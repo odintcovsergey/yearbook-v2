@@ -1,0 +1,569 @@
+'use client'
+
+import { useEffect, useState, useCallback, memo } from 'react'
+import { useParams } from 'next/navigation'
+import type { Photo } from '@/types'
+
+type StepId = 1 | 2 | 3 | 4 | 5 | 6
+
+const STEPS = [
+  { id: 1, label: 'Портрет' },
+  { id: 2, label: 'Обложка' },
+  { id: 4, label: 'Фото' },
+  { id: 3, label: 'Текст' },
+  { id: 5, label: 'Контакт' },
+  { id: 6, label: 'Готово' },
+]
+
+const MAX_TEXT = 500
+
+export default function ParentPage() {
+  const { token } = useParams<{ token: string }>()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [done, setDone] = useState(false)
+
+  const [childName, setChildName] = useState('')
+  const [albumTitle, setAlbumTitle] = useState('')
+  const [coverMode, setCoverMode] = useState<string>('none')
+  const [coverPrice, setCoverPrice] = useState(300)
+  const [portraits, setPortraits] = useState<Photo[]>([])
+  const [groups, setGroups] = useState<Photo[]>([])
+
+  const [step, setStep] = useState<StepId>(1)
+  const [parentName, setParentName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [portraitPage, setPortraitPage] = useState<string | null>(null)
+  const [coverOption, setCoverOption] = useState<'none' | 'same' | 'other'>('none')
+  const [portraitCover, setPortraitCover] = useState<string | null>(null)
+  const [studentText, setStudentText] = useState('')
+  const [groupPhotos, setGroupPhotos] = useState<string[]>([])
+
+  const [lightbox, setLightbox] = useState<{ photos: Photo[], index: number, onSelect?: (id: string) => void | Promise<void> } | null>(null)
+
+  useEffect(() => {
+    fetch(`/api/child?token=${token}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { setError(data.error); setLoading(false); return }
+        setChildName(data.child.full_name)
+        setAlbumTitle(data.album?.title ?? '')
+        setCoverMode(data.album?.cover_mode ?? 'none')
+        setCoverPrice(data.album?.cover_price ?? 300)
+        setPortraits(data.portraits)
+        setGroups(data.groups)
+
+        const ex = data.existing
+        if (ex.contact) { setParentName(ex.contact.parent_name); setPhone(ex.contact.phone) }
+        if (ex.text) setStudentText(ex.text)
+        if (ex.cover) { setCoverOption(ex.cover.cover_option); setPortraitCover(ex.cover.photo_id) }
+        const pg = ex.selections.find((s: any) => s.selection_type === 'portrait_page')
+        if (pg) setPortraitPage(pg.photo_id)
+        const gr = ex.selections.filter((s: any) => s.selection_type === 'group').map((s: any) => s.photo_id)
+        if (gr.length) setGroupPhotos(gr)
+
+        if (data.child.submitted_at) setDone(true)
+        setLoading(false)
+
+        if (!data.child.submitted_at) {
+          fetch(`/api/draft?token=${token}`)
+            .then(r => r.json())
+            .then(draft => {
+              if (!draft) return
+              if (draft.studentText) setStudentText(draft.studentText)
+              if (draft.coverOption) setCoverOption(draft.coverOption)
+              if (draft.portraitCover) setPortraitCover(draft.portraitCover)
+              if (draft.portraitPage) setPortraitPage(draft.portraitPage)
+              if (draft.groupPhotos?.length) setGroupPhotos(draft.groupPhotos)
+              if (draft.step) setStep(draft.step)
+            })
+            .catch(() => {})
+        }
+      })
+      .catch(() => { setError('Не удалось загрузить данные.'); setLoading(false) })
+  }, [token])
+
+  const saveDraft = useCallback(async (data: object) => {
+    try {
+      await fetch('/api/draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, data }),
+      })
+    } catch (e) {}
+  }, [token])
+
+  const lockPhoto = useCallback(async (photoId: string) => {
+    const res = await fetch('/api/select', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, photoId, action: 'lock' }),
+    })
+    return res.ok
+  }, [token])
+
+  const unlockPhoto = useCallback(async (photoId: string) => {
+    await fetch('/api/select', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, photoId, action: 'unlock' }),
+    })
+  }, [token])
+
+  const toggleGroup = useCallback((id: string) => {
+    if (done) return
+    if (groupPhotos.includes(id)) {
+      setGroupPhotos(prev => prev.filter(p => p !== id))
+      setTimeout(() => unlockPhoto(id), 0)
+    } else {
+      if (groupPhotos.length >= 2) return
+      setGroupPhotos(prev => [...prev, id])
+      setTimeout(async () => {
+        const ok = await lockPhoto(id)
+        if (!ok) {
+          setGroupPhotos(prev => prev.filter(p => p !== id))
+          setGroups(prev => prev.map(p => p.id === id ? { ...p, locked: true } : p))
+        }
+      }, 0)
+    }
+  }, [done, groupPhotos, lockPhoto, unlockPhoto])
+
+  const togglePortrait = useCallback((id: string) => {
+    if (done) return
+    if (portraitPage === id) {
+      setPortraitPage(null)
+      setTimeout(() => unlockPhoto(id), 0)
+    } else {
+      const prev = portraitPage
+      setPortraitPage(id)
+      setTimeout(async () => {
+        if (prev) unlockPhoto(prev)
+        const ok = await lockPhoto(id)
+        if (!ok) {
+          setPortraitPage(prev ?? null)
+          setPortraits(p => p.map(ph => ph.id === id ? { ...ph, locked: true } : ph))
+        }
+      }, 0)
+    }
+  }, [done, portraitPage, lockPhoto, unlockPhoto])
+
+  const handleSubmit = async () => {
+    setSaving(true)
+    const res = await fetch('/api/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, parentName, phone, portraitPage, coverOption, portraitCover, studentText, groupPhotos }),
+    })
+    const data = await res.json()
+    setSaving(false)
+    if (data.error) { setError(data.error); return }
+    setDone(true)
+    setStep(6)
+  }
+
+  const effectiveSteps = STEPS.filter(s => !(s.id === 2 && coverMode === 'none'))
+  const totalSteps = effectiveSteps.length
+  const currentIdx = effectiveSteps.findIndex(s => s.id === step)
+  const progress = ((currentIdx + 1) / totalSteps) * 100
+
+  const goNext = () => {
+    const next = effectiveSteps[currentIdx + 1]
+    if (next) {
+      setStep(next.id as StepId)
+      saveDraft({ studentText, coverOption, portraitCover, portraitPage, groupPhotos, step: next.id })
+    }
+  }
+  const goPrev = () => {
+    const prev = effectiveSteps[currentIdx - 1]
+    if (prev) setStep(prev.id as StepId)
+  }
+
+  if (loading) return <LoadingScreen />
+  if (error && !done) return <ErrorScreen message={error} />
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-gray-50">
+
+      {lightbox && (
+        <Lightbox
+          photos={lightbox.photos}
+          index={lightbox.index}
+          onClose={() => setLightbox(null)}
+          onNavigate={i => setLightbox(prev => prev ? { ...prev, index: i } : null)}
+          onSelect={lightbox.onSelect}
+          selected={[...(portraitPage ? [portraitPage] : []), ...groupPhotos]}
+        />
+      )}
+
+      <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 py-3">
+          <p className="text-xs text-gray-400 mb-1">{albumTitle}</p>
+          <div className="flex items-center justify-between mb-2">
+            <h1 className="text-sm font-medium text-gray-700">{childName}</h1>
+            <span className="text-xs text-gray-400">{currentIdx + 1} / {totalSteps}</span>
+          </div>
+          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${done ? 100 : progress}%` }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 py-6">
+
+        {step === 1 && (
+          <StepCard wide title="Портрет для личной страницы" subtitle="Нажмите на фото чтобы увидеть крупнее и выбрать. Серые уже выбраны другими.">
+            <div className="flex items-center gap-3 mb-4">
+              <span className={`badge-${portraitPage ? 'green' : 'blue'}`}>Выбрано: {portraitPage ? 1 : 0} / 1</span>
+              <span className="text-xs text-gray-400">{portraits.filter(p => !p.locked).length} из {portraits.length} доступно</span>
+            </div>
+            <PhotoGrid
+              photos={portraits}
+              selected={portraitPage ? [portraitPage] : []}
+              limit={1}
+              onToggle={togglePortrait}
+              onLightbox={(idx) => setLightbox({
+                photos: portraits,
+                index: idx,
+                onSelect: togglePortrait,
+              })}
+            />
+            <div className="flex items-center justify-between mt-4">
+              <button className="btn-ghost" onClick={goPrev}>← Назад</button>
+              <button className="btn-primary" onClick={goNext} disabled={!portraitPage}>Далее →</button>
+            </div>
+          </StepCard>
+        )}
+
+        {step === 2 && coverMode !== 'none' && (
+          <StepCard wide title="Портрет для обложки" subtitle="Выберите вариант оформления обложки">
+            <div className="space-y-3 mb-6">
+              {coverMode !== 'required' && (
+                <RadioCard active={coverOption === 'none'} onClick={() => setCoverOption('none')} label="Без портрета на обложке" sub="Включено в стоимость" />
+              )}
+              <RadioCard active={coverOption === 'same'} onClick={() => setCoverOption('same')} label="Тот же портрет что на странице" sub={`+ ${coverPrice} ₽`} paid />
+              {portraits.length > 1 && (
+                <RadioCard active={coverOption === 'other'} onClick={() => setCoverOption('other')} label="Другой портрет на обложку" sub={`+ ${coverPrice} ₽`} paid />
+              )}
+            </div>
+            {coverOption === 'other' && (
+              <div className="mb-6">
+                <p className="text-sm text-gray-500 mb-3">Выберите портрет для обложки:</p>
+                <PhotoGrid
+                  photos={portraits.filter(p => p.id !== portraitPage)}
+                  selected={portraitCover ? [portraitCover] : []}
+                  limit={1}
+                  onToggle={(id) => setPortraitCover(prev => prev === id ? null : id)}
+                  onLightbox={(idx) => setLightbox({
+                    photos: portraits.filter(p => p.id !== portraitPage),
+                    index: idx,
+                    onSelect: (id) => setPortraitCover(prev => prev === id ? null : id),
+                  })}
+                  small
+                />
+              </div>
+            )}
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mb-6 text-xs text-amber-700">
+              Доплата собирается организатором отдельно.
+            </div>
+            <div className="flex items-center justify-between">
+              <button className="btn-ghost" onClick={goPrev}>← Назад</button>
+              <button className="btn-primary" onClick={goNext} disabled={coverOption === 'other' && !portraitCover}>Далее →</button>
+            </div>
+          </StepCard>
+        )}
+
+        {step === 3 && (
+          <StepCard title="Текст от ученика" subtitle="Цитата, пожелание или любимая фраза">
+            <textarea className="input resize-none h-36 mb-1" placeholder="«Спасибо всем за эти годы!»" maxLength={MAX_TEXT} value={studentText} onChange={e => setStudentText(e.target.value)} />
+            <div className="text-right text-xs text-gray-400 mb-2">
+              <span className={studentText.length > MAX_TEXT * 0.9 ? 'text-amber-500' : ''}>{studentText.length}</span> / {MAX_TEXT}
+            </div>
+            <p className="text-xs text-gray-400 mb-6">Необязательно.</p>
+            <div className="flex items-center justify-between">
+              <button className="btn-ghost" onClick={goPrev}>← Назад</button>
+              <button className="btn-primary" onClick={goNext}>Далее →</button>
+            </div>
+          </StepCard>
+        )}
+
+        {step === 4 && (
+          <StepCard wide title="Фото с друзьями" subtitle="Нажмите на фото чтобы увидеть крупнее и выбрать. Выберите ровно 2.">
+            <div className="flex items-center gap-3 mb-4">
+              <span className={`badge-${groupPhotos.length === 2 ? 'green' : 'blue'}`}>Выбрано: {groupPhotos.length} / 2</span>
+              <span className="text-xs text-gray-400">{groups.filter(g => !g.locked).length} из {groups.length} доступно</span>
+            </div>
+            <PhotoGrid
+              photos={groups}
+              selected={groupPhotos}
+              limit={2}
+              onToggle={toggleGroup}
+              onLightbox={(idx) => setLightbox({
+                photos: groups,
+                index: idx,
+                onSelect: toggleGroup,
+              })}
+            />
+            <div className="flex items-center justify-between mt-4">
+              <button className="btn-ghost" onClick={goPrev}>← Назад</button>
+              <button className="btn-primary" onClick={goNext} disabled={groupPhotos.length !== 2}>Далее →</button>
+            </div>
+          </StepCard>
+        )}
+
+        {step === 5 && (
+          <StepCard title="Ваш номер телефона" subtitle="Сообщим когда альбом будет готов к получению">
+            <label className="block text-sm text-gray-500 mb-1">Ваше имя</label>
+            <input className="input mb-4" placeholder="Иванова Елена Сергеевна" value={parentName} onChange={e => setParentName(e.target.value)} />
+            <label className="block text-sm text-gray-500 mb-1">Номер телефона</label>
+            <input className="input mb-1" type="tel" placeholder="+7 (999) 123-45-67" value={phone} onChange={e => setPhone(e.target.value)} />
+            <p className="text-xs text-gray-400 mb-6">Используется только для связи по альбому. Никакой рекламы.</p>
+            <div className="flex items-center justify-between">
+              <button className="btn-ghost" onClick={goPrev}>← Назад</button>
+              <button className="btn-primary" onClick={goNext} disabled={!phone.trim()}>Далее →</button>
+            </div>
+          </StepCard>
+        )}
+
+        {step === 6 && !done && (
+          <StepCard title="Проверьте выбор" subtitle="После подтверждения изменить нельзя">
+            <div className="space-y-3 mb-6">
+              <SummaryRow label="Портрет" value={portraits.find(p => p.id === portraitPage)?.filename ?? '—'} />
+              {coverMode !== 'none' && <SummaryRow label="Обложка" value={coverOption === 'none' ? 'Без портрета' : coverOption === 'same' ? `Тот же (+${coverPrice} ₽)` : `Другой (+${coverPrice} ₽)`} />}
+              <SummaryRow label="Текст" value={studentText || '(не заполнен)'} multiline />
+              <SummaryRow label="Фото с друзьями" value={groupPhotos.map(id => groups.find(g => g.id === id)?.filename).filter(Boolean).join(', ') || '—'} />
+              <SummaryRow label="Телефон" value={phone} />
+            </div>
+            {error && <div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-sm mb-4">{error}</div>}
+            <div className="flex items-center justify-between">
+              <button className="btn-ghost" onClick={goPrev}>← Изменить</button>
+              <button className="btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? 'Сохраняю...' : 'Подтвердить ✓'}</button>
+            </div>
+          </StepCard>
+        )}
+
+        {done && (
+          <div className="card p-8 text-center">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+            <h2 className="text-xl font-medium text-gray-800 mb-2">Спасибо!</h2>
+            <p className="text-gray-500 text-sm">Выбор для <strong>{childName}</strong> сохранён.<br />Сообщим когда альбом будет готов.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
+  photos: Photo[]
+  index: number
+  onClose: () => void
+  onNavigate: (i: number) => void
+  onSelect?: (id: string) => void | Promise<void>
+  selected: string[]
+}) {
+  const photo = photos[index]
+  if (!photo) return null
+  const isSelected = selected.includes(photo.id)
+  const isLocked = (photo.locked ?? false) && !isSelected
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') onNavigate(Math.min(index + 1, photos.length - 1))
+      if (e.key === 'ArrowLeft') onNavigate(Math.max(index - 1, 0))
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [index, photos.length, onNavigate, onClose])
+
+  // Свайп на телефоне
+  const touchStart = useState<number | null>(null)
+  const handleTouchStart = (e: React.TouchEvent) => { (touchStart as any)[1](e.touches[0].clientX) }
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const start = (touchStart as any)[0]
+    if (start === null) return
+    const diff = start - e.changedTouches[0].clientX
+    if (Math.abs(diff) > 50) {
+      if (diff > 0) onNavigate(Math.min(index + 1, photos.length - 1))
+      else onNavigate(Math.max(index - 1, 0))
+    }
+    ;(touchStart as any)[1](null)
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/95 z-50 flex flex-col" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+      <div className="flex items-center justify-between px-4 py-3">
+        <span className="text-white/60 text-sm">{index + 1} / {photos.length}</span>
+        <button onClick={onClose} className="text-white/80 hover:text-white text-3xl leading-none w-10 h-10 flex items-center justify-center">×</button>
+      </div>
+
+      <div className="flex-1 flex items-center justify-center relative px-4">
+        {index > 0 && (
+          <button onClick={() => onNavigate(index - 1)} className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white text-2xl z-10">‹</button>
+        )}
+        <img src={photo.url} alt="" className={`max-w-full object-contain rounded-lg ${isLocked ? 'opacity-40' : ''}`} style={{maxHeight: 'calc(100vh - 220px)'}} />
+        {index < photos.length - 1 && (
+          <button onClick={() => onNavigate(index + 1)} className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white text-2xl z-10">›</button>
+        )}
+      </div>
+
+      <div className="px-4 py-3 flex items-center justify-center">
+        {isLocked ? (
+          <div className="text-white/40 text-sm px-6 py-3">🔒 Уже выбрано другим</div>
+        ) : onSelect ? (
+          <button
+            onClick={() => { onSelect(photo.id); onClose() }}
+            className={`px-10 py-3 rounded-xl text-sm font-medium transition-all
+              ${isSelected ? 'bg-red-500 text-white' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
+          >
+            {isSelected ? '✕ Отменить выбор' : '✓ Выбрать это фото'}
+          </button>
+        ) : null}
+      </div>
+
+      <div className="flex gap-2 px-4 pb-4 overflow-x-auto">
+        {photos.map((p, i) => (
+          <button key={p.id} onClick={() => onNavigate(i)}
+            className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all
+              ${i === index ? 'border-blue-400' : 'border-transparent opacity-50 hover:opacity-100'}
+              ${p.locked && !selected.includes(p.id) ? 'opacity-20' : ''}`}
+          >
+            <img src={p.url} alt="" className="w-full h-full object-cover" />
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const PhotoThumb = memo(function PhotoThumb({ photo, isSelected, isLocked, canSelect, onLightbox, onToggle, selIndex }: {
+  photo: Photo; isSelected: boolean; isLocked: boolean; canSelect: boolean
+  onLightbox: () => void; onToggle?: () => void; selIndex: number
+}) {
+  return (
+    <div className="relative group">
+      <div style={{willChange: 'transform'}} className={`w-full aspect-square rounded-xl overflow-hidden border-2 relative
+        ${isSelected ? 'border-blue-500 shadow-md' : 'border-transparent'}
+        ${isLocked ? 'opacity-30' : ''}`}
+      >
+        <img src={photo.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+        {isSelected && (
+          <div className="absolute top-2 right-2 w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-medium shadow">
+            {selIndex + 1}
+          </div>
+        )}
+        {isLocked && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900/30 rounded-xl">
+            <span className="text-2xl">🔒</span>
+          </div>
+        )}
+      </div>
+      {!isLocked && onToggle && (
+        <button onClick={onToggle} disabled={!canSelect}
+          className={`absolute bottom-2 left-2 text-xs px-2 py-1 rounded-lg font-medium transition-all
+            ${isSelected ? 'bg-blue-500 text-white' : canSelect ? 'bg-white/90 text-gray-700' : 'bg-white/50 text-gray-400 cursor-not-allowed'}`}
+        >
+          {isSelected ? '✓' : '+'}
+        </button>
+      )}
+      <button onClick={onLightbox}
+        className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded-lg hover:bg-black/70 transition-all"
+      >
+        ⤢
+      </button>
+    </div>
+  )
+})
+
+function PhotoGrid({ photos, selected, limit, onLightbox, onToggle, small = false }: {
+  photos: Photo[]
+  selected: string[]
+  limit: number
+  onLightbox: (index: number) => void
+  onToggle?: (id: string) => void
+  small?: boolean
+}) {
+  if (!photos.length) return <p className="text-gray-400 text-sm text-center py-8">Нет доступных фотографий</p>
+  const cols = small ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
+  return (
+    <div className={`grid ${cols} gap-3`}>
+      {photos.map((photo, idx) => {
+        const isSelected = selected.includes(photo.id)
+        const isLocked = (photo.locked ?? false) && !isSelected
+        const canSelect = !isLocked && (isSelected || selected.length < limit)
+        return (
+          <PhotoThumb
+            key={photo.id}
+            photo={photo}
+            isSelected={isSelected}
+            isLocked={isLocked}
+            canSelect={canSelect}
+            selIndex={selected.indexOf(photo.id)}
+            onLightbox={() => onLightbox(idx)}
+            onToggle={onToggle ? () => onToggle(photo.id) : undefined}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function StepCard({ title, subtitle, children, wide = false }: { title: string; subtitle: string; children: React.ReactNode; wide?: boolean }) {
+  return (
+    <div className={`card p-5 ${wide ? '' : 'max-w-2xl mx-auto w-full'}`}>
+      <h2 className="text-lg font-medium text-gray-800 mb-1">{title}</h2>
+      <p className="text-sm text-gray-400 mb-5">{subtitle}</p>
+      {children}
+    </div>
+  )
+}
+
+function RadioCard({ active, onClick, label, sub, paid }: { active: boolean; onClick: () => void; label: string; sub: string; paid?: boolean }) {
+  return (
+    <button onClick={onClick} className={`w-full text-left p-4 rounded-xl border-2 transition-all flex items-center gap-3 ${active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300 bg-white'}`}>
+      <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${active ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`}>
+        {active && <div className="w-2 h-2 rounded-full bg-white" />}
+      </div>
+      <div>
+        <p className="text-sm font-medium text-gray-800">{label}</p>
+        <p className={`text-xs mt-0.5 ${paid ? 'text-green-600 font-medium' : 'text-gray-400'}`}>{sub}</p>
+      </div>
+    </button>
+  )
+}
+
+function SummaryRow({ label, value, multiline }: { label: string; value: string; multiline?: boolean }) {
+  return (
+    <div className="flex gap-3 py-2 border-b border-gray-100 last:border-0">
+      <span className="text-xs text-gray-400 w-28 flex-shrink-0 pt-0.5">{label}</span>
+      <span className={`text-sm text-gray-700 flex-1 ${multiline ? 'whitespace-pre-wrap' : 'truncate'}`}>{value}</span>
+    </div>
+  )
+}
+
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin mx-auto" />
+    </div>
+  )
+}
+
+function ErrorScreen({ message }: { message: string }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="card p-8 text-center max-w-sm">
+        <div className="text-4xl mb-4">😕</div>
+        <p className="text-sm text-gray-700 font-medium mb-2">Что-то пошло не так</p>
+        <p className="text-sm text-gray-500 mb-6">{message}</p>
+        <button onClick={() => window.history.back()} className="btn-secondary w-full mb-3">
+          ← Вернуться назад
+        </button>
+        <button onClick={() => window.location.reload()} className="btn-primary w-full">
+          Попробовать снова
+        </button>
+      </div>
+    </div>
+  )
+}
