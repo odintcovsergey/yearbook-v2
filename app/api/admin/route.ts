@@ -20,6 +20,27 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(data ?? [])
   }
 
+  // Список альбомов со статистикой (один запрос)
+  if (action === 'albums_with_stats') {
+    const [albumsRes, childrenRes] = await Promise.all([
+      supabaseAdmin.from('albums').select('*').order('created_at', { ascending: false }),
+      supabaseAdmin.from('children').select('album_id, submitted_at, started_at'),
+    ])
+    const albums = albumsRes.data ?? []
+    const children = childrenRes.data ?? []
+    const statsMap: Record<string, { total: number; submitted: number; in_progress: number }> = {}
+    for (const c of children) {
+      if (!statsMap[c.album_id]) statsMap[c.album_id] = { total: 0, submitted: 0, in_progress: 0 }
+      statsMap[c.album_id].total++
+      if (c.submitted_at) statsMap[c.album_id].submitted++
+      else if (c.started_at) statsMap[c.album_id].in_progress++
+    }
+    return NextResponse.json(albums.map(a => ({
+      ...a,
+      stats: statsMap[a.id] ?? { total: 0, submitted: 0, in_progress: 0 },
+    })))
+  }
+
   // Статистика по альбому
   if (action === 'stats' && albumId) {
     const [children, teachers, surcharges] = await Promise.all([

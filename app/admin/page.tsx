@@ -9,7 +9,7 @@ const api = (path: string, opts?: RequestInit) =>
   fetch(path, { ...opts, headers: { 'x-admin-secret': secret(), 'Content-Type': 'application/json', ...opts?.headers } })
 
 type Tab = 'overview' | 'children' | 'upload' | 'import' | 'surcharges' | 'contacts' | 'teachers'
-type Album = { id: string; title: string; classes: string[]; cover_mode: string; cover_price: number; deadline: string | null }
+type Album = { id: string; title: string; classes: string[]; cover_mode: string; cover_price: number; deadline: string | null; stats?: { total: number; submitted: number; in_progress: number } }
 type Stats = { total: number; submitted: number; in_progress: number; not_started: number; teachers_total: number; teachers_done: number; surcharge_total: number; surcharge_count: number }
 type Child = { id: string; full_name: string; class: string; access_token: string; submitted_at: string | null; started_at: string | null; contact: any; cover: any }
 
@@ -30,7 +30,7 @@ export default function AdminPage() {
   }
 
   const loadAlbums = async () => {
-    const r = await api('/api/admin?action=albums')
+    const r = await api('/api/admin?action=albums_with_stats')
     if (r.ok) setAlbums(await r.json())
   }
 
@@ -182,6 +182,9 @@ export default function AdminPage() {
 function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ title: '', classes: '', cover_mode: 'optional', cover_price: '300', deadline: '' })
+  const [search, setSearch] = useState('')
+  const [filterStatus, setFilterStatus] = useState<'all' | 'done' | 'pending'>('all')
+  const [sortBy, setSortBy] = useState<'created' | 'deadline' | 'progress'>('created')
 
   const create = async () => {
     const res = await api('/api/admin', {
@@ -198,6 +201,29 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
     if (res.ok) { notify('Альбом создан!'); setCreating(false); onRefresh() }
     else notify('Ошибка создания', 'err')
   }
+
+  const filtered = albums
+    .filter((a: Album) => {
+      if (search && !a.title.toLowerCase().includes(search.toLowerCase())) return false
+      const s = a.stats ?? { total: 0, submitted: 0, in_progress: 0 }
+      if (filterStatus === 'done' && (s.total === 0 || s.submitted < s.total)) return false
+      if (filterStatus === 'pending' && s.total > 0 && s.submitted === s.total) return false
+      return true
+    })
+    .sort((a: Album, b: Album) => {
+      if (sortBy === 'deadline') {
+        if (!a.deadline && !b.deadline) return 0
+        if (!a.deadline) return 1
+        if (!b.deadline) return -1
+        return new Date(a.deadline).getTime() - new Date(b.deadline).getTime()
+      }
+      if (sortBy === 'progress') {
+        const pctA = (a.stats?.total ?? 0) ? (a.stats!.submitted / a.stats!.total) : 0
+        const pctB = (b.stats?.total ?? 0) ? (b.stats!.submitted / b.stats!.total) : 0
+        return pctB - pctA
+      }
+      return 0
+    })
 
   return (
     <div>
@@ -245,28 +271,107 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
         </div>
       )}
 
-      {albums.length === 0 && (
-        <div className="card p-12 text-center text-gray-400 text-sm">
-          Нет альбомов. Создайте первый.
+      {/* Поиск и фильтры */}
+      {albums.length > 0 && (
+        <div className="flex flex-wrap gap-3 mb-4">
+          <input
+            type="text"
+            placeholder="🔍 Поиск по названию..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="input flex-1 min-w-[200px] text-sm"
+          />
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)} className="input text-sm w-auto">
+            <option value="all">Все статусы</option>
+            <option value="done">Все готовы</option>
+            <option value="pending">Есть незавершённые</option>
+          </select>
+          <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="input text-sm w-auto">
+            <option value="created">По дате создания</option>
+            <option value="deadline">По дедлайну</option>
+            <option value="progress">По % готовности</option>
+          </select>
         </div>
       )}
 
+      {albums.length === 0 && (
+        <div className="card p-12 text-center text-gray-400 text-sm">Нет альбомов. Создайте первый.</div>
+      )}
+
+      {albums.length > 0 && filtered.length === 0 && (
+        <div className="card p-12 text-center text-gray-400 text-sm">Ничего не найдено. Попробуйте изменить фильтры.</div>
+      )}
+
       <div className="grid gap-3">
-        {albums.map((a: Album) => (
-          <button
-            key={a.id}
-            onClick={() => onSelect(a)}
-            className="card p-5 text-left hover:border-blue-200 hover:shadow-md transition-all"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-gray-800">{a.title}</p>
-                <p className="text-sm text-gray-400 mt-1">{a.classes.join(', ')} · {a.cover_mode}</p>
+        {filtered.map((a: Album) => {
+          const s = a.stats ?? { total: 0, submitted: 0, in_progress: 0 }
+          const pct = s.total ? Math.round(s.submitted / s.total * 100) : 0
+          const allDone = s.total > 0 && s.submitted === s.total
+
+          const now = new Date()
+          const deadline = a.deadline ? new Date(a.deadline) : null
+          const daysLeft = deadline ? Math.ceil((deadline.getTime() - now.getTime()) / 86400000) : null
+          const deadlineOverdue = daysLeft !== null && daysLeft < 0
+          const deadlineSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3
+
+          return (
+            <button
+              key={a.id}
+              onClick={() => onSelect(a)}
+              className="card p-5 text-left hover:border-blue-200 hover:shadow-md transition-all"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-medium text-gray-800">{a.title}</p>
+                    {allDone && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">✓ Все готовы</span>
+                    )}
+                    {!allDone && s.total > 0 && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                        {s.total - s.submitted} не завершили
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3 mt-1 flex-wrap">
+                    <p className="text-sm text-gray-400">{a.classes.join(', ')}</p>
+                    {deadline && (
+                      <span className={`text-xs font-medium ${deadlineOverdue ? 'text-red-500' : deadlineSoon ? 'text-amber-600' : 'text-gray-400'}`}>
+                        {deadlineOverdue
+                          ? `⚠ Просрочен ${Math.abs(daysLeft!)} дн. назад`
+                          : daysLeft === 0 ? '⏰ Сегодня дедлайн'
+                          : daysLeft === 1 ? '⏰ Завтра дедлайн'
+                          : `📅 ${deadline.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} · ещё ${daysLeft} дн.`}
+                      </span>
+                    )}
+                  </div>
+
+                  {s.total > 0 && (
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-gray-400">
+                          {s.submitted} из {s.total} подтвердили
+                          {s.in_progress > 0 && ` · ${s.in_progress} в процессе`}
+                        </span>
+                        <span className={`text-xs font-semibold ${allDone ? 'text-green-600' : 'text-blue-600'}`}>{pct}%</span>
+                      </div>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${allDone ? 'bg-green-500' : 'bg-blue-500'}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {s.total === 0 && <p className="text-xs text-gray-300 mt-2">Нет учеников</p>}
+                </div>
+                <span className="text-blue-400 mt-1 shrink-0">→</span>
               </div>
-              <span className="text-blue-500">→</span>
-            </div>
-          </button>
-        ))}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
