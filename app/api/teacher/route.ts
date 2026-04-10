@@ -97,11 +97,9 @@ export async function POST(req: NextRequest) {
       submitted_at: new Date().toISOString(),
     }).eq('id', teacher_id)
 
+    await supabaseAdmin.from('photo_teachers').delete().eq('teacher_id', teacher_id)
     if (photo_id) {
-      await supabaseAdmin.from('photo_teachers').upsert(
-        { photo_id, teacher_id },
-        { onConflict: 'teacher_id' }
-      )
+      await supabaseAdmin.from('photo_teachers').insert({ photo_id, teacher_id })
     }
     return NextResponse.json({ ok: true })
   }
