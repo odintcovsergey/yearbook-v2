@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
 
   const [existingSelections, existingContact, existingText, existingCover] = await Promise.all([
     supabaseAdmin.from('selections').select('photo_id, selection_type').eq('child_id', child.id),
-    supabaseAdmin.from('parent_contacts').select('parent_name, phone').eq('child_id', child.id).maybeSingle(),
+    supabaseAdmin.from('parent_contacts').select('parent_name, phone, referral').eq('child_id', child.id).maybeSingle(),
     supabaseAdmin.from('student_texts').select('text').eq('child_id', child.id).maybeSingle(),
     supabaseAdmin.from('cover_selections').select('cover_option, photo_id, surcharge').eq('child_id', child.id).maybeSingle(),
   ])
