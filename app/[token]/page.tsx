@@ -480,7 +480,7 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
               ${i === index ? 'border-blue-400' : 'border-transparent opacity-50 hover:opacity-100'}
               ${p.locked && !selected.includes(p.id) ? 'opacity-20' : ''}`}
           >
-            <img src={p.url} alt="" className="w-full h-full object-cover" />
+            <img src={p.url} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLElement).closest('.photo-thumb')?.classList.add('hidden') }} />
           </button>
         ))}
       </div>
@@ -493,12 +493,12 @@ const PhotoThumb = memo(function PhotoThumb({ photo, isSelected, isLocked, canSe
   onLightbox: () => void; onToggle?: () => void; selIndex: number
 }) {
   return (
-    <div className="relative group">
+    <div className="relative group photo-thumb">
       <div style={{willChange: 'transform'}} className={`w-full aspect-square rounded-xl overflow-hidden border-2 relative
         ${isSelected ? 'border-blue-500 shadow-md' : 'border-transparent'}
         ${isLocked ? 'opacity-30' : ''}`}
       >
-        <img src={photo.thumb || photo.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+        <img src={photo.thumb || photo.url} alt="" className="w-full h-full object-cover" loading="lazy" onError={e => { (e.target as HTMLElement).closest('.photo-thumb')?.classList.add('hidden') }} />
         {isSelected && (
           <div className="absolute top-2 right-2 w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-medium shadow">
             {selIndex + 1}
