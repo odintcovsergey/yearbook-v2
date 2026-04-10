@@ -962,100 +962,59 @@ function SurchargesTab({ album, notify }: any) {
 // ─── Контакты ─────────────────────────────────────────────────────────────────
 
 function ContactsTab({ album, notify }: any) {
-  const [all, setAll] = useState<any[]>([])
-  const [tab, setTab] = useState<'contacts' | 'referrals'>('contacts')
+  const [contacts, setContacts] = useState<any[]>([])
 
   useEffect(() => {
     api(`/api/admin?action=children&album_id=${album.id}`)
       .then(r => r.json())
-      .then(setAll)
+      .then(data => setContacts(data.filter((c: any) => c.contact)))
   }, [album.id])
 
-  const contacts = all.filter((c: any) => c.contact)
-  const referrals = all.filter((c: any) => c.referral)
-
   const exportCsv = () => {
-    if (tab === 'contacts') {
-      const rows = contacts.map(c => `"${c.full_name}","${c.class}","${c.contact?.parent_name ?? ''}","${c.contact?.phone ?? ''}"`)
-      const csv = 'Ученик,Класс,Родитель,Телефон\n' + rows.join('\n')
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a'); a.href = url; a.download = 'contacts.csv'; a.click()
-    } else {
-      const rows = referrals.map(c => `"${c.full_name}","${c.class}","${c.contact?.parent_name ?? ''}","${c.contact?.phone ?? ''}","${(c.referral ?? '').replace(/"/g, '""')}"`)
-      const csv = 'Ученик,Класс,Родитель,Телефон родителя,Рекомендации\n' + rows.join('\n')
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a'); a.href = url; a.download = 'referrals.csv'; a.click()
-    }
-    notify('Скачано!')
+    const rows = contacts.map(c => [
+      c.full_name, c.class,
+      c.contact?.parent_name ?? '',
+      c.contact?.phone ?? '',
+      (c.referral ?? '').replace(/"/g, '""'),
+    ].map(v => `"${v}"`).join(','))
+    const csv = 'Ученик,Класс,Родитель,Телефон,Рекомендации\n' + rows.join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = 'contacts.csv'; a.click()
+    notify('Контакты скачаны!')
   }
 
   return (
-    <div className="space-y-4 max-w-3xl">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          <button onClick={() => setTab('contacts')}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === 'contacts' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-            📞 Контакты ({contacts.length})
-          </button>
-          <button onClick={() => setTab('referrals')}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === 'referrals' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-            🎁 Рекомендации ({referrals.length})
-          </button>
-        </div>
+        <p className="text-sm text-gray-500">{contacts.length} родителей оставили контакты</p>
         <button onClick={exportCsv} className="btn-primary text-sm">⬇ Скачать CSV</button>
       </div>
-
-      {tab === 'contacts' && (
-        <div className="card overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Ученик</th>
-                <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Класс</th>
-                <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Родитель</th>
-                <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Телефон</th>
+      <div className="card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Ученик</th>
+              <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Класс</th>
+              <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Родитель</th>
+              <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Телефон</th>
+              <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Рекомендации 🎁</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {contacts.map((c: any) => (
+              <tr key={c.id}>
+                <td className="px-4 py-3 font-medium text-gray-800">{c.full_name}</td>
+                <td className="px-4 py-3 text-gray-500">{c.class}</td>
+                <td className="px-4 py-3 text-gray-500">{c.contact?.parent_name}</td>
+                <td className="px-4 py-3 text-blue-600 whitespace-nowrap">{c.contact?.phone}</td>
+                <td className="px-4 py-3 text-gray-600 whitespace-pre-wrap">{c.referral || <span className="text-gray-300">—</span>}</td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {contacts.map((c: any) => (
-                <tr key={c.id}>
-                  <td className="px-4 py-3 font-medium text-gray-800">{c.full_name}</td>
-                  <td className="px-4 py-3 text-gray-500">{c.class}</td>
-                  <td className="px-4 py-3 text-gray-500">{c.contact?.parent_name}</td>
-                  <td className="px-4 py-3 text-blue-600">{c.contact?.phone}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {contacts.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">Нет контактов</p>}
-        </div>
-      )}
-
-      {tab === 'referrals' && (
-        <div className="card overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Родитель</th>
-                <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Телефон</th>
-                <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Рекомендации</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {referrals.map((c: any) => (
-                <tr key={c.id}>
-                  <td className="px-4 py-3 font-medium text-gray-800">{c.contact?.parent_name ?? c.full_name}</td>
-                  <td className="px-4 py-3 text-blue-600 whitespace-nowrap">{c.contact?.phone ?? '—'}</td>
-                  <td className="px-4 py-3 text-gray-700 whitespace-pre-wrap">{c.referral}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {referrals.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">Нет рекомендаций</p>}
-        </div>
-      )}
+            ))}
+          </tbody>
+        </table>
+        {contacts.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">Нет контактов</p>}
+      </div>
     </div>
   )
 }
