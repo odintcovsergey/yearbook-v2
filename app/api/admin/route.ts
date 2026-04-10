@@ -144,7 +144,7 @@ export async function GET(req: NextRequest) {
 
   // Список фото альбома по типу
   if (action === 'photos' && albumId) {
-    const photoType = url.searchParams.get('photo_type')
+    const photoType = req.nextUrl.searchParams.get('photo_type')
     let query = supabaseAdmin.from('photos').select('id, filename, storage_path, type').eq('album_id', albumId).order('created_at')
     if (photoType) query = (query as any).eq('type', photoType)
     const { data: photos } = await query
