@@ -295,7 +295,7 @@ export async function POST(req: NextRequest) {
     // Найти детей, у которых было выбрано это фото — им нужно сбросить submitted_at
     const { data: affectedSelections } = await supabaseAdmin
       .from('selections').select('child_id').eq('photo_id', photo_id)
-    const affectedChildIds = [...new Set((affectedSelections ?? []).map((s: any) => s.child_id))]
+    const affectedChildIds = Array.from(new Set((affectedSelections ?? []).map((s: any) => s.child_id)))
     // Удалить фото из хранилища и базы
     await supabaseAdmin.storage.from('photos').remove([storage_path])
     await supabaseAdmin.from('selections').delete().eq('photo_id', photo_id)
