@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
 
   // 1. Контакт родителя
   await supabaseAdmin.from('parent_contacts').upsert(
-    { child_id: childId, parent_name: parentName.trim(), phone: phone.trim() },
+    { child_id: childId, parent_name: parentName.trim(), phone: phone.trim(), referral: referral?.trim() || null },
     { onConflict: 'child_id' }
   )
 
@@ -136,12 +136,6 @@ export async function POST(req: NextRequest) {
   const { error: selError } = await supabaseAdmin.from('selections').insert(selectionRows)
   if (selError)
     return NextResponse.json({ error: 'Ошибка сохранения: ' + selError.message }, { status: 500 })
-
-  // 5. Реферал (если заполнен)
-  if (referral?.trim()) {
-    await supabaseAdmin.from('referrals')
-      .upsert({ child_id: childId, content: referral.trim() }, { onConflict: 'child_id' })
-  }
 
   // 6. Удалить временные блокировки этого ребёнка (теперь selections — источник правды)
   await supabaseAdmin.from('photo_locks').delete().eq('child_id', childId)

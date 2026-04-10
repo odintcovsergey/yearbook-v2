@@ -82,21 +82,19 @@ export async function GET(req: NextRequest) {
       .order('class').order('full_name')
 
     const ids = (children ?? []).map((c: any) => c.id)
-    const [contacts, covers, referrals] = await Promise.all([
-      supabaseAdmin.from('parent_contacts').select('child_id, parent_name, phone').in('child_id', ids),
+    const [contacts, covers] = await Promise.all([
+      supabaseAdmin.from('parent_contacts').select('child_id, parent_name, phone, referral').in('child_id', ids),
       supabaseAdmin.from('cover_selections').select('child_id, cover_option, surcharge').in('child_id', ids),
-      supabaseAdmin.from('referrals').select('child_id, content').in('child_id', ids),
     ])
 
     const contactMap = Object.fromEntries((contacts.data ?? []).map((c: any) => [c.child_id, c]))
     const coverMap = Object.fromEntries((covers.data ?? []).map((c: any) => [c.child_id, c]))
-    const referralMap = Object.fromEntries((referrals.data ?? []).map((r: any) => [r.child_id, r.content]))
 
     return NextResponse.json((children ?? []).map((c: any) => ({
       ...c,
       contact: contactMap[c.id] ?? null,
       cover: coverMap[c.id] ?? null,
-      referral: referralMap[c.id] ?? null,
+      referral: contactMap[c.id]?.referral ?? null,
     })))
   }
 

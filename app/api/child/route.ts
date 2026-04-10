@@ -84,16 +84,15 @@ export async function GET(req: NextRequest) {
     locked: album?.group_exclusive !== false && groupLockedByOther.has(p.id),
   }))
 
-  const [existingSelections, existingContact, existingText, existingCover, existingReferral] = await Promise.all([
+  const [existingSelections, existingContact, existingText, existingCover] = await Promise.all([
     supabaseAdmin.from('selections').select('photo_id, selection_type').eq('child_id', child.id),
     supabaseAdmin.from('parent_contacts').select('parent_name, phone').eq('child_id', child.id).maybeSingle(),
     supabaseAdmin.from('student_texts').select('text').eq('child_id', child.id).maybeSingle(),
     supabaseAdmin.from('cover_selections').select('cover_option, photo_id, surcharge').eq('child_id', child.id).maybeSingle(),
-    supabaseAdmin.from('referrals').select('content').eq('child_id', child.id).maybeSingle(),
   ])
 
   return NextResponse.json({
-    child, album, portraits, groups, referral: existingReferral.data?.content ?? null,
+    child, album, portraits, groups, referral: existingContact.data?.referral ?? null,
     existing: {
       selections: existingSelections.data ?? [],
       contact: existingContact.data,
