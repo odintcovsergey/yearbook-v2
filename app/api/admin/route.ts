@@ -195,10 +195,44 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    const headers = Object.keys(rows[0] ?? {})
+    // Учителя
+    const { data: teachers } = await supabaseAdmin
+      .from('teachers')
+      .select('id, full_name, position')
+      .eq('album_id', albumId)
+      .order('created_at')
+
+    const teacherIds = (teachers ?? []).map((t: any) => t.id)
+    const { data: photoLinks } = teacherIds.length > 0
+      ? await supabaseAdmin.from('photo_teachers').select('teacher_id, photos(filename, storage_path)').in('teacher_id', teacherIds)
+      : { data: [] }
+
+    const photoByTeacher: Record<string, any> = {}
+    for (const link of photoLinks ?? []) {
+      photoByTeacher[(link as any).teacher_id] = (link as any).photos
+    }
+
+    const teacherRows = (teachers ?? []).map((t: any) => {
+      const photo = photoByTeacher[t.id]
+      return {
+        Класс: 'УЧИТЕЛЬ',
+        Ученик: t.full_name,
+        Родитель: t.position ?? '',
+        Телефон: '',
+        Портрет_страница: photo?.filename ?? '',
+        URL_портрет_страница: photo?.storage_path ? getPhotoUrl(photo.storage_path) : '',
+        Обложка: '', Портрет_обложка: '', URL_портрет_обложка: '',
+        Доплата_руб: '', Текст: '', Фото_друзья_1: '', URL_фото_1: '', Фото_друзья_2: '', URL_фото_2: '',
+      }
+    })
+
+    const allRows = [...rows, ...(teacherRows.length > 0 ? [null, ...teacherRows] : [])]
+    const headers = Object.keys(rows[0] ?? teacherRows[0] ?? {})
     const csv = [
       headers.join(','),
-      ...rows.map(r => headers.map(h => `"${String((r as any)[h] ?? '').replace(/"/g, '""')}"`).join(','))
+      ...allRows.map(r => r === null
+        ? headers.map(() => '""').join(',')
+        : headers.map(h => `"${String((r as any)[h] ?? '').replace(/"/g, '""')}"`).join(','))
     ].join('\n')
 
     return new NextResponse('\uFEFF' + csv, {
