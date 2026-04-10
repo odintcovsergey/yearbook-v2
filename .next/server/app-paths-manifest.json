@@ -7,8 +7,8 @@
   "/api/admin/register-photo/route": "app/api/admin/register-photo/route.js",
   "/album/[albumId]/page": "app/album/[albumId]/page.js",
   "/api/draft/route": "app/api/draft/route.js",
-  "/api/child/route": "app/api/child/route.js",
-  "/api/teacher/route": "app/api/teacher/route.js",
   "/api/select/route": "app/api/select/route.js",
-  "/api/admin/route": "app/api/admin/route.js"
+  "/api/admin/route": "app/api/admin/route.js",
+  "/api/child/route": "app/api/child/route.js",
+  "/api/teacher/route": "app/api/teacher/route.js"
 }

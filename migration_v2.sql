@@ -53,3 +53,13 @@ where group_enabled is null or group_min is null;
 alter table albums
   add column if not exists city text,
   add column if not exists year integer not null default 2026;
+
+-- 6. Рефералы (рекомендации знакомых)
+create table if not exists referrals (
+  id          uuid primary key default gen_random_uuid(),
+  child_id    uuid not null references children(id) on delete cascade,
+  content     text not null,  -- свободный текст: имена и телефоны знакомых
+  created_at  timestamptz default now()
+);
+alter table referrals enable row level security;
+create index if not exists on referrals(child_id);

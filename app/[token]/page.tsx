@@ -39,6 +39,7 @@ export default function ParentPage() {
   const [step, setStep] = useState<StepId>(1)
   const [parentName, setParentName] = useState('')
   const [phone, setPhone] = useState('')
+  const [referral, setReferral] = useState('')
   const [portraitPage, setPortraitPage] = useState<string | null>(null)
   const [coverOption, setCoverOption] = useState<'none' | 'same' | 'other'>('none')
   const [portraitCover, setPortraitCover] = useState<string | null>(null)
@@ -68,6 +69,7 @@ export default function ParentPage() {
 
         const ex = data.existing
         if (ex.contact) { setParentName(ex.contact.parent_name); setPhone(ex.contact.phone) }
+        if (ex.referral) setReferral(ex.referral)
         if (ex.text) setStudentText(ex.text)
         if (ex.cover) { setCoverOption(ex.cover.cover_option); setPortraitCover(ex.cover.photo_id) }
         const pg = ex.selections.find((s: any) => s.selection_type === 'portrait_page')
@@ -167,7 +169,7 @@ export default function ParentPage() {
     const res = await fetch('/api/select', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, parentName, phone, portraitPage, coverOption, portraitCover, studentText, groupPhotos }),
+      body: JSON.stringify({ token, parentName, phone, portraitPage, coverOption, portraitCover, studentText, groupPhotos, referral }),
     })
     const data = await res.json()
     setSaving(false)
@@ -350,6 +352,23 @@ export default function ParentPage() {
             <label className="block text-sm text-gray-500 mb-1">Номер телефона</label>
             <input className="input mb-1" type="tel" placeholder="+7 (999) 123-45-67" value={phone} onChange={e => setPhone(e.target.value)} />
             <p className="text-xs text-gray-400 mb-6">Используется только для связи по альбому. Никакой рекламы.</p>
+
+            {/* Реферальный блок */}
+            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-6">
+              <p className="text-sm font-medium text-blue-800 mb-1">🎁 Получите скидку 50%</p>
+              <p className="text-sm text-blue-700 mb-3">
+                Если ваши знакомые тоже закажут выпускной альбом — вы получите скидку 50% на свой.
+                Оставьте их имя и телефон, и мы свяжемся с ними сами.
+              </p>
+              <label className="block text-xs text-blue-600 mb-1">Имя и телефон знакомых (необязательно)</label>
+              <textarea
+                className="input resize-none h-24 text-sm"
+                placeholder={"Иванова Мария, +7 999 123-45-67\nПетров Алексей, +7 912 456-78-90"}
+                value={referral}
+                onChange={e => setReferral(e.target.value)}
+              />
+            </div>
+
             <div className="flex items-center justify-between">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
               <button className="btn-primary" onClick={goNext} disabled={!phone.trim()}>Далее →</button>

@@ -48,7 +48,7 @@ export async function PUT(req: NextRequest) {
 // POST /api/select — финальное сохранение всего выбора
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { token, parentName, phone, portraitPage, coverOption, portraitCover, studentText, groupPhotos } = body
+  const { token, parentName, phone, portraitPage, coverOption, portraitCover, studentText, groupPhotos, referral } = body
 
   if (!token) return NextResponse.json({ error: 'Токен не указан' }, { status: 400 })
 
