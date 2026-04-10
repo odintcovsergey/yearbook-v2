@@ -660,6 +660,17 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
     })
   }
 
+  const resetChild = async (id: string, name: string) => {
+    if (!confirm(`Сбросить выбор ${name}? Все выборы фото, текст и контакты будут удалены. Ученик останется в списке.`)) return
+    const res = await api('/api/admin', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'reset_child', child_id: id }),
+    })
+    const data = await res.json()
+    if (data.ok) { notify(`Выбор ${name} сброшен`); onRefresh() }
+    else notify(data.error || 'Ошибка', 'err')
+  }
+
   const deleteChild = async (id: string, name: string, submitted: boolean) => {
     const msg = submitted
       ? `Внимание! ${name} уже провёл отбор фотографий. Удалить его и освободить выбранные фото?`
@@ -746,7 +757,13 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
                     Копировать ссылку
                   </button>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 flex gap-3 items-center">
+                  <button
+                    onClick={() => resetChild(c.id, c.full_name)}
+                    className="text-amber-500 hover:text-amber-700 text-xs hover:underline"
+                  >
+                    Сбросить
+                  </button>
                   <button
                     onClick={() => deleteChild(c.id, c.full_name, !!c.submitted_at)}
                     className="text-red-400 hover:text-red-600 text-xs hover:underline"
