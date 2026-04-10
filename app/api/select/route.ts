@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
   // Получить данные альбома для валидации и расчёта
   const { data: album } = await supabaseAdmin
     .from('albums')
-    .select('cover_mode, cover_price, group_enabled, group_min, group_max, text_enabled')
+    .select('cover_mode, cover_price, group_enabled, group_min, group_max, group_exclusive, text_enabled')
     .eq('id', child.album_id).single()
 
   // Валидация
