@@ -193,6 +193,27 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'done' | 'pending'>('all')
   const [sortBy, setSortBy] = useState<'created' | 'deadline' | 'progress'>('created')
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
+
+  const deleteAlbum = async (id: string, title: string) => {
+    if (!confirm(`Удалить альбом «${title}»?
+
+Будут удалены все ученики, фотографии и выборы. Это действие нельзя отменить.`)) return
+    if (!confirm(`Подтвердите ещё раз: удалить «${title}» безвозвратно?`)) return
+    const res = await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'delete_album', album_id: id }) })
+    const data = await res.json()
+    if (data.ok) { notify('Альбом удалён'); onRefresh() }
+    else notify(data.error || 'Ошибка', 'err')
+  }
+
+  const renameAlbum = async (id: string, title: string) => {
+    if (!title.trim()) return
+    const res = await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'rename_album', album_id: id, title: title.trim() }) })
+    const data = await res.json()
+    if (data.ok) { notify('Название обновлено'); onRefresh() }
+    else notify(data.error || 'Ошибка', 'err')
+  }
 
   useEffect(() => {
     api('/api/admin?action=templates').then(r => r.json()).then(setTemplates)
@@ -444,11 +465,25 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
           const deadlineSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3
 
           return (
-            <button key={a.id} onClick={() => onSelect(a)} className="card p-5 text-left hover:border-blue-200 hover:shadow-md transition-all">
+            <div key={a.id} className="card p-5 hover:border-blue-200 hover:shadow-md transition-all">
               <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelect(a)}>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-medium text-gray-800">{a.title}</p>
+                    {editingTitleId === a.id ? (
+                      <input
+                        className="input text-sm font-medium py-0.5 px-2 w-48"
+                        value={editingTitle}
+                        autoFocus
+                        onChange={e => setEditingTitle(e.target.value)}
+                        onKeyDown={async e => {
+                          if (e.key === 'Enter') { await renameAlbum(a.id, editingTitle); setEditingTitleId(null) }
+                          if (e.key === 'Escape') setEditingTitleId(null)
+                        }}
+                        onClick={e => e.stopPropagation()}
+                      />
+                    ) : (
+                      <p className="font-medium text-gray-800">{a.title}</p>
+                    )}
                     {allDone && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">✓ Все готовы</span>}
                     {!allDone && s.total > 0 && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">{s.total - s.submitted} не завершили</span>}
                   </div>
@@ -473,9 +508,15 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
                   )}
                   {s.total === 0 && <p className="text-xs text-gray-300 mt-2">Нет учеников</p>}
                 </div>
-                <span className="text-blue-400 mt-1 shrink-0">→</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => { setEditingTitleId(a.id); setEditingTitle(a.title) }} className="text-gray-400 hover:text-gray-600 text-xs hover:underline" title="Переименовать">✏️</button>
+                  <button onClick={() => { navigator.clipboard.writeText(`${location.origin}/album/${a.id}`); notify('Ссылка класса скопирована') }} className="text-blue-400 hover:text-blue-600 text-xs hover:underline">Класс</button>
+                  {(a as any).teacher_token && <button onClick={() => { navigator.clipboard.writeText(`${location.origin}/teacher/${(a as any).teacher_token}`); notify('Ссылка учителей скопирована') }} className="text-purple-400 hover:text-purple-600 text-xs hover:underline">Учителя</button>}
+                  <button onClick={() => deleteAlbum(a.id, a.title)} className="text-red-400 hover:text-red-600 text-xs hover:underline">Удалить</button>
+                  <span className="text-blue-400 cursor-pointer" onClick={() => onSelect(a)}>→</span>
+                </div>
               </div>
-            </button>
+            </div>
           )
         })}
       </div>

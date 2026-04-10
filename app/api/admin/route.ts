@@ -28,12 +28,15 @@ export async function GET(req: NextRequest) {
 
   // Список альбомов со статистикой (один запрос)
   if (action === 'albums_with_stats') {
-    const [albumsRes, childrenRes] = await Promise.all([
+    const [albumsRes, childrenRes, teacherTokenRes] = await Promise.all([
       supabaseAdmin.from('albums').select('*').order('created_at', { ascending: false }),
       supabaseAdmin.from('children').select('album_id, submitted_at, started_at'),
+      supabaseAdmin.from('responsible_parents').select('album_id, access_token'),
     ])
     const albums = albumsRes.data ?? []
     const children = childrenRes.data ?? []
+    const tokenMap: Record<string, string> = {}
+    for (const t of teacherTokenRes.data ?? []) tokenMap[t.album_id] = t.access_token
     const statsMap: Record<string, { total: number; submitted: number; in_progress: number }> = {}
     for (const c of children) {
       if (!statsMap[c.album_id]) statsMap[c.album_id] = { total: 0, submitted: 0, in_progress: 0 }
@@ -44,6 +47,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(albums.map(a => ({
       ...a,
       stats: statsMap[a.id] ?? { total: 0, submitted: 0, in_progress: 0 },
+      teacher_token: tokenMap[a.id] ?? null,
     })))
   }
 
@@ -312,6 +316,37 @@ export async function POST(req: NextRequest) {
         .in('id', affectedChildIds)
     }
     return NextResponse.json({ ok: true, resetChildren: affectedChildIds.length })
+  }
+
+  // Удалить альбом полностью
+  if (body.action === 'delete_album') {
+    const { album_id } = body
+    const { data: childIds } = await supabaseAdmin.from('children').select('id').eq('album_id', album_id)
+    const ids = (childIds ?? []).map((c: any) => c.id)
+    if (ids.length > 0) {
+      await supabaseAdmin.from('selections').delete().in('child_id', ids)
+      await supabaseAdmin.from('photo_locks').delete().in('child_id', ids)
+      await supabaseAdmin.from('cover_selections').delete().in('child_id', ids)
+      await supabaseAdmin.from('student_texts').delete().in('child_id', ids)
+      await supabaseAdmin.from('parent_contacts').delete().in('child_id', ids)
+      await supabaseAdmin.from('drafts').delete().in('child_id', ids)
+      await supabaseAdmin.from('photo_children').delete().in('child_id', ids)
+    }
+    await supabaseAdmin.from('children').delete().eq('album_id', album_id)
+    const { data: teacherIds } = await supabaseAdmin.from('teachers').select('id').eq('album_id', album_id)
+    const tids = (teacherIds ?? []).map((t: any) => t.id)
+    if (tids.length > 0) await supabaseAdmin.from('photo_teachers').delete().in('teacher_id', tids)
+    await supabaseAdmin.from('teachers').delete().eq('album_id', album_id)
+    await supabaseAdmin.from('photos').delete().eq('album_id', album_id)
+    await supabaseAdmin.from('responsible_parents').delete().eq('album_id', album_id)
+    await supabaseAdmin.from('albums').delete().eq('id', album_id)
+    return NextResponse.json({ ok: true })
+  }
+
+  // Переименовать альбом
+  if (body.action === 'rename_album') {
+    await supabaseAdmin.from('albums').update({ title: body.title }).eq('id', body.album_id)
+    return NextResponse.json({ ok: true })
   }
 
   // Создать альбом
