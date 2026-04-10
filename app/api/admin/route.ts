@@ -322,6 +322,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(data)
   }
 
+  // Обновить дедлайн альбома
+  if (body.action === 'update_deadline') {
+    const { error } = await supabaseAdmin
+      .from('albums')
+      .update({ deadline: body.deadline ?? null })
+      .eq('id', body.album_id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
   // Удалить ученика
   if (body.action === 'delete_child') {
     // Разблокировать все фото которые он выбрал

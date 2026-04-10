@@ -26,6 +26,7 @@ export default function ParentPage() {
 
   const [childName, setChildName] = useState('')
   const [albumTitle, setAlbumTitle] = useState('')
+  const [albumDeadline, setAlbumDeadline] = useState<string | null>(null)
   const [coverMode, setCoverMode] = useState<string>('none')
   const [coverPrice, setCoverPrice] = useState(300)
   const [portraits, setPortraits] = useState<Photo[]>([])
@@ -49,6 +50,7 @@ export default function ParentPage() {
         if (data.error) { setError(data.error); setLoading(false); return }
         setChildName(data.child.full_name)
         setAlbumTitle(data.album?.title ?? '')
+        setAlbumDeadline(data.album?.deadline ?? null)
         setCoverMode(data.album?.cover_mode ?? 'none')
         setCoverPrice(data.album?.cover_price ?? 300)
         setPortraits(data.portraits)
@@ -208,6 +210,22 @@ export default function ParentPage() {
           </div>
         </div>
       </div>
+
+      {/* Предупреждение о дедлайне */}
+      {albumDeadline && (() => {
+        const dl = new Date(albumDeadline)
+        const days = Math.ceil((dl.getTime() - Date.now()) / 86400000)
+        if (days >= 0 && days <= 3) return (
+          <div className={`px-4 py-3 text-sm font-medium text-center ${days === 0 ? 'bg-red-500 text-white' : 'bg-amber-400 text-amber-900'}`}>
+            {days === 0
+              ? '⚠️ Сегодня последний день для выбора фотографий!'
+              : days === 1
+              ? '⏰ Завтра истекает срок выбора фотографий'
+              : `⏰ До конца выбора фотографий осталось ${days} дня`}
+          </div>
+        )
+        return null
+      })()}
 
       <div className="max-w-6xl mx-auto px-4 py-6">
 

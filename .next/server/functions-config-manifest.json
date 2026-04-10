@@ -1,1 +1,1 @@
-{"version":1,"functions":{"/api/admin/register-photo":{},"/api/album":{},"/api/child":{},"/api/draft":{},"/album/[albumId]":{},"/api/teacher":{},"/api/select":{},"/api/admin":{}}}
+{"version":1,"functions":{"/api/admin/register-photo":{},"/api/album":{},"/api/draft":{},"/api/select":{},"/api/child":{},"/api/admin":{},"/api/teacher":{},"/album/[albumId]":{}}}

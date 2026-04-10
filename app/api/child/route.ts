@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
   const { data: album } = await supabaseAdmin
     .from('albums')
-    .select('id, title, cover_mode, cover_price, deadline')
+    .select('id, title, cover_mode, cover_price, deadline, group_enabled, group_min, group_max, group_exclusive, text_enabled, text_max_chars')
     .eq('id', child.album_id)
     .single()
 

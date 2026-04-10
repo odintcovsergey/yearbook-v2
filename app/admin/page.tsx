@@ -152,7 +152,7 @@ export default function AdminPage() {
             {loading && <div className="text-center py-12 text-gray-400 text-sm">Загрузка...</div>}
 
             {!loading && tab === 'overview' && stats && (
-              <OverviewTab stats={stats} album={selectedAlbum} notify={notify} />
+              <OverviewTab stats={stats} album={selectedAlbum} notify={notify} onRefresh={() => loadAlbumData(selectedAlbum)} />
             )}
             {!loading && tab === 'children' && (
               <ChildrenTab children={children} album={selectedAlbum} notify={notify} onRefresh={() => loadAlbumData(selectedAlbum)} />
@@ -484,8 +484,35 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
 }
 // ─── Обзор ────────────────────────────────────────────────────────────────────
 
-function OverviewTab({ stats, album, notify }: any) {
+function OverviewTab({ stats, album, notify, onRefresh }: any) {
   const pct = stats.total ? Math.round(stats.submitted / stats.total * 100) : 0
+
+  // Дедлайн
+  const toLocalDatetime = (iso: string | null) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+  const [deadlineVal, setDeadlineVal] = useState(toLocalDatetime(album.deadline))
+  const [savingDeadline, setSavingDeadline] = useState(false)
+
+  const saveDeadline = async () => {
+    setSavingDeadline(true)
+    const res = await api('/api/admin', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_deadline', album_id: album.id, deadline: deadlineVal || null }),
+    })
+    setSavingDeadline(false)
+    if (res.ok) { notify('Дедлайн обновлён!'); onRefresh() }
+    else notify('Ошибка', 'err')
+  }
+
+  const now = new Date()
+  const deadlineDate = deadlineVal ? new Date(deadlineVal) : null
+  const daysLeft = deadlineDate ? Math.ceil((deadlineDate.getTime() - now.getTime()) / 86400000) : null
+  const isOverdue = daysLeft !== null && daysLeft < 0
+  const isSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3
 
   const exportCsv = async () => {
     const res = await api(`/api/admin?action=export&album_id=${album.id}`)
@@ -518,6 +545,36 @@ function OverviewTab({ stats, album, notify }: any) {
           <MiniStat label="Доплаты" value={`${stats.surcharge_count} чел.`} />
           <MiniStat label="Сумма доплат" value={`${stats.surcharge_total} ₽`} accent />
         </div>
+      </div>
+
+      {/* Дедлайн */}
+      <div className="card p-5">
+        <p className="font-medium text-gray-700 mb-3">Дедлайн</p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <input
+            type="datetime-local"
+            value={deadlineVal}
+            onChange={e => setDeadlineVal(e.target.value)}
+            className="input w-auto"
+          />
+          <button onClick={saveDeadline} disabled={savingDeadline} className="btn-primary text-sm">
+            {savingDeadline ? 'Сохраняю...' : 'Сохранить'}
+          </button>
+          {deadlineVal && (
+            <button onClick={() => setDeadlineVal('')} className="btn-ghost text-xs text-gray-400">
+              Убрать дедлайн
+            </button>
+          )}
+        </div>
+        {daysLeft !== null && (
+          <p className={`text-sm mt-2 ${isOverdue ? 'text-red-500' : isSoon ? 'text-amber-600' : 'text-gray-400'}`}>
+            {isOverdue
+              ? `⚠ Дедлайн просрочен ${Math.abs(daysLeft)} дн. назад — ссылки заблокированы`
+              : daysLeft === 0 ? '⏰ Сегодня последний день'
+              : daysLeft === 1 ? '⏰ Завтра истекает'
+              : `📅 До дедлайна ${daysLeft} дн.`}
+          </p>
+        )}
       </div>
 
       <div className="flex gap-3 flex-wrap">
