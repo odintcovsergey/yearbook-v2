@@ -19,6 +19,7 @@ export default function ParentPage() {
   const { token } = useParams<{ token: string }>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [submitError, setSubmitError] = useState('')
   const [saving, setSaving] = useState(false)
   const [done, setDone] = useState(false)
 
@@ -173,7 +174,14 @@ export default function ParentPage() {
     })
     const data = await res.json()
     setSaving(false)
-    if (data.error) { setError(data.error); return }
+    if (data.error) {
+      // Определить на какой шаг вернуть
+      if (data.error.includes('портрет')) setStep(1)
+      else if (data.error.includes('друзьями') || data.error.includes('фото с друзьями')) setStep(4)
+      else if (data.error.includes('занят')) setStep(4)
+      setSubmitError(data.error)
+      return
+    }
     setDone(true)
     setStep(6)
   }
@@ -186,6 +194,7 @@ export default function ParentPage() {
   const goNext = () => {
     const next = effectiveSteps[currentIdx + 1]
     if (next) {
+      setSubmitError('')
       setStep(next.id as StepId)
       saveDraft({ studentText, coverOption, portraitCover, portraitPage, groupPhotos, step: next.id })
     }
@@ -385,7 +394,7 @@ export default function ParentPage() {
               <SummaryRow label="Фото с друзьями" value={groupPhotos.map(id => groups.find(g => g.id === id)?.filename).filter(Boolean).join(', ') || '—'} />
               <SummaryRow label="Телефон" value={phone} />
             </div>
-            {error && <div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-sm mb-4">{error}</div>}
+            {submitError && <div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-sm mb-4">{submitError}</div>}
             <div className="flex items-center justify-between">
               <button className="btn-ghost" onClick={goPrev}>← Изменить</button>
               <button className="btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? 'Сохраняю...' : 'Подтвердить ✓'}</button>
