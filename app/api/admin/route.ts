@@ -256,6 +256,8 @@ export async function POST(req: NextRequest) {
         group_exclusive: body.group_exclusive ?? true,
         text_enabled: body.text_enabled ?? true,
         text_max_chars: body.text_max_chars ?? 500,
+        city: body.city ?? null,
+        year: body.year ?? new Date().getFullYear(),
       })
       .select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })

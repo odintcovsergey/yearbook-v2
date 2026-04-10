@@ -48,3 +48,8 @@ update albums set
   text_enabled    = true,
   text_max_chars  = 500
 where group_enabled is null or group_min is null;
+
+-- 5. Город и год выпуска
+alter table albums
+  add column if not exists city text,
+  add column if not exists year integer not null default 2026;

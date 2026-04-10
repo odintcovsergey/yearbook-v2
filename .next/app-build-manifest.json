@@ -15,19 +15,19 @@
       "static/css/4e8df6955d04ef67.css",
       "static/chunks/app/layout-e538582df3e1f80c.js"
     ],
+    "/admin/page": [
+      "static/chunks/webpack-4606af448ddda17e.js",
+      "static/chunks/fd9d1056-792b91b3085d4590.js",
+      "static/chunks/23-baad48ca8b79efb6.js",
+      "static/chunks/main-app-1c45bc082c457f6f.js",
+      "static/chunks/app/admin/page-8129f20d21d137b2.js"
+    ],
     "/[token]/page": [
       "static/chunks/webpack-4606af448ddda17e.js",
       "static/chunks/fd9d1056-792b91b3085d4590.js",
       "static/chunks/23-baad48ca8b79efb6.js",
       "static/chunks/main-app-1c45bc082c457f6f.js",
       "static/chunks/app/[token]/page-fa95e2807c97437e.js"
-    ],
-    "/admin/page": [
-      "static/chunks/webpack-4606af448ddda17e.js",
-      "static/chunks/fd9d1056-792b91b3085d4590.js",
-      "static/chunks/23-baad48ca8b79efb6.js",
-      "static/chunks/main-app-1c45bc082c457f6f.js",
-      "static/chunks/app/admin/page-706d1a2caf699fda.js"
     ],
     "/teacher/[token]/page": [
       "static/chunks/webpack-4606af448ddda17e.js",

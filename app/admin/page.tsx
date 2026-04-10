@@ -9,7 +9,7 @@ const api = (path: string, opts?: RequestInit) =>
   fetch(path, { ...opts, headers: { 'x-admin-secret': secret(), 'Content-Type': 'application/json', ...opts?.headers } })
 
 type Tab = 'overview' | 'children' | 'upload' | 'import' | 'surcharges' | 'contacts' | 'teachers' | 'templates'
-type Album = { id: string; title: string; classes: string[]; cover_mode: string; cover_price: number; deadline: string | null; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number; stats?: { total: number; submitted: number; in_progress: number } }
+type Album = { id: string; title: string; classes: string[]; cover_mode: string; cover_price: number; deadline: string | null; city: string | null; year: number | null; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number; stats?: { total: number; submitted: number; in_progress: number } }
 type Template = { id: string; title: string; cover_mode: string; cover_price: number; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number }
 type Stats = { total: number; submitted: number; in_progress: number; not_started: number; teachers_total: number; teachers_done: number; surcharge_total: number; surcharge_count: number }
 type Child = { id: string; full_name: string; class: string; access_token: string; submitted_at: string | null; started_at: string | null; contact: any; cover: any }
@@ -188,7 +188,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
   const [creating, setCreating] = useState(false)
   const [templates, setTemplates] = useState<Template[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState<string>('')
-  const emptyForm = { title: '', classes: '', cover_mode: 'none', cover_price: '0', deadline: '', group_enabled: true, group_min: '2', group_max: '2', group_exclusive: true, text_enabled: true, text_max_chars: '500' }
+  const emptyForm = { title: '', classes: '', cover_mode: 'none', cover_price: '0', deadline: '', city: '', year: String(new Date().getFullYear()), group_enabled: true, group_min: '2', group_max: '2', group_exclusive: true, text_enabled: true, text_max_chars: '500' }
   const [form, setForm] = useState(emptyForm)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'done' | 'pending'>('all')
@@ -232,6 +232,8 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
         group_exclusive: form.group_exclusive,
         text_enabled: form.text_enabled,
         text_max_chars: parseInt(form.text_max_chars),
+        city: form.city || null,
+        year: parseInt(form.year),
       }),
     })
     if (res.ok) { notify('Альбом создан!'); setCreating(false); setForm(emptyForm); setSelectedTemplate(''); onRefresh() }
@@ -305,6 +307,18 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
             <div>
               <label className="text-xs text-gray-500 block mb-1">Дедлайн</label>
               <input className="input" type="datetime-local" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Город</label>
+              <input className="input" placeholder="Москва" value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Год выпуска</label>
+              <select className="input" value={form.year} onChange={e => setForm(f => ({ ...f, year: e.target.value }))}>
+                {Array.from({ length: 15 }, (_, i) => 2026 + i).map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -439,7 +453,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
                     {!allDone && s.total > 0 && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">{s.total - s.submitted} не завершили</span>}
                   </div>
                   <div className="flex items-center gap-3 mt-1 flex-wrap">
-                    <p className="text-sm text-gray-400">{a.classes.join(', ')}</p>
+                    <p className="text-sm text-gray-400">{a.classes.join(', ')}{a.city ? ` · ${a.city}` : ''}{a.year ? ` · ${a.year}` : ''}</p>
                     {deadline && (
                       <span className={`text-xs font-medium ${deadlineOverdue ? 'text-red-500' : deadlineSoon ? 'text-amber-600' : 'text-gray-400'}`}>
                         {deadlineOverdue ? `⚠ Просрочен ${Math.abs(daysLeft!)} дн. назад` : daysLeft === 0 ? '⏰ Сегодня дедлайн' : daysLeft === 1 ? '⏰ Завтра дедлайн' : `📅 ${deadline.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} · ещё ${daysLeft} дн.`}
