@@ -15,7 +15,32 @@ export async function GET(req: NextRequest) {
   const { data } = await supabaseAdmin
     .from('drafts').select('data').eq('child_id', child.id).maybeSingle()
 
-  return NextResponse.json(data?.data ?? null)
+  const draft = data?.data ?? null
+  if (!draft) return NextResponse.json(null)
+
+  // Собрать все photo_id из черновика
+  const draftPhotoIds = [
+    draft.portraitPage,
+    draft.portraitCover,
+    ...((draft.groupPhotos as string[]) ?? []),
+  ].filter(Boolean)
+
+  if (draftPhotoIds.length === 0) return NextResponse.json(draft)
+
+  // Проверить какие из них ещё существуют
+  const { data: existingPhotos } = await supabaseAdmin
+    .from('photos').select('id').in('id', draftPhotoIds)
+  const existingIds = new Set((existingPhotos ?? []).map((p: any) => p.id))
+
+  // Очистить черновик от удалённых фото
+  const cleanDraft = {
+    ...draft,
+    portraitPage: existingIds.has(draft.portraitPage) ? draft.portraitPage : null,
+    portraitCover: existingIds.has(draft.portraitCover) ? draft.portraitCover : null,
+    groupPhotos: ((draft.groupPhotos as string[]) ?? []).filter((id: string) => existingIds.has(id)),
+  }
+
+  return NextResponse.json(cleanDraft)
 }
 
 // POST — сохранить черновик
