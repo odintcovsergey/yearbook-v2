@@ -1019,15 +1019,26 @@ function TeachersTab({ album, notify }: any) {
   const [responsible, setResponsible] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
-  const load = async () => {
+  const load = async (autoCreate = false) => {
     setLoading(true)
     const [t, r] = await Promise.all([
       api(`/api/admin?action=teachers&album_id=${album.id}`).then(r => r.json()),
       api(`/api/admin?action=responsible&album_id=${album.id}`).then(r => r.json()),
     ])
     setTeachers(Array.isArray(t) ? t : [])
-    setResponsible(r?.id ? r : null)
-    setLoading(false)
+    if (r?.id) {
+      setResponsible(r)
+      setLoading(false)
+    } else {
+      // Автоматически создаём ответственного если нет
+      const res = await api('/api/admin', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'create_responsible', album_id: album.id, full_name: 'Ответственный родитель', phone: '' }),
+      })
+      const created = await res.json()
+      setResponsible(created?.id ? created : null)
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load() }, [album.id])

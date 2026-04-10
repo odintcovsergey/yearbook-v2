@@ -15,8 +15,6 @@ const STEPS = [
   { id: 6, label: 'Готово' },
 ]
 
-const MAX_TEXT = 500
-
 export default function ParentPage() {
   const { token } = useParams<{ token: string }>()
   const [loading, setLoading] = useState(true)
@@ -28,7 +26,12 @@ export default function ParentPage() {
   const [albumTitle, setAlbumTitle] = useState('')
   const [albumDeadline, setAlbumDeadline] = useState<string | null>(null)
   const [coverMode, setCoverMode] = useState<string>('none')
-  const [coverPrice, setCoverPrice] = useState(300)
+  const [coverPrice, setCoverPrice] = useState(0)
+  const [groupEnabled, setGroupEnabled] = useState(true)
+  const [groupMin, setGroupMin] = useState(2)
+  const [groupMax, setGroupMax] = useState(2)
+  const [textEnabled, setTextEnabled] = useState(true)
+  const [textMaxChars, setTextMaxChars] = useState(500)
   const [portraits, setPortraits] = useState<Photo[]>([])
   const [groups, setGroups] = useState<Photo[]>([])
 
@@ -52,7 +55,12 @@ export default function ParentPage() {
         setAlbumTitle(data.album?.title ?? '')
         setAlbumDeadline(data.album?.deadline ?? null)
         setCoverMode(data.album?.cover_mode ?? 'none')
-        setCoverPrice(data.album?.cover_price ?? 300)
+        setCoverPrice(data.album?.cover_price ?? 0)
+        setGroupEnabled(data.album?.group_enabled ?? true)
+        setGroupMin(data.album?.group_min ?? 2)
+        setGroupMax(data.album?.group_max ?? 2)
+        setTextEnabled(data.album?.text_enabled ?? true)
+        setTextMaxChars(data.album?.text_max_chars ?? 500)
         setPortraits(data.portraits)
         setGroups(data.groups)
 
@@ -119,7 +127,7 @@ export default function ParentPage() {
       setGroupPhotos(prev => prev.filter(p => p !== id))
       setTimeout(() => unlockPhoto(id), 0)
     } else {
-      if (groupPhotos.length >= 2) return
+      if (groupPhotos.length >= groupMax) return
       setGroupPhotos(prev => [...prev, id])
       setTimeout(async () => {
         const ok = await lockPhoto(id)
@@ -164,7 +172,7 @@ export default function ParentPage() {
     setStep(6)
   }
 
-  const effectiveSteps = STEPS.filter(s => !(s.id === 2 && coverMode === 'none'))
+  const effectiveSteps = STEPS.filter(s => !(s.id === 2 && coverMode === 'none') && !(s.id === 4 && !groupEnabled) && !(s.id === 3 && !textEnabled))
   const totalSteps = effectiveSteps.length
   const currentIdx = effectiveSteps.findIndex(s => s.id === step)
   const progress = ((currentIdx + 1) / totalSteps) * 100
@@ -293,9 +301,9 @@ export default function ParentPage() {
 
         {step === 3 && (
           <StepCard title="Текст от ученика" subtitle="Цитата, пожелание или любимая фраза">
-            <textarea className="input resize-none h-36 mb-1" placeholder="«Спасибо всем за эти годы!»" maxLength={MAX_TEXT} value={studentText} onChange={e => setStudentText(e.target.value)} />
+            <textarea className="input resize-none h-36 mb-1" placeholder="«Спасибо всем за эти годы!»" maxLength={textMaxChars} value={studentText} onChange={e => setStudentText(e.target.value)} />
             <div className="text-right text-xs text-gray-400 mb-2">
-              <span className={studentText.length > MAX_TEXT * 0.9 ? 'text-amber-500' : ''}>{studentText.length}</span> / {MAX_TEXT}
+              <span className={studentText.length > textMaxChars * 0.9 ? 'text-amber-500' : ''}>{studentText.length}</span> / {textMaxChars}
             </div>
             <p className="text-xs text-gray-400 mb-6">Необязательно.</p>
             <div className="flex items-center justify-between">
@@ -306,15 +314,17 @@ export default function ParentPage() {
         )}
 
         {step === 4 && (
-          <StepCard wide title="Фото с друзьями" subtitle="Нажмите на фото чтобы увидеть крупнее и выбрать. Выберите ровно 2.">
+          <StepCard wide title="Фото с друзьями" subtitle={groupMin === groupMax ? `Выберите ровно ${groupMin} фото` : `Выберите от ${groupMin} до ${groupMax} фото`}>
             <div className="flex items-center gap-3 mb-4">
-              <span className={`badge-${groupPhotos.length === 2 ? 'green' : 'blue'}`}>Выбрано: {groupPhotos.length} / 2</span>
+              <span className={`badge-${groupPhotos.length >= groupMin && groupPhotos.length <= groupMax ? 'green' : 'blue'}`}>
+                Выбрано: {groupPhotos.length} / {groupMax}
+              </span>
               <span className="text-xs text-gray-400">{groups.filter(g => !g.locked).length} из {groups.length} доступно</span>
             </div>
             <PhotoGrid
               photos={groups}
               selected={groupPhotos}
-              limit={2}
+              limit={groupMax}
               onToggle={toggleGroup}
               onLightbox={(idx) => setLightbox({
                 photos: groups,
@@ -324,7 +334,7 @@ export default function ParentPage() {
             />
             <div className="flex items-center justify-between mt-4">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
-              <button className="btn-primary" onClick={goNext} disabled={groupPhotos.length !== 2}>Далее →</button>
+              <button className="btn-primary" onClick={goNext} disabled={groupPhotos.length < groupMin || groupPhotos.length > groupMax}>Далее →</button>
             </div>
           </StepCard>
         )}
@@ -555,7 +565,7 @@ function SummaryRow({ label, value, multiline }: { label: string; value: string;
   return (
     <div className="flex gap-3 py-2 border-b border-gray-100 last:border-0">
       <span className="text-xs text-gray-400 w-28 flex-shrink-0 pt-0.5">{label}</span>
-      <span className={`text-sm text-gray-700 flex-1 ${multiline ? 'whitespace-pre-wrap' : 'truncate'}`}>{value}</span>
+      <span className={`text-sm text-gray-700 flex-1 break-words min-w-0 ${multiline ? 'whitespace-pre-wrap' : ''}`}>{value}</span>
     </div>
   )
 }

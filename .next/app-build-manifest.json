@@ -12,22 +12,22 @@
       "static/chunks/fd9d1056-792b91b3085d4590.js",
       "static/chunks/23-baad48ca8b79efb6.js",
       "static/chunks/main-app-1c45bc082c457f6f.js",
-      "static/css/bbff8450f2be79af.css",
+      "static/css/f80d18d23717899d.css",
       "static/chunks/app/layout-e538582df3e1f80c.js"
-    ],
-    "/[token]/page": [
-      "static/chunks/webpack-4606af448ddda17e.js",
-      "static/chunks/fd9d1056-792b91b3085d4590.js",
-      "static/chunks/23-baad48ca8b79efb6.js",
-      "static/chunks/main-app-1c45bc082c457f6f.js",
-      "static/chunks/app/[token]/page-4e0f56dc1e0d4922.js"
     ],
     "/admin/page": [
       "static/chunks/webpack-4606af448ddda17e.js",
       "static/chunks/fd9d1056-792b91b3085d4590.js",
       "static/chunks/23-baad48ca8b79efb6.js",
       "static/chunks/main-app-1c45bc082c457f6f.js",
-      "static/chunks/app/admin/page-9edc1d60496fa73e.js"
+      "static/chunks/app/admin/page-3c59272c9b3d6e3d.js"
+    ],
+    "/[token]/page": [
+      "static/chunks/webpack-4606af448ddda17e.js",
+      "static/chunks/fd9d1056-792b91b3085d4590.js",
+      "static/chunks/23-baad48ca8b79efb6.js",
+      "static/chunks/main-app-1c45bc082c457f6f.js",
+      "static/chunks/app/[token]/page-97da1acc8fadbe48.js"
     ],
     "/teacher/[token]/page": [
       "static/chunks/webpack-4606af448ddda17e.js",
