@@ -653,7 +653,7 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
           })
           if (res.ok) added++; else skipped++
         }
-        notify(`Импортировано: ${added}, пропущено: ${skipped}`)
+        notify(skipped > 0 ? `Импортировано: ${added}, пропущено: ${skipped} (дубликаты или ошибки)` : `Импортировано: ${added} учеников`)
         onRefresh()
         e.target.value = ''
       }
