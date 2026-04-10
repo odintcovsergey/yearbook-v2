@@ -404,6 +404,20 @@ export async function POST(req: NextRequest) {
   }
 
   // Удалить ученика
+  // Одноразовая очистка: сбросить submitted_at у детей с битыми selections
+  if (body.action === 'fix_broken_selections') {
+    const { data: orphaned } = await supabaseAdmin.from('selections').select('child_id, photo_id')
+    const photoIds = Array.from(new Set((orphaned ?? []).map((s: any) => s.photo_id)))
+    const { data: existingPhotos } = await supabaseAdmin.from('photos').select('id').in('id', photoIds)
+    const existingIds = new Set((existingPhotos ?? []).map((p: any) => p.id))
+    const broken = (orphaned ?? []).filter((s: any) => !existingIds.has(s.photo_id))
+    const brokenChildIds = Array.from(new Set(broken.map((s: any) => s.child_id)))
+    if (brokenChildIds.length > 0) {
+      await supabaseAdmin.from('children').update({ submitted_at: null }).in('id', brokenChildIds)
+    }
+    return NextResponse.json({ fixed: brokenChildIds.length, children: brokenChildIds })
+  }
+
   // Сбросить выбор ребёнка (без удаления)
   if (body.action === 'reset_child') {
     const { child_id } = body
