@@ -292,13 +292,24 @@ export async function POST(req: NextRequest) {
   // Удалить фото
   if (body.action === 'delete_photo') {
     const { photo_id, storage_path } = body
+    // Найти детей, у которых было выбрано это фото — им нужно сбросить submitted_at
+    const { data: affectedSelections } = await supabaseAdmin
+      .from('selections').select('child_id').eq('photo_id', photo_id)
+    const affectedChildIds = [...new Set((affectedSelections ?? []).map((s: any) => s.child_id))]
+    // Удалить фото из хранилища и базы
     await supabaseAdmin.storage.from('photos').remove([storage_path])
     await supabaseAdmin.from('selections').delete().eq('photo_id', photo_id)
     await supabaseAdmin.from('photo_teachers').delete().eq('photo_id', photo_id)
     await supabaseAdmin.from('photo_children').delete().eq('photo_id', photo_id)
     await supabaseAdmin.from('photo_locks').delete().eq('photo_id', photo_id)
     await supabaseAdmin.from('photos').delete().eq('id', photo_id)
-    return NextResponse.json({ ok: true })
+    // Сбросить submitted_at у затронутых детей
+    if (affectedChildIds.length > 0) {
+      await supabaseAdmin.from('children')
+        .update({ submitted_at: null })
+        .in('id', affectedChildIds)
+    }
+    return NextResponse.json({ ok: true, resetChildren: affectedChildIds.length })
   }
 
   // Создать альбом
