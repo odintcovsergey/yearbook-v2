@@ -189,22 +189,23 @@ export async function GET(req: NextRequest) {
       const ppUrl = pp ? getPhotoUrl((pp as any).photos?.storage_path ?? '') : ''
       const pcUrl = pc ? getPhotoUrl((pc as any).photos?.storage_path ?? '') : (cover?.cover_option === 'same' ? ppUrl : '')
 
+      // Динамические колонки для групповых фото (до 10)
+      const grCols: Record<string, string> = {}
+      for (let i = 0; i < 10; i++) {
+        grCols[`Фото_друзья_${i + 1}`] = gr[i] ? (gr[i] as any).photos?.filename ?? '' : ''
+        grCols[`URL_фото_${i + 1}`] = gr[i] ? getPhotoUrl((gr[i] as any).photos?.storage_path ?? '') : ''
+      }
+
       return {
         Класс: c.class,
         Ученик: c.full_name,
-        Родитель: contact?.parent_name ?? '',
-        Телефон: contact?.phone ?? '',
         Портрет_страница: (pp as any)?.photos?.filename ?? '',
         URL_портрет_страница: ppUrl,
         Обложка: cover?.cover_option ?? 'none',
         Портрет_обложка: pc ? (pc as any).photos?.filename : (cover?.cover_option === 'same' ? (pp as any)?.photos?.filename ?? '' : ''),
         URL_портрет_обложка: pcUrl,
-        Доплата_руб: cover?.surcharge ?? 0,
         Текст: textMap[c.id] ?? '',
-        Фото_друзья_1: gr[0] ? (gr[0] as any).photos?.filename : '',
-        URL_фото_1: gr[0] ? getPhotoUrl((gr[0] as any).photos?.storage_path ?? '') : '',
-        Фото_друзья_2: gr[1] ? (gr[1] as any).photos?.filename : '',
-        URL_фото_2: gr[1] ? getPhotoUrl((gr[1] as any).photos?.storage_path ?? '') : '',
+        ...grCols,
       }
     })
 
@@ -227,15 +228,16 @@ export async function GET(req: NextRequest) {
 
     const teacherRows = (teachers ?? []).map((t: any) => {
       const photo = photoByTeacher[t.id]
+      const grTeacherCols: Record<string, string> = {}
+      for (let i = 0; i < 10; i++) { grTeacherCols[`Фото_друзья_${i+1}`] = ''; grTeacherCols[`URL_фото_${i+1}`] = '' }
       return {
         Класс: 'УЧИТЕЛЬ',
         Ученик: t.full_name,
-        Родитель: t.position ?? '',
-        Телефон: '',
         Портрет_страница: photo?.filename ?? '',
         URL_портрет_страница: photo?.storage_path ? getPhotoUrl(photo.storage_path) : '',
-        Обложка: '', Портрет_обложка: '', URL_портрет_обложка: '',
-        Доплата_руб: '', Текст: '', Фото_друзья_1: '', URL_фото_1: '', Фото_друзья_2: '', URL_фото_2: '',
+        Обложка: t.position ?? '', Портрет_обложка: '', URL_портрет_обложка: '',
+        Текст: '',
+        ...grTeacherCols,
       }
     })
 
