@@ -142,6 +142,19 @@ export async function GET(req: NextRequest) {
     })))
   }
 
+  // Список фото альбома по типу
+  if (action === 'photos' && albumId) {
+    const photoType = url.searchParams.get('photo_type')
+    let query = supabaseAdmin.from('photos').select('id, filename, storage_path, type').eq('album_id', albumId).order('created_at')
+    if (photoType) query = (query as any).eq('type', photoType)
+    const { data: photos } = await query
+    const result = (photos ?? []).map((p: any) => ({
+      ...p,
+      url: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${p.storage_path}`,
+    }))
+    return NextResponse.json({ photos: result })
+  }
+
   // Экспорт CSV для вёрстки
   if (action === 'export' && albumId) {
     const { data: children } = await supabaseAdmin
@@ -275,6 +288,18 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
+
+  // Удалить фото
+  if (body.action === 'delete_photo') {
+    const { photo_id, storage_path } = body
+    await supabaseAdmin.storage.from('photos').remove([storage_path])
+    await supabaseAdmin.from('selections').delete().eq('photo_id', photo_id)
+    await supabaseAdmin.from('photo_teachers').delete().eq('photo_id', photo_id)
+    await supabaseAdmin.from('photo_children').delete().eq('photo_id', photo_id)
+    await supabaseAdmin.from('photo_locks').delete().eq('photo_id', photo_id)
+    await supabaseAdmin.from('photos').delete().eq('id', photo_id)
+    return NextResponse.json({ ok: true })
+  }
 
   // Создать альбом
   if (body.action === 'create_album') {

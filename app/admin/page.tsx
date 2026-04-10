@@ -773,6 +773,20 @@ function UploadTab({ album, notify }: any) {
   const [files, setFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [photos, setPhotos] = useState<any[]>([])
+  const [loadingPhotos, setLoadingPhotos] = useState(false)
+
+  const loadPhotos = async (t: string) => {
+    setLoadingPhotos(true)
+    const res = await fetch(`/api/admin?action=photos&album_id=${album.id}&photo_type=${t}`, {
+      headers: { 'x-admin-secret': secret() }
+    })
+    const data = await res.json()
+    setPhotos(data.photos ?? [])
+    setLoadingPhotos(false)
+  }
+
+  useEffect(() => { loadPhotos(type) }, [type, album.id])
 
   const upload = async () => {
     setUploading(true)
@@ -807,59 +821,106 @@ function UploadTab({ album, notify }: any) {
     setFiles([])
     setProgress(0)
     notify(`Загружено ${files.length} фото (${type})`)
+    loadPhotos(type)
   }
 
+  const deletePhoto = async (photo: any) => {
+    if (!confirm(`Удалить фото "${photo.filename}"? Это удалит его из всех выборов родителей.`)) return
+    await fetch('/api/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret() },
+      body: JSON.stringify({ action: 'delete_photo', photo_id: photo.id, storage_path: photo.storage_path }),
+    })
+    setPhotos(prev => prev.filter(p => p.id !== photo.id))
+    notify('Фото удалено')
+  }
+
+  const typeLabels: Record<string, string> = { portrait: 'Портреты учеников', group: 'Групповые / с друзьями', teacher: 'Учителя' }
+
   return (
-    <div className="card p-6 space-y-5 max-w-lg">
-      <h3 className="font-medium text-gray-800">Загрузка фотографий</h3>
+    <div className="space-y-6">
+      <div className="card p-6 space-y-5 max-w-lg">
+        <h3 className="font-medium text-gray-800">Загрузка фотографий</h3>
 
-      <div>
-        <label className="text-xs text-gray-500 block mb-2">Тип фотографий</label>
-        <div className="flex gap-3">
-          {[['portrait', 'Портреты учеников'], ['group', 'Групповые / с друзьями'], ['teacher', 'Учителя']].map(([v, l]) => (
-            <button
-              key={v}
-              onClick={() => setType(v)}
-              className={`px-4 py-2 rounded-xl border text-sm transition-colors
-                ${type === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="text-xs text-gray-500 block mb-2">Выберите файлы</label>
-        <input
-          type="file"
-          multiple
-          accept="image/*"
-          onChange={e => setFiles(Array.from(e.target.files ?? []))}
-          className="block w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100"
-        />
-      </div>
-
-      {files.length > 0 && (
-        <p className="text-sm text-gray-500">Выбрано: {files.length} файлов</p>
-      )}
-
-      {uploading && (
         <div>
-          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
+          <label className="text-xs text-gray-500 block mb-2">Тип фотографий</label>
+          <div className="flex gap-3">
+            {[['portrait', 'Портреты учеников'], ['group', 'Групповые / с друзьями'], ['teacher', 'Учителя']].map(([v, l]) => (
+              <button
+                key={v}
+                onClick={() => setType(v)}
+                className={`px-4 py-2 rounded-xl border text-sm transition-colors
+                  ${type === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              >
+                {l}
+              </button>
+            ))}
           </div>
-          <p className="text-xs text-gray-400 mt-1">{progress}%</p>
         </div>
-      )}
 
-      <button
-        className="btn-primary"
-        onClick={upload}
-        disabled={files.length === 0 || uploading}
-      >
-        {uploading ? 'Загружаю...' : `Загрузить ${files.length} фото`}
-      </button>
+        <div>
+          <label className="text-xs text-gray-500 block mb-2">Выберите файлы</label>
+          <input
+            type="file"
+            multiple
+            accept="image/*"
+            onChange={e => setFiles(Array.from(e.target.files ?? []))}
+            className="block w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100"
+          />
+        </div>
+
+        {files.length > 0 && (
+          <p className="text-sm text-gray-500">Выбрано: {files.length} файлов</p>
+        )}
+
+        {uploading && (
+          <div>
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">{progress}%</p>
+          </div>
+        )}
+
+        <button
+          className="btn-primary"
+          onClick={upload}
+          disabled={files.length === 0 || uploading}
+        >
+          {uploading ? 'Загружаю...' : `Загрузить ${files.length} фото`}
+        </button>
+      </div>
+
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-medium text-gray-800">
+            {typeLabels[type]}
+            <span className="ml-2 text-sm font-normal text-gray-400">{loadingPhotos ? '...' : `${photos.length} фото`}</span>
+          </h3>
+        </div>
+
+        {loadingPhotos ? (
+          <p className="text-sm text-gray-400">Загрузка...</p>
+        ) : photos.length === 0 ? (
+          <p className="text-sm text-gray-400">Нет загруженных фото</p>
+        ) : (
+          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+            {photos.map(photo => (
+              <div key={photo.id} className="relative group aspect-square">
+                <img src={photo.url} alt={photo.filename} className="w-full h-full object-cover rounded-lg" loading="lazy" />
+                <button
+                  onClick={() => deletePhoto(photo)}
+                  className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs items-center justify-center hidden group-hover:flex"
+                  title="Удалить"
+                >✕</button>
+                <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] px-1 py-0.5 rounded-b-lg truncate opacity-0 group-hover:opacity-100">
+                  {photo.filename}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
