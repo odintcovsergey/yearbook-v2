@@ -85,8 +85,8 @@ export async function POST(req: NextRequest) {
   let surcharge = 0
   if (coverOption === 'other') surcharge = album?.cover_price ?? 0
 
-  // Проверить что групповые фото не заняты другими (финальная проверка)
-  for (const photoId of groupPhotos) {
+  // Проверить что групповые фото не заняты другими (финальная проверка, только если exclusive)
+  for (const photoId of (album?.group_exclusive !== false ? groupPhotos : [])) {
     const { data: confirmedByOther } = await supabaseAdmin
       .from('selections')
       .select('child_id')

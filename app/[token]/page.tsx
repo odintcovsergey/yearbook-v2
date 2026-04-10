@@ -30,6 +30,7 @@ export default function ParentPage() {
   const [groupEnabled, setGroupEnabled] = useState(true)
   const [groupMin, setGroupMin] = useState(2)
   const [groupMax, setGroupMax] = useState(2)
+  const [groupExclusive, setGroupExclusive] = useState(true)
   const [textEnabled, setTextEnabled] = useState(true)
   const [textMaxChars, setTextMaxChars] = useState(500)
   const [portraits, setPortraits] = useState<Photo[]>([])
@@ -59,6 +60,7 @@ export default function ParentPage() {
         setGroupEnabled(data.album?.group_enabled ?? true)
         setGroupMin(data.album?.group_min ?? 2)
         setGroupMax(data.album?.group_max ?? 2)
+        setGroupExclusive(data.album?.group_exclusive ?? true)
         setTextEnabled(data.album?.text_enabled ?? true)
         setTextMaxChars(data.album?.text_max_chars ?? 500)
         setPortraits(data.portraits)
@@ -125,19 +127,21 @@ export default function ParentPage() {
     if (done) return
     if (groupPhotos.includes(id)) {
       setGroupPhotos(prev => prev.filter(p => p !== id))
-      setTimeout(() => unlockPhoto(id), 0)
+      if (groupExclusive) setTimeout(() => unlockPhoto(id), 0)
     } else {
       if (groupPhotos.length >= groupMax) return
       setGroupPhotos(prev => [...prev, id])
-      setTimeout(async () => {
-        const ok = await lockPhoto(id)
-        if (!ok) {
-          setGroupPhotos(prev => prev.filter(p => p !== id))
-          setGroups(prev => prev.map(p => p.id === id ? { ...p, locked: true } : p))
-        }
-      }, 0)
+      if (groupExclusive) {
+        setTimeout(async () => {
+          const ok = await lockPhoto(id)
+          if (!ok) {
+            setGroupPhotos(prev => prev.filter(p => p !== id))
+            setGroups(prev => prev.map(p => p.id === id ? { ...p, locked: true } : p))
+          }
+        }, 0)
+      }
     }
-  }, [done, groupPhotos, lockPhoto, unlockPhoto])
+  }, [done, groupPhotos, groupExclusive, groupMax, lockPhoto, unlockPhoto])
 
   const togglePortrait = useCallback((id: string) => {
     if (done) return

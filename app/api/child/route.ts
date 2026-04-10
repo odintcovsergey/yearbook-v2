@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
     ...p,
     url: getPhotoUrl(p.storage_path),
     thumb: getPhotoUrl(p.storage_path, true),
-    locked: groupLockedByOther.has(p.id),
+    locked: album?.group_exclusive !== false && groupLockedByOther.has(p.id),
   }))
 
   const [existingSelections, existingContact, existingText, existingCover] = await Promise.all([
