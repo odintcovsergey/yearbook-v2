@@ -16,6 +16,9 @@ export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-export function getPhotoUrl(storagePath: string): string {
-  return supabaseAdmin.storage.from('photos').getPublicUrl(storagePath).data.publicUrl
+export function getPhotoUrl(storagePath: string, thumb = false): string {
+  const base = supabaseAdmin.storage.from('photos').getPublicUrl(storagePath).data.publicUrl
+  if (!thumb) return base
+  // Supabase image transformation — thumbnail 400px wide
+  return base + '?width=400&quality=70'
 }

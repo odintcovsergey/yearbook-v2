@@ -269,7 +269,7 @@ export default function ParentPage() {
               )}
               <RadioCard active={coverOption === 'same'} onClick={() => setCoverOption('same')} label="Тот же портрет что на странице" sub="Бесплатно" />
               {portraits.length > 1 && (
-                <RadioCard active={coverOption === 'other'} onClick={() => setCoverOption('other')} label="Другой портрет на обложку" sub="Бесплатно" />
+                <RadioCard active={coverOption === 'other'} onClick={() => setCoverOption('other')} label="Другой портрет на обложку" sub={coverPrice > 0 ? `+ ${coverPrice} ₽` : 'Бесплатно'} paid={coverPrice > 0} />
               )}
             </div>
             {coverOption === 'other' && (
@@ -475,7 +475,7 @@ const PhotoThumb = memo(function PhotoThumb({ photo, isSelected, isLocked, canSe
         ${isSelected ? 'border-blue-500 shadow-md' : 'border-transparent'}
         ${isLocked ? 'opacity-30' : ''}`}
       >
-        <img src={photo.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+        <img src={photo.thumb || photo.url} alt="" className="w-full h-full object-cover" loading="lazy" />
         {isSelected && (
           <div className="absolute top-2 right-2 w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-medium shadow">
             {selIndex + 1}

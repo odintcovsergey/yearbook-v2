@@ -636,6 +636,7 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
     if (!file) return
     Papa.parse(file, {
       header: true,
+      skipEmptyLines: true,
       complete: async (result) => {
         const rows = result.data as { full_name: string; class: string }[]
         let added = 0, skipped = 0

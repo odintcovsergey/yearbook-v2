@@ -35,6 +35,7 @@ export interface Photo {
   storage_path: string
   type: PhotoType
   url: string
+  thumb: string
   locked?: boolean  // для групповых — занято другим
 }
 

@@ -51,6 +51,7 @@ export async function GET(req: NextRequest) {
   const portraits = (allPortraits ?? []).map((p: any) => ({
     ...p,
     url: getPhotoUrl(p.storage_path),
+    thumb: getPhotoUrl(p.storage_path, true),
     locked: portraitLockedByOther.has(p.id),
   }))
 
@@ -79,6 +80,7 @@ export async function GET(req: NextRequest) {
   const groups = (groupPhotos ?? []).map((p: any) => ({
     ...p,
     url: getPhotoUrl(p.storage_path),
+    thumb: getPhotoUrl(p.storage_path, true),
     locked: groupLockedByOther.has(p.id),
   }))
 

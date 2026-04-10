@@ -61,16 +61,26 @@ export async function POST(req: NextRequest) {
   if (!child) return NextResponse.json({ error: 'Токен не найден' }, { status: 404 })
   if (child.submitted_at) return NextResponse.json({ error: 'Выбор уже сохранён' }, { status: 409 })
 
+  // Получить данные альбома для валидации и расчёта
+  const { data: album } = await supabaseAdmin
+    .from('albums')
+    .select('cover_mode, cover_price, group_enabled, group_min, group_max, text_enabled')
+    .eq('id', child.album_id).single()
+
   // Валидация
   if (!parentName?.trim()) return NextResponse.json({ error: 'Укажите имя родителя' }, { status: 400 })
   if (!phone?.trim()) return NextResponse.json({ error: 'Укажите телефон' }, { status: 400 })
   if (!portraitPage) return NextResponse.json({ error: 'Выберите портрет для страницы' }, { status: 400 })
-  if (!Array.isArray(groupPhotos) || groupPhotos.length !== 2)
-    return NextResponse.json({ error: 'Выберите ровно 2 фото с друзьями' }, { status: 400 })
-
-  // Получить данные альбома для расчёта доплаты
-  const { data: album } = await supabaseAdmin
-    .from('albums').select('cover_mode, cover_price').eq('id', child.album_id).single()
+  if (album?.group_enabled) {
+    const gMin = album?.group_min ?? 2
+    const gMax = album?.group_max ?? 2
+    if (!Array.isArray(groupPhotos) || groupPhotos.length < gMin || groupPhotos.length > gMax) {
+      const msg = gMin === gMax
+        ? `Выберите ровно ${gMin} фото с друзьями`
+        : `Выберите от ${gMin} до ${gMax} фото с друзьями`
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
+  }
 
   let surcharge = 0
   if (coverOption === 'other') surcharge = album?.cover_price ?? 0
