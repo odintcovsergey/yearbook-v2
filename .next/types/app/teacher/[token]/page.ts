@@ -1,4 +1,4 @@
-// File: /Users/sergejodincov/Desktop/yearbook-v2/app/teacher/[token]/page.tsx
+// File: /root/yearbook-v2/app/teacher/[token]/page.tsx
 import * as entry from '../../../../../app/teacher/[token]/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

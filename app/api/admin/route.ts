@@ -20,6 +20,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(data ?? [])
   }
 
+  // Шаблоны
+  if (action === 'templates') {
+    const { data } = await supabaseAdmin.from('album_templates').select('*').order('created_at')
+    return NextResponse.json(data ?? [])
+  }
+
   // Список альбомов со статистикой (один запрос)
   if (action === 'albums_with_stats') {
     const [albumsRes, childrenRes] = await Promise.all([
@@ -238,10 +244,53 @@ export async function POST(req: NextRequest) {
   // Создать альбом
   if (body.action === 'create_album') {
     const { data, error } = await supabaseAdmin.from('albums')
-      .insert({ title: body.title, classes: body.classes, cover_mode: body.cover_mode, cover_price: body.cover_price ?? 300, deadline: body.deadline ?? null })
+      .insert({
+        title: body.title,
+        classes: body.classes,
+        cover_mode: body.cover_mode,
+        cover_price: body.cover_price ?? 0,
+        deadline: body.deadline ?? null,
+        group_enabled: body.group_enabled ?? true,
+        group_min: body.group_min ?? 2,
+        group_max: body.group_max ?? 2,
+        group_exclusive: body.group_exclusive ?? true,
+        text_enabled: body.text_enabled ?? true,
+        text_max_chars: body.text_max_chars ?? 500,
+      })
       .select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
+  }
+
+  // Шаблоны — получить список
+  if (body.action === 'get_templates') {
+    const { data } = await supabaseAdmin.from('album_templates').select('*').order('created_at')
+    return NextResponse.json(data ?? [])
+  }
+
+  // Шаблоны — создать
+  if (body.action === 'create_template') {
+    const { data, error } = await supabaseAdmin.from('album_templates')
+      .insert({
+        title: body.title,
+        cover_mode: body.cover_mode,
+        cover_price: body.cover_price ?? 0,
+        group_enabled: body.group_enabled ?? true,
+        group_min: body.group_min ?? 2,
+        group_max: body.group_max ?? 2,
+        group_exclusive: body.group_exclusive ?? true,
+        text_enabled: body.text_enabled ?? true,
+        text_max_chars: body.text_max_chars ?? 500,
+      })
+      .select().single()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data)
+  }
+
+  // Шаблоны — удалить
+  if (body.action === 'delete_template') {
+    await supabaseAdmin.from('album_templates').delete().eq('id', body.id)
+    return NextResponse.json({ ok: true })
   }
 
   // Добавить ученика

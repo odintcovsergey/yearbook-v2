@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
     .from('albums').select('cover_mode, cover_price').eq('id', child.album_id).single()
 
   let surcharge = 0
-  if (coverOption === 'same' || coverOption === 'other') surcharge = album?.cover_price ?? 300
+  if (coverOption === 'other') surcharge = album?.cover_price ?? 0
 
   // Проверить что групповые фото не заняты другими (финальная проверка)
   for (const photoId of groupPhotos) {

@@ -8,8 +8,9 @@ const secret = () => typeof window !== 'undefined' ? localStorage.getItem('admin
 const api = (path: string, opts?: RequestInit) =>
   fetch(path, { ...opts, headers: { 'x-admin-secret': secret(), 'Content-Type': 'application/json', ...opts?.headers } })
 
-type Tab = 'overview' | 'children' | 'upload' | 'import' | 'surcharges' | 'contacts' | 'teachers'
-type Album = { id: string; title: string; classes: string[]; cover_mode: string; cover_price: number; deadline: string | null; stats?: { total: number; submitted: number; in_progress: number } }
+type Tab = 'overview' | 'children' | 'upload' | 'import' | 'surcharges' | 'contacts' | 'teachers' | 'templates'
+type Album = { id: string; title: string; classes: string[]; cover_mode: string; cover_price: number; deadline: string | null; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number; stats?: { total: number; submitted: number; in_progress: number } }
+type Template = { id: string; title: string; cover_mode: string; cover_price: number; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number }
 type Stats = { total: number; submitted: number; in_progress: number; not_started: number; teachers_total: number; teachers_done: number; surcharge_total: number; surcharge_count: number }
 type Child = { id: string; full_name: string; class: string; access_token: string; submitted_at: string | null; started_at: string | null; contact: any; cover: any }
 
@@ -135,6 +136,7 @@ export default function AdminPage() {
                 { id: 'surcharges', label: '💰 Доплаты' },
                 { id: 'contacts', label: '📞 Контакты' },
                 { id: 'teachers', label: '🎓 Учителя' },
+                { id: 'templates', label: '📐 Шаблоны' },
               ] as { id: Tab; label: string }[]).map(t => (
                 <button
                   key={t.id}
@@ -170,6 +172,9 @@ export default function AdminPage() {
             {!loading && tab === 'teachers' && (
               <TeachersTab album={selectedAlbum} notify={notify} />
             )}
+            {tab === 'templates' && (
+              <TemplatesTab notify={notify} />
+            )}
           </>
         )}
       </div>
@@ -181,10 +186,35 @@ export default function AdminPage() {
 
 function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
   const [creating, setCreating] = useState(false)
-  const [form, setForm] = useState({ title: '', classes: '', cover_mode: 'optional', cover_price: '300', deadline: '' })
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('')
+  const emptyForm = { title: '', classes: '', cover_mode: 'none', cover_price: '0', deadline: '', group_enabled: true, group_min: '2', group_max: '2', group_exclusive: true, text_enabled: true, text_max_chars: '500' }
+  const [form, setForm] = useState(emptyForm)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'done' | 'pending'>('all')
   const [sortBy, setSortBy] = useState<'created' | 'deadline' | 'progress'>('created')
+
+  useEffect(() => {
+    api('/api/admin?action=templates').then(r => r.json()).then(setTemplates)
+  }, [])
+
+  const applyTemplate = (id: string) => {
+    setSelectedTemplate(id)
+    if (!id) { setForm(emptyForm); return }
+    const t = templates.find(t => t.id === id)
+    if (!t) return
+    setForm(f => ({
+      ...f,
+      cover_mode: t.cover_mode,
+      cover_price: String(t.cover_price),
+      group_enabled: t.group_enabled,
+      group_min: String(t.group_min),
+      group_max: String(t.group_max),
+      group_exclusive: t.group_exclusive,
+      text_enabled: t.text_enabled,
+      text_max_chars: String(t.text_max_chars),
+    }))
+  }
 
   const create = async () => {
     const res = await api('/api/admin', {
@@ -192,13 +222,19 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
       body: JSON.stringify({
         action: 'create_album',
         title: form.title,
-        classes: form.classes.split(',').map(s => s.trim()).filter(Boolean),
+        classes: form.classes.split(',').map((s: string) => s.trim()).filter(Boolean),
         cover_mode: form.cover_mode,
-        cover_price: parseInt(form.cover_price),
+        cover_price: form.cover_mode === 'optional' || form.cover_mode === 'required' ? parseInt(form.cover_price) : 0,
         deadline: form.deadline || null,
+        group_enabled: form.group_enabled,
+        group_min: form.group_enabled ? parseInt(form.group_min) : 0,
+        group_max: form.group_enabled ? parseInt(form.group_max) : 0,
+        group_exclusive: form.group_exclusive,
+        text_enabled: form.text_enabled,
+        text_max_chars: parseInt(form.text_max_chars),
       }),
     })
-    if (res.ok) { notify('Альбом создан!'); setCreating(false); onRefresh() }
+    if (res.ok) { notify('Альбом создан!'); setCreating(false); setForm(emptyForm); setSelectedTemplate(''); onRefresh() }
     else notify('Ошибка создания', 'err')
   }
 
@@ -229,44 +265,131 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-medium text-gray-800">Альбомы</h2>
-        <button onClick={() => setCreating(!creating)} className="btn-primary text-sm">
+        <button onClick={() => { setCreating(!creating); setSelectedTemplate(''); setForm(emptyForm) }} className="btn-primary text-sm">
           + Новый альбом
         </button>
       </div>
 
       {creating && (
-        <div className="card p-5 mb-6">
-          <h3 className="font-medium text-gray-800 mb-4">Новый альбом</h3>
-          <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="card p-5 mb-6 space-y-5">
+          <h3 className="font-medium text-gray-800">Новый альбом</h3>
+
+          {/* Шаблон */}
+          {templates.length > 0 && (
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Название</label>
-              <input className="input" placeholder="Выпускной 11А 2025" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+              <label className="text-xs text-gray-500 block mb-2">Шаблон (необязательно)</label>
+              <div className="flex flex-wrap gap-2">
+                {templates.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => applyTemplate(selectedTemplate === t.id ? '' : t.id)}
+                    className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${selectedTemplate === t.id ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    {t.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Основные поля */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Название *</label>
+              <input className="input" placeholder="Школа 72, 11А" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Классы (через запятую)</label>
+              <label className="text-xs text-gray-500 block mb-1">Классы (через запятую) *</label>
               <input className="input" placeholder="11А, 11Б" value={form.classes} onChange={e => setForm(f => ({ ...f, classes: e.target.value }))} />
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Режим обложки</label>
-              <select className="input" value={form.cover_mode} onChange={e => setForm(f => ({ ...f, cover_mode: e.target.value }))}>
-                <option value="none">Без портрета на обложке</option>
-                <option value="same">Тот же портрет (авто)</option>
-                <option value="optional">Выбор родителя (с доплатой)</option>
-                <option value="required">Обязателен (все платят)</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Доплата за обложку (₽)</label>
-              <input className="input" type="number" value={form.cover_price} onChange={e => setForm(f => ({ ...f, cover_price: e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Дедлайн (необязательно)</label>
+              <label className="text-xs text-gray-500 block mb-1">Дедлайн</label>
               <input className="input" type="datetime-local" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
             </div>
           </div>
+
+          {/* Обложка */}
+          <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+            <p className="text-sm font-medium text-gray-700">Портрет на обложку</p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { v: 'none', l: 'Без портрета' },
+                { v: 'same', l: 'Тот же (бесплатно)' },
+                { v: 'optional', l: 'Другой (доплата)' },
+                { v: 'required', l: 'Обязателен (все платят)' },
+              ].map(({ v, l }) => (
+                <button key={v} onClick={() => setForm(f => ({ ...f, cover_mode: v }))}
+                  className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${form.cover_mode === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            {(form.cover_mode === 'optional' || form.cover_mode === 'required') && (
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-gray-500">Доплата (₽)</label>
+                <input className="input w-28" type="number" value={form.cover_price} onChange={e => setForm(f => ({ ...f, cover_price: e.target.value }))} />
+              </div>
+            )}
+          </div>
+
+          {/* Групповые фото */}
+          <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-700">Групповые фото</p>
+              <button onClick={() => setForm(f => ({ ...f, group_enabled: !f.group_enabled }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.group_enabled ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.group_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            {form.group_enabled && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Минимум фото</label>
+                    <input className="input w-20" type="number" min="0" value={form.group_min} onChange={e => setForm(f => ({ ...f, group_min: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Максимум фото</label>
+                    <input className="input w-20" type="number" min="1" value={form.group_max} onChange={e => setForm(f => ({ ...f, group_max: e.target.value }))} />
+                  </div>
+                  {form.group_min === form.group_max && (
+                    <p className="text-xs text-blue-500 mt-4">Фиксированное: ровно {form.group_min} фото</p>
+                  )}
+                  {form.group_min !== form.group_max && (
+                    <p className="text-xs text-blue-500 mt-4">От {form.group_min} до {form.group_max} фото</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setForm(f => ({ ...f, group_exclusive: !f.group_exclusive }))}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${form.group_exclusive ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${form.group_exclusive ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </button>
+                  <span className="text-sm text-gray-600">Эксклюзивный выбор — одно фото нельзя выбрать дважды</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Текст */}
+          <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-700">Текст от ученика</p>
+              <button onClick={() => setForm(f => ({ ...f, text_enabled: !f.text_enabled }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.text_enabled ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.text_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            {form.text_enabled && (
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-gray-500">Макс. символов</label>
+                <input className="input w-24" type="number" value={form.text_max_chars} onChange={e => setForm(f => ({ ...f, text_max_chars: e.target.value }))} />
+              </div>
+            )}
+          </div>
+
           <div className="flex gap-3">
             <button className="btn-primary" onClick={create} disabled={!form.title || !form.classes}>Создать</button>
-            <button className="btn-secondary" onClick={() => setCreating(false)}>Отмена</button>
+            <button className="btn-secondary" onClick={() => { setCreating(false); setForm(emptyForm); setSelectedTemplate('') }}>Отмена</button>
           </div>
         </div>
       )}
@@ -274,13 +397,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
       {/* Поиск и фильтры */}
       {albums.length > 0 && (
         <div className="flex flex-wrap gap-3 mb-4">
-          <input
-            type="text"
-            placeholder="🔍 Поиск по названию..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="input flex-1 min-w-[200px] text-sm"
-          />
+          <input type="text" placeholder="🔍 Поиск по названию..." value={search} onChange={e => setSearch(e.target.value)} className="input flex-1 min-w-[200px] text-sm" />
           <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)} className="input text-sm w-auto">
             <option value="all">Все статусы</option>
             <option value="done">Все готовы</option>
@@ -297,7 +414,6 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
       {albums.length === 0 && (
         <div className="card p-12 text-center text-gray-400 text-sm">Нет альбомов. Создайте первый.</div>
       )}
-
       {albums.length > 0 && filtered.length === 0 && (
         <div className="card p-12 text-center text-gray-400 text-sm">Ничего не найдено. Попробуйте изменить фильтры.</div>
       )}
@@ -307,7 +423,6 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
           const s = a.stats ?? { total: 0, submitted: 0, in_progress: 0 }
           const pct = s.total ? Math.round(s.submitted / s.total * 100) : 0
           const allDone = s.total > 0 && s.submitted === s.total
-
           const now = new Date()
           const deadline = a.deadline ? new Date(a.deadline) : null
           const daysLeft = deadline ? Math.ceil((deadline.getTime() - now.getTime()) / 86400000) : null
@@ -315,56 +430,33 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
           const deadlineSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3
 
           return (
-            <button
-              key={a.id}
-              onClick={() => onSelect(a)}
-              className="card p-5 text-left hover:border-blue-200 hover:shadow-md transition-all"
-            >
+            <button key={a.id} onClick={() => onSelect(a)} className="card p-5 text-left hover:border-blue-200 hover:shadow-md transition-all">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-medium text-gray-800">{a.title}</p>
-                    {allDone && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">✓ Все готовы</span>
-                    )}
-                    {!allDone && s.total > 0 && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                        {s.total - s.submitted} не завершили
-                      </span>
-                    )}
+                    {allDone && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">✓ Все готовы</span>}
+                    {!allDone && s.total > 0 && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">{s.total - s.submitted} не завершили</span>}
                   </div>
-
                   <div className="flex items-center gap-3 mt-1 flex-wrap">
                     <p className="text-sm text-gray-400">{a.classes.join(', ')}</p>
                     {deadline && (
                       <span className={`text-xs font-medium ${deadlineOverdue ? 'text-red-500' : deadlineSoon ? 'text-amber-600' : 'text-gray-400'}`}>
-                        {deadlineOverdue
-                          ? `⚠ Просрочен ${Math.abs(daysLeft!)} дн. назад`
-                          : daysLeft === 0 ? '⏰ Сегодня дедлайн'
-                          : daysLeft === 1 ? '⏰ Завтра дедлайн'
-                          : `📅 ${deadline.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} · ещё ${daysLeft} дн.`}
+                        {deadlineOverdue ? `⚠ Просрочен ${Math.abs(daysLeft!)} дн. назад` : daysLeft === 0 ? '⏰ Сегодня дедлайн' : daysLeft === 1 ? '⏰ Завтра дедлайн' : `📅 ${deadline.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} · ещё ${daysLeft} дн.`}
                       </span>
                     )}
                   </div>
-
                   {s.total > 0 && (
                     <div className="mt-3">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs text-gray-400">
-                          {s.submitted} из {s.total} подтвердили
-                          {s.in_progress > 0 && ` · ${s.in_progress} в процессе`}
-                        </span>
+                        <span className="text-xs text-gray-400">{s.submitted} из {s.total} подтвердили{s.in_progress > 0 && ` · ${s.in_progress} в процессе`}</span>
                         <span className={`text-xs font-semibold ${allDone ? 'text-green-600' : 'text-blue-600'}`}>{pct}%</span>
                       </div>
                       <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${allDone ? 'bg-green-500' : 'bg-blue-500'}`}
-                          style={{ width: `${pct}%` }}
-                        />
+                        <div className={`h-full rounded-full transition-all ${allDone ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
                       </div>
                     </div>
                   )}
-
                   {s.total === 0 && <p className="text-xs text-gray-300 mt-2">Нет учеников</p>}
                 </div>
                 <span className="text-blue-400 mt-1 shrink-0">→</span>
@@ -376,7 +468,6 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
     </div>
   )
 }
-
 // ─── Обзор ────────────────────────────────────────────────────────────────────
 
 function OverviewTab({ stats, album, notify }: any) {
@@ -953,6 +1044,173 @@ function TeachersTab({ album, notify }: any) {
           </tbody>
         </table>
         {teachers.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">Нет учителей</p>}
+      </div>
+    </div>
+  )
+}
+
+// ─── Шаблоны ─────────────────────────────────────────────────────────────────
+
+function TemplatesTab({ notify }: any) {
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [creating, setCreating] = useState(false)
+  const emptyForm = { title: '', cover_mode: 'none', cover_price: '0', group_enabled: true, group_min: '2', group_max: '2', group_exclusive: true, text_enabled: true, text_max_chars: '500' }
+  const [form, setForm] = useState(emptyForm)
+
+  const load = () => api('/api/admin?action=templates').then(r => r.json()).then(setTemplates)
+  useEffect(() => { load() }, [])
+
+  const create = async () => {
+    const res = await api('/api/admin', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'create_template',
+        title: form.title,
+        cover_mode: form.cover_mode,
+        cover_price: parseInt(form.cover_price),
+        group_enabled: form.group_enabled,
+        group_min: form.group_enabled ? parseInt(form.group_min) : 0,
+        group_max: form.group_enabled ? parseInt(form.group_max) : 0,
+        group_exclusive: form.group_exclusive,
+        text_enabled: form.text_enabled,
+        text_max_chars: parseInt(form.text_max_chars),
+      }),
+    })
+    if (res.ok) { notify('Шаблон создан!'); setCreating(false); setForm(emptyForm); load() }
+    else notify('Ошибка', 'err')
+  }
+
+  const del = async (id: string, title: string) => {
+    if (!confirm(`Удалить шаблон «${title}»?`)) return
+    await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'delete_template', id }) })
+    notify('Шаблон удалён')
+    load()
+  }
+
+  return (
+    <div className="space-y-5 max-w-2xl">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">Шаблоны ускоряют создание альбомов — параметры заполняются автоматически</p>
+        <button onClick={() => setCreating(!creating)} className="btn-primary text-sm">+ Новый шаблон</button>
+      </div>
+
+      {creating && (
+        <div className="card p-5 space-y-4">
+          <h3 className="font-medium text-gray-800">Новый шаблон</h3>
+
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Название шаблона *</label>
+            <input className="input" placeholder="Универсал" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+          </div>
+
+          {/* Обложка */}
+          <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+            <p className="text-sm font-medium text-gray-700">Портрет на обложку</p>
+            <div className="flex flex-wrap gap-2">
+              {[{ v: 'none', l: 'Без портрета' }, { v: 'same', l: 'Тот же (бесплатно)' }, { v: 'optional', l: 'Другой (доплата)' }, { v: 'required', l: 'Обязателен' }].map(({ v, l }) => (
+                <button key={v} onClick={() => setForm(f => ({ ...f, cover_mode: v }))}
+                  className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${form.cover_mode === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{l}</button>
+              ))}
+            </div>
+            {(form.cover_mode === 'optional' || form.cover_mode === 'required') && (
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-gray-500">Доплата (₽)</label>
+                <input className="input w-28" type="number" value={form.cover_price} onChange={e => setForm(f => ({ ...f, cover_price: e.target.value }))} />
+              </div>
+            )}
+          </div>
+
+          {/* Групповые */}
+          <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-700">Групповые фото</p>
+              <button onClick={() => setForm(f => ({ ...f, group_enabled: !f.group_enabled }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.group_enabled ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.group_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            {form.group_enabled && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Минимум</label>
+                    <input className="input w-20" type="number" min="0" value={form.group_min} onChange={e => setForm(f => ({ ...f, group_min: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Максимум</label>
+                    <input className="input w-20" type="number" min="1" value={form.group_max} onChange={e => setForm(f => ({ ...f, group_max: e.target.value }))} />
+                  </div>
+                  <p className="text-xs text-blue-500 mt-4">
+                    {form.group_min === form.group_max ? `Ровно ${form.group_min} фото` : `От ${form.group_min} до ${form.group_max}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setForm(f => ({ ...f, group_exclusive: !f.group_exclusive }))}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${form.group_exclusive ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                    <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${form.group_exclusive ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </button>
+                  <span className="text-sm text-gray-600">Эксклюзивный выбор</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Текст */}
+          <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-gray-700">Текст от ученика</p>
+              <button onClick={() => setForm(f => ({ ...f, text_enabled: !f.text_enabled }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.text_enabled ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.text_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            {form.text_enabled && (
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-gray-500">Макс. символов</label>
+                <input className="input w-24" type="number" value={form.text_max_chars} onChange={e => setForm(f => ({ ...f, text_max_chars: e.target.value }))} />
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3">
+            <button className="btn-primary" onClick={create} disabled={!form.title}>Создать</button>
+            <button className="btn-secondary" onClick={() => { setCreating(false); setForm(emptyForm) }}>Отмена</button>
+          </div>
+        </div>
+      )}
+
+      <div className="card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Шаблон</th>
+              <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Групповые</th>
+              <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Текст</th>
+              <th className="px-4 py-3 text-left text-xs text-gray-500 font-medium">Обложка</th>
+              <th className="px-4 py-3"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {templates.map(t => (
+              <tr key={t.id}>
+                <td className="px-4 py-3 font-medium text-gray-800">{t.title}</td>
+                <td className="px-4 py-3 text-gray-500 text-xs">
+                  {t.group_enabled
+                    ? t.group_min === t.group_max ? `${t.group_min} фото${t.group_exclusive ? ' · эксклюзив' : ''}` : `${t.group_min}–${t.group_max} фото${t.group_exclusive ? ' · эксклюзив' : ''}`
+                    : '—'}
+                </td>
+                <td className="px-4 py-3 text-gray-500 text-xs">{t.text_enabled ? `до ${t.text_max_chars} симв.` : '—'}</td>
+                <td className="px-4 py-3 text-gray-500 text-xs">
+                  {t.cover_mode === 'none' ? '—' : t.cover_mode === 'same' ? 'Тот же' : `Доплата ${t.cover_price} ₽`}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button onClick={() => del(t.id, t.title)} className="text-red-400 hover:text-red-600 text-xs hover:underline">Удалить</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {templates.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">Нет шаблонов</p>}
       </div>
     </div>
   )

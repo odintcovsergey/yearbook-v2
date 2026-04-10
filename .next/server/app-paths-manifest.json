@@ -3,12 +3,12 @@
   "/[token]/page": "app/[token]/page.js",
   "/admin/page": "app/admin/page.js",
   "/teacher/[token]/page": "app/teacher/[token]/page.js",
-  "/api/admin/register-photo/route": "app/api/admin/register-photo/route.js",
   "/album/[albumId]/page": "app/album/[albumId]/page.js",
-  "/api/draft/route": "app/api/draft/route.js",
-  "/api/album/route": "app/api/album/route.js",
-  "/api/teacher/route": "app/api/teacher/route.js",
-  "/api/select/route": "app/api/select/route.js",
+  "/api/admin/register-photo/route": "app/api/admin/register-photo/route.js",
   "/api/child/route": "app/api/child/route.js",
+  "/api/album/route": "app/api/album/route.js",
+  "/api/select/route": "app/api/select/route.js",
+  "/api/draft/route": "app/api/draft/route.js",
+  "/api/teacher/route": "app/api/teacher/route.js",
   "/api/admin/route": "app/api/admin/route.js"
 }

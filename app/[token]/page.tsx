@@ -241,9 +241,9 @@ export default function ParentPage() {
               {coverMode !== 'required' && (
                 <RadioCard active={coverOption === 'none'} onClick={() => setCoverOption('none')} label="Без портрета на обложке" sub="Включено в стоимость" />
               )}
-              <RadioCard active={coverOption === 'same'} onClick={() => setCoverOption('same')} label="Тот же портрет что на странице" sub={`+ ${coverPrice} ₽`} paid />
+              <RadioCard active={coverOption === 'same'} onClick={() => setCoverOption('same')} label="Тот же портрет что на странице" sub="Бесплатно" />
               {portraits.length > 1 && (
-                <RadioCard active={coverOption === 'other'} onClick={() => setCoverOption('other')} label="Другой портрет на обложку" sub={`+ ${coverPrice} ₽`} paid />
+                <RadioCard active={coverOption === 'other'} onClick={() => setCoverOption('other')} label="Другой портрет на обложку" sub="Бесплатно" />
               )}
             </div>
             {coverOption === 'other' && (
@@ -329,7 +329,7 @@ export default function ParentPage() {
           <StepCard title="Проверьте выбор" subtitle="После подтверждения изменить нельзя">
             <div className="space-y-3 mb-6">
               <SummaryRow label="Портрет" value={portraits.find(p => p.id === portraitPage)?.filename ?? '—'} />
-              {coverMode !== 'none' && <SummaryRow label="Обложка" value={coverOption === 'none' ? 'Без портрета' : coverOption === 'same' ? `Тот же (+${coverPrice} ₽)` : `Другой (+${coverPrice} ₽)`} />}
+              {coverMode !== 'none' && <SummaryRow label="Обложка" value={coverOption === 'none' ? 'Без портрета' : coverOption === 'same' ? 'Тот же (бесплатно)' : `Другой (+${coverPrice} ₽)`} />}
               <SummaryRow label="Текст" value={studentText || '(не заполнен)'} multiline />
               <SummaryRow label="Фото с друзьями" value={groupPhotos.map(id => groups.find(g => g.id === id)?.filename).filter(Boolean).join(', ') || '—'} />
               <SummaryRow label="Телефон" value={phone} />

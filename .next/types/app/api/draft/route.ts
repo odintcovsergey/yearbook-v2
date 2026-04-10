@@ -1,4 +1,4 @@
-// File: /Users/sergejodincov/Desktop/yearbook-v2/app/api/draft/route.ts
+// File: /root/yearbook-v2/app/api/draft/route.ts
 import * as entry from '../../../../../app/api/draft/route.js'
 import type { NextRequest } from 'next/server.js'
 
