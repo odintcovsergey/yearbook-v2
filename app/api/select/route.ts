@@ -137,10 +137,16 @@ export async function POST(req: NextRequest) {
   if (selError)
     return NextResponse.json({ error: 'Ошибка сохранения: ' + selError.message }, { status: 500 })
 
-  // 5. Удалить временные блокировки этого ребёнка (теперь selections — источник правды)
+  // 5. Реферал (если заполнен)
+  if (referral?.trim()) {
+    await supabaseAdmin.from('referrals')
+      .upsert({ child_id: childId, content: referral.trim() }, { onConflict: 'child_id' })
+  }
+
+  // 6. Удалить временные блокировки этого ребёнка (теперь selections — источник правды)
   await supabaseAdmin.from('photo_locks').delete().eq('child_id', childId)
 
-  // 6. Отметить как подтверждённое
+  // 7. Отметить как подтверждённое
   await supabaseAdmin
     .from('children')
     .update({ submitted_at: new Date().toISOString() })
