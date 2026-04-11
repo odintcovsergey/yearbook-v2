@@ -420,7 +420,7 @@ export default function ParentPage() {
                 <span className="text-xs text-gray-400 block mb-2">Портрет</span>
                 {portraitPage ? (() => { const p = portraits.find(ph => ph.id === portraitPage); return p ? (
                   <img src={p.thumb || p.url} alt="" className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-blue-200"
-                    onClick={() => setLightbox({ photos: portraits, index: portraits.indexOf(p), onSelect: undefined })} />
+                    onClick={() => setLightbox({ photos: [p], index: 0, onSelect: undefined })} />
                 ) : <span className="text-sm text-gray-400">—</span> })() : <span className="text-sm text-gray-400">—</span>}
               </div>
               {/* Обложка */}
@@ -433,7 +433,7 @@ export default function ParentPage() {
                     <div className="flex items-center gap-3">
                       {portraitCover ? (() => { const p = portraits.find(ph => ph.id === portraitCover); return p ? (
                         <img src={p.thumb || p.url} alt="" className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-blue-200"
-                          onClick={() => setLightbox({ photos: portraits, index: portraits.indexOf(p), onSelect: undefined })} />
+                          onClick={() => setLightbox({ photos: [p], index: 0, onSelect: undefined })} />
                       ) : null })() : null}
                       <span className="text-sm text-green-600 font-medium">+{coverPrice} ₽</span>
                     </div>
@@ -447,7 +447,7 @@ export default function ParentPage() {
                   <div className="flex gap-2 flex-wrap">
                     {groupPhotos.map(id => { const p = groups.find(g => g.id === id); return p ? (
                       <img key={id} src={p.thumb || p.url} alt="" className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-blue-200"
-                        onClick={() => setLightbox({ photos: groups, index: groups.indexOf(p), onSelect: undefined })} />
+                        onClick={() => setLightbox({ photos: [p], index: 0, onSelect: undefined })} />
                     ) : null })}
                     {groupPhotos.length === 0 && <span className="text-sm text-gray-400">—</span>}
                   </div>
