@@ -652,15 +652,8 @@ function OverviewTab({ stats, album, children, notify, onRefresh }: any) {
 
       {showReminder && (() => {
         const unfinished = (children ?? []).filter((c: any) => !c.submitted_at)
-        const lines = unfinished.map((c: any) =>
-          `${c.full_name} — ${location.origin}/${c.access_token}`
-        ).join('
-')
-        const text = `Уважаемые родители, напоминаем о необходимости выбрать фотографии для альбома «${album.title}».
-
-Пожалуйста, перейдите по своей ссылке и подтвердите выбор:
-
-${lines}`
+        const lines = unfinished.map((c: any) => `${c.full_name} — ${location.origin}/${c.access_token}`).join('\n')
+        const text = `Уважаемые родители, напоминаем о необходимости выбрать фотографии для альбома «${album.title}».\n\nПожалуйста, перейдите по своей ссылке и подтвердите выбор:\n\n${lines}`
         return (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowReminder(false)}>
             <div className="card p-6 w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
