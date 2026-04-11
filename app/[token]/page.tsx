@@ -253,11 +253,21 @@ export default function ParentPage() {
       <div className="max-w-6xl mx-auto px-4 py-6">
 
         {step === 1 && (
-          <StepCard wide title="Портрет для личной страницы" subtitle="Нажмите на фото чтобы увидеть крупнее и выбрать. Серые уже выбраны другими.">
+          <StepCard wide title="Портрет для личной страницы" subtitle="Это фото появится на вашей личной странице в альбоме. Нажмите на фото чтобы увидеть крупнее.">
             <div className="flex items-center gap-3 mb-4">
               <span className={`badge-${portraitPage ? 'green' : 'blue'}`}>Выбрано: {portraitPage ? 1 : 0} / 1</span>
               <span className="text-xs text-gray-400">{portraits.filter(p => !p.locked).length} из {portraits.length} доступно</span>
             </div>
+            {!portraitPage && (
+              <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-4 text-sm text-blue-700">
+                👆 Нажмите на фото чтобы выбрать — нужно выбрать <strong>1 фото</strong>
+              </div>
+            )}
+            {portraitPage && (
+              <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 mb-4 text-sm text-green-700">
+                ✅ Отлично! Портрет выбран — можно двигаться дальше
+              </div>
+            )}
             <PhotoGrid
               photos={portraits}
               selected={portraitPage ? [portraitPage] : []}
@@ -308,9 +318,7 @@ export default function ParentPage() {
                 />
               </div>
             )}
-            <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mb-6 text-xs text-amber-700">
-              Доплата собирается организатором отдельно.
-            </div>
+
             <div className="flex items-center justify-between">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
             </div>
@@ -337,13 +345,28 @@ export default function ParentPage() {
         )}
 
         {step === 4 && (
-          <StepCard wide title="Фото с друзьями" subtitle={groupMin === groupMax ? `Выберите ровно ${groupMin} фото` : `Выберите от ${groupMin} до ${groupMax} фото`}>
+          <StepCard wide title="Фото с друзьями" subtitle="Эти фото разместятся рядом с вашим портретом на личной странице.">
             <div className="flex items-center gap-3 mb-4">
               <span className={`badge-${groupPhotos.length >= groupMin && groupPhotos.length <= groupMax ? 'green' : 'blue'}`}>
                 Выбрано: {groupPhotos.length} / {groupMax}
               </span>
               <span className="text-xs text-gray-400">{groups.filter(g => !g.locked).length} из {groups.length} доступно</span>
             </div>
+            {groupPhotos.length === 0 && (
+              <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-4 text-sm text-blue-700">
+                👆 Нажмите на фото чтобы выбрать — нужно {groupMin === groupMax ? <>ровно <strong>{groupMin} фото</strong></> : <>от <strong>{groupMin}</strong> до <strong>{groupMax} фото</strong></>}
+              </div>
+            )}
+            {groupPhotos.length > 0 && groupPhotos.length < groupMin && (
+              <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 mb-4 text-sm text-amber-700">
+                👆 Выбрано {groupPhotos.length} из {groupMin} — добавьте ещё {groupMin - groupPhotos.length}
+              </div>
+            )}
+            {groupPhotos.length >= groupMin && groupPhotos.length <= groupMax && (
+              <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 mb-4 text-sm text-green-700">
+                ✅ Отлично! Все фото выбраны — можно двигаться дальше
+              </div>
+            )}
             <PhotoGrid
               photos={groups}
               selected={groupPhotos}
