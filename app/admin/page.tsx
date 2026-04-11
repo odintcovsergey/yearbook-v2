@@ -95,7 +95,7 @@ export default function AdminPage() {
           </div>
           <div className="flex items-center gap-2">
             {selectedAlbum && (
-              <button onClick={() => { setSelectedAlbum(null); setStats(null) }} className="btn-ghost text-xs">
+              <button onClick={() => { setSelectedAlbum(null); setStats(null); loadAlbums() }} className="btn-ghost text-xs">
                 ← Все альбомы
               </button>
             )}
