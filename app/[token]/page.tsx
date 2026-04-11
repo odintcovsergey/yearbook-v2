@@ -313,9 +313,13 @@ export default function ParentPage() {
             </div>
             <div className="flex items-center justify-between">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
-              <button className="btn-primary" onClick={goNext} disabled={coverOption === 'other' && !portraitCover}>Далее →</button>
             </div>
           </StepCard>
+        )}
+        {step === 2 && coverMode !== 'none' && (
+          <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3 flex justify-end">
+            <button className="btn-primary px-8" onClick={goNext} disabled={coverOption === 'other' && !portraitCover}>Далее →</button>
+          </div>
         )}
 
         {step === 3 && (
