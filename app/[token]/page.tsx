@@ -258,16 +258,9 @@ export default function ParentPage() {
               <span className={`badge-${portraitPage ? 'green' : 'blue'}`}>Выбрано: {portraitPage ? 1 : 0} / 1</span>
               <span className="text-xs text-gray-400">{portraits.filter(p => !p.locked).length} из {portraits.length} доступно</span>
             </div>
-            {!portraitPage && (
-              <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-4 text-sm text-blue-700">
-                👆 Нажмите на фото чтобы выбрать — нужно выбрать <strong>1 фото</strong>
-              </div>
-            )}
-            {portraitPage && (
-              <div className="sticky top-16 z-10 bg-green-50 border border-green-100 rounded-xl px-4 py-3 mb-4 text-sm text-green-700 shadow-sm">
-                ✅ Отлично! Портрет выбран — можно двигаться дальше
-              </div>
-            )}
+            <div className={`sticky top-16 z-10 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitPage ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
+              {portraitPage ? '✅ Отлично! Портрет выбран — можно двигаться дальше' : '👆 Нажмите на фото чтобы выбрать — нужно 1 фото'}
+            </div>
             <PhotoGrid
               photos={portraits}
               selected={portraitPage ? [portraitPage] : []}
@@ -352,21 +345,20 @@ export default function ParentPage() {
               </span>
               <span className="text-xs text-gray-400">{groups.filter(g => !g.locked).length} из {groups.length} доступно</span>
             </div>
-            {groupPhotos.length === 0 && (
-              <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-4 text-sm text-blue-700">
-                👆 Нажмите на фото чтобы выбрать — нужно {groupMin === groupMax ? <>ровно <strong>{groupMin} фото</strong></> : <>от <strong>{groupMin}</strong> до <strong>{groupMax} фото</strong></>}
-              </div>
-            )}
-            {groupPhotos.length > 0 && groupPhotos.length < groupMin && (
-              <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 mb-4 text-sm text-amber-700">
-                👆 Выбрано {groupPhotos.length} из {groupMin} — добавьте ещё {groupMin - groupPhotos.length}
-              </div>
-            )}
-            {groupPhotos.length >= groupMin && groupPhotos.length <= groupMax && (
-              <div className="sticky top-16 z-10 bg-green-50 border border-green-100 rounded-xl px-4 py-3 mb-4 text-sm text-green-700 shadow-sm">
-                ✅ Отлично! Все фото выбраны — можно двигаться дальше
-              </div>
-            )}
+            <div className={`sticky top-16 z-10 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${
+              groupPhotos.length >= groupMin && groupPhotos.length <= groupMax
+                ? 'bg-green-50 border-green-100 text-green-700'
+                : groupPhotos.length > 0
+                  ? 'bg-amber-50 border-amber-100 text-amber-700'
+                  : 'bg-blue-50 border-blue-100 text-blue-700'
+            }`}>
+              {groupPhotos.length >= groupMin && groupPhotos.length <= groupMax
+                ? '✅ Отлично! Все фото выбраны — можно двигаться дальше'
+                : groupPhotos.length > 0
+                  ? `👆 Выбрано ${groupPhotos.length} из ${groupMin} — добавьте ещё ${groupMin - groupPhotos.length}`
+                  : `👆 Нажмите на фото чтобы выбрать — нужно ${groupMin === groupMax ? `${groupMin} фото` : `от ${groupMin} до ${groupMax} фото`}`
+              }
+            </div>
             <PhotoGrid
               photos={groups}
               selected={groupPhotos}
@@ -592,15 +584,12 @@ const PhotoThumb = memo(function PhotoThumb({ photo, isSelected, isLocked, canSe
         )}
       </div>
       {!isLocked && onToggle && (
-        <button onClick={onToggle} disabled={!canSelect}
-          className={`absolute bottom-2 left-2 text-xs px-2 py-1 rounded-lg font-medium transition-all
-            ${isSelected ? 'bg-blue-500 text-white' : canSelect ? 'bg-white/90 text-gray-700' : 'bg-white/50 text-gray-400 cursor-not-allowed'}`}
-        >
-          {isSelected ? '✓' : '+'}
-        </button>
+        <div onClick={canSelect ? onToggle : undefined}
+          className={`absolute inset-0 rounded-xl ${canSelect ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+        />
       )}
-      <button onClick={onLightbox}
-        className="absolute bottom-2 right-2 bg-black/60 text-white text-sm w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/80 transition-all"
+      <button onClick={e => { e.stopPropagation(); onLightbox() }}
+        className="absolute bottom-2 right-2 bg-black/60 text-white text-sm w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/80 transition-all z-10"
       >
         ⤢
       </button>
