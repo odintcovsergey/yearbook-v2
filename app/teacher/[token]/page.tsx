@@ -197,21 +197,27 @@ export default function TeacherPage() {
                         <div className="grid grid-cols-4 gap-2 mb-4">
                           {photos.map((photo, pidx) => {
                             const isSelected = teacher.photo_id === photo.id
+                            // Заблокировано если выбрано другим учителем
+                            const usedByOther = teachers.some(t => t.id !== teacher.id && t.photo_id === photo.id)
                             return (
                               <div key={photo.id} className="relative group">
-                                <div className={`relative aspect-square rounded-xl overflow-hidden border-2
-                                  ${isSelected ? 'border-blue-500 shadow-md' : 'border-transparent'}`}>
+                                <div className={`relative aspect-square rounded-xl overflow-hidden border-2 cursor-pointer
+                                  ${isSelected ? 'border-blue-500 shadow-md' : 'border-transparent'}
+                                  ${usedByOther ? 'opacity-30' : ''}`}
+                                  onClick={() => !usedByOther && updateLocal(teacher.id, 'photo_id', isSelected ? null : photo.id)}
+                                >
                                   <img src={photo.url} alt="" className="w-full h-full object-cover" loading="lazy" />
                                   {isSelected && (
                                     <div className="absolute top-1 right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs">✓</div>
                                   )}
+                                  {usedByOther && (
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                      <span className="text-xl">🔒</span>
+                                    </div>
+                                  )}
                                 </div>
-                                <button onClick={() => updateLocal(teacher.id, 'photo_id', isSelected ? null : photo.id)}
-                                  className={`absolute bottom-1 left-1 text-xs px-1.5 py-0.5 rounded-lg font-medium
-                                    ${isSelected ? 'bg-blue-500 text-white' : 'bg-white/90 text-gray-700'}`}
-                                >{isSelected ? '✓' : '+'}</button>
-                                <button onClick={() => setLightbox({photos, index: pidx, teacherId: teacher.id})}
-                                  className="absolute bottom-1 right-1 bg-black/50 text-white text-xs px-1.5 py-0.5 rounded-lg">⤢</button>
+                                <button onClick={e => { e.stopPropagation(); setLightbox({photos, index: pidx, teacherId: teacher.id}) }}
+                                  className="absolute bottom-1 right-1 bg-black/60 text-white text-sm w-7 h-7 flex items-center justify-center rounded-xl hover:bg-black/80 z-10">⤢</button>
                               </div>
                             )
                           })}
