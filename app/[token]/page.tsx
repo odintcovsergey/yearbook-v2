@@ -487,9 +487,9 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
           <button
             onClick={() => { onSelect(photo.id); onClose() }}
             className={`px-10 py-3 rounded-xl text-sm font-medium transition-all
-              ${isSelected ? 'bg-red-500 text-white' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
+              ${isSelected ? 'bg-green-500 text-white' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
           >
-            {isSelected ? '✕ Отменить выбор' : '✓ Выбрать это фото'}
+            {isSelected ? '✓ Выбрано' : '✓ Выбрать это фото'}
           </button>
         ) : null}
       </div>
@@ -541,7 +541,7 @@ const PhotoThumb = memo(function PhotoThumb({ photo, isSelected, isLocked, canSe
         </button>
       )}
       <button onClick={onLightbox}
-        className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded-lg hover:bg-black/70 transition-all"
+        className="absolute bottom-2 right-2 bg-black/60 text-white text-sm w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/80 transition-all"
       >
         ⤢
       </button>
@@ -565,7 +565,7 @@ function PhotoGrid({ photos, selected, limit, onLightbox, onToggle, small = fals
   const pagePhotos = photos.slice(start, start + PAGE_SIZE)
 
   if (!photos.length) return <p className="text-gray-400 text-sm text-center py-8">Нет доступных фотографий</p>
-  const cols = small ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
+  const cols = 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
   return (
     <div>
       <div className={`grid ${cols} gap-3`}>
