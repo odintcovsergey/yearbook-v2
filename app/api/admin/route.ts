@@ -337,6 +337,12 @@ export async function POST(req: NextRequest) {
     const tids = (teacherIds ?? []).map((t: any) => t.id)
     if (tids.length > 0) await supabaseAdmin.from('photo_teachers').delete().in('teacher_id', tids)
     await supabaseAdmin.from('teachers').delete().eq('album_id', album_id)
+    // Удалить файлы из Storage
+    const { data: photos } = await supabaseAdmin.from('photos').select('storage_path').eq('album_id', album_id)
+    if (photos && photos.length > 0) {
+      const paths = photos.map((p: any) => p.storage_path)
+      await supabaseAdmin.storage.from('photos').remove(paths)
+    }
     await supabaseAdmin.from('photos').delete().eq('album_id', album_id)
     await supabaseAdmin.from('responsible_parents').delete().eq('album_id', album_id)
     await supabaseAdmin.from('albums').delete().eq('id', album_id)
