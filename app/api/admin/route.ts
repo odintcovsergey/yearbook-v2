@@ -349,6 +349,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  // Архивировать альбом — удалить все фото из Storage, оставить данные в базе
+  if (body.action === 'archive_album') {
+    const { album_id } = body
+    const { data: photos } = await supabaseAdmin.from('photos').select('storage_path').eq('album_id', album_id)
+    if (photos && photos.length > 0) {
+      const paths = photos.map((p: any) => p.storage_path)
+      // Удаляем батчами по 100
+      for (let i = 0; i < paths.length; i += 100) {
+        await supabaseAdmin.storage.from('photos').remove(paths.slice(i, i + 100))
+      }
+    }
+    await supabaseAdmin.from('photos').delete().eq('album_id', album_id)
+    await supabaseAdmin.from('albums').update({ archived: true }).eq('id', album_id)
+    return NextResponse.json({ ok: true, deleted: photos?.length ?? 0 })
+  }
+
   // Переименовать альбом
   if (body.action === 'rename_album') {
     await supabaseAdmin.from('albums').update({ title: body.title }).eq('id', body.album_id)

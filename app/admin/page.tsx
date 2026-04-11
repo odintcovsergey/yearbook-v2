@@ -555,6 +555,14 @@ function OverviewTab({ stats, album, notify, onRefresh }: any) {
   const isOverdue = daysLeft !== null && daysLeft < 0
   const isSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3
 
+  const archiveAlbum = async () => {
+    if (!confirm(`Архивировать альбом «${album.title}»?\n\nВсе фотографии будут удалены из хранилища. Данные о выборе, тексты и контакты останутся. CSV экспорт сохранит имена файлов.\n\nЭто действие нельзя отменить.`)) return
+    const res = await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'archive_album', album_id: album.id }) })
+    const data = await res.json()
+    if (data.ok) { notify(`Архивировано! Удалено ${data.deleted} фото из хранилища.`); onRefresh() }
+    else notify(data.error || 'Ошибка', 'err')
+  }
+
   const exportCsv = async () => {
     const res = await api(`/api/admin?action=export&album_id=${album.id}`)
     if (!res.ok) { notify('Ошибка экспорта', 'err'); return }
@@ -630,6 +638,9 @@ function OverviewTab({ stats, album, notify, onRefresh }: any) {
           className="btn-secondary"
         >
           🔗 Скопировать ссылку класса
+        </button>
+        <button onClick={archiveAlbum} className="btn-secondary text-amber-600 border-amber-200 hover:bg-amber-50">
+          🗄 Архивировать (удалить фото)
         </button>
       </div>
     </div>
