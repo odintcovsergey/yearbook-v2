@@ -568,7 +568,7 @@ function PhotoGrid({ photos, selected, limit, onLightbox, onToggle, small = fals
         {pagePhotos.map((photo, idx) => {
           const isSelected = selected.includes(photo.id)
           const isLocked = (photo.locked ?? false) && !isSelected
-          const canSelect = !isLocked && (isSelected || selected.length < limit)
+          const canSelect = !isLocked && (isSelected || selected.length < limit || limit === 1)
           return (
             <PhotoThumb
               key={photo.id}
