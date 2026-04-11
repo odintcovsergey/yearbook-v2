@@ -152,7 +152,7 @@ export default function AdminPage() {
             {loading && <div className="text-center py-12 text-gray-400 text-sm">Загрузка...</div>}
 
             {!loading && tab === 'overview' && stats && (
-              <OverviewTab stats={stats} album={selectedAlbum} notify={notify} onRefresh={() => loadAlbumData(selectedAlbum)} />
+              <OverviewTab stats={stats} album={selectedAlbum} children={children} notify={notify} onRefresh={() => loadAlbumData(selectedAlbum)} />
             )}
             {!loading && tab === 'children' && (
               <ChildrenTab children={children} album={selectedAlbum} notify={notify} onRefresh={() => loadAlbumData(selectedAlbum)} />
@@ -525,7 +525,8 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
 }
 // ─── Обзор ────────────────────────────────────────────────────────────────────
 
-function OverviewTab({ stats, album, notify, onRefresh }: any) {
+function OverviewTab({ stats, album, children, notify, onRefresh }: any) {
+  const [showReminder, setShowReminder] = useState(false)
   const pct = stats.total ? Math.round(stats.submitted / stats.total * 100) : 0
 
   // Дедлайн
@@ -642,7 +643,52 @@ function OverviewTab({ stats, album, notify, onRefresh }: any) {
         <button onClick={archiveAlbum} className="btn-secondary text-amber-600 border-amber-200 hover:bg-amber-50">
           🗄 Архивировать (удалить фото)
         </button>
+        {(stats.in_progress > 0 || stats.not_started > 0) && (
+          <button onClick={() => setShowReminder(true)} className="btn-secondary text-blue-600 border-blue-200 hover:bg-blue-50">
+            🔔 Напоминание ({stats.in_progress + stats.not_started} чел.)
+          </button>
+        )}
       </div>
+
+      {showReminder && (() => {
+        const unfinished = (children ?? []).filter((c: any) => !c.submitted_at)
+        const lines = unfinished.map((c: any) =>
+          `${c.full_name} — ${location.origin}/${c.access_token}`
+        ).join('
+')
+        const text = `Уважаемые родители, напоминаем о необходимости выбрать фотографии для альбома «${album.title}».
+
+Пожалуйста, перейдите по своей ссылке и подтвердите выбор:
+
+${lines}`
+        return (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowReminder(false)}>
+            <div className="card p-6 w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-medium text-gray-800">Напоминание — {unfinished.length} незавершивших</h3>
+                <button onClick={() => setShowReminder(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+              </div>
+              <p className="text-sm text-gray-500 mb-3">Скопируйте текст и отправьте в общий чат класса:</p>
+              <textarea
+                className="input resize-none flex-1 font-mono text-xs"
+                style={{minHeight: '300px'}}
+                value={text}
+                readOnly
+                onClick={e => (e.target as HTMLTextAreaElement).select()}
+              />
+              <div className="flex gap-3 mt-4">
+                <button
+                  onClick={() => { navigator.clipboard.writeText(text); notify('Текст скопирован!') }}
+                  className="btn-primary flex-1"
+                >
+                  📋 Скопировать текст
+                </button>
+                <button onClick={() => setShowReminder(false)} className="btn-secondary">Закрыть</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
