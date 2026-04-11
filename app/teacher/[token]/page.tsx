@@ -115,24 +115,26 @@ export default function TeacherPage() {
                 className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-white text-2xl">›</button>
             )}
           </div>
-          {lightbox.teacherId && (
-            <div className="px-4 py-2 flex justify-center">
-              <button
-                onClick={() => {
-                  const photo = lightbox.photos[lightbox.index]
-                  const t = teachers.find(t => t.id === lightbox.teacherId)
-                  updateLocal(lightbox.teacherId!, 'photo_id', t?.photo_id === photo.id ? null : photo.id)
-                  setLightbox(null)
-                }}
-                className={`px-10 py-3 rounded-xl text-sm font-medium
-                  ${teachers.find(t => t.id === lightbox.teacherId)?.photo_id === lightbox.photos[lightbox.index]?.id
-                    ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'}`}
-              >
-                {teachers.find(t => t.id === lightbox.teacherId)?.photo_id === lightbox.photos[lightbox.index]?.id
-                  ? '✕ Отменить' : '✓ Выбрать это фото'}
-              </button>
-            </div>
-          )}
+          {lightbox.teacherId && (() => {
+            const photo = lightbox.photos[lightbox.index]
+            const t = teachers.find(t => t.id === lightbox.teacherId)
+            const isSelected = t?.photo_id === photo?.id
+            const usedByOther = teachers.some(t => t.id !== lightbox.teacherId && t.photo_id === photo?.id)
+            return (
+              <div className="px-4 py-2 flex justify-center">
+                {usedByOther ? (
+                  <div className="px-10 py-3 rounded-xl text-sm font-medium bg-gray-500 text-white opacity-60">🔒 Выбрано другим учителем</div>
+                ) : (
+                  <button
+                    onClick={() => { updateLocal(lightbox.teacherId!, 'photo_id', isSelected ? null : photo.id); setLightbox(null) }}
+                    className={`px-10 py-3 rounded-xl text-sm font-medium ${isSelected ? 'bg-green-500 text-white' : 'bg-blue-500 text-white'}`}
+                  >
+                    {isSelected ? '✓ Выбрано' : '✓ Выбрать это фото'}
+                  </button>
+                )}
+              </div>
+            )
+          })()}
           <div className="flex gap-2 px-4 pb-4 overflow-x-auto justify-center flex-wrap">
             {lightbox.photos.map((p, i) => (
               <button key={p.id} onClick={() => setLightbox(prev => prev ? {...prev, index: i} : null)}
