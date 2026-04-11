@@ -264,7 +264,7 @@ export default function ParentPage() {
               </div>
             )}
             {portraitPage && (
-              <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 mb-4 text-sm text-green-700">
+              <div className="sticky top-16 z-10 bg-green-50 border border-green-100 rounded-xl px-4 py-3 mb-4 text-sm text-green-700 shadow-sm">
                 ✅ Отлично! Портрет выбран — можно двигаться дальше
               </div>
             )}
@@ -363,7 +363,7 @@ export default function ParentPage() {
               </div>
             )}
             {groupPhotos.length >= groupMin && groupPhotos.length <= groupMax && (
-              <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-3 mb-4 text-sm text-green-700">
+              <div className="sticky top-16 z-10 bg-green-50 border border-green-100 rounded-xl px-4 py-3 mb-4 text-sm text-green-700 shadow-sm">
                 ✅ Отлично! Все фото выбраны — можно двигаться дальше
               </div>
             )}
@@ -422,11 +422,47 @@ export default function ParentPage() {
 
         {step === 6 && !done && (
           <StepCard title="Проверьте выбор" subtitle="После подтверждения изменить нельзя">
-            <div className="space-y-3 mb-6">
-              <SummaryRow label="Портрет" value={portraits.find(p => p.id === portraitPage)?.filename ?? '—'} />
-              {coverMode !== 'none' && <SummaryRow label="Обложка" value={coverOption === 'none' ? 'Без портрета' : coverOption === 'same' ? 'Тот же (бесплатно)' : `Другой (+${coverPrice} ₽)`} />}
-              <SummaryRow label="Текст" value={studentText || '(не заполнен)'} multiline />
-              <SummaryRow label="Фото с друзьями" value={groupPhotos.map(id => groups.find(g => g.id === id)?.filename).filter(Boolean).join(', ') || '—'} />
+            <div className="space-y-5 mb-6">
+              {/* Портрет */}
+              <div className="py-2 border-b border-gray-100">
+                <span className="text-xs text-gray-400 block mb-2">Портрет</span>
+                {portraitPage ? (() => { const p = portraits.find(ph => ph.id === portraitPage); return p ? (
+                  <img src={p.thumb || p.url} alt="" className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-blue-200"
+                    onClick={() => setLightbox({ photos: portraits, index: portraits.indexOf(p), onSelect: undefined })} />
+                ) : <span className="text-sm text-gray-400">—</span> })() : <span className="text-sm text-gray-400">—</span>}
+              </div>
+              {/* Обложка */}
+              {coverMode !== 'none' && (
+                <div className="py-2 border-b border-gray-100">
+                  <span className="text-xs text-gray-400 block mb-2">Обложка</span>
+                  {coverOption === 'none' && <span className="text-sm text-gray-700">Без портрета</span>}
+                  {coverOption === 'same' && <span className="text-sm text-gray-700">Тот же портрет (бесплатно)</span>}
+                  {coverOption === 'other' && (
+                    <div className="flex items-center gap-3">
+                      {portraitCover ? (() => { const p = portraits.find(ph => ph.id === portraitCover); return p ? (
+                        <img src={p.thumb || p.url} alt="" className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-blue-200"
+                          onClick={() => setLightbox({ photos: portraits, index: portraits.indexOf(p), onSelect: undefined })} />
+                      ) : null })() : null}
+                      <span className="text-sm text-green-600 font-medium">+{coverPrice} ₽</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Фото с друзьями */}
+              {groupEnabled && (
+                <div className="py-2 border-b border-gray-100">
+                  <span className="text-xs text-gray-400 block mb-2">Фото с друзьями</span>
+                  <div className="flex gap-2 flex-wrap">
+                    {groupPhotos.map(id => { const p = groups.find(g => g.id === id); return p ? (
+                      <img key={id} src={p.thumb || p.url} alt="" className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-blue-200"
+                        onClick={() => setLightbox({ photos: groups, index: groups.indexOf(p), onSelect: undefined })} />
+                    ) : null })}
+                    {groupPhotos.length === 0 && <span className="text-sm text-gray-400">—</span>}
+                  </div>
+                </div>
+              )}
+              {/* Текст */}
+              {textEnabled && <SummaryRow label="Текст" value={studentText || '(не заполнен)'} multiline />}
               <SummaryRow label="Телефон" value={phone} />
             </div>
             {submitError && <div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-sm mb-4">{submitError}</div>}
