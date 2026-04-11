@@ -694,7 +694,7 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
           })
           const data = await res.json()
           if (res.ok) added++
-          else { skipped++; console.log('skip:', row.full_name, data.error) }
+          else { skipped++; if (skipped === 1) alert('Ошибка импорта: ' + data.error) }
         }
         notify(skipped > 0 ? `Импортировано: ${added}, пропущено: ${skipped} (дубликаты или ошибки)` : `Импортировано: ${added} учеников`)
         onRefresh()
