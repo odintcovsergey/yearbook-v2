@@ -271,9 +271,13 @@ export default function ParentPage() {
             />
             <div className="flex items-center justify-between mt-4">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
-              <button className="btn-primary" onClick={goNext} disabled={!portraitPage}>Далее →</button>
             </div>
           </StepCard>
+        )}
+        {step === 1 && (
+          <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3 flex justify-end">
+            <button className="btn-primary px-8" onClick={goNext} disabled={!portraitPage}>Далее →</button>
+          </div>
         )}
 
         {step === 2 && coverMode !== 'none' && (
@@ -349,9 +353,13 @@ export default function ParentPage() {
             />
             <div className="flex items-center justify-between mt-4">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
-              <button className="btn-primary" onClick={goNext} disabled={groupPhotos.length < groupMin || groupPhotos.length > groupMax}>Далее →</button>
             </div>
           </StepCard>
+        )}
+        {step === 4 && (
+          <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3 flex justify-end">
+            <button className="btn-primary px-8" onClick={goNext} disabled={groupPhotos.length < groupMin || groupPhotos.length > groupMax}>Далее →</button>
+          </div>
         )}
 
         {step === 5 && (
@@ -482,14 +490,15 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
         ) : null}
       </div>
 
-      <div className="flex gap-2 px-4 pb-4 overflow-x-auto">
+      <div className="flex gap-2 px-4 pb-4 overflow-x-auto scroll-smooth" style={{scrollSnapType:'x mandatory', WebkitOverflowScrolling:'touch'}}>
         {photos.map((p, i) => (
           <button key={p.id} onClick={() => onNavigate(i)}
+            style={{scrollSnapAlign:'start'}}
             className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all
               ${i === index ? 'border-blue-400' : 'border-transparent opacity-50 hover:opacity-100'}
               ${p.locked && !selected.includes(p.id) ? 'opacity-20' : ''}`}
           >
-            <img src={p.url} alt="" className="w-full h-full object-cover" onError={e => { (e.target as HTMLElement).closest('.photo-thumb')?.classList.add('hidden') }} />
+            <img src={p.url} alt="" className="w-full h-full object-cover" />
           </button>
         ))}
       </div>
@@ -536,6 +545,8 @@ const PhotoThumb = memo(function PhotoThumb({ photo, isSelected, isLocked, canSe
   )
 })
 
+const PAGE_SIZE = 40
+
 function PhotoGrid({ photos, selected, limit, onLightbox, onToggle, small = false }: {
   photos: Photo[]
   selected: string[]
@@ -544,27 +555,49 @@ function PhotoGrid({ photos, selected, limit, onLightbox, onToggle, small = fals
   onToggle?: (id: string) => void
   small?: boolean
 }) {
+  const [page, setPage] = useState(0)
+  const totalPages = Math.ceil(photos.length / PAGE_SIZE)
+  const start = page * PAGE_SIZE
+  const pagePhotos = photos.slice(start, start + PAGE_SIZE)
+
   if (!photos.length) return <p className="text-gray-400 text-sm text-center py-8">Нет доступных фотографий</p>
   const cols = small ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
   return (
-    <div className={`grid ${cols} gap-3`}>
-      {photos.map((photo, idx) => {
-        const isSelected = selected.includes(photo.id)
-        const isLocked = (photo.locked ?? false) && !isSelected
-        const canSelect = !isLocked && (isSelected || selected.length < limit)
-        return (
-          <PhotoThumb
-            key={photo.id}
-            photo={photo}
-            isSelected={isSelected}
-            isLocked={isLocked}
-            canSelect={canSelect}
-            selIndex={selected.indexOf(photo.id)}
-            onLightbox={() => onLightbox(idx)}
-            onToggle={onToggle ? () => onToggle(photo.id) : undefined}
-          />
-        )
-      })}
+    <div>
+      <div className={`grid ${cols} gap-3`}>
+        {pagePhotos.map((photo, idx) => {
+          const isSelected = selected.includes(photo.id)
+          const isLocked = (photo.locked ?? false) && !isSelected
+          const canSelect = !isLocked && (isSelected || selected.length < limit)
+          return (
+            <PhotoThumb
+              key={photo.id}
+              photo={photo}
+              isSelected={isSelected}
+              isLocked={isLocked}
+              canSelect={canSelect}
+              selIndex={selected.indexOf(photo.id)}
+              onLightbox={() => onLightbox(start + idx)}
+              onToggle={onToggle ? () => onToggle(photo.id) : undefined}
+            />
+          )
+        })}
+      </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 mt-5">
+          <button onClick={() => { setPage(p => Math.max(0, p - 1)); window.scrollTo(0, 0) }}
+            disabled={page === 0}
+            className="px-4 py-2 rounded-xl text-sm font-medium border border-gray-200 disabled:opacity-40 hover:bg-gray-50">
+            ← Назад
+          </button>
+          <span className="text-sm text-gray-500">{page + 1} / {totalPages}</span>
+          <button onClick={() => { setPage(p => Math.min(totalPages - 1, p + 1)); window.scrollTo(0, 0) }}
+            disabled={page === totalPages - 1}
+            className="px-4 py-2 rounded-xl text-sm font-medium border border-gray-200 disabled:opacity-40 hover:bg-gray-50">
+            Вперёд →
+          </button>
+        </div>
+      )}
     </div>
   )
 }
