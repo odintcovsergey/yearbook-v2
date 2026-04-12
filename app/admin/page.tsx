@@ -508,32 +508,32 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
                         onClick={e => e.stopPropagation()}
                       />
                     ) : (
-                      <span className="font-medium text-gray-900 text-[15px]">{a.title}</span>
+                      <span className="font-medium text-gray-900 text-base">{a.title}</span>
                     )}
-                    {allDone && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-600">✓ Все готовы</span>}
-                    {!allDone && s.total > 0 && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-600">{s.total - s.submitted} не завершили</span>}
+                    {allDone && <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">✓ Все готовы</span>}
+                    {!allDone && s.total > 0 && <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">{s.total - s.submitted} не завершили</span>}
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    <span className="text-xs text-gray-400">{a.classes.join(', ')}{a.city ? ` · ${a.city}` : ''}{a.year ? ` · ${a.year}` : ''}</span>
+                    <span className="text-sm text-gray-500">{a.classes.join(', ')}{a.city ? ` · ${a.city}` : ''}{a.year ? ` · ${a.year}` : ''}</span>
                     {deadline && (
-                      <span className={`text-xs ${deadlineOverdue ? 'text-red-400' : deadlineSoon ? 'text-amber-500' : 'text-gray-300'}`}>
-                        · {deadlineOverdue ? `просрочен ${Math.abs(daysLeft!)} дн.` : daysLeft === 0 ? 'сегодня дедлайн' : daysLeft === 1 ? 'завтра дедлайн' : `${deadline.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`}
+                      <span className={`text-sm font-medium ${deadlineOverdue ? 'text-red-500' : deadlineSoon ? 'text-amber-600' : 'text-gray-400'}`}>
+                        · {deadlineOverdue ? `просрочен ${Math.abs(daysLeft!)} дн.` : daysLeft === 0 ? 'сегодня дедлайн' : daysLeft === 1 ? 'завтра дедлайн' : `до ${deadline.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`}
                       </span>
                     )}
                     {teachers && (() => {
                       const done = teachers.total > 0 && teachers.done === teachers.total
                       const none = teachers.done === 0
-                      return <span className={`text-xs ${done ? 'text-green-400' : none ? 'text-amber-400' : 'text-blue-400'}`}>
+                      return <span className={`text-sm font-medium ${done ? 'text-green-600' : none ? 'text-amber-600' : 'text-blue-600'}`}>
                         · {done ? 'учителя ✓' : none ? `учителя ⚠` : `учителя ${teachers.done}/${teachers.total}`}
                       </span>
                     })()}
                   </div>
                   {s.total > 0 && (
                     <div className="mt-2.5 flex items-center gap-3">
-                      <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                         <div className={`h-full rounded-full transition-all ${allDone ? 'bg-green-400' : 'bg-blue-400'}`} style={{ width: `${pct}%` }} />
                       </div>
-                      <span className={`text-xs font-medium tabular-nums ${allDone ? 'text-green-500' : 'text-blue-500'}`}>{pct}%</span>
+                      <span className={`text-sm font-semibold tabular-nums ${allDone ? 'text-green-600' : 'text-blue-600'}`}>{pct}%</span>
                     </div>
                   )}
                 </div>
