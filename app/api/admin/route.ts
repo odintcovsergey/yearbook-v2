@@ -302,8 +302,11 @@ export async function POST(req: NextRequest) {
     const { data: affectedSelections } = await supabaseAdmin
       .from('selections').select('child_id').eq('photo_id', photo_id)
     const affectedChildIds = Array.from(new Set((affectedSelections ?? []).map((s: any) => s.child_id)))
-    // Удалить фото из хранилища и базы
-    await supabaseAdmin.storage.from('photos').remove([storage_path])
+    // Удалить фото и миниатюру из хранилища
+    const { data: photoData } = await supabaseAdmin.from('photos').select('thumb_path').eq('id', photo_id).single()
+    const pathsToDelete = [storage_path]
+    if ((photoData as any)?.thumb_path) pathsToDelete.push((photoData as any).thumb_path)
+    await supabaseAdmin.storage.from('photos').remove(pathsToDelete)
     await supabaseAdmin.from('selections').delete().eq('photo_id', photo_id)
     await supabaseAdmin.from('photo_teachers').delete().eq('photo_id', photo_id)
     await supabaseAdmin.from('photo_children').delete().eq('photo_id', photo_id)
