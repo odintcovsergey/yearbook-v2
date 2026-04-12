@@ -413,8 +413,6 @@ export default function ParentPage() {
         )}
 
         {step === 6 && !done && (
-          <div className="max-w-4xl mx-auto w-full">
-          <div className="grid md:grid-cols-2 gap-4 items-start">
           <StepCard title="Проверьте выбор" subtitle="После подтверждения изменить нельзя">
             <div className="space-y-5 mb-6">
               {/* Портрет */}
@@ -465,36 +463,6 @@ export default function ParentPage() {
               <button className="btn-primary min-w-36" onClick={handleSubmit} disabled={saving}>{saving ? <span className="flex items-center gap-2 justify-center"><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block"/>Сохраняю...</span> : 'Подтвердить ✓'}</button>
             </div>
           </StepCard>
-
-          {/* Предпросмотр страницы */}
-          <div className="card p-4 border-2 border-blue-400">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">Предпросмотр страницы</span>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-3">
-              <p className="text-center text-xs text-gray-400 mb-3">{albumTitle}</p>
-              <div className="flex gap-3 items-start">
-                {portraitPage && (() => { const p = portraits.find(ph => ph.id === portraitPage); return p ? (
-                  <img src={p.thumb || p.url} alt="" className="w-16 object-cover rounded-lg flex-shrink-0" style={{aspectRatio:'3/4'}} />
-                ) : <div className="w-16 h-20 bg-gray-200 rounded-lg flex-shrink-0" /> })()}
-                {!portraitPage && <div className="w-16 h-20 bg-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center"><span className="text-xs text-gray-400">фото</span></div>}
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-800 mb-1">{childName}</p>
-                  {studentText && <p className="text-xs text-gray-500 italic mb-2 line-clamp-2">"{studentText}"</p>}
-                  {groupPhotos.length > 0 && (
-                    <div className="flex gap-1 flex-wrap">
-                      {groupPhotos.slice(0, 4).map(id => { const p = groups.find(g => g.id === id); return p ? (
-                        <img key={id} src={p.thumb || p.url} alt="" className="w-10 h-10 object-cover rounded" />
-                      ) : null })}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <p className="text-center text-xs text-gray-300 mt-3 border-t border-dashed border-gray-200 pt-2">Примерный макет · реальный вид зависит от вёрстки</p>
-            </div>
-          </div>
-          </div>
-          </div>
         )}
 
         {done && (
