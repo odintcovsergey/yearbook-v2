@@ -879,29 +879,21 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
 const UPLOAD_CONCURRENCY = 5 // сколько файлов загружать параллельно
 
 async function uploadFiles(files: File[], type: string, albumId: string, onProgress: (done: number) => void) {
-  const { createClient } = await import('@supabase/supabase-js')
-  const imageCompression = (await import('browser-image-compression')).default
-  const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
-
   let done = 0
   const queue = [...files]
 
   const worker = async () => {
     while (queue.length > 0) {
       const file = queue.shift()!
-      let compressed = file
-      try {
-        compressed = await imageCompression(file, { maxSizeMB: 1.5, maxWidthOrHeight: 2048, useWebWorker: true })
-      } catch (e) {}
-      const path = `${albumId}/${type}/${Date.now()}_${file.name}`
-      const { error } = await sb.storage.from('photos').upload(path, compressed, { upsert: false })
-      if (!error) {
-        await fetch('/api/admin/register-photo', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret() },
-          body: JSON.stringify({ album_id: albumId, filename: file.name, storage_path: path, type }),
-        })
-      }
+      const form = new FormData()
+      form.append('file', file)
+      form.append('type', type)
+      form.append('album_id', albumId)
+      await fetch('/api/admin/upload-photo', {
+        method: 'POST',
+        headers: { 'x-admin-secret': secret() },
+        body: form,
+      })
       done++
       onProgress(done)
     }

@@ -17,8 +17,17 @@ export const supabase = createClient(
 )
 
 export function getPhotoUrl(storagePath: string, thumb = false): string {
+  if (!storagePath) return ''
   const base = supabaseAdmin.storage.from('photos').getPublicUrl(storagePath).data.publicUrl
   if (!thumb) return base
-  // Supabase image transformation — thumbnail 400px wide
+  // Если есть отдельная миниатюра (новые WebP фото) — используем её
+  // Иначе fallback на Supabase трансформацию
   return base + '?width=400&quality=70'
+}
+
+export function getThumbUrl(storagePath: string, thumbPath: string | null): string {
+  if (thumbPath) {
+    return supabaseAdmin.storage.from('photos').getPublicUrl(thumbPath).data.publicUrl
+  }
+  return getPhotoUrl(storagePath, true)
 }

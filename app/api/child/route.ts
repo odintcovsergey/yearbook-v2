@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin, getPhotoUrl } from '@/lib/supabase'
+import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
 
   const { data: allPortraits } = await supabaseAdmin
     .from('photos')
-    .select('id, filename, storage_path')
+    .select('id, filename, storage_path, thumb_path')
     .eq('album_id', child.album_id)
     .eq('type', 'portrait')
 
@@ -51,13 +51,13 @@ export async function GET(req: NextRequest) {
   const portraits = (allPortraits ?? []).map((p: any) => ({
     ...p,
     url: getPhotoUrl(p.storage_path),
-    thumb: getPhotoUrl(p.storage_path, true),
+    thumb: getThumbUrl(p.storage_path, (p as any).thumb_path ?? null),
     locked: portraitLockedByOther.has(p.id),
   }))
 
   const { data: groupPhotos } = await supabaseAdmin
     .from('photos')
-    .select('id, filename, storage_path')
+    .select('id, filename, storage_path, thumb_path')
     .eq('album_id', child.album_id)
     .eq('type', 'group')
 
@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
   const groups = (groupPhotos ?? []).map((p: any) => ({
     ...p,
     url: getPhotoUrl(p.storage_path),
-    thumb: getPhotoUrl(p.storage_path, true),
+    thumb: getThumbUrl(p.storage_path, (p as any).thumb_path ?? null),
     locked: album?.group_exclusive !== false && groupLockedByOther.has(p.id),
   }))
 
