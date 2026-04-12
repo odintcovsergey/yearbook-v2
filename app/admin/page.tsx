@@ -523,6 +523,19 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
                     </div>
                   )}
                   {s.total === 0 && <p className="text-xs text-gray-300 mt-2">Нет учеников</p>}
+                  {(() => {
+                    const t = (a as any).teachers
+                    if (!t) return null
+                    const done = t.total > 0 && t.done === t.total
+                    const none = t.done === 0
+                    return (
+                      <div className="mt-1.5">
+                        <span className={`text-xs ${done ? 'text-green-500' : none ? 'text-amber-500' : 'text-blue-500'}`}>
+                          {done ? '✓ Учителя заполнены' : none ? `⚠ Учителя не заполнены (${t.total})` : `Учителя: ${t.done} из ${t.total}`}
+                        </span>
+                      </div>
+                    )
+                  })()}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button onClick={() => { setEditingTitleId(a.id); setEditingTitle(a.title) }} className="text-gray-400 hover:text-gray-600 text-xs hover:underline" title="Переименовать">✏️</button>

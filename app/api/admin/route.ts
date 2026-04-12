@@ -28,10 +28,11 @@ export async function GET(req: NextRequest) {
 
   // Список альбомов со статистикой (один запрос)
   if (action === 'albums_with_stats') {
-    const [albumsRes, childrenRes, teacherTokenRes] = await Promise.all([
+    const [albumsRes, childrenRes, teacherTokenRes, teachersRes] = await Promise.all([
       supabaseAdmin.from('albums').select('*').order('created_at', { ascending: false }),
       supabaseAdmin.from('children').select('album_id, submitted_at, started_at'),
       supabaseAdmin.from('responsible_parents').select('album_id, access_token'),
+      supabaseAdmin.from('teachers').select('album_id, submitted_at'),
     ])
     const albums = albumsRes.data ?? []
     const children = childrenRes.data ?? []
@@ -44,10 +45,17 @@ export async function GET(req: NextRequest) {
       if (c.submitted_at) statsMap[c.album_id].submitted++
       else if (c.started_at) statsMap[c.album_id].in_progress++
     }
+    const teacherMap: Record<string, { total: number; done: number }> = {}
+    for (const t of teachersRes.data ?? []) {
+      if (!teacherMap[t.album_id]) teacherMap[t.album_id] = { total: 0, done: 0 }
+      teacherMap[t.album_id].total++
+      if (t.submitted_at) teacherMap[t.album_id].done++
+    }
     return NextResponse.json(albums.map(a => ({
       ...a,
       stats: statsMap[a.id] ?? { total: 0, submitted: 0, in_progress: 0 },
       teacher_token: tokenMap[a.id] ?? null,
+      teachers: teacherMap[a.id] ?? null,
     })))
   }
 
