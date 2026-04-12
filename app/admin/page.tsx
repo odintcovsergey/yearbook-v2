@@ -8,7 +8,7 @@ const secret = () => typeof window !== 'undefined' ? localStorage.getItem('admin
 const api = (path: string, opts?: RequestInit) =>
   fetch(path, { ...opts, headers: { 'x-admin-secret': secret(), 'Content-Type': 'application/json', ...opts?.headers } })
 
-type Tab = 'overview' | 'children' | 'upload' | 'import' | 'surcharges' | 'contacts' | 'teachers' | 'templates'
+type Tab = 'overview' | 'children' | 'upload' | 'import' | 'surcharges' | 'contacts' | 'teachers'
 type Album = { id: string; title: string; classes: string[]; cover_mode: string; cover_price: number; deadline: string | null; city: string | null; year: number | null; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number; stats?: { total: number; submitted: number; in_progress: number } }
 type Template = { id: string; title: string; cover_mode: string; cover_price: number; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number }
 type Stats = { total: number; submitted: number; in_progress: number; not_started: number; teachers_total: number; teachers_done: number; surcharge_total: number; surcharge_count: number }
@@ -136,7 +136,7 @@ export default function AdminPage() {
                 { id: 'surcharges', label: '💰 Доплаты' },
                 { id: 'contacts', label: '📞 Контакты' },
                 { id: 'teachers', label: '🎓 Учителя' },
-                { id: 'templates', label: '📐 Шаблоны' },
+
               ] as { id: Tab; label: string }[]).map(t => (
                 <button
                   key={t.id}
@@ -172,9 +172,7 @@ export default function AdminPage() {
             {!loading && tab === 'teachers' && (
               <TeachersTab album={selectedAlbum} notify={notify} />
             )}
-            {tab === 'templates' && (
-              <TemplatesTab notify={notify} />
-            )}
+
           </>
         )}
       </div>
@@ -195,6 +193,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
   const [sortBy, setSortBy] = useState<'created' | 'deadline' | 'progress'>('created')
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false)
 
   const deleteAlbum = async (id: string, title: string) => {
     if (!confirm(`Удалить альбом «${title}»?
@@ -288,10 +287,27 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-medium text-gray-800">Альбомы</h2>
-        <button onClick={() => { setCreating(!creating); setSelectedTemplate(''); setForm(emptyForm) }} className="btn-primary text-sm">
-          + Новый альбом
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowTemplatesModal(true)} className="btn-secondary text-sm">
+            📐 Шаблоны
+          </button>
+          <button onClick={() => { setCreating(!creating); setSelectedTemplate(''); setForm(emptyForm) }} className="btn-primary text-sm">
+            + Новый альбом
+          </button>
+        </div>
       </div>
+
+      {showTemplatesModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowTemplatesModal(false)}>
+          <div className="card p-6 w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-medium text-gray-800">Шаблоны альбомов</h3>
+              <button onClick={() => setShowTemplatesModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+            </div>
+            <TemplatesTab notify={notify} />
+          </div>
+        </div>
+      )}
 
       {creating && (
         <div className="card p-5 mb-6 space-y-5">
