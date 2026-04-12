@@ -20,6 +20,7 @@ export default function ParentPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [submitError, setSubmitError] = useState('')
+  const [alreadySubmitted, setAlreadySubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
   const [done, setDone] = useState(false)
 
@@ -78,7 +79,7 @@ export default function ParentPage() {
         const gr = ex.selections.filter((s: any) => s.selection_type === 'group').map((s: any) => s.photo_id)
         if (gr.length) setGroupPhotos(gr)
 
-        if (data.child.submitted_at) setDone(true)
+        if (data.child.submitted_at) { setDone(true); setAlreadySubmitted(true) }
         setLoading(false)
 
         if (!data.child.submitted_at) {
@@ -206,6 +207,17 @@ export default function ParentPage() {
 
   if (loading) return <LoadingScreen />
   if (error && !done) return <ErrorScreen message={error} />
+  if (alreadySubmitted) return (
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-gray-50 flex items-center justify-center p-4">
+      <div className="card p-8 text-center max-w-sm w-full">
+        <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+        <p className="text-xs text-gray-400 mb-1">{albumTitle}</p>
+        <h2 className="text-xl font-medium text-gray-800 mb-2">Выбор уже сделан</h2>
+        <p className="text-gray-500 text-sm mb-4">Фотографии для <strong>{childName}</strong> уже выбраны и сохранены.</p>
+        <p className="text-gray-400 text-sm">Если нужно внести изменения — обратитесь к вашему менеджеру.</p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-gray-50">
@@ -465,11 +477,19 @@ export default function ParentPage() {
           </StepCard>
         )}
 
-        {done && (
+        {done && !alreadySubmitted && (
           <div className="card p-8 text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
             <h2 className="text-xl font-medium text-gray-800 mb-2">Спасибо!</h2>
             <p className="text-gray-500 text-sm">Выбор для <strong>{childName}</strong> сохранён.<br />Сообщим когда альбом будет готов.</p>
+          </div>
+        )}
+        {done && alreadySubmitted && (
+          <div className="card p-8 text-center max-w-sm mx-auto">
+            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+            <h2 className="text-xl font-medium text-gray-800 mb-2">Выбор уже сделан</h2>
+            <p className="text-gray-500 text-sm mb-4">Фотографии для <strong>{childName}</strong> уже выбраны и сохранены.</p>
+            <p className="text-gray-400 text-sm">Если нужно внести изменения — обратитесь к вашему менеджеру.</p>
           </div>
         )}
       </div>
