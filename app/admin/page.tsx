@@ -727,6 +727,8 @@ function MiniStat({ label, value, accent }: any) {
 function ChildrenTab({ children, album, notify, onRefresh }: any) {
   const [newName, setNewName] = useState(''); const [newClass, setNewClass] = useState('')
   const [filter, setFilter] = useState('')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkLoading, setBulkLoading] = useState(false)
 
   const addChild = async () => {
     if (!newName || !newClass) return
@@ -825,10 +827,58 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
 
       <input className="input bg-white" placeholder="Поиск по имени или классу..." value={filter} onChange={e => setFilter(e.target.value)} />
 
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+          <span className="text-sm text-blue-700 font-medium flex-1">Выбрано: {selected.size} учеников</span>
+          <button
+            disabled={bulkLoading}
+            onClick={async () => {
+              if (!confirm(`Сбросить выбор у ${selected.size} учеников?`)) return
+              setBulkLoading(true)
+              for (const id of Array.from(selected)) {
+                await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'reset_child', child_id: id }) })
+              }
+              setBulkLoading(false)
+              setSelected(new Set())
+              notify(`Сброшено ${selected.size} учеников`)
+              onRefresh()
+            }}
+            className="btn-secondary text-sm text-amber-600 border-amber-200 hover:bg-amber-50"
+          >
+            {bulkLoading ? 'Сбрасываю...' : 'Сбросить выбранных'}
+          </button>
+          <button
+            disabled={bulkLoading}
+            onClick={async () => {
+              if (!confirm(`Удалить ${selected.size} учеников? Это действие нельзя отменить.`)) return
+              setBulkLoading(true)
+              for (const id of Array.from(selected)) {
+                await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'delete_child', child_id: id }) })
+              }
+              setBulkLoading(false)
+              setSelected(new Set())
+              notify(`Удалено ${selected.size} учеников`)
+              onRefresh()
+            }}
+            className="btn-secondary text-sm text-red-500 border-red-200 hover:bg-red-50"
+          >
+            {bulkLoading ? 'Удаляю...' : 'Удалить выбранных'}
+          </button>
+          <button onClick={() => setSelected(new Set())} className="text-gray-400 hover:text-gray-600 text-sm">✕</button>
+        </div>
+      )}
+
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr className="text-left">
+              <th className="px-4 py-3 w-8">
+                <input type="checkbox"
+                  checked={filtered.length > 0 && filtered.every((c: Child) => selected.has(c.id))}
+                  onChange={e => setSelected(e.target.checked ? new Set(filtered.map((c: Child) => c.id)) : new Set())}
+                  className="rounded"
+                />
+              </th>
               <th className="px-4 py-3 text-xs text-gray-500 font-medium">Ученик</th>
               <th className="px-4 py-3 text-xs text-gray-500 font-medium">Класс</th>
               <th className="px-4 py-3 text-xs text-gray-500 font-medium">Статус</th>
@@ -841,7 +891,13 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map((c: Child) => (
-              <tr key={c.id} className="hover:bg-gray-50">
+              <tr key={c.id} className={`hover:bg-gray-50 ${selected.has(c.id) ? 'bg-blue-50/50' : ''}`}>
+                <td className="px-4 py-3 w-8">
+                  <input type="checkbox" checked={selected.has(c.id)}
+                    onChange={e => setSelected(prev => { const s = new Set(prev); e.target.checked ? s.add(c.id) : s.delete(c.id); return s })}
+                    className="rounded"
+                  />
+                </td>
                 <td className="px-4 py-3 font-medium text-gray-800">{c.full_name}</td>
                 <td className="px-4 py-3 text-gray-500">{c.class}</td>
                 <td className="px-4 py-3">
