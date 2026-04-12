@@ -729,6 +729,9 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
   const [filter, setFilter] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [detailChild, setDetailChild] = useState<any>(null)
+  const [detailData, setDetailData] = useState<any>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
 
   const addChild = async () => {
     if (!newName || !newClass) return
@@ -797,6 +800,16 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
   const copyLink = (token: string, name: string) => {
     navigator.clipboard.writeText(`${location.origin}/${token}`)
     notify(`Ссылка для ${name} скопирована`)
+  }
+
+  const openDetail = async (c: Child) => {
+    setDetailChild(c)
+    setDetailData(null)
+    setDetailLoading(true)
+    const res = await api(`/api/admin?action=child_details&child_id=${c.id}`)
+    const data = await res.json()
+    setDetailData(data)
+    setDetailLoading(false)
   }
 
   const filtered = children.filter((c: Child) =>
@@ -868,7 +881,8 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
         </div>
       )}
 
-      <div className="card overflow-hidden">
+      <div className="flex gap-4">
+      <div className="card overflow-hidden flex-1 min-w-0">
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr className="text-left">
@@ -891,7 +905,7 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map((c: Child) => (
-              <tr key={c.id} className={`hover:bg-gray-50 ${selected.has(c.id) ? 'bg-blue-50/50' : ''}`}>
+              <tr key={c.id} onClick={() => openDetail(c)} className={`hover:bg-gray-50 cursor-pointer ${selected.has(c.id) ? 'bg-blue-50/50' : ''} ${detailChild?.id === c.id ? 'bg-blue-50 border-l-2 border-blue-400' : ''}`}>
                 <td className="px-4 py-3 w-8">
                   <input type="checkbox" checked={selected.has(c.id)}
                     onChange={e => setSelected(prev => { const s = new Set(prev); e.target.checked ? s.add(c.id) : s.delete(c.id); return s })}
@@ -947,6 +961,67 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
         {filtered.length === 0 && (
           <p className="text-center text-gray-400 text-sm py-8">Ничего не найдено</p>
         )}
+      </div>
+
+      {/* Панель деталей */}
+      {detailChild && (
+        <div className="w-80 shrink-0 card p-4 self-start sticky top-4">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="font-medium text-gray-800 text-sm truncate">{detailChild.full_name}</h4>
+            <button onClick={() => { setDetailChild(null); setDetailData(null) }} className="text-gray-400 hover:text-gray-600 text-lg leading-none ml-2">×</button>
+          </div>
+          {detailLoading ? (
+            <p className="text-xs text-gray-400 py-4 text-center">Загрузка...</p>
+          ) : detailData ? (
+            <div className="space-y-3">
+              {/* Портрет */}
+              {detailData.selections?.filter((s: any) => s.type === 'portrait_page').map((s: any) => (
+                <div key={s.type}>
+                  <p className="text-xs text-gray-400 mb-1">Портрет</p>
+                  <img src={s.thumb || s.url} alt="" className="w-full rounded-lg object-cover aspect-square" />
+                </div>
+              ))}
+              {/* Обложка */}
+              {detailData.cover?.cover_option === 'other' && detailData.selections?.filter((s: any) => s.type === 'portrait_cover').map((s: any) => (
+                <div key={s.type}>
+                  <p className="text-xs text-gray-400 mb-1">Обложка <span className="text-green-600">+{detailData.cover.surcharge} ₽</span></p>
+                  <img src={s.thumb || s.url} alt="" className="w-full rounded-lg object-cover aspect-square" />
+                </div>
+              ))}
+              {detailData.cover?.cover_option === 'same' && <p className="text-xs text-gray-500">Обложка: тот же портрет</p>}
+              {/* Фото с друзьями */}
+              {detailData.selections?.filter((s: any) => s.type === 'group').length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-1">Фото с друзьями</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {detailData.selections.filter((s: any) => s.type === 'group').map((s: any, i: number) => (
+                      <img key={i} src={s.thumb || s.url} alt="" className="w-full rounded-lg object-cover aspect-square" />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Текст */}
+              {detailData.text && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-1">Текст</p>
+                  <p className="text-xs text-gray-700 bg-gray-50 rounded-lg p-2">{detailData.text}</p>
+                </div>
+              )}
+              {/* Контакт */}
+              {detailData.contact && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-1">Контакт</p>
+                  <p className="text-xs text-gray-700">{detailData.contact.parent_name}</p>
+                  <p className="text-xs text-gray-500">{detailData.contact.phone}</p>
+                </div>
+              )}
+              {!detailData.selections?.length && !detailData.text && !detailData.contact && (
+                <p className="text-xs text-gray-400 text-center py-2">Ученик ещё не начал выбор</p>
+              )}
+            </div>
+          ) : null}
+        </div>
+      )}
       </div>
     </div>
   )

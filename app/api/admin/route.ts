@@ -102,6 +102,35 @@ export async function GET(req: NextRequest) {
     })))
   }
 
+  // Детали одного ученика с выборами и фото
+  if (action === 'child_details') {
+    const childId = url.searchParams.get('child_id')
+    if (!childId) return NextResponse.json({ error: 'Нет child_id' }, { status: 400 })
+
+    const [selectionsRes, textRes, contactRes, coverRes] = await Promise.all([
+      supabaseAdmin.from('selections').select('photo_id, selection_type, photos(filename, storage_path, thumb_path)').eq('child_id', childId),
+      supabaseAdmin.from('student_texts').select('text').eq('child_id', childId).maybeSingle(),
+      supabaseAdmin.from('parent_contacts').select('parent_name, phone, referral').eq('child_id', childId).maybeSingle(),
+      supabaseAdmin.from('cover_selections').select('cover_option, surcharge').eq('child_id', childId).maybeSingle(),
+    ])
+
+    const selections = (selectionsRes.data ?? []).map((s: any) => ({
+      type: s.selection_type,
+      filename: s.photos?.filename ?? '',
+      url: s.photos?.storage_path ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${s.photos.storage_path}` : '',
+      thumb: s.photos?.thumb_path
+        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${s.photos.thumb_path}`
+        : s.photos?.storage_path ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${s.photos.storage_path}?width=400&quality=70` : '',
+    }))
+
+    return NextResponse.json({
+      selections,
+      text: textRes.data?.text ?? '',
+      contact: contactRes.data ?? null,
+      cover: coverRes.data ?? null,
+    })
+  }
+
   // Список учителей
   if (action === 'teachers' && albumId) {
     const { data } = await supabaseAdmin
