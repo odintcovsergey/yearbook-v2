@@ -906,7 +906,7 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
           <tbody className="divide-y divide-gray-100">
             {filtered.map((c: Child) => (
               <tr key={c.id} onClick={() => openDetail(c)} className={`hover:bg-gray-50 cursor-pointer ${selected.has(c.id) ? 'bg-blue-50/50' : ''} ${detailChild?.id === c.id ? 'bg-blue-50 border-l-2 border-blue-400' : ''}`}>
-                <td className="px-4 py-3 w-8">
+                <td className="px-4 py-3 w-8" onClick={e => e.stopPropagation()}>
                   <input type="checkbox" checked={selected.has(c.id)}
                     onChange={e => setSelected(prev => { const s = new Set(prev); e.target.checked ? s.add(c.id) : s.delete(c.id); return s })}
                     className="rounded"
@@ -932,7 +932,7 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
                     ? <span className="text-green-600 font-medium">+{c.cover.surcharge} ₽</span>
                     : <span className="text-gray-400">—</span>}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                   <button
                     onClick={() => copyLink(c.access_token, c.full_name)}
                     className="text-blue-500 hover:text-blue-700 text-xs hover:underline"
@@ -940,7 +940,7 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
                     Копировать ссылку
                   </button>
                 </td>
-                <td className="px-4 py-3 flex gap-3 items-center">
+                <td className="px-4 py-3 flex gap-3 items-center" onClick={e => e.stopPropagation()}>
                   <button
                     onClick={() => resetChild(c.id, c.full_name)}
                     className="text-amber-500 hover:text-amber-700 text-xs hover:underline"
