@@ -285,13 +285,16 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-medium text-gray-800">Альбомы</h2>
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="text-2xl font-medium text-gray-900">Альбомы</h2>
+          {albums.length > 0 && <p className="text-sm text-gray-400 mt-0.5">{albums.length} {albums.length === 1 ? 'альбом' : albums.length < 5 ? 'альбома' : 'альбомов'}</p>}
+        </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowTemplatesModal(true)} className="btn-secondary text-sm">
-            📐 Шаблоны
+          <button onClick={() => setShowTemplatesModal(true)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
+            Шаблоны
           </button>
-          <button onClick={() => { setCreating(!creating); setSelectedTemplate(''); setForm(emptyForm) }} className="btn-primary text-sm">
+          <button onClick={() => { setCreating(!creating); setSelectedTemplate(''); setForm(emptyForm) }} className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-all">
             + Новый альбом
           </button>
         </div>
@@ -447,14 +450,14 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
 
       {/* Поиск и фильтры */}
       {albums.length > 0 && (
-        <div className="flex flex-wrap gap-3 mb-4">
-          <input type="text" placeholder="🔍 Поиск по названию..." value={search} onChange={e => setSearch(e.target.value)} className="input flex-1 min-w-[200px] text-sm" />
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)} className="input text-sm w-auto">
+        <div className="flex flex-wrap gap-2 mb-4">
+          <input type="text" placeholder="Поиск по названию..." value={search} onChange={e => setSearch(e.target.value)} className="input flex-1 min-w-[200px] text-sm bg-white" />
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)} className="input text-sm w-auto bg-white">
             <option value="all">Все статусы</option>
             <option value="done">Все готовы</option>
             <option value="pending">Есть незавершённые</option>
           </select>
-          <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="input text-sm w-auto">
+          <select value={sortBy} onChange={e => setSortBy(e.target.value as any)} className="input text-sm w-auto bg-white">
             <option value="created">По дате создания</option>
             <option value="deadline">По дедлайну</option>
             <option value="progress">По % готовности</option>
@@ -463,13 +466,13 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
       )}
 
       {albums.length === 0 && (
-        <div className="card p-12 text-center text-gray-400 text-sm">Нет альбомов. Создайте первый.</div>
+        <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center text-gray-400 text-sm">Нет альбомов. Создайте первый.</div>
       )}
       {albums.length > 0 && filtered.length === 0 && (
-        <div className="card p-12 text-center text-gray-400 text-sm">Ничего не найдено. Попробуйте изменить фильтры.</div>
+        <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center text-gray-400 text-sm">Ничего не найдено.</div>
       )}
 
-      <div className="grid gap-3">
+      <div className="grid gap-2">
         {filtered.map((a: Album) => {
           const s = a.stats ?? { total: 0, submitted: 0, in_progress: 0 }
           const pct = s.total ? Math.round(s.submitted / s.total * 100) : 0
@@ -479,10 +482,17 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
           const daysLeft = deadline ? Math.ceil((deadline.getTime() - now.getTime()) / 86400000) : null
           const deadlineOverdue = daysLeft !== null && daysLeft < 0
           const deadlineSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3
+          const teachers = (a as any).teachers
 
           return (
-            <div key={a.id} className="card p-5 hover:border-blue-200 hover:shadow-md transition-all">
-              <div className="flex items-start justify-between gap-4">
+            <div key={a.id} className="bg-white rounded-2xl border border-gray-100 hover:border-gray-200 transition-all">
+              <div className="flex items-center gap-4 p-5">
+                {/* Иконка-кружок */}
+                <div className={`w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center ${allDone ? 'bg-green-50' : 'bg-blue-50'}`}>
+                  <div className={`w-5 h-1.5 rounded-full ${allDone ? 'bg-green-400' : 'bg-blue-400'}`} />
+                </div>
+
+                {/* Основная инфа */}
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onSelect(a)}>
                   <div className="flex items-center gap-2 flex-wrap">
                     {editingTitleId === a.id ? (
@@ -498,51 +508,47 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
                         onClick={e => e.stopPropagation()}
                       />
                     ) : (
-                      <p className="font-medium text-gray-800">{a.title}</p>
+                      <span className="font-medium text-gray-900 text-[15px]">{a.title}</span>
                     )}
-                    {allDone && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">✓ Все готовы</span>}
-                    {!allDone && s.total > 0 && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">{s.total - s.submitted} не завершили</span>}
+                    {allDone && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-600">✓ Все готовы</span>}
+                    {!allDone && s.total > 0 && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-600">{s.total - s.submitted} не завершили</span>}
                   </div>
-                  <div className="flex items-center gap-3 mt-1 flex-wrap">
-                    <p className="text-sm text-gray-400">{a.classes.join(', ')}{a.city ? ` · ${a.city}` : ''}{a.year ? ` · ${a.year}` : ''}</p>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <span className="text-xs text-gray-400">{a.classes.join(', ')}{a.city ? ` · ${a.city}` : ''}{a.year ? ` · ${a.year}` : ''}</span>
                     {deadline && (
-                      <span className={`text-xs font-medium ${deadlineOverdue ? 'text-red-500' : deadlineSoon ? 'text-amber-600' : 'text-gray-400'}`}>
-                        {deadlineOverdue ? `⚠ Просрочен ${Math.abs(daysLeft!)} дн. назад` : daysLeft === 0 ? '⏰ Сегодня дедлайн' : daysLeft === 1 ? '⏰ Завтра дедлайн' : `📅 ${deadline.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} · ещё ${daysLeft} дн.`}
+                      <span className={`text-xs ${deadlineOverdue ? 'text-red-400' : deadlineSoon ? 'text-amber-500' : 'text-gray-300'}`}>
+                        · {deadlineOverdue ? `просрочен ${Math.abs(daysLeft!)} дн.` : daysLeft === 0 ? 'сегодня дедлайн' : daysLeft === 1 ? 'завтра дедлайн' : `${deadline.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`}
                       </span>
                     )}
+                    {teachers && (() => {
+                      const done = teachers.total > 0 && teachers.done === teachers.total
+                      const none = teachers.done === 0
+                      return <span className={`text-xs ${done ? 'text-green-400' : none ? 'text-amber-400' : 'text-blue-400'}`}>
+                        · {done ? 'учителя ✓' : none ? `учителя ⚠` : `учителя ${teachers.done}/${teachers.total}`}
+                      </span>
+                    })()}
                   </div>
                   {s.total > 0 && (
-                    <div className="mt-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs text-gray-400">{s.submitted} из {s.total} подтвердили{s.in_progress > 0 && ` · ${s.in_progress} в процессе`}</span>
-                        <span className={`text-xs font-semibold ${allDone ? 'text-green-600' : 'text-blue-600'}`}>{pct}%</span>
+                    <div className="mt-2.5 flex items-center gap-3">
+                      <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${allDone ? 'bg-green-400' : 'bg-blue-400'}`} style={{ width: `${pct}%` }} />
                       </div>
-                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all ${allDone ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
-                      </div>
+                      <span className={`text-xs font-medium tabular-nums ${allDone ? 'text-green-500' : 'text-blue-500'}`}>{pct}%</span>
                     </div>
                   )}
-                  {s.total === 0 && <p className="text-xs text-gray-300 mt-2">Нет учеников</p>}
-                  {(() => {
-                    const t = (a as any).teachers
-                    if (!t) return null
-                    const done = t.total > 0 && t.done === t.total
-                    const none = t.done === 0
-                    return (
-                      <div className="mt-1.5">
-                        <span className={`text-xs ${done ? 'text-green-500' : none ? 'text-amber-500' : 'text-blue-500'}`}>
-                          {done ? '✓ Учителя заполнены' : none ? `⚠ Учителя не заполнены (${t.total})` : `Учителя: ${t.done} из ${t.total}`}
-                        </span>
-                      </div>
-                    )
-                  })()}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button onClick={() => { setEditingTitleId(a.id); setEditingTitle(a.title) }} className="text-gray-400 hover:text-gray-600 text-xs hover:underline" title="Переименовать">✏️</button>
-                  <button onClick={() => { navigator.clipboard.writeText(`${location.origin}/album/${a.id}`); notify('Ссылка класса скопирована') }} className="text-blue-400 hover:text-blue-600 text-xs hover:underline">Класс</button>
-                  {(a as any).teacher_token && <button onClick={() => { navigator.clipboard.writeText(`${location.origin}/teacher/${(a as any).teacher_token}`); notify('Ссылка учителей скопирована') }} className="text-purple-400 hover:text-purple-600 text-xs hover:underline">Учителя</button>}
-                  <button onClick={() => deleteAlbum(a.id, a.title)} className="text-red-400 hover:text-red-600 text-xs hover:underline">Удалить</button>
-                  <span className="text-blue-400 cursor-pointer" onClick={() => onSelect(a)}>→</span>
+
+                {/* Действия */}
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => { setEditingTitleId(a.id); setEditingTitle(a.title) }} className="p-1.5 text-gray-300 hover:text-gray-500 transition-colors rounded-lg hover:bg-gray-50" title="Переименовать">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button onClick={() => { navigator.clipboard.writeText(`${location.origin}/album/${a.id}`); notify('Ссылка класса скопирована') }} className="px-2.5 py-1 text-xs text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors">Класс</button>
+                  {(a as any).teacher_token && <button onClick={() => { navigator.clipboard.writeText(`${location.origin}/teacher/${(a as any).teacher_token}`); notify('Ссылка учителей скопирована') }} className="px-2.5 py-1 text-xs text-violet-500 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-colors">Учителя</button>}
+                  <button onClick={() => deleteAlbum(a.id, a.title)} className="px-2.5 py-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">Удалить</button>
+                  <button onClick={() => onSelect(a)} className="p-1.5 text-gray-300 hover:text-gray-600 transition-colors rounded-lg hover:bg-gray-50">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+                  </button>
                 </div>
               </div>
             </div>
