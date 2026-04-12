@@ -832,6 +832,7 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
               <th className="px-4 py-3 text-xs text-gray-500 font-medium">Ученик</th>
               <th className="px-4 py-3 text-xs text-gray-500 font-medium">Класс</th>
               <th className="px-4 py-3 text-xs text-gray-500 font-medium">Статус</th>
+              <th className="px-4 py-3 text-xs text-gray-500 font-medium">Дата</th>
               <th className="px-4 py-3 text-xs text-gray-500 font-medium">Родитель</th>
               <th className="px-4 py-3 text-xs text-gray-500 font-medium">Обложка</th>
               <th className="px-4 py-3 text-xs text-gray-500 font-medium">Ссылка</th>
@@ -849,6 +850,11 @@ function ChildrenTab({ children, album, notify, onRefresh }: any) {
                     : c.started_at
                       ? <span className="badge-amber">В процессе</span>
                       : <span className="badge-gray">Не начал</span>}
+                </td>
+                <td className="px-4 py-3 text-gray-400 text-xs">
+                  {c.submitted_at
+                    ? new Date(c.submitted_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+                    : '—'}
                 </td>
                 <td className="px-4 py-3 text-gray-500 text-xs">{c.contact?.parent_name ?? '—'}</td>
                 <td className="px-4 py-3 text-xs">

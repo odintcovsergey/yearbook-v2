@@ -460,7 +460,7 @@ export default function ParentPage() {
             {submitError && <div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-sm mb-4">{submitError}</div>}
             <div className="flex items-center justify-between">
               <button className="btn-ghost" onClick={goPrev}>← Изменить</button>
-              <button className="btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? 'Сохраняю...' : 'Подтвердить ✓'}</button>
+              <button className="btn-primary min-w-36" onClick={handleSubmit} disabled={saving}>{saving ? <span className="flex items-center gap-2 justify-center"><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block"/>Сохраняю...</span> : 'Подтвердить ✓'}</button>
             </div>
           </StepCard>
         )}
