@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
 
   // Детали одного ученика с выборами и фото
   if (action === 'child_details') {
-    const childId = url.searchParams.get('child_id')
+    const childId = req.nextUrl.searchParams.get('child_id')
     if (!childId) return NextResponse.json({ error: 'Нет child_id' }, { status: 400 })
 
     const [selectionsRes, textRes, contactRes, coverRes] = await Promise.all([
