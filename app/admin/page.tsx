@@ -127,22 +127,21 @@ export default function AdminPage() {
         {selectedAlbum && (
           <>
             {/* Tabs */}
-            <div className="flex gap-1 mb-6 overflow-x-auto pb-1">
+            <div className="flex gap-0 mb-6 overflow-x-auto border-b border-gray-100">
               {([
-                { id: 'overview', label: '📊 Обзор' },
-                { id: 'children', label: '👤 Ученики' },
-                { id: 'upload', label: '📤 Фото' },
-                { id: 'import', label: '📋 CSV' },
-                { id: 'surcharges', label: '💰 Доплаты' },
-                { id: 'contacts', label: '📞 Контакты' },
-                { id: 'teachers', label: '🎓 Учителя' },
-
+                { id: 'overview', label: 'Обзор' },
+                { id: 'children', label: 'Ученики' },
+                { id: 'upload', label: 'Фото' },
+                { id: 'import', label: 'CSV' },
+                { id: 'surcharges', label: 'Доплаты' },
+                { id: 'contacts', label: 'Контакты' },
+                { id: 'teachers', label: 'Учителя' },
               ] as { id: Tab; label: string }[]).map(t => (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
-                  className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors
-                    ${tab === t.id ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                  className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px
+                    ${tab === t.id ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-700'}`}
                 >
                   {t.label}
                 </button>
@@ -617,15 +616,15 @@ function OverviewTab({ stats, album, children, notify, onRefresh }: any) {
         <StatCard label="Не начали" value={stats.not_started} />
       </div>
 
-      <div className="card p-5">
-        <div className="flex items-center justify-between mb-3">
-          <span className="font-medium text-gray-700">Общий прогресс</span>
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="flex items-center justify-between mb-4">
+          <span className="font-medium text-gray-900">Общий прогресс</span>
           <span className="text-sm text-gray-400">{stats.submitted} из {stats.total} подтвердили</span>
         </div>
-        <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-          <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-500' : 'bg-gray-900'}`} style={{ width: `${pct}%` }} />
         </div>
-        <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-100">
+        <div className="grid grid-cols-3 gap-4 mt-5 pt-4 border-t border-gray-100">
           <MiniStat label="Учителя" value={`${stats.teachers_done}/${stats.teachers_total}`} />
           <MiniStat label="Доплаты" value={`${stats.surcharge_count} чел.`} />
           <MiniStat label="Сумма доплат" value={`${stats.surcharge_total} ₽`} accent />
@@ -633,8 +632,8 @@ function OverviewTab({ stats, album, children, notify, onRefresh }: any) {
       </div>
 
       {/* Дедлайн */}
-      <div className="card p-5">
-        <p className="font-medium text-gray-700 mb-3">Дедлайн</p>
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <p className="font-medium text-gray-900 mb-3">Дедлайн</p>
         <div className="flex items-center gap-3 flex-wrap">
           <input
             type="datetime-local"
@@ -642,7 +641,7 @@ function OverviewTab({ stats, album, children, notify, onRefresh }: any) {
             onChange={e => setDeadlineVal(e.target.value)}
             className="input w-auto"
           />
-          <button onClick={saveDeadline} disabled={savingDeadline} className="btn-primary text-sm">
+          <button onClick={saveDeadline} disabled={savingDeadline} className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-all disabled:opacity-40">
             {savingDeadline ? 'Сохраняю...' : 'Сохранить'}
           </button>
           {deadlineVal && (
@@ -662,27 +661,24 @@ function OverviewTab({ stats, album, children, notify, onRefresh }: any) {
         )}
       </div>
 
-      <div className="flex gap-3 flex-wrap">
-        <button onClick={exportCsv} className="btn-primary">
-          ⬇ Экспорт для вёрстки (CSV)
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={exportCsv} className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-all">
+          ⬇ Экспорт CSV
         </button>
         <button
-          onClick={() => {
-            navigator.clipboard.writeText(`${location.origin}/album/${album.id}`)
-            notify('Ссылка на класс скопирована!')
-          }}
-          className="btn-secondary"
+          onClick={() => { navigator.clipboard.writeText(`${location.origin}/album/${album.id}`); notify('Ссылка на класс скопирована!') }}
+          className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all"
         >
-          🔗 Скопировать ссылку класса
-        </button>
-        <button onClick={archiveAlbum} className="btn-secondary text-amber-600 border-amber-200 hover:bg-amber-50">
-          🗄 Архивировать (удалить фото)
+          Ссылка класса
         </button>
         {(stats.in_progress > 0 || stats.not_started > 0) && (
-          <button onClick={() => setShowReminder(true)} className="btn-secondary text-blue-600 border-blue-200 hover:bg-blue-50">
-            🔔 Напоминание ({stats.in_progress + stats.not_started} чел.)
+          <button onClick={() => setShowReminder(true)} className="px-4 py-2 text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-all">
+            Напоминание · {stats.in_progress + stats.not_started} чел.
           </button>
         )}
+        <button onClick={archiveAlbum} className="px-4 py-2 text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-xl hover:bg-amber-100 transition-all">
+          Архивировать
+        </button>
       </div>
 
       {showReminder && (() => {
@@ -722,12 +718,12 @@ function OverviewTab({ stats, album, children, notify, onRefresh }: any) {
 }
 
 function StatCard({ label, value, accent, note }: any) {
-  const color = accent === 'green' ? 'text-green-600' : accent === 'amber' ? 'text-amber-600' : 'text-gray-800'
+  const color = accent === 'green' ? 'text-green-600' : accent === 'amber' ? 'text-amber-600' : 'text-gray-900'
   return (
-    <div className="card p-4">
-      <div className={`text-3xl font-medium ${color}`}>{value}</div>
-      {note && <div className="text-xs text-gray-400">{note}</div>}
-      <div className="text-xs text-gray-500 mt-1">{label}</div>
+    <div className="bg-white rounded-2xl border border-gray-100 p-5">
+      <div className={`text-4xl font-medium tabular-nums ${color}`}>{value}</div>
+      {note && <div className="text-sm font-medium text-gray-400 mt-0.5">{note}</div>}
+      <div className="text-sm text-gray-400 mt-1">{label}</div>
     </div>
   )
 }
