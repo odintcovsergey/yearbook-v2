@@ -254,6 +254,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
         text_enabled: form.text_enabled,
         text_max_chars: parseInt(form.text_max_chars),
         text_type: form.text_type || 'free',
+        template_title: selectedTemplate ? (templates.find(t => t.id === selectedTemplate)?.title ?? null) : null,
         city: form.city || null,
         year: parseInt(form.year),
       }),
@@ -544,6 +545,9 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
                       />
                     ) : (
                       <span className="font-medium text-gray-900 text-base">{a.title}</span>
+                    {(a as any).template_title && (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">{(a as any).template_title}</span>
+                    )}
                     )}
                     {allDone && <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">✓ Все готовы</span>}
                     {!allDone && s.total > 0 && <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">{s.total - s.submitted} не завершили</span>}

@@ -427,6 +427,7 @@ export async function POST(req: NextRequest) {
         text_enabled: body.text_enabled ?? true,
         text_max_chars: body.text_max_chars ?? 500,
         text_type: body.text_type ?? 'free',
+        template_title: body.template_title ?? null,
         city: body.city ?? null,
         year: body.year ?? new Date().getFullYear(),
       })
