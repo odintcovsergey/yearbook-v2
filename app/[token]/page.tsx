@@ -403,8 +403,12 @@ export default function ParentPage() {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ token, quote_id: newId })
                           })
-                          if (!newId) setTakenQuoteIds(prev => prev.filter(id => id !== q.id))
-                          else setTakenQuoteIds(prev => [...prev.filter(id => id !== q.id), q.id])
+                          setTakenQuoteIds(prev => {
+                            // Убрать предыдущую выбранную цитату из заблокированных
+                            let updated = selectedQuoteId ? prev.filter(id => id !== selectedQuoteId) : [...prev]
+                            if (!newId) return updated.filter(id => id !== q.id)
+                            return [...updated.filter(id => id !== q.id), q.id]
+                          })
                         }}
                         className={`w-full text-left px-4 py-3 rounded-xl text-sm border transition-all
                           ${mine ? 'border-blue-500 bg-blue-50 text-blue-800' :

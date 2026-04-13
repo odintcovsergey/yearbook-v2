@@ -548,6 +548,7 @@ export async function POST(req: NextRequest) {
     await supabaseAdmin.from('student_texts').delete().eq('child_id', child_id)
     await supabaseAdmin.from('parent_contacts').delete().eq('child_id', child_id)
     await supabaseAdmin.from('drafts').delete().eq('child_id', child_id)
+    await supabaseAdmin.from('quote_selections').delete().eq('child_id', child_id)
     await supabaseAdmin.from('children').update({ submitted_at: null, started_at: null }).eq('id', child_id)
     return NextResponse.json({ ok: true })
   }
@@ -558,6 +559,7 @@ export async function POST(req: NextRequest) {
     await supabaseAdmin.from('selections').delete().eq('child_id', body.child_id)
     await supabaseAdmin.from('parent_contacts').delete().eq('child_id', body.child_id)
     await supabaseAdmin.from('cover_selections').delete().eq('child_id', body.child_id)
+    await supabaseAdmin.from('quote_selections').delete().eq('child_id', body.child_id)
     await supabaseAdmin.from('student_texts').delete().eq('child_id', body.child_id)
     await supabaseAdmin.from('drafts').delete().eq('child_id', body.child_id)
     await supabaseAdmin.from('photo_children').delete().eq('child_id', body.child_id)
