@@ -387,46 +387,37 @@ export default function ParentPage() {
             {textType === 'grade11' && quotes.length > 0 && (
               <div className="mb-6">
                 <p className="text-sm font-medium text-gray-700 mb-3">Или выберите готовую цитату:</p>
-                {['Дерзкие / с характером', 'С юмором / лёгкие', 'Про жизнь / чуть глубже'].map(cat => {
-                  const catQuotes = quotes.filter((q: any) => q.category === cat)
-                  if (!catQuotes.length) return null
-                  return (
-                    <div key={cat} className="mb-4">
-                      <p className="text-xs text-gray-400 font-medium mb-2 uppercase tracking-wide">{cat}</p>
-                      <div className="space-y-2">
-                        {catQuotes.map((q: any) => {
-                          const taken = takenQuoteIds.includes(q.id)
-                          const mine = selectedQuoteId === q.id
-                          return (
-                            <button key={q.id} disabled={taken && !mine}
-                              onClick={async () => {
-                                const newId = mine ? null : q.id
-                                setSelectedQuoteId(newId)
-                                if (newId) setStudentText(q.text)
-                                else if (studentText === q.text) setStudentText('')
-                                await fetch('/api/quote', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ token, quote_id: newId })
-                                })
-                                if (!newId) setTakenQuoteIds(prev => prev.filter(id => id !== q.id))
-                                else setTakenQuoteIds(prev => [...prev.filter(id => id !== q.id), q.id])
-                              }}
-                              className={`w-full text-left px-4 py-3 rounded-xl text-sm border transition-all
-                                ${mine ? 'border-blue-500 bg-blue-50 text-blue-800' :
-                                  taken ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed' :
-                                  'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'}`}
-                            >
-                              {taken && !mine && <span className="text-xs text-gray-300 mr-2">🔒</span>}
-                              {mine && <span className="text-xs text-blue-500 mr-2">✓</span>}
-                              {q.text}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })}
+                <div className="space-y-2">
+                  {quotes.map((q: any) => {
+                    const taken = takenQuoteIds.includes(q.id)
+                    const mine = selectedQuoteId === q.id
+                    return (
+                      <button key={q.id} disabled={taken && !mine}
+                        onClick={async () => {
+                          const newId = mine ? null : q.id
+                          setSelectedQuoteId(newId)
+                          if (newId) setStudentText(q.text)
+                          else if (studentText === q.text) setStudentText('')
+                          await fetch('/api/quote', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ token, quote_id: newId })
+                          })
+                          if (!newId) setTakenQuoteIds(prev => prev.filter(id => id !== q.id))
+                          else setTakenQuoteIds(prev => [...prev.filter(id => id !== q.id), q.id])
+                        }}
+                        className={`w-full text-left px-4 py-3 rounded-xl text-sm border transition-all
+                          ${mine ? 'border-blue-500 bg-blue-50 text-blue-800' :
+                            taken ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed' :
+                            'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'}`}
+                      >
+                        {taken && !mine && <span className="text-xs text-gray-300 mr-2">🔒</span>}
+                        {mine && <span className="text-xs text-blue-500 mr-2">✓</span>}
+                        {q.text}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
             )}
             <div className="flex items-center justify-between">

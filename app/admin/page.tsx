@@ -1542,10 +1542,7 @@ function TeachersTab({ album, notify }: any) {
 function QuotesTab({ notify }: any) {
   const [quotes, setQuotes] = useState<any[]>([])
   const [newText, setNewText] = useState('')
-  const [newCat, setNewCat] = useState('Дерзкие / с характером')
   const [saving, setSaving] = useState(false)
-
-  const cats = ['Дерзкие / с характером', 'С юмором / лёгкие', 'Про жизнь / чуть глубже']
 
   const load = () => api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'get_quotes' }) }).then(r => r.json()).then(setQuotes)
   useEffect(() => { load() }, [])
@@ -1553,7 +1550,7 @@ function QuotesTab({ notify }: any) {
   const add = async () => {
     if (!newText.trim()) return
     setSaving(true)
-    await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'create_quote', text: newText.trim(), category: newCat }) })
+    await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'create_quote', text: newText.trim(), category: 'general' }) })
     setNewText('')
     setSaving(false)
     load()
@@ -1567,44 +1564,26 @@ function QuotesTab({ notify }: any) {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+    <div className="space-y-4 max-w-2xl">
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
         <h3 className="font-medium text-gray-900">Добавить цитату</h3>
-        <div>
-          <label className="text-xs text-gray-500 block mb-2">Категория</label>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {cats.map(c => (
-              <button key={c} onClick={() => setNewCat(c)}
-                className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${newCat === c ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-                {c}
-              </button>
-            ))}
-          </div>
-          <textarea className="input resize-none h-24" placeholder="Текст цитаты..." value={newText} onChange={e => setNewText(e.target.value)} />
-        </div>
+        <textarea className="input resize-none h-20" placeholder="Текст цитаты..." value={newText} onChange={e => setNewText(e.target.value)} />
         <button onClick={add} disabled={saving || !newText.trim()} className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 disabled:opacity-40">
           {saving ? 'Сохраняю...' : '+ Добавить'}
         </button>
       </div>
 
-      {cats.map(cat => {
-        const catQuotes = quotes.filter((q: any) => q.category === cat)
-        if (!catQuotes.length) return null
-        return (
-          <div key={cat} className="bg-white rounded-2xl border border-gray-100 p-5">
-            <h4 className="font-medium text-gray-700 mb-3 text-sm">{cat}</h4>
-            <div className="space-y-2">
-              {catQuotes.map((q: any) => (
-                <div key={q.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
-                  <p className="text-sm text-gray-700 flex-1">{q.text}</p>
-                  <button onClick={() => del(q.id)} className="text-red-400 hover:text-red-600 text-xs shrink-0">Удалить</button>
-                </div>
-              ))}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-2">
+        {quotes.length === 0
+          ? <p className="text-sm text-gray-400 text-center py-4">Нет цитат. Добавьте первую.</p>
+          : quotes.map((q: any) => (
+            <div key={q.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
+              <p className="text-sm text-gray-700 flex-1">{q.text}</p>
+              <button onClick={() => del(q.id)} className="text-red-400 hover:text-red-600 text-xs shrink-0 mt-0.5">Удалить</button>
             </div>
-          </div>
-        )
-      })}
-      {quotes.length === 0 && <p className="text-sm text-gray-400 text-center py-8">Нет цитат. Добавьте первую.</p>}
+          ))
+        }
+      </div>
     </div>
   )
 }
