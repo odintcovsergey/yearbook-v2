@@ -267,13 +267,13 @@ export default function ParentPage() {
       <div className="max-w-6xl mx-auto px-4 py-6">
 
         {step === 1 && (
-          <StepCard wide title="Портрет для личной страницы" subtitle="Это фото появится на вашей личной странице в альбоме. Нажмите на фото чтобы увидеть крупнее.">
+          <StepCard wide title="Портрет для личной страницы" subtitle="Это фото появится на вашей личной странице в альбоме.">
             <div className="flex items-center gap-3 mb-4">
               <span className={`badge-${portraitPage ? 'green' : 'blue'}`}>Выбрано: {portraitPage ? 1 : 0} / 1</span>
               <span className="text-xs text-gray-400">{portraits.filter(p => !p.locked).length} из {portraits.length} доступно</span>
             </div>
             <div className={`sticky top-16 z-10 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitPage ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
-              {portraitPage ? '✅ Отлично! Портрет выбран — можно двигаться дальше' : '👆 Нажмите на фото чтобы выбрать — нужно 1 фото'}
+              {portraitPage ? '✅ Портрет выбран — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать портрет. Для просмотра крупнее используйте кнопку в правом нижнем углу фото'}
             </div>
             <PhotoGrid
               photos={portraits}
@@ -298,10 +298,10 @@ export default function ParentPage() {
         )}
 
         {step === 2 && coverMode !== 'none' && (
-          <StepCard wide title="Портрет для обложки" subtitle="Выберите вариант оформления обложки">
+          <StepCard wide title="Портрет для обложки" subtitle="Выберите портрет, который будет размещён на обложке вашего альбома">
             <div className="space-y-3 mb-6">
               {coverMode !== 'required' && (
-                <RadioCard active={coverOption === 'none'} onClick={() => setCoverOption('none')} label="Без портрета на обложке" sub="Включено в стоимость" />
+                <RadioCard active={coverOption === 'none'} onClick={() => setCoverOption('none')} label="Без портрета на обложке" sub="Бесплатно" />
               )}
               <RadioCard active={coverOption === 'same'} onClick={() => setCoverOption('same')} label="Тот же портрет что на странице" sub="Бесплатно" />
               {portraits.length > 1 && (
@@ -352,7 +352,7 @@ export default function ParentPage() {
         )}
 
         {step === 4 && (
-          <StepCard wide title="Фото с друзьями" subtitle="Эти фото разместятся рядом с вашим портретом на личной странице.">
+          <StepCard wide title="Фото с друзьями" subtitle={`Эти фото разместятся рядом с вашим портретом на личной странице. Нужно выбрать ${groupMin === groupMax ? `${groupMin}` : `от ${groupMin} до ${groupMax}`} фото. Затемнённые фото с замком уже выбраны другими участниками.`}>
             <div className="flex items-center gap-3 mb-4">
               <span className={`badge-${groupPhotos.length >= groupMin && groupPhotos.length <= groupMax ? 'green' : 'blue'}`}>
                 Выбрано: {groupPhotos.length} / {groupMax}
@@ -367,9 +367,9 @@ export default function ParentPage() {
                   : 'bg-blue-50 border-blue-100 text-blue-700'
             }`}>
               {groupPhotos.length >= groupMin && groupPhotos.length <= groupMax
-                ? '✅ Отлично! Все фото выбраны — можно двигаться дальше'
+                ? '✅ Всё выбрано — нажмите Далее'
                 : groupPhotos.length > 0
-                  ? `👆 Выбрано ${groupPhotos.length} из ${groupMin} — добавьте ещё ${groupMin - groupPhotos.length}`
+                  ? `👆 Выбрано ${groupPhotos.length} из ${groupMin} — добавьте ещё ${groupMin - groupPhotos.length} фото`
                   : `👆 Нажмите на фото чтобы выбрать — нужно ${groupMin === groupMax ? `${groupMin} фото` : `от ${groupMin} до ${groupMax} фото`}`
               }
             </div>
@@ -680,7 +680,7 @@ function StepCard({ title, subtitle, children, wide = false }: { title: string; 
   return (
     <div className={`card p-5 ${wide ? '' : 'max-w-2xl mx-auto w-full'}`}>
       <h2 className="text-lg font-medium text-gray-800 mb-1">{title}</h2>
-      <p className="text-sm text-gray-400 mb-5">{subtitle}</p>
+      <p className="text-sm text-gray-600 mb-5">{subtitle}</p>
       {children}
     </div>
   )
