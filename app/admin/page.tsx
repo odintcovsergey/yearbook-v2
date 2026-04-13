@@ -10,7 +10,7 @@ const api = (path: string, opts?: RequestInit) =>
 
 type Tab = 'overview' | 'children' | 'upload' | 'import' | 'surcharges' | 'contacts' | 'teachers'
 type Album = { id: string; title: string; classes: string[]; cover_mode: string; cover_price: number; deadline: string | null; city: string | null; year: number | null; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number; stats?: { total: number; submitted: number; in_progress: number } }
-type Template = { id: string; title: string; cover_mode: string; cover_price: number; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number }
+type Template = { id: string; title: string; cover_mode: string; cover_price: number; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number; text_type?: string }
 type Stats = { total: number; submitted: number; in_progress: number; not_started: number; teachers_total: number; teachers_done: number; surcharge_total: number; surcharge_count: number }
 type Child = { id: string; full_name: string; class: string; access_token: string; submitted_at: string | null; started_at: string | null; contact: any; cover: any }
 
