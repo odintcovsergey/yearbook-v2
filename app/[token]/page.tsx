@@ -314,15 +314,18 @@ export default function ParentPage() {
                   {portraitCover ? '✅ Портрет для обложки выбран — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать портрет для обложки'}
                 </div>
                 <PhotoGrid
-                  photos={portraits.filter(p => p.id !== portraitPage)}
+                  photos={portraits.map(p => p.id === portraitPage ? {...p, locked: true} : p)}
                   selected={portraitCover ? [portraitCover] : []}
                   limit={1}
-                  onToggle={(id) => setPortraitCover(prev => prev === id ? null : id)}
-                  onLightbox={(idx) => setLightbox({
-                    photos: portraits.filter(p => p.id !== portraitPage),
-                    index: idx,
-                    onSelect: (id) => setPortraitCover(prev => prev === id ? null : id),
-                  })}
+                  onToggle={(id) => { if (id !== portraitPage) setPortraitCover(prev => prev === id ? null : id) }}
+                  onLightbox={(idx) => {
+                    const available = portraits.map(p => p.id === portraitPage ? {...p, locked: true} : p)
+                    setLightbox({
+                      photos: available,
+                      index: idx,
+                      onSelect: (id) => { if (id !== portraitPage) setPortraitCover(prev => prev === id ? null : id) },
+                    })
+                  }}
                   small
                 />
               </div>

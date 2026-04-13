@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
 
   const selectionRows = [
     { child_id: childId, photo_id: portraitPage, selection_type: 'portrait_page' },
-    ...(coverOption === 'other' && portraitCover && existingPhotoIds.has(portraitCover)
+    ...(coverOption === 'other' && portraitCover && existingPhotoIds.has(portraitCover) && portraitCover !== portraitPage
       ? [{ child_id: childId, photo_id: portraitCover, selection_type: 'portrait_cover' }]
       : []),
     ...validGroupPhotos.map((photoId: string) => ({
