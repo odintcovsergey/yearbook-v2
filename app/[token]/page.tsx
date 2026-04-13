@@ -379,7 +379,7 @@ export default function ParentPage() {
               </div>
             )}
             <textarea className="input resize-none h-32 mb-1"
-              placeholder={textType === 'garden' ? 'Напишите о ребёнке...' : textType === 'grade4' ? 'Напишите небольшой текст...' : '«Всё получится. По-другому не вариант.»'}
+              placeholder={textType === 'garden' ? 'Я люблю играть в трассу с шариками и в машинки с друзьями. А ещё – гулять! Самый вкусный для меня суп – борщ. Когда вырасту – хочу стать футболистом.' : textType === 'grade4' ? 'Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!' : textType === 'grade11' ? '«Всё получится. По-другому не вариант.»' : '«Спасибо всем за эти годы!»'}
               maxLength={textMaxChars} value={studentText} onChange={e => setStudentText(e.target.value)} />
             <div className="text-right text-xs text-gray-400 mb-4">
               <span className={studentText.length > textMaxChars * 0.9 ? 'text-amber-500' : ''}>{studentText.length}</span> / {textMaxChars}
