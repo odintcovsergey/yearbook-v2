@@ -252,6 +252,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
         group_exclusive: form.group_exclusive,
         text_enabled: form.text_enabled,
         text_max_chars: parseInt(form.text_max_chars),
+        text_type: form.text_type || 'free',
         city: form.city || null,
         year: parseInt(form.year),
       }),
