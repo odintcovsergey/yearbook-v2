@@ -233,6 +233,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
       group_exclusive: t.group_exclusive,
       text_enabled: t.text_enabled,
       text_max_chars: String(t.text_max_chars),
+      text_type: t.text_type || 'free',
     }))
   }
 
@@ -1614,6 +1615,7 @@ function TemplatesTab({ notify }: any) {
         group_exclusive: form.group_exclusive,
         text_enabled: form.text_enabled,
         text_max_chars: parseInt(form.text_max_chars),
+        text_type: form.text_type || 'free',
       }),
     })
     if (res.ok) { notify('Шаблон создан!'); setCreating(false); setForm(emptyForm); load() }
