@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
     .select('id, filename, storage_path, thumb_path')
     .eq('album_id', child.album_id)
     .eq('type', 'portrait')
+    .order('filename')
 
   const { data: portraitLocks } = await supabaseAdmin
     .from('photo_locks')
@@ -60,6 +61,7 @@ export async function GET(req: NextRequest) {
     .select('id, filename, storage_path, thumb_path')
     .eq('album_id', child.album_id)
     .eq('type', 'group')
+    .order('filename')
 
   const { data: groupLocks } = await supabaseAdmin
     .from('photo_locks')

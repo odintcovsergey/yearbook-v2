@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
     .select('id, filename, storage_path')
     .eq('album_id', resp.album_id)
     .eq('type', 'teacher')
+    .order('filename')
 
   const photos = (allPhotos ?? []).map((p: any) => ({
     ...p,
