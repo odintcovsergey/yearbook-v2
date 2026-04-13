@@ -193,6 +193,7 @@ export default function ParentPage() {
   const progress = ((currentIdx + 1) / totalSteps) * 100
 
   const goNext = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     const next = effectiveSteps[currentIdx + 1]
     if (next) {
       setSubmitError('')
@@ -201,6 +202,7 @@ export default function ParentPage() {
     }
   }
   const goPrev = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     const prev = effectiveSteps[currentIdx - 1]
     if (prev) setStep(prev.id as StepId)
   }
