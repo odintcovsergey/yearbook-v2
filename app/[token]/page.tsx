@@ -424,9 +424,9 @@ export default function ParentPage() {
                 </div>
               </div>
             )}
-            <div className="flex items-center justify-between">
+            <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3 -mx-5 -mb-5 flex items-center justify-between rounded-b-2xl">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
-              <button className="btn-primary" onClick={goNext}>Далее →</button>
+              <button className="btn-primary px-8" onClick={goNext}>Далее →</button>
             </div>
           </StepCard>
         )}
