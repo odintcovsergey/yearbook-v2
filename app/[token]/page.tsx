@@ -310,7 +310,9 @@ export default function ParentPage() {
             </div>
             {coverOption === 'other' && (
               <div className="mb-6">
-                <p className="text-sm text-gray-500 mb-3">Выберите портрет для обложки:</p>
+                <div className={`sticky top-16 z-10 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitCover ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
+                  {portraitCover ? '✅ Портрет для обложки выбран — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать портрет для обложки'}
+                </div>
                 <PhotoGrid
                   photos={portraits.filter(p => p.id !== portraitPage)}
                   selected={portraitCover ? [portraitCover] : []}
