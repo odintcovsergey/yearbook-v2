@@ -426,12 +426,34 @@ export async function POST(req: NextRequest) {
         group_exclusive: body.group_exclusive ?? true,
         text_enabled: body.text_enabled ?? true,
         text_max_chars: body.text_max_chars ?? 500,
+        text_type: body.text_type ?? 'free',
         city: body.city ?? null,
         year: body.year ?? new Date().getFullYear(),
       })
       .select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
+  }
+
+  // Цитаты — получить список
+  if (body.action === 'get_quotes') {
+    const { data } = await supabaseAdmin.from('quotes').select('*').order('category').order('created_at')
+    return NextResponse.json(data ?? [])
+  }
+
+  // Цитаты — создать
+  if (body.action === 'create_quote') {
+    const { data, error } = await supabaseAdmin.from('quotes')
+      .insert({ text: body.text, category: body.category ?? 'general' })
+      .select().single()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data)
+  }
+
+  // Цитаты — удалить
+  if (body.action === 'delete_quote') {
+    await supabaseAdmin.from('quotes').delete().eq('id', body.id)
+    return NextResponse.json({ ok: true })
   }
 
   // Шаблоны — получить список

@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
   const { data: album } = await supabaseAdmin
     .from('albums')
-    .select('id, title, cover_mode, cover_price, deadline, group_enabled, group_min, group_max, group_exclusive, text_enabled, text_max_chars')
+    .select('id, title, cover_mode, cover_price, deadline, group_enabled, group_min, group_max, group_exclusive, text_enabled, text_max_chars, text_type')
     .eq('id', child.album_id)
     .single()
 
@@ -93,8 +93,29 @@ export async function GET(req: NextRequest) {
     supabaseAdmin.from('cover_selections').select('cover_option, photo_id, surcharge').eq('child_id', child.id).maybeSingle(),
   ])
 
+  // Загружаем цитаты если это альбом 9-11 класса
+  let quotes: any[] = []
+  let takenQuoteIds: string[] = []
+  if ((album as any)?.text_type === 'grade11') {
+    const [quotesRes, takenRes] = await Promise.all([
+      supabaseAdmin.from('quotes').select('id, text, category').order('category').order('created_at'),
+      supabaseAdmin.from('quote_selections').select('quote_id, child_id').eq('album_id', child.album_id),
+    ])
+    quotes = quotesRes.data ?? []
+    // Цитаты занятые другими детьми
+    takenQuoteIds = (takenRes.data ?? [])
+      .filter((q: any) => q.child_id !== child.id)
+      .map((q: any) => q.quote_id)
+  }
+
+  // Текущая выбранная цитата этого ребёнка
+  const myQuote = await supabaseAdmin.from('quote_selections')
+    .select('quote_id').eq('child_id', child.id).maybeSingle()
+
   return NextResponse.json({
     child, album, portraits, groups, referral: existingContact.data?.referral ?? null,
+    quotes, takenQuoteIds,
+    selectedQuoteId: myQuote.data?.quote_id ?? null,
     existing: {
       selections: existingSelections.data ?? [],
       contact: existingContact.data,

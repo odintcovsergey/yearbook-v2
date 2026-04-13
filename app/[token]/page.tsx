@@ -35,6 +35,10 @@ export default function ParentPage() {
   const [groupExclusive, setGroupExclusive] = useState(true)
   const [textEnabled, setTextEnabled] = useState(true)
   const [textMaxChars, setTextMaxChars] = useState(500)
+  const [textType, setTextType] = useState<string>('free')
+  const [quotes, setQuotes] = useState<any[]>([])
+  const [takenQuoteIds, setTakenQuoteIds] = useState<string[]>([])
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null)
   const [portraits, setPortraits] = useState<Photo[]>([])
   const [groups, setGroups] = useState<Photo[]>([])
 
@@ -66,6 +70,10 @@ export default function ParentPage() {
         setGroupExclusive(data.album?.group_exclusive ?? true)
         setTextEnabled(data.album?.text_enabled ?? true)
         setTextMaxChars(data.album?.text_max_chars ?? 500)
+        setTextType(data.album?.text_type ?? 'free')
+        if (data.quotes) setQuotes(data.quotes)
+        if (data.takenQuoteIds) setTakenQuoteIds(data.takenQuoteIds)
+        if (data.selectedQuoteId) setSelectedQuoteId(data.selectedQuoteId)
         setPortraits(data.portraits)
         setGroups(data.groups)
 
@@ -343,12 +351,84 @@ export default function ParentPage() {
         )}
 
         {step === 3 && (
-          <StepCard title="Текст от ученика" subtitle="Цитата, пожелание или любимая фраза">
-            <textarea className="input resize-none h-36 mb-1" placeholder="«Спасибо всем за эти годы!»" maxLength={textMaxChars} value={studentText} onChange={e => setStudentText(e.target.value)} />
-            <div className="text-right text-xs text-gray-400 mb-2">
+          <StepCard title="Текст от ученика" subtitle={
+            textType === 'garden' ? 'Расскажите о ребёнке — ответьте на вопросы ниже' :
+            textType === 'grade4' ? 'Ответьте на вопросы — получится небольшой текст для альбома' :
+            textType === 'grade11' ? 'Напишите цитату или выберите готовую из списка ниже' :
+            'Цитата, пожелание или любимая фраза'
+          }>
+            {textType === 'garden' && (
+              <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
+                <p className="font-medium mb-2">Вопросы для вдохновения:</p>
+                <ul className="space-y-1 text-blue-700 list-disc list-inside">
+                  <li>Во что любит играть?</li>
+                  <li>Любимое блюдо в саду?</li>
+                  <li>Какая мечта?</li>
+                </ul>
+                <p className="mt-3 text-blue-600 italic text-xs">Пример: «Я люблю играть в трассу с шариками и в машинки с друзьями. А ещё – гулять! Самый вкусный для меня суп – борщ. Когда вырасту – хочу стать футболистом.»</p>
+              </div>
+            )}
+            {textType === 'grade4' && (
+              <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
+                <p className="font-medium mb-2">Вопросы для вдохновения:</p>
+                <ul className="space-y-1 text-blue-700 list-disc list-inside">
+                  <li>Какой суперспособностью ты бы хотел(а) обладать? Где и как ты бы её применял(а)?</li>
+                  <li>Что бы ты хотел(а) пожелать себе и своим одноклассникам?</li>
+                </ul>
+                <p className="mt-3 text-blue-600 italic text-xs">Пример: «Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!»</p>
+              </div>
+            )}
+            <textarea className="input resize-none h-32 mb-1"
+              placeholder={textType === 'garden' ? 'Напишите о ребёнке...' : textType === 'grade4' ? 'Напишите небольшой текст...' : '«Всё получится. По-другому не вариант.»'}
+              maxLength={textMaxChars} value={studentText} onChange={e => setStudentText(e.target.value)} />
+            <div className="text-right text-xs text-gray-400 mb-4">
               <span className={studentText.length > textMaxChars * 0.9 ? 'text-amber-500' : ''}>{studentText.length}</span> / {textMaxChars}
             </div>
-            <p className="text-xs text-gray-400 mb-6">Необязательно.</p>
+            {textType === 'grade11' && quotes.length > 0 && (
+              <div className="mb-6">
+                <p className="text-sm font-medium text-gray-700 mb-3">Или выберите готовую цитату:</p>
+                {['Дерзкие / с характером', 'С юмором / лёгкие', 'Про жизнь / чуть глубже'].map(cat => {
+                  const catQuotes = quotes.filter((q: any) => q.category === cat)
+                  if (!catQuotes.length) return null
+                  return (
+                    <div key={cat} className="mb-4">
+                      <p className="text-xs text-gray-400 font-medium mb-2 uppercase tracking-wide">{cat}</p>
+                      <div className="space-y-2">
+                        {catQuotes.map((q: any) => {
+                          const taken = takenQuoteIds.includes(q.id)
+                          const mine = selectedQuoteId === q.id
+                          return (
+                            <button key={q.id} disabled={taken && !mine}
+                              onClick={async () => {
+                                const newId = mine ? null : q.id
+                                setSelectedQuoteId(newId)
+                                if (newId) setStudentText(q.text)
+                                else if (studentText === q.text) setStudentText('')
+                                await fetch('/api/quote', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ token, quote_id: newId })
+                                })
+                                if (!newId) setTakenQuoteIds(prev => prev.filter(id => id !== q.id))
+                                else setTakenQuoteIds(prev => [...prev.filter(id => id !== q.id), q.id])
+                              }}
+                              className={`w-full text-left px-4 py-3 rounded-xl text-sm border transition-all
+                                ${mine ? 'border-blue-500 bg-blue-50 text-blue-800' :
+                                  taken ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed' :
+                                  'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'}`}
+                            >
+                              {taken && !mine && <span className="text-xs text-gray-300 mr-2">🔒</span>}
+                              {mine && <span className="text-xs text-blue-500 mr-2">✓</span>}
+                              {q.text}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
               <button className="btn-primary" onClick={goNext}>Далее →</button>

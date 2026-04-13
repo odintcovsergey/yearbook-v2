@@ -185,7 +185,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
   const [creating, setCreating] = useState(false)
   const [templates, setTemplates] = useState<Template[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState<string>('')
-  const emptyForm = { title: '', classes: '', cover_mode: 'none', cover_price: '0', deadline: '', city: '', year: String(new Date().getFullYear()), group_enabled: true, group_min: '2', group_max: '2', group_exclusive: true, text_enabled: true, text_max_chars: '500' }
+  const emptyForm = { title: '', classes: '', cover_mode: 'none', cover_price: '0', deadline: '', city: '', year: String(new Date().getFullYear()), group_enabled: true, group_min: '2', group_max: '2', group_exclusive: true, text_enabled: true, text_max_chars: '500', text_type: 'free' }
   const [form, setForm] = useState(emptyForm)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'done' | 'pending'>('all')
@@ -193,6 +193,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [showTemplatesModal, setShowTemplatesModal] = useState(false)
+  const [showQuotesModal, setShowQuotesModal] = useState(false)
 
   const deleteAlbum = async (id: string, title: string) => {
     if (!confirm(`Удалить альбом «${title}»?
@@ -293,6 +294,9 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
           <button onClick={() => setShowTemplatesModal(true)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
             Шаблоны
           </button>
+          <button onClick={() => setShowQuotesModal(true)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
+            Цитаты
+          </button>
           <button onClick={() => { setCreating(!creating); setSelectedTemplate(''); setForm(emptyForm) }} className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-all">
             + Новый альбом
           </button>
@@ -301,12 +305,24 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
 
       {showTemplatesModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowTemplatesModal(false)}>
-          <div className="card p-6 w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="card p-6 w-full max-w-2xl max-h-[80vh] flex flex-col overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-medium text-gray-800">Шаблоны альбомов</h3>
               <button onClick={() => setShowTemplatesModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
             </div>
             <TemplatesTab notify={notify} />
+          </div>
+        </div>
+      )}
+
+      {showQuotesModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowQuotesModal(false)}>
+          <div className="card p-6 w-full max-w-2xl max-h-[85vh] flex flex-col overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-medium text-gray-800">Цитаты для 9–11 классов</h3>
+              <button onClick={() => setShowQuotesModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+            </div>
+            <QuotesTab notify={notify} />
           </div>
         </div>
       )}
@@ -432,6 +448,24 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.text_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
+            {form.text_enabled && (
+              <div>
+                <label className="text-xs text-gray-500 block mb-2">Тип текста</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { v: 'free', l: 'Свободный' },
+                    { v: 'garden', l: 'Детский сад' },
+                    { v: 'grade4', l: '4 класс' },
+                    { v: 'grade11', l: '9-11 класс' },
+                  ].map(({ v, l }) => (
+                    <button key={v} onClick={() => setForm(f => ({ ...f, text_type: v }))}
+                      className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${form.text_type === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {form.text_enabled && (
               <div className="flex items-center gap-3">
                 <label className="text-xs text-gray-500">Макс. символов</label>
@@ -1503,12 +1537,84 @@ function TeachersTab({ album, notify }: any) {
   )
 }
 
+// ─── Цитаты ───────────────────────────────────────────────────────────────────
+
+function QuotesTab({ notify }: any) {
+  const [quotes, setQuotes] = useState<any[]>([])
+  const [newText, setNewText] = useState('')
+  const [newCat, setNewCat] = useState('Дерзкие / с характером')
+  const [saving, setSaving] = useState(false)
+
+  const cats = ['Дерзкие / с характером', 'С юмором / лёгкие', 'Про жизнь / чуть глубже']
+
+  const load = () => api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'get_quotes' }) }).then(r => r.json()).then(setQuotes)
+  useEffect(() => { load() }, [])
+
+  const add = async () => {
+    if (!newText.trim()) return
+    setSaving(true)
+    await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'create_quote', text: newText.trim(), category: newCat }) })
+    setNewText('')
+    setSaving(false)
+    load()
+    notify('Цитата добавлена')
+  }
+
+  const del = async (id: string) => {
+    await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'delete_quote', id }) })
+    load()
+    notify('Цитата удалена')
+  }
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+        <h3 className="font-medium text-gray-900">Добавить цитату</h3>
+        <div>
+          <label className="text-xs text-gray-500 block mb-2">Категория</label>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {cats.map(c => (
+              <button key={c} onClick={() => setNewCat(c)}
+                className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${newCat === c ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                {c}
+              </button>
+            ))}
+          </div>
+          <textarea className="input resize-none h-24" placeholder="Текст цитаты..." value={newText} onChange={e => setNewText(e.target.value)} />
+        </div>
+        <button onClick={add} disabled={saving || !newText.trim()} className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 disabled:opacity-40">
+          {saving ? 'Сохраняю...' : '+ Добавить'}
+        </button>
+      </div>
+
+      {cats.map(cat => {
+        const catQuotes = quotes.filter((q: any) => q.category === cat)
+        if (!catQuotes.length) return null
+        return (
+          <div key={cat} className="bg-white rounded-2xl border border-gray-100 p-5">
+            <h4 className="font-medium text-gray-700 mb-3 text-sm">{cat}</h4>
+            <div className="space-y-2">
+              {catQuotes.map((q: any) => (
+                <div key={q.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
+                  <p className="text-sm text-gray-700 flex-1">{q.text}</p>
+                  <button onClick={() => del(q.id)} className="text-red-400 hover:text-red-600 text-xs shrink-0">Удалить</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+      {quotes.length === 0 && <p className="text-sm text-gray-400 text-center py-8">Нет цитат. Добавьте первую.</p>}
+    </div>
+  )
+}
+
 // ─── Шаблоны ─────────────────────────────────────────────────────────────────
 
 function TemplatesTab({ notify }: any) {
   const [templates, setTemplates] = useState<Template[]>([])
   const [creating, setCreating] = useState(false)
-  const emptyForm = { title: '', cover_mode: 'none', cover_price: '0', group_enabled: true, group_min: '2', group_max: '2', group_exclusive: true, text_enabled: true, text_max_chars: '500' }
+  const emptyForm = { title: '', cover_mode: 'none', cover_price: '0', group_enabled: true, group_min: '2', group_max: '2', group_exclusive: true, text_enabled: true, text_max_chars: '500', text_type: 'free' }
   const [form, setForm] = useState(emptyForm)
 
   const load = () => api('/api/admin?action=templates').then(r => r.json()).then(setTemplates)
@@ -1618,6 +1724,24 @@ function TemplatesTab({ notify }: any) {
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.text_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
+            {form.text_enabled && (
+              <div>
+                <label className="text-xs text-gray-500 block mb-2">Тип текста</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { v: 'free', l: 'Свободный' },
+                    { v: 'garden', l: 'Детский сад' },
+                    { v: 'grade4', l: '4 класс' },
+                    { v: 'grade11', l: '9-11 класс' },
+                  ].map(({ v, l }) => (
+                    <button key={v} onClick={() => setForm(f => ({ ...f, text_type: v }))}
+                      className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${form.text_type === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {form.text_enabled && (
               <div className="flex items-center gap-3">
                 <label className="text-xs text-gray-500">Макс. символов</label>
