@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   // Уже созданные карточки учителей
   const { data: teachers } = await supabaseAdmin
     .from('teachers')
-    .select('id, full_name, position, submitted_at')
+    .select('id, full_name, position, description, submitted_at')
     .eq('album_id', resp.album_id)
     .order('created_at')
 
@@ -91,10 +91,11 @@ export async function POST(req: NextRequest) {
 
   // Сохранить карточку учителя
   if (action === 'save') {
-    const { teacher_id, full_name, position, photo_id } = body
+    const { teacher_id, full_name, position, description, photo_id } = body
     await supabaseAdmin.from('teachers').update({
       full_name: full_name?.trim() ?? '',
       position: position?.trim() ?? '',
+      description: description?.trim() ?? '',
       submitted_at: new Date().toISOString(),
     }).eq('id', teacher_id)
 

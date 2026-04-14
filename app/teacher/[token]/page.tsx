@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 
 type Photo = { id: string; filename: string; storage_path: string; url: string }
-type Teacher = { id: string; full_name: string; position: string; photo_id: string | null; submitted_at: string | null }
+type Teacher = { id: string; full_name: string; position: string; description: string; photo_id: string | null; submitted_at: string | null }
 
 export default function TeacherPage() {
   const { token } = useParams<{ token: string }>()
@@ -39,7 +39,7 @@ export default function TeacherPage() {
       body: JSON.stringify({ token, action: 'create' }),
     })
     const teacher = await res.json()
-    setTeachers(prev => [...prev, { ...teacher, photo_id: null }])
+    setTeachers(prev => [...prev, { ...teacher, photo_id: null, description: '' }])
     setEditingId(teacher.id)
   }
 
@@ -47,7 +47,7 @@ export default function TeacherPage() {
     await fetch('/api/teacher', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, action: 'save', teacher_id: t.id, full_name: t.full_name, position: t.position, photo_id: t.photo_id }),
+      body: JSON.stringify({ token, action: 'save', teacher_id: t.id, full_name: t.full_name, position: t.position, description: t.description, photo_id: t.photo_id }),
     })
     setEditingId(null)
     load()
@@ -232,9 +232,22 @@ export default function TeacherPage() {
                         onChange={e => updateLocal(teacher.id, 'full_name', e.target.value)} />
 
                       <label className="block text-xs text-gray-500 mb-1">Должность / предмет</label>
-                      <input className="input mb-4" placeholder="Классный руководитель, математика"
+                      <input className="input mb-3" placeholder="Классный руководитель, математика"
                         value={teacher.position}
                         onChange={e => updateLocal(teacher.id, 'position', e.target.value)} />
+
+                      {idx === 0 && (
+                        <>
+                          <label className="block text-xs text-gray-500 mb-1">Текст о классном руководителе / воспитателе</label>
+                          <textarea className="input resize-none h-24 mb-3" placeholder="Например: «Лучший учитель, который всегда поддерживал нас!»"
+                            maxLength={500}
+                            value={teacher.description}
+                            onChange={e => updateLocal(teacher.id, 'description', e.target.value)} />
+                          <div className="text-right text-xs text-gray-400 -mt-2 mb-3">
+                            <span className={(teacher.description?.length ?? 0) > 450 ? 'text-amber-500' : ''}>{teacher.description?.length ?? 0}</span> / 500
+                          </div>
+                        </>
+                      )}
 
                       <button onClick={() => saveTeacher(teacher)} className="btn-primary w-full">
                         Сохранить карточку ✓
@@ -251,6 +264,9 @@ export default function TeacherPage() {
                       <div>
                         <p className="font-medium text-gray-800">{teacher.full_name || <span className="text-gray-400 italic">Не заполнено</span>}</p>
                         <p className="text-sm text-gray-500">{teacher.position || '—'}</p>
+                        {idx === 0 && teacher.description && (
+                          <p className="text-sm text-gray-500 mt-1 italic">«{teacher.description}»</p>
+                        )}
                       </div>
                     </div>
                   )}
