@@ -594,7 +594,7 @@ export async function POST(req: NextRequest) {
       .select('id, name, phone, school, class_name, status, created_at, referrer_child_id')
       .order('created_at', { ascending: false })
 
-    const childIds = [...new Set((data ?? []).map((d: any) => d.referrer_child_id))]
+    const childIds = Array.from(new Set((data ?? []).map((d: any) => d.referrer_child_id)))
     const { data: children } = childIds.length > 0
       ? await supabaseAdmin.from('children').select('id, full_name').in('id', childIds)
       : { data: [] }
