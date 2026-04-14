@@ -9,7 +9,7 @@ const api = (path: string, opts?: RequestInit) =>
   fetch(path, { ...opts, headers: { 'x-admin-secret': secret(), 'Content-Type': 'application/json', ...opts?.headers } })
 
 type Tab = 'overview' | 'children' | 'upload' | 'import' | 'surcharges' | 'contacts' | 'teachers'
-type Album = { id: string; title: string; classes: string[]; cover_mode: string; cover_price: number; deadline: string | null; city: string | null; year: number | null; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number; stats?: { total: number; submitted: number; in_progress: number } }
+type Album = { id: string; title: string; classes: string[]; cover_mode: string; cover_price: number; deadline: string | null; city: string | null; year: number | null; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number; archived?: boolean; stats?: { total: number; submitted: number; in_progress: number } }
 type Template = { id: string; title: string; cover_mode: string; cover_price: number; group_enabled: boolean; group_min: number; group_max: number; group_exclusive: boolean; text_enabled: boolean; text_max_chars: number; text_type?: string }
 type Stats = { total: number; submitted: number; in_progress: number; not_started: number; teachers_total: number; teachers_done: number; surcharge_total: number; surcharge_count: number }
 type Child = { id: string; full_name: string; class: string; access_token: string; submitted_at: string | null; started_at: string | null; contact: any; cover: any }
@@ -196,6 +196,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
   const [showQuotesModal, setShowQuotesModal] = useState(false)
   const [showLeadsModal, setShowLeadsModal] = useState(false)
   const [leadsCount, setLeadsCount] = useState(0)
+  const [showArchived, setShowArchived] = useState(false)
 
   useEffect(() => {
     api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'get_leads' }) })
@@ -272,7 +273,11 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
     else notify('Ошибка создания', 'err')
   }
 
-  const filtered = albums
+  const activeAlbums = albums.filter((a: Album) => !a.archived)
+  const archivedAlbums = albums.filter((a: Album) => a.archived)
+  const baseAlbums = showArchived ? archivedAlbums : activeAlbums
+
+  const filtered = baseAlbums
     .filter((a: Album) => {
       if (search && !a.title.toLowerCase().includes(search.toLowerCase())) return false
       const s = a.stats ?? { total: 0, submitted: 0, in_progress: 0 }
@@ -300,7 +305,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h2 className="text-2xl font-medium text-gray-900">Альбомы</h2>
-          {albums.length > 0 && <p className="text-sm text-gray-400 mt-0.5">{albums.length} {albums.length === 1 ? 'альбом' : albums.length < 5 ? 'альбома' : 'альбомов'}</p>}
+          {albums.length > 0 && <p className="text-sm text-gray-400 mt-0.5">{activeAlbums.length} {activeAlbums.length === 1 ? 'альбом' : activeAlbums.length < 5 ? 'альбома' : 'альбомов'}{archivedAlbums.length > 0 ? ` · ${archivedAlbums.length} в архиве` : ''}</p>}
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowTemplatesModal(true)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
@@ -511,8 +516,22 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
         </div>
       )}
 
+      {/* Вкладки: Актуальные / Архив */}
+      {archivedAlbums.length > 0 && (
+        <div className="flex gap-1 mb-4 border-b border-gray-100">
+          <button onClick={() => setShowArchived(false)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-all ${!showArchived ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+            Актуальные ({activeAlbums.length})
+          </button>
+          <button onClick={() => setShowArchived(true)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-all ${showArchived ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
+            Архив ({archivedAlbums.length})
+          </button>
+        </div>
+      )}
+
       {/* Поиск и фильтры */}
-      {albums.length > 0 && (
+      {baseAlbums.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-4">
           <input type="text" placeholder="Поиск по названию..." value={search} onChange={e => setSearch(e.target.value)} className="input flex-1 min-w-[200px] text-sm bg-white" />
           <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)} className="input text-sm w-auto bg-white">
@@ -531,8 +550,11 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
       {albums.length === 0 && (
         <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center text-gray-400 text-sm">Нет альбомов. Создайте первый.</div>
       )}
-      {albums.length > 0 && filtered.length === 0 && (
+      {baseAlbums.length > 0 && filtered.length === 0 && (
         <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center text-gray-400 text-sm">Ничего не найдено.</div>
+      )}
+      {albums.length > 0 && baseAlbums.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center text-gray-400 text-sm">{showArchived ? 'Нет архивных альбомов.' : 'Нет актуальных альбомов.'}</div>
       )}
 
       <div className="grid gap-2">
