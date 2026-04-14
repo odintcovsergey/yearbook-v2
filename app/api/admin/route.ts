@@ -591,23 +591,31 @@ export async function POST(req: NextRequest) {
   if (body.action === 'get_leads') {
     const { data } = await supabaseAdmin
       .from('referral_leads')
-      .select('id, name, phone, school, class_name, status, created_at, referrer_child_id')
+      .select('id, name, phone, city, school, class_name, status, created_at, referrer_child_id')
       .order('created_at', { ascending: false })
 
     const childIds = Array.from(new Set((data ?? []).map((d: any) => d.referrer_child_id)))
     const { data: children } = childIds.length > 0
-      ? await supabaseAdmin.from('children').select('id, full_name').in('id', childIds)
+      ? await supabaseAdmin.from('children').select('id, full_name, album_id').in('id', childIds)
       : { data: [] }
     const { data: contacts } = childIds.length > 0
       ? await supabaseAdmin.from('parent_contacts').select('child_id, parent_name').in('child_id', childIds)
       : { data: [] }
 
-    const childMap = Object.fromEntries((children ?? []).map((c: any) => [c.id, c.full_name]))
+    const childMap = Object.fromEntries((children ?? []).map((c: any) => [c.id, c]))
     const contactMap = Object.fromEntries((contacts ?? []).map((c: any) => [c.child_id, c.parent_name]))
+
+    // Get album titles for referrers
+    const albumIds = Array.from(new Set((children ?? []).map((c: any) => c.album_id)))
+    const { data: albums } = albumIds.length > 0
+      ? await supabaseAdmin.from('albums').select('id, title').in('id', albumIds)
+      : { data: [] }
+    const albumMap = Object.fromEntries((albums ?? []).map((a: any) => [a.id, a.title]))
 
     const leads = (data ?? []).map((d: any) => ({
       ...d,
-      referrer_name: contactMap[d.referrer_child_id] || childMap[d.referrer_child_id] || '—',
+      referrer_name: contactMap[d.referrer_child_id] || childMap[d.referrer_child_id]?.full_name || '—',
+      referrer_album: albumMap[childMap[d.referrer_child_id]?.album_id] || '',
     }))
 
     return NextResponse.json(leads)

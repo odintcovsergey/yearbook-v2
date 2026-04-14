@@ -13,6 +13,7 @@ export default function ReferralPage() {
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [city, setCity] = useState('')
   const [school, setSchool] = useState('')
   const [className, setClassName] = useState('')
 
@@ -28,12 +29,12 @@ export default function ReferralPage() {
   }, [token])
 
   const handleSubmit = async () => {
-    if (!name.trim() || !phone.trim()) return
+    if (!name.trim() || !phone.trim() || !city.trim()) return
     setSending(true)
     const res = await fetch('/api/referral', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, name: name.trim(), phone: phone.trim(), school: school.trim(), class_name: className.trim() }),
+      body: JSON.stringify({ token, name: name.trim(), phone: phone.trim(), city: city.trim(), school: school.trim(), class_name: className.trim() }),
     })
     setSending(false)
     if (res.ok) setSent(true)
@@ -112,13 +113,16 @@ export default function ReferralPage() {
               <label className="block text-xs text-gray-500 mb-1">Телефон *</label>
               <input className="input mb-3" type="tel" placeholder="+7 (999) 123-45-67" value={phone} onChange={e => setPhone(e.target.value)} />
 
+              <label className="block text-xs text-gray-500 mb-1">Город *</label>
+              <input className="input mb-3" placeholder="Москва, Казань, Новосибирск..." value={city} onChange={e => setCity(e.target.value)} />
+
               <label className="block text-xs text-gray-500 mb-1">Школа / детский сад</label>
               <input className="input mb-3" placeholder="Название учреждения" value={school} onChange={e => setSchool(e.target.value)} />
 
               <label className="block text-xs text-gray-500 mb-1">Класс / группа</label>
               <input className="input mb-5" placeholder="4-А, подготовительная группа..." value={className} onChange={e => setClassName(e.target.value)} />
 
-              <button className="btn-primary w-full" onClick={handleSubmit} disabled={!name.trim() || !phone.trim() || sending}>
+              <button className="btn-primary w-full" onClick={handleSubmit} disabled={!name.trim() || !phone.trim() || !city.trim() || sending}>
                 {sending ? 'Отправляю...' : 'Отправить заявку'}
               </button>
 

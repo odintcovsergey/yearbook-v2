@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 // POST — save new lead
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { token, name, phone, school, class_name } = body
+  const { token, name, phone, city, school, class_name } = body
 
   if (!token || !name?.trim() || !phone?.trim())
     return NextResponse.json({ error: 'Заполните имя и телефон' }, { status: 400 })
@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
     referrer_child_id: child.id,
     name: name.trim(),
     phone: phone.trim(),
+    city: city?.trim() || null,
     school: school?.trim() || null,
     class_name: class_name?.trim() || null,
     status: 'new',

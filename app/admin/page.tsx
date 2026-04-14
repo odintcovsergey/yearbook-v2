@@ -1857,13 +1857,13 @@ function ReferralLeadsTab({ notify }: any) {
                   </div>
                   <span className={`text-xs px-2 py-1 rounded-full font-medium ${st.color}`}>{st.label}</span>
                 </div>
-                {(lead.school || lead.class_name) && (
+                {(lead.city || lead.school || lead.class_name) && (
                   <p className="text-sm text-gray-500 mb-2">
-                    {[lead.school, lead.class_name].filter(Boolean).join(' · ')}
+                    {[lead.city, lead.school, lead.class_name].filter(Boolean).join(' · ')}
                   </p>
                 )}
                 <p className="text-xs text-gray-400 mb-3">
-                  Реферер: <strong>{lead.referrer_name}</strong> · {new Date(lead.created_at).toLocaleDateString('ru-RU')}
+                  Реферер: <strong>{lead.referrer_name}</strong>{lead.referrer_album ? ` · ${lead.referrer_album}` : ''} · {new Date(lead.created_at).toLocaleDateString('ru-RU')}
                 </p>
                 <div className="flex items-center gap-2 flex-wrap">
                   {Object.entries(statusLabels).map(([key, val]) => (
