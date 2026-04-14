@@ -195,6 +195,14 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
   const [showTemplatesModal, setShowTemplatesModal] = useState(false)
   const [showQuotesModal, setShowQuotesModal] = useState(false)
   const [showLeadsModal, setShowLeadsModal] = useState(false)
+  const [leadsCount, setLeadsCount] = useState(0)
+
+  useEffect(() => {
+    api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'get_leads' }) })
+      .then(r => r.json()).then(data => {
+        if (Array.isArray(data)) setLeadsCount(data.filter((l: any) => l.status === 'new').length)
+      })
+  }, [showLeadsModal])
 
   const deleteAlbum = async (id: string, title: string) => {
     if (!confirm(`Удалить альбом «${title}»?
@@ -301,8 +309,11 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
           <button onClick={() => setShowQuotesModal(true)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
             Цитаты
           </button>
-          <button onClick={() => setShowLeadsModal(true)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
+          <button onClick={() => setShowLeadsModal(true)} className="relative px-3 py-2 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
             Заявки
+            {leadsCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 flex items-center justify-center bg-red-500 text-white text-xs font-medium rounded-full px-1">{leadsCount}</span>
+            )}
           </button>
           <button onClick={() => { setCreating(!creating); setSelectedTemplate(''); setForm(emptyForm) }} className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-all">
             + Новый альбом
@@ -1802,36 +1813,20 @@ function ReferralLeadsTab({ notify }: any) {
   const [leads, setLeads] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
-  const load = async () => {
-    const res = await fetch('/api/admin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-admin-secret': sessionStorage.getItem('admin_secret') ?? '' },
-      body: JSON.stringify({ action: 'get_leads' }),
-    })
-    const data = await res.json()
-    setLeads(Array.isArray(data) ? data : [])
-    setLoading(false)
-  }
+  const load = () => api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'get_leads' }) })
+    .then(r => r.json()).then(data => { setLeads(Array.isArray(data) ? data : []); setLoading(false) })
 
   useEffect(() => { load() }, [])
 
   const updateStatus = async (id: string, status: string) => {
-    await fetch('/api/admin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-admin-secret': sessionStorage.getItem('admin_secret') ?? '' },
-      body: JSON.stringify({ action: 'update_lead_status', id, status }),
-    })
+    await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'update_lead_status', id, status }) })
     setLeads(prev => prev.map(l => l.id === id ? { ...l, status } : l))
-    notify?.(`Статус обновлён: ${status}`)
+    notify?.(`Статус обновлён`)
   }
 
   const deleteLead = async (id: string) => {
     if (!confirm('Удалить заявку?')) return
-    await fetch('/api/admin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-admin-secret': sessionStorage.getItem('admin_secret') ?? '' },
-      body: JSON.stringify({ action: 'delete_lead', id }),
-    })
+    await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'delete_lead', id }) })
     setLeads(prev => prev.filter(l => l.id !== id))
     notify?.('Заявка удалена')
   }
