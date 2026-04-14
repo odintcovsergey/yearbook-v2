@@ -238,7 +238,7 @@ export default function TeacherPage() {
 
                       {idx === 0 && (
                         <>
-                          <label className="block text-xs text-gray-500 mb-1">Текст о классном руководителе / воспитателе</label>
+                          <label className="block text-xs text-gray-500 mb-1">Текст от классного руководителя / воспитателя</label>
                           <textarea className="input resize-none h-24 mb-3" placeholder="Например: «Лучший учитель, который всегда поддерживал нас!»"
                             maxLength={500}
                             value={teacher.description}
