@@ -227,24 +227,18 @@ export async function GET(req: NextRequest) {
       const cover = coverMap[c.id]
       const contact = contactMap[c.id]
 
-      const ppUrl = pp ? getPhotoUrl((pp as any).photos?.storage_path ?? '') : ''
-      const pcUrl = pc ? getPhotoUrl((pc as any).photos?.storage_path ?? '') : (cover?.cover_option === 'same' ? ppUrl : '')
-
       // Динамические колонки для групповых фото (до 10)
       const grCols: Record<string, string> = {}
       for (let i = 0; i < 10; i++) {
         grCols[`Фото_друзья_${i + 1}`] = gr[i] ? (gr[i] as any).photos?.filename ?? '' : ''
-        grCols[`URL_фото_${i + 1}`] = gr[i] ? getPhotoUrl((gr[i] as any).photos?.storage_path ?? '') : ''
       }
 
       return {
         Класс: c.class,
         Ученик: c.full_name,
         Портрет_страница: (pp as any)?.photos?.filename ?? '',
-        URL_портрет_страница: ppUrl,
         Обложка: cover?.cover_option ?? 'none',
         Портрет_обложка: pc ? (pc as any).photos?.filename : (cover?.cover_option === 'same' ? (pp as any)?.photos?.filename ?? '' : ''),
-        URL_портрет_обложка: pcUrl,
         Текст: textMap[c.id] ?? '',
         ...grCols,
       }
@@ -270,13 +264,12 @@ export async function GET(req: NextRequest) {
     const teacherRows = (teachers ?? []).map((t: any) => {
       const photo = photoByTeacher[t.id]
       const grTeacherCols: Record<string, string> = {}
-      for (let i = 0; i < 10; i++) { grTeacherCols[`Фото_друзья_${i+1}`] = ''; grTeacherCols[`URL_фото_${i+1}`] = '' }
+      for (let i = 0; i < 10; i++) { grTeacherCols[`Фото_друзья_${i+1}`] = '' }
       return {
         Класс: 'УЧИТЕЛЬ',
         Ученик: t.full_name,
         Портрет_страница: photo?.filename ?? '',
-        URL_портрет_страница: photo?.storage_path ? getPhotoUrl(photo.storage_path) : '',
-        Обложка: t.position ?? '', Портрет_обложка: '', URL_портрет_обложка: '',
+        Обложка: t.position ?? '', Портрет_обложка: '',
         Текст: t.description ?? '',
         ...grTeacherCols,
       }
