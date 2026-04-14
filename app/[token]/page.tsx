@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, memo } from 'react'
+import { useEffect, useState, useCallback, memo, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import type { Photo } from '@/types'
 
@@ -280,7 +280,7 @@ export default function ParentPage() {
               <span className={`badge-${portraitPage ? 'green' : 'blue'}`}>Выбрано: {portraitPage ? 1 : 0} / 1</span>
               <span className="text-xs text-gray-400">{portraits.filter(p => !p.locked).length} из {portraits.length} доступно</span>
             </div>
-            <div className={`sticky top-16 z-10 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitPage ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
+            <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitPage ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
               {portraitPage ? '✅ Портрет выбран — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать портрет. Для просмотра крупнее используйте кнопку в правом нижнем углу фото'}
             </div>
             <PhotoGrid
@@ -300,7 +300,7 @@ export default function ParentPage() {
           </StepCard>
         )}
         {step === 1 && (
-          <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
+          <div className="sticky bottom-0 z-20 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
             {portraitPage && (() => { const p = portraits.find(ph => ph.id === portraitPage); return p ? (
               <div className="flex items-center gap-3 mb-3">
                 <img src={p.thumb || p.url} alt="" className="w-12 h-12 rounded-lg object-cover border-2 border-blue-400" />
@@ -326,7 +326,7 @@ export default function ParentPage() {
             </div>
             {coverOption === 'other' && (
               <div className="mb-6">
-                <div className={`sticky top-16 z-10 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitCover ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
+                <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitCover ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
                   {portraitCover ? '✅ Портрет для обложки выбран — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать портрет для обложки'}
                 </div>
                 <PhotoGrid
@@ -353,7 +353,7 @@ export default function ParentPage() {
           </StepCard>
         )}
         {step === 2 && coverMode !== 'none' && (
-          <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
+          <div className="sticky bottom-0 z-20 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
             {coverOption === 'other' && portraitCover && (() => { const p = portraits.find(ph => ph.id === portraitCover); return p ? (
               <div className="flex items-center gap-3 mb-3">
                 <img src={p.thumb || p.url} alt="" className="w-12 h-12 rounded-lg object-cover border-2 border-blue-400" />
@@ -454,7 +454,7 @@ export default function ParentPage() {
               </span>
               <span className="text-xs text-gray-400">{groups.filter(g => !g.locked).length} из {groups.length} доступно</span>
             </div>
-            <div className={`sticky top-16 z-10 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${
+            <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${
               groupPhotos.length >= groupMin && groupPhotos.length <= groupMax
                 ? 'bg-green-50 border-green-100 text-green-700'
                 : groupPhotos.length > 0
@@ -485,7 +485,7 @@ export default function ParentPage() {
           </StepCard>
         )}
         {step === 4 && (
-          <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
+          <div className="sticky bottom-0 z-20 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
             {groupPhotos.length > 0 && (
               <div className="flex items-center gap-2 mb-3 overflow-x-auto">
                 {groupPhotos.map(id => { const p = groups.find(g => g.id === id); return p ? (
@@ -722,7 +722,7 @@ const PhotoThumb = memo(function PhotoThumb({ photo, isSelected, isLocked, canSe
         />
       )}
       <button onClick={e => { e.stopPropagation(); onLightbox() }}
-        className="absolute bottom-2 right-2 bg-black/60 text-white text-sm w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/80 transition-all z-10"
+        className="absolute bottom-2 right-2 bg-black/60 text-white text-sm w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/80 transition-all z-[1]"
       >
         ⤢
       </button>
@@ -741,14 +741,23 @@ function PhotoGrid({ photos, selected, limit, onLightbox, onToggle, small = fals
   small?: boolean
 }) {
   const [page, setPage] = useState(0)
+  const gridRef = useRef<HTMLDivElement>(null)
   const totalPages = Math.ceil(photos.length / PAGE_SIZE)
   const start = page * PAGE_SIZE
   const pagePhotos = photos.slice(start, start + PAGE_SIZE)
 
+  const goToPage = (i: number) => {
+    setPage(i)
+    if (gridRef.current) {
+      const top = gridRef.current.getBoundingClientRect().top + window.scrollY - 80
+      window.scrollTo({ top: Math.max(0, top), behavior: 'instant' })
+    }
+  }
+
   if (!photos.length) return <p className="text-gray-400 text-sm text-center py-8">Нет доступных фотографий</p>
   const cols = 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
   return (
-    <div>
+    <div ref={gridRef}>
       <div className={`grid ${cols} gap-3`}>
         {pagePhotos.map((photo, idx) => {
           const isSelected = selected.includes(photo.id)
@@ -773,7 +782,7 @@ function PhotoGrid({ photos, selected, limit, onLightbox, onToggle, small = fals
           <p className="text-xs text-gray-400 text-center mb-2">Другие фотографии</p>
           <div className="flex items-center justify-center gap-1.5 flex-wrap">
             {Array.from({ length: totalPages }, (_, i) => (
-              <button key={i} onClick={() => { setPage(i); window.scrollTo(0, 0) }}
+              <button key={i} onClick={() => goToPage(i)}
                 className={`w-9 h-9 rounded-xl text-sm font-medium transition-all ${
                   i === page
                     ? 'bg-blue-500 text-white shadow-sm'
