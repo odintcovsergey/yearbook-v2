@@ -300,8 +300,16 @@ export default function ParentPage() {
           </StepCard>
         )}
         {step === 1 && (
-          <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3 flex justify-end">
-            <button className="btn-primary px-8" onClick={goNext} disabled={!portraitPage}>Далее →</button>
+          <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
+            {portraitPage && (() => { const p = portraits.find(ph => ph.id === portraitPage); return p ? (
+              <div className="flex items-center gap-3 mb-3">
+                <img src={p.thumb || p.url} alt="" className="w-12 h-12 rounded-lg object-cover border-2 border-blue-400" />
+                <span className="text-sm text-gray-600">Выбранный портрет</span>
+              </div>
+            ) : null })()}
+            <div className="flex justify-end">
+              <button className="btn-primary px-8" onClick={goNext} disabled={!portraitPage}>Далее →</button>
+            </div>
           </div>
         )}
 
@@ -345,8 +353,16 @@ export default function ParentPage() {
           </StepCard>
         )}
         {step === 2 && coverMode !== 'none' && (
-          <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3 flex justify-end">
-            <button className="btn-primary px-8" onClick={goNext} disabled={coverOption === 'other' && !portraitCover}>Далее →</button>
+          <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
+            {coverOption === 'other' && portraitCover && (() => { const p = portraits.find(ph => ph.id === portraitCover); return p ? (
+              <div className="flex items-center gap-3 mb-3">
+                <img src={p.thumb || p.url} alt="" className="w-12 h-12 rounded-lg object-cover border-2 border-blue-400" />
+                <span className="text-sm text-gray-600">Портрет для обложки</span>
+              </div>
+            ) : null })()}
+            <div className="flex justify-end">
+              <button className="btn-primary px-8" onClick={goNext} disabled={coverOption === 'other' && !portraitCover}>Далее →</button>
+            </div>
           </div>
         )}
 
@@ -469,8 +485,18 @@ export default function ParentPage() {
           </StepCard>
         )}
         {step === 4 && (
-          <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3 flex justify-end">
-            <button className="btn-primary px-8" onClick={goNext} disabled={groupPhotos.length < groupMin || groupPhotos.length > groupMax}>Далее →</button>
+          <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
+            {groupPhotos.length > 0 && (
+              <div className="flex items-center gap-2 mb-3 overflow-x-auto">
+                {groupPhotos.map(id => { const p = groups.find(g => g.id === id); return p ? (
+                  <img key={id} src={p.thumb || p.url} alt="" className="w-12 h-12 rounded-lg object-cover border-2 border-blue-400 flex-shrink-0" />
+                ) : null })}
+                <span className="text-xs text-gray-400 flex-shrink-0 ml-1">Выбрано {groupPhotos.length} из {groupMax}</span>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button className="btn-primary px-8" onClick={goNext} disabled={groupPhotos.length < groupMin || groupPhotos.length > groupMax}>Далее →</button>
+            </div>
           </div>
         )}
 
@@ -743,18 +769,19 @@ function PhotoGrid({ photos, selected, limit, onLightbox, onToggle, small = fals
         })}
       </div>
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3 mt-5">
-          <button onClick={() => { setPage(p => Math.max(0, p - 1)); window.scrollTo(0, 0) }}
-            disabled={page === 0}
-            className="px-4 py-2 rounded-xl text-sm font-medium border border-gray-200 disabled:opacity-40 hover:bg-gray-50">
-            ← Назад
-          </button>
-          <span className="text-sm text-gray-500">{page + 1} / {totalPages}</span>
-          <button onClick={() => { setPage(p => Math.min(totalPages - 1, p + 1)); window.scrollTo(0, 0) }}
-            disabled={page === totalPages - 1}
-            className="px-4 py-2 rounded-xl text-sm font-medium border border-gray-200 disabled:opacity-40 hover:bg-gray-50">
-            Вперёд →
-          </button>
+        <div className="mt-5">
+          <p className="text-xs text-gray-400 text-center mb-2">Другие фотографии</p>
+          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+            {Array.from({ length: totalPages }, (_, i) => (
+              <button key={i} onClick={() => { setPage(i); window.scrollTo(0, 0) }}
+                className={`w-9 h-9 rounded-xl text-sm font-medium transition-all ${
+                  i === page
+                    ? 'bg-blue-500 text-white shadow-sm'
+                    : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
+                }`}
+              >{i + 1}</button>
+            ))}
+          </div>
         </div>
       )}
     </div>
