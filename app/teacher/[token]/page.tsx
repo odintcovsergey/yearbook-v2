@@ -239,7 +239,7 @@ export default function TeacherPage() {
                       {idx === 0 && (
                         <>
                           <label className="block text-xs text-gray-500 mb-1">Текст от классного руководителя / воспитателя</label>
-                          <textarea className="input resize-none h-24 mb-3" placeholder="Например: «Лучший учитель, который всегда поддерживал нас!»"
+                          <textarea className="input resize-none h-24 mb-3" placeholder="Например: «Дорогие мои, вы — лучший класс! Желаю вам смелых решений и больших побед!»"
                             maxLength={500}
                             value={teacher.description}
                             onChange={e => updateLocal(teacher.id, 'description', e.target.value)} />

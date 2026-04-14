@@ -253,7 +253,7 @@ export async function GET(req: NextRequest) {
     // Учителя
     const { data: teachers } = await supabaseAdmin
       .from('teachers')
-      .select('id, full_name, position')
+      .select('id, full_name, position, description')
       .eq('album_id', albumId)
       .order('created_at')
 
@@ -277,7 +277,7 @@ export async function GET(req: NextRequest) {
         Портрет_страница: photo?.filename ?? '',
         URL_портрет_страница: photo?.storage_path ? getPhotoUrl(photo.storage_path) : '',
         Обложка: t.position ?? '', Портрет_обложка: '', URL_портрет_обложка: '',
-        Текст: '',
+        Текст: t.description ?? '',
         ...grTeacherCols,
       }
     })
