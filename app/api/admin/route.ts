@@ -587,5 +587,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ linked, skipped })
   }
 
+  // Реферальные заявки — получить список
+  if (body.action === 'get_leads') {
+    const { data } = await supabaseAdmin
+      .from('referral_leads')
+      .select('id, name, phone, school, class_name, status, created_at, referrer_child_id')
+      .order('created_at', { ascending: false })
+
+    const childIds = [...new Set((data ?? []).map((d: any) => d.referrer_child_id))]
+    const { data: children } = childIds.length > 0
+      ? await supabaseAdmin.from('children').select('id, full_name').in('id', childIds)
+      : { data: [] }
+    const { data: contacts } = childIds.length > 0
+      ? await supabaseAdmin.from('parent_contacts').select('child_id, parent_name').in('child_id', childIds)
+      : { data: [] }
+
+    const childMap = Object.fromEntries((children ?? []).map((c: any) => [c.id, c.full_name]))
+    const contactMap = Object.fromEntries((contacts ?? []).map((c: any) => [c.child_id, c.parent_name]))
+
+    const leads = (data ?? []).map((d: any) => ({
+      ...d,
+      referrer_name: contactMap[d.referrer_child_id] || childMap[d.referrer_child_id] || '—',
+    }))
+
+    return NextResponse.json(leads)
+  }
+
+  if (body.action === 'update_lead_status') {
+    await supabaseAdmin.from('referral_leads').update({ status: body.status }).eq('id', body.id)
+    return NextResponse.json({ ok: true })
+  }
+
+  if (body.action === 'delete_lead') {
+    await supabaseAdmin.from('referral_leads').delete().eq('id', body.id)
+    return NextResponse.json({ ok: true })
+  }
+
   return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })
 }

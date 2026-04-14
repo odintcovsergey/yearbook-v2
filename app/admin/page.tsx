@@ -194,6 +194,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
   const [editingTitle, setEditingTitle] = useState('')
   const [showTemplatesModal, setShowTemplatesModal] = useState(false)
   const [showQuotesModal, setShowQuotesModal] = useState(false)
+  const [showLeadsModal, setShowLeadsModal] = useState(false)
 
   const deleteAlbum = async (id: string, title: string) => {
     if (!confirm(`Удалить альбом «${title}»?
@@ -300,6 +301,9 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
           <button onClick={() => setShowQuotesModal(true)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
             Цитаты
           </button>
+          <button onClick={() => setShowLeadsModal(true)} className="px-3 py-2 text-sm text-gray-500 hover:text-gray-800 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
+            Заявки
+          </button>
           <button onClick={() => { setCreating(!creating); setSelectedTemplate(''); setForm(emptyForm) }} className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-700 transition-all">
             + Новый альбом
           </button>
@@ -326,6 +330,18 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
               <button onClick={() => setShowQuotesModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
             </div>
             <QuotesTab notify={notify} />
+          </div>
+        </div>
+      )}
+
+      {showLeadsModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowLeadsModal(false)}>
+          <div className="card p-6 w-full max-w-3xl max-h-[85vh] flex flex-col overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-medium text-gray-800">Реферальные заявки</h3>
+              <button onClick={() => setShowLeadsModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+            </div>
+            <ReferralLeadsTab notify={notify} />
           </div>
         </div>
       )}
@@ -1776,6 +1792,98 @@ function TemplatesTab({ notify }: any) {
         </table>
         {templates.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">Нет шаблонов</p>}
       </div>
+    </div>
+  )
+}
+
+// ─── Реферальные заявки ──────────────────────────────────────────────────────
+
+function ReferralLeadsTab({ notify }: any) {
+  const [leads, setLeads] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const load = async () => {
+    const res = await fetch('/api/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-secret': sessionStorage.getItem('admin_secret') ?? '' },
+      body: JSON.stringify({ action: 'get_leads' }),
+    })
+    const data = await res.json()
+    setLeads(Array.isArray(data) ? data : [])
+    setLoading(false)
+  }
+
+  useEffect(() => { load() }, [])
+
+  const updateStatus = async (id: string, status: string) => {
+    await fetch('/api/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-secret': sessionStorage.getItem('admin_secret') ?? '' },
+      body: JSON.stringify({ action: 'update_lead_status', id, status }),
+    })
+    setLeads(prev => prev.map(l => l.id === id ? { ...l, status } : l))
+    notify?.(`Статус обновлён: ${status}`)
+  }
+
+  const deleteLead = async (id: string) => {
+    if (!confirm('Удалить заявку?')) return
+    await fetch('/api/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-secret': sessionStorage.getItem('admin_secret') ?? '' },
+      body: JSON.stringify({ action: 'delete_lead', id }),
+    })
+    setLeads(prev => prev.filter(l => l.id !== id))
+    notify?.('Заявка удалена')
+  }
+
+  const statusLabels: Record<string, { label: string; color: string }> = {
+    new: { label: 'Новая', color: 'bg-blue-100 text-blue-700' },
+    in_progress: { label: 'В работе', color: 'bg-amber-100 text-amber-700' },
+    done: { label: 'Заказ', color: 'bg-green-100 text-green-700' },
+    rejected: { label: 'Отказ', color: 'bg-gray-100 text-gray-500' },
+  }
+
+  if (loading) return <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-blue-200 border-t-blue-500 rounded-full animate-spin" /></div>
+
+  return (
+    <div>
+      {leads.length === 0 ? (
+        <p className="text-center py-8 text-gray-400 text-sm">Заявок пока нет</p>
+      ) : (
+        <div className="space-y-3">
+          {leads.map(lead => {
+            const st = statusLabels[lead.status] ?? statusLabels.new
+            return (
+              <div key={lead.id} className="border border-gray-100 rounded-xl p-4">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div>
+                    <p className="font-medium text-gray-800">{lead.name}</p>
+                    <p className="text-sm text-gray-500">{lead.phone}</p>
+                  </div>
+                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${st.color}`}>{st.label}</span>
+                </div>
+                {(lead.school || lead.class_name) && (
+                  <p className="text-sm text-gray-500 mb-2">
+                    {[lead.school, lead.class_name].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+                <p className="text-xs text-gray-400 mb-3">
+                  Реферер: <strong>{lead.referrer_name}</strong> · {new Date(lead.created_at).toLocaleDateString('ru-RU')}
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {Object.entries(statusLabels).map(([key, val]) => (
+                    <button key={key}
+                      onClick={() => updateStatus(lead.id, key)}
+                      className={`text-xs px-2 py-1 rounded-lg border transition-all ${lead.status === key ? 'border-gray-400 font-medium' : 'border-gray-200 text-gray-400 hover:text-gray-600'}`}
+                    >{val.label}</button>
+                  ))}
+                  <button onClick={() => deleteLead(lead.id)} className="text-xs text-red-400 hover:text-red-600 ml-auto">Удалить</button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

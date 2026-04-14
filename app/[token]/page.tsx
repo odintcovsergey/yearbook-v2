@@ -179,7 +179,7 @@ export default function ParentPage() {
     const res = await fetch('/api/select', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, parentName, phone, portraitPage, coverOption, portraitCover, studentText, groupPhotos, referral }),
+      body: JSON.stringify({ token, parentName, phone, portraitPage, coverOption, portraitCover, studentText, groupPhotos }),
     })
     const data = await res.json()
     setSaving(false)
@@ -482,22 +482,6 @@ export default function ParentPage() {
             <input className="input mb-1" type="tel" placeholder="+7 (999) 123-45-67" value={phone} onChange={e => setPhone(e.target.value)} />
             <p className="text-xs text-gray-400 mb-6">Используется только для связи по альбому. Никакой рекламы.</p>
 
-            {/* Реферальный блок */}
-            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-6">
-              <p className="text-sm font-medium text-blue-800 mb-1">🎁 Получите скидку 50%</p>
-              <p className="text-sm text-blue-700 mb-3">
-                Если ваши знакомые тоже закажут выпускной альбом — вы получите скидку 50% на свой.
-                Оставьте их имя и телефон, и мы свяжемся с ними сами.
-              </p>
-              <label className="block text-xs text-blue-600 mb-1">Имя и телефон знакомых (необязательно)</label>
-              <textarea
-                className="input resize-none h-24 text-sm"
-                placeholder={"Иванова Мария, +7 999 123-45-67\nПетров Алексей, +7 912 456-78-90"}
-                value={referral}
-                onChange={e => setReferral(e.target.value)}
-              />
-            </div>
-
             <div className="flex items-center justify-between">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
               <button className="btn-primary" onClick={goNext} disabled={!phone.trim()}>Далее →</button>
@@ -558,13 +542,35 @@ export default function ParentPage() {
           </StepCard>
         )}
 
-        {done && !alreadySubmitted && (
+        {done && !alreadySubmitted && (() => {
+          const refLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/ref/${token}`
+          return (
           <div className="card p-8 text-center">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
             <h2 className="text-xl font-medium text-gray-800 mb-2">Спасибо!</h2>
-            <p className="text-gray-500 text-sm">Выбор для <strong>{childName}</strong> сохранён.<br />Сообщим когда альбом будет готов.</p>
+            <p className="text-gray-500 text-sm mb-6">Выбор для <strong>{childName}</strong> сохранён.<br />Сообщим когда альбом будет готов.</p>
+
+            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-left">
+              <p className="text-sm font-medium text-blue-800 mb-1">🎁 Получите скидку 50%</p>
+              <p className="text-sm text-blue-700 mb-4">
+                Поделитесь ссылкой с друзьями из других классов или садов. Если они закажут альбом — вы получите скидку 50% на свой!
+              </p>
+              <div className="flex gap-2">
+                <input readOnly value={refLink} className="input text-xs flex-1 bg-white" />
+                <button
+                  className="btn-primary text-sm px-4 whitespace-nowrap"
+                  onClick={() => {
+                    navigator.clipboard.writeText(refLink)
+                    const btn = document.getElementById('copy-ref-btn')
+                    if (btn) { btn.textContent = 'Скопировано ✓'; setTimeout(() => { btn.textContent = 'Копировать' }, 2000) }
+                  }}
+                  id="copy-ref-btn"
+                >Копировать</button>
+              </div>
+            </div>
           </div>
-        )}
+          )
+        })()}
         {done && alreadySubmitted && (
           <div className="card p-8 text-center max-w-sm mx-auto">
             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
