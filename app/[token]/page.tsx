@@ -384,8 +384,12 @@ export default function ParentPage() {
             <div className="text-right text-xs text-gray-400 mb-4">
               <span className={studentText.length > textMaxChars * 0.9 ? 'text-amber-500' : ''}>{studentText.length}</span> / {textMaxChars}
             </div>
+            <div className="flex items-center justify-between mb-6">
+              <button className="btn-ghost" onClick={goPrev}>← Назад</button>
+              <button className="btn-primary px-8" onClick={goNext}>Далее →</button>
+            </div>
             {textType === 'grade11' && quotes.length > 0 && (
-              <div className="mb-6">
+              <div className="border-t border-gray-100 pt-5">
                 <p className="text-sm font-medium text-gray-700 mb-3">Или выберите готовую цитату:</p>
                 <div className="space-y-2">
                   {quotes.map((q: any) => {
@@ -404,7 +408,6 @@ export default function ParentPage() {
                             body: JSON.stringify({ token, quote_id: newId })
                           })
                           setTakenQuoteIds(prev => {
-                            // Убрать предыдущую выбранную цитату из заблокированных
                             let updated = selectedQuoteId ? prev.filter(id => id !== selectedQuoteId) : [...prev]
                             if (!newId) return updated.filter(id => id !== q.id)
                             return [...updated.filter(id => id !== q.id), q.id]
@@ -424,10 +427,6 @@ export default function ParentPage() {
                 </div>
               </div>
             )}
-            <div className="sticky bottom-0 bg-white border-t border-gray-100 shadow-lg px-4 py-3 -mx-5 -mb-5 flex items-center justify-between rounded-b-2xl">
-              <button className="btn-ghost" onClick={goPrev}>← Назад</button>
-              <button className="btn-primary px-8" onClick={goNext}>Далее →</button>
-            </div>
           </StepCard>
         )}
 
