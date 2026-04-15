@@ -185,7 +185,7 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
   const [creating, setCreating] = useState(false)
   const [templates, setTemplates] = useState<Template[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState<string>('')
-  const emptyForm = { title: '', classes: '', cover_mode: 'none', cover_price: '0', deadline: '', city: '', year: String(new Date().getFullYear()), group_enabled: true, group_min: '2', group_max: '2', group_exclusive: true, text_enabled: true, text_max_chars: '500', text_type: 'free' }
+  const emptyForm = { title: '', classes: '', cover_mode: 'required', cover_price: '0', deadline: '', city: '', year: String(new Date().getFullYear()), group_enabled: true, group_min: '2', group_max: '2', group_exclusive: true, text_enabled: true, text_max_chars: '500', text_type: 'free' }
   const [form, setForm] = useState(emptyForm)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'done' | 'pending'>('all')
@@ -417,10 +417,8 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
             <p className="text-sm font-medium text-gray-700">Портрет на обложку</p>
             <div className="flex flex-wrap gap-2">
               {[
-                { v: 'none', l: 'Без портрета' },
-                { v: 'same', l: 'Тот же (бесплатно)' },
-                { v: 'optional', l: 'Другой (доплата)' },
                 { v: 'required', l: 'Обязателен (все платят)' },
+                { v: 'optional', l: 'На выбор' },
               ].map(({ v, l }) => (
                 <button key={v} onClick={() => setForm(f => ({ ...f, cover_mode: v }))}
                   className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${form.cover_mode === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
@@ -1648,7 +1646,7 @@ function QuotesTab({ notify }: any) {
 function TemplatesTab({ notify }: any) {
   const [templates, setTemplates] = useState<Template[]>([])
   const [creating, setCreating] = useState(false)
-  const emptyForm = { title: '', cover_mode: 'none', cover_price: '0', group_enabled: true, group_min: '2', group_max: '2', group_exclusive: true, text_enabled: true, text_max_chars: '500', text_type: 'free' }
+  const emptyForm = { title: '', cover_mode: 'required', cover_price: '0', group_enabled: true, group_min: '2', group_max: '2', group_exclusive: true, text_enabled: true, text_max_chars: '500', text_type: 'free' }
   const [form, setForm] = useState(emptyForm)
 
   const load = () => api('/api/admin?action=templates').then(r => r.json()).then(setTemplates)
@@ -1702,7 +1700,7 @@ function TemplatesTab({ notify }: any) {
           <div className="border border-gray-100 rounded-xl p-4 space-y-3">
             <p className="text-sm font-medium text-gray-700">Портрет на обложку</p>
             <div className="flex flex-wrap gap-2">
-              {[{ v: 'none', l: 'Без портрета' }, { v: 'same', l: 'Тот же (бесплатно)' }, { v: 'optional', l: 'Другой (доплата)' }, { v: 'required', l: 'Обязателен' }].map(({ v, l }) => (
+              {[{ v: 'required', l: 'Обязателен (все платят)' }, { v: 'optional', l: 'На выбор' }].map(({ v, l }) => (
                 <button key={v} onClick={() => setForm(f => ({ ...f, cover_mode: v }))}
                   className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${form.cover_mode === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{l}</button>
               ))}

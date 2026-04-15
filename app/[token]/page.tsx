@@ -63,6 +63,7 @@ export default function ParentPage() {
         setAlbumTitle(data.album?.title ?? '')
         setAlbumDeadline(data.album?.deadline ?? null)
         setCoverMode(data.album?.cover_mode ?? 'none')
+        if (data.album?.cover_mode === 'required') setCoverOption('other')
         setCoverPrice(data.album?.cover_price ?? 0)
         setGroupEnabled(data.album?.group_enabled ?? true)
         setGroupMin(data.album?.group_min ?? 2)
@@ -334,17 +335,23 @@ export default function ParentPage() {
         )}
 
         {step === 2 && coverMode !== 'none' && (
-          <StepCard wide title="Портрет для обложки" subtitle="Выберите портрет, который будет размещён на обложке вашего альбома">
-            <div className="space-y-3 mb-6">
-              {coverMode !== 'required' && (
+          <StepCard wide
+            title={coverMode === 'required' ? 'Выберите второй портрет на обложку' : 'Портрет для обложки'}
+            subtitle={coverMode === 'required'
+              ? `Этот портрет будет на обложке вашего альбома${coverPrice > 0 ? ` · + ${coverPrice} ₽` : ''}`
+              : 'Выберите вариант размещения портрета на обложке'}>
+
+            {coverMode !== 'required' && (
+              <div className="space-y-3 mb-6">
                 <RadioCard active={coverOption === 'none'} onClick={() => setCoverOption('none')} label="Без портрета на обложке" sub="Бесплатно" />
-              )}
-              <RadioCard active={coverOption === 'same'} onClick={() => setCoverOption('same')} label="Тот же портрет что на странице" sub="Бесплатно" />
-              {portraits.length > 1 && (
-                <RadioCard active={coverOption === 'other'} onClick={() => setCoverOption('other')} label="Другой портрет на обложку" sub={coverPrice > 0 ? `+ ${coverPrice} ₽` : 'Бесплатно'} paid={coverPrice > 0} />
-              )}
-            </div>
-            {coverOption === 'other' && (
+                <RadioCard active={coverOption === 'same'} onClick={() => setCoverOption('same')} label="Тот же портрет что на странице" sub="Бесплатно" />
+                {portraits.length > 1 && (
+                  <RadioCard active={coverOption === 'other'} onClick={() => setCoverOption('other')} label="Другой портрет на обложку" sub={coverPrice > 0 ? `+ ${coverPrice} ₽` : 'Бесплатно'} paid={coverPrice > 0} />
+                )}
+              </div>
+            )}
+
+            {(coverMode === 'required' || coverOption === 'other') && (
               <div className="mb-6">
                 <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitCover ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
                   {portraitCover ? '✅ Портрет для обложки выбран — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать портрет для обложки'}
