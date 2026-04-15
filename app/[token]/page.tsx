@@ -219,12 +219,32 @@ export default function ParentPage() {
   if (error && !done) return <ErrorScreen message={error} />
   if (alreadySubmitted) return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-gray-50 flex items-center justify-center p-4">
-      <div className="card p-8 text-center max-w-sm w-full">
-        <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
-        <p className="text-xs text-gray-400 mb-1">{albumTitle}</p>
-        <h2 className="text-xl font-medium text-gray-800 mb-2">Выбор уже сделан</h2>
-        <p className="text-gray-500 text-sm mb-4">Фотографии для <strong>{childName}</strong> уже выбраны и сохранены.</p>
-        <p className="text-gray-400 text-sm">Если нужно внести изменения — обратитесь к вашему менеджеру.</p>
+      <div className="max-w-sm w-full space-y-4">
+        <div className="card p-8 text-center">
+          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+          <p className="text-xs text-gray-400 mb-1">{albumTitle}</p>
+          <h2 className="text-xl font-medium text-gray-800 mb-2">Выбор уже сделан</h2>
+          <p className="text-gray-500 text-sm mb-4">Фотографии для <strong>{childName}</strong> уже выбраны и сохранены.</p>
+          <p className="text-gray-400 text-sm">Если нужно внести изменения — обратитесь к вашему менеджеру.</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-sm font-medium text-blue-800 mb-1">🎁 Получите скидку 50%</p>
+          <p className="text-sm text-blue-700 mb-4">
+            Поделитесь ссылкой с друзьями из других классов или садов. Если они закажут альбом — вы получите скидку 50% на свой!
+          </p>
+          <div className="flex gap-2">
+            <input readOnly value={`${typeof window !== 'undefined' ? window.location.origin : ''}/ref/${token}`} className="input text-xs flex-1 bg-white" />
+            <button
+              className="btn-primary text-sm px-4 whitespace-nowrap"
+              onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/ref/${token}`)
+                const btn = document.getElementById('copy-ref-btn2')
+                if (btn) { btn.textContent = 'Скопировано ✓'; setTimeout(() => { btn.textContent = 'Копировать' }, 2000) }
+              }}
+              id="copy-ref-btn2"
+            >Копировать</button>
+          </div>
+        </div>
       </div>
     </div>
   )
