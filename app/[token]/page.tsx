@@ -45,6 +45,7 @@ export default function ParentPage() {
   const [step, setStep] = useState<StepId>(1)
   const [parentName, setParentName] = useState('')
   const [phone, setPhone] = useState('')
+  const [consent, setConsent] = useState(false)
   const [referral, setReferral] = useState('')
   const [portraitPage, setPortraitPage] = useState<string | null>(null)
   const [coverOption, setCoverOption] = useState<'none' | 'same' | 'other'>('none')
@@ -506,11 +507,20 @@ export default function ParentPage() {
             <input className="input mb-4" placeholder="Иванова Елена Сергеевна" value={parentName} onChange={e => setParentName(e.target.value)} />
             <label className="block text-sm text-gray-500 mb-1">Номер телефона</label>
             <input className="input mb-1" type="tel" placeholder="+7 (999) 123-45-67" value={phone} onChange={e => setPhone(e.target.value)} />
-            <p className="text-xs text-gray-400 mb-6">Используется только для связи по альбому. Никакой рекламы.</p>
+            <p className="text-xs text-gray-400 mb-4">Используется только для связи по альбому. Никакой рекламы.</p>
+
+            <label className="flex items-start gap-3 mb-6 cursor-pointer">
+              <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500 flex-shrink-0" />
+              <span className="text-xs text-gray-500">
+                Я даю согласие на обработку персональных данных в соответствии с{' '}
+                <a href="/privacy" target="_blank" className="text-blue-500 hover:underline">Политикой конфиденциальности</a>
+              </span>
+            </label>
 
             <div className="flex items-center justify-between">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
-              <button className="btn-primary" onClick={goNext} disabled={!phone.trim()}>Далее →</button>
+              <button className="btn-primary" onClick={goNext} disabled={!phone.trim() || !consent}>Далее →</button>
             </div>
           </StepCard>
         )}

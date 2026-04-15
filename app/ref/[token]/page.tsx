@@ -16,6 +16,7 @@ export default function ReferralPage() {
   const [city, setCity] = useState('')
   const [school, setSchool] = useState('')
   const [className, setClassName] = useState('')
+  const [consent, setConsent] = useState(false)
 
   useEffect(() => {
     fetch(`/api/referral?token=${token}`)
@@ -122,7 +123,16 @@ export default function ReferralPage() {
               <label className="block text-xs text-gray-500 mb-1">Класс / группа</label>
               <input className="input mb-5" placeholder="4-А, подготовительная группа..." value={className} onChange={e => setClassName(e.target.value)} />
 
-              <button className="btn-primary w-full" onClick={handleSubmit} disabled={!name.trim() || !phone.trim() || !city.trim() || sending}>
+              <label className="flex items-start gap-3 mb-5 cursor-pointer">
+                <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500 flex-shrink-0" />
+                <span className="text-xs text-gray-500">
+                  Я даю согласие на обработку персональных данных в соответствии с{' '}
+                  <a href="/privacy" target="_blank" className="text-blue-500 hover:underline">Политикой конфиденциальности</a>
+                </span>
+              </label>
+
+              <button className="btn-primary w-full" onClick={handleSubmit} disabled={!name.trim() || !phone.trim() || !city.trim() || !consent || sending}>
                 {sending ? 'Отправляю...' : 'Отправить заявку'}
               </button>
 
