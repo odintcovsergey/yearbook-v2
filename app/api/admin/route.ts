@@ -364,6 +364,8 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from('parent_contacts').delete().in('child_id', ids)
       await supabaseAdmin.from('drafts').delete().in('child_id', ids)
       await supabaseAdmin.from('photo_children').delete().in('child_id', ids)
+      await supabaseAdmin.from('quote_selections').delete().in('child_id', ids)
+      await supabaseAdmin.from('referral_leads').delete().in('referrer_child_id', ids)
     }
     await supabaseAdmin.from('children').delete().eq('album_id', album_id)
     const { data: teacherIds } = await supabaseAdmin.from('teachers').select('id').eq('album_id', album_id)
@@ -378,7 +380,8 @@ export async function POST(req: NextRequest) {
     }
     await supabaseAdmin.from('photos').delete().eq('album_id', album_id)
     await supabaseAdmin.from('responsible_parents').delete().eq('album_id', album_id)
-    await supabaseAdmin.from('albums').delete().eq('id', album_id)
+    const { error: delErr } = await supabaseAdmin.from('albums').delete().eq('id', album_id)
+    if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
     return NextResponse.json({ ok: true })
   }
 
