@@ -407,6 +407,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  // Обновить настройки альбома
+  if (body.action === 'update_album') {
+    const { error } = await supabaseAdmin.from('albums').update({
+      title: body.title,
+      cover_mode: body.cover_mode,
+      cover_price: body.cover_price ?? 0,
+      deadline: body.deadline || null,
+      group_enabled: body.group_enabled ?? true,
+      group_min: body.group_min ?? 2,
+      group_max: body.group_max ?? 2,
+      group_exclusive: body.group_exclusive ?? true,
+      text_enabled: body.text_enabled ?? true,
+      text_max_chars: body.text_max_chars ?? 500,
+      text_type: body.text_type ?? 'free',
+      city: body.city ?? null,
+      year: body.year ?? null,
+    }).eq('id', body.album_id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
   // Создать альбом
   if (body.action === 'create_album') {
     const { data, error } = await supabaseAdmin.from('albums')

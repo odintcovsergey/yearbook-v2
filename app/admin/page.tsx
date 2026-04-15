@@ -192,6 +192,8 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
   const [sortBy, setSortBy] = useState<'created' | 'deadline' | 'progress'>('created')
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
+  const [editAlbum, setEditAlbum] = useState<Album | null>(null)
+  const [editForm, setEditForm] = useState<any>(null)
   const [showTemplatesModal, setShowTemplatesModal] = useState(false)
   const [showQuotesModal, setShowQuotesModal] = useState(false)
   const [showLeadsModal, setShowLeadsModal] = useState(false)
@@ -221,6 +223,49 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
     const res = await api('/api/admin', { method: 'POST', body: JSON.stringify({ action: 'rename_album', album_id: id, title: title.trim() }) })
     const data = await res.json()
     if (data.ok) { notify('Название обновлено'); onRefresh() }
+    else notify(data.error || 'Ошибка', 'err')
+  }
+
+  const openEdit = (a: Album) => {
+    setEditAlbum(a)
+    setEditForm({
+      title: a.title,
+      cover_mode: a.cover_mode,
+      cover_price: String(a.cover_price ?? 0),
+      deadline: (a as any).deadline ? (a as any).deadline.split('T')[0] : '',
+      group_enabled: a.group_enabled,
+      group_min: String(a.group_min),
+      group_max: String(a.group_max),
+      group_exclusive: a.group_exclusive,
+      text_enabled: a.text_enabled,
+      text_max_chars: String(a.text_max_chars),
+      text_type: (a as any).text_type ?? 'free',
+      city: (a as any).city ?? '',
+      year: String((a as any).year ?? ''),
+    })
+  }
+
+  const saveEdit = async () => {
+    if (!editAlbum || !editForm) return
+    const res = await api('/api/admin', { method: 'POST', body: JSON.stringify({
+      action: 'update_album',
+      album_id: editAlbum.id,
+      title: editForm.title,
+      cover_mode: editForm.cover_mode,
+      cover_price: parseInt(editForm.cover_price) || 0,
+      deadline: editForm.deadline || null,
+      group_enabled: editForm.group_enabled,
+      group_min: parseInt(editForm.group_min) || 2,
+      group_max: parseInt(editForm.group_max) || 2,
+      group_exclusive: editForm.group_exclusive,
+      text_enabled: editForm.text_enabled,
+      text_max_chars: parseInt(editForm.text_max_chars) || 500,
+      text_type: editForm.text_type,
+      city: editForm.city || null,
+      year: parseInt(editForm.year) || null,
+    })})
+    const data = await res.json()
+    if (data.ok) { notify('Настройки сохранены'); setEditAlbum(null); onRefresh() }
     else notify(data.error || 'Ошибка', 'err')
   }
 
@@ -358,6 +403,106 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
               <button onClick={() => setShowLeadsModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
             </div>
             <ReferralLeadsTab notify={notify} />
+          </div>
+        </div>
+      )}
+
+      {editAlbum && editForm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEditAlbum(null)}>
+          <div className="card p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-medium text-gray-800">Настройки альбома</h3>
+              <button onClick={() => setEditAlbum(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+            </div>
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Название</label>
+                  <input className="input" value={editForm.title} onChange={e => setEditForm((f: any) => ({ ...f, title: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Город</label>
+                  <input className="input" value={editForm.city} onChange={e => setEditForm((f: any) => ({ ...f, city: e.target.value }))} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Год</label>
+                  <input className="input" type="number" value={editForm.year} onChange={e => setEditForm((f: any) => ({ ...f, year: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Дедлайн</label>
+                  <input className="input" type="date" value={editForm.deadline} onChange={e => setEditForm((f: any) => ({ ...f, deadline: e.target.value }))} />
+                </div>
+              </div>
+
+              <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+                <p className="text-sm font-medium text-gray-700">Портрет на обложку</p>
+                <div className="flex flex-wrap gap-2">
+                  {[{ v: 'required', l: 'Обязателен (все платят)' }, { v: 'optional', l: 'На выбор' }].map(({ v, l }) => (
+                    <button key={v} onClick={() => setEditForm((f: any) => ({ ...f, cover_mode: v }))}
+                      className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${editForm.cover_mode === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{l}</button>
+                  ))}
+                </div>
+                {(editForm.cover_mode === 'optional' || editForm.cover_mode === 'required') && (
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs text-gray-500">Доплата (₽)</label>
+                    <input className="input w-28" type="number" value={editForm.cover_price} onChange={e => setEditForm((f: any) => ({ ...f, cover_price: e.target.value }))} />
+                  </div>
+                )}
+              </div>
+
+              <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-700">Групповые фото</p>
+                  <button onClick={() => setEditForm((f: any) => ({ ...f, group_enabled: !f.group_enabled }))}
+                    className={`w-10 h-6 rounded-full transition-colors ${editForm.group_enabled ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                    <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform mx-1 ${editForm.group_enabled ? 'translate-x-4' : ''}`} />
+                  </button>
+                </div>
+                {editForm.group_enabled && (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <label className="text-xs text-gray-500">Мин</label>
+                    <input className="input w-20" type="number" value={editForm.group_min} onChange={e => setEditForm((f: any) => ({ ...f, group_min: e.target.value }))} />
+                    <label className="text-xs text-gray-500">Макс</label>
+                    <input className="input w-20" type="number" value={editForm.group_max} onChange={e => setEditForm((f: any) => ({ ...f, group_max: e.target.value }))} />
+                    <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                      <input type="checkbox" checked={editForm.group_exclusive} onChange={e => setEditForm((f: any) => ({ ...f, group_exclusive: e.target.checked }))} />
+                      Эксклюзивные
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-gray-700">Текст от ученика</p>
+                  <button onClick={() => setEditForm((f: any) => ({ ...f, text_enabled: !f.text_enabled }))}
+                    className={`w-10 h-6 rounded-full transition-colors ${editForm.text_enabled ? 'bg-blue-500' : 'bg-gray-200'}`}>
+                    <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform mx-1 ${editForm.text_enabled ? 'translate-x-4' : ''}`} />
+                  </button>
+                </div>
+                {editForm.text_enabled && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs text-gray-500">Макс символов</label>
+                      <input className="input w-28" type="number" value={editForm.text_max_chars} onChange={e => setEditForm((f: any) => ({ ...f, text_max_chars: e.target.value }))} />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[{ v: 'free', l: 'Свободный' }, { v: 'garden', l: 'Детский сад' }, { v: 'grade4', l: '4 класс' }, { v: 'grade11', l: '9-11 класс' }].map(({ v, l }) => (
+                        <button key={v} onClick={() => setEditForm((f: any) => ({ ...f, text_type: v }))}
+                          className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${editForm.text_type === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button className="btn-primary" onClick={saveEdit}>Сохранить</button>
+                <button className="btn-secondary" onClick={() => setEditAlbum(null)}>Отмена</button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -626,8 +771,8 @@ function AlbumsView({ albums, onSelect, onRefresh, notify }: any) {
 
                 {/* Действия */}
                 <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => { setEditingTitleId(a.id); setEditingTitle(a.title) }} className="p-1.5 text-gray-300 hover:text-gray-500 transition-colors rounded-lg hover:bg-gray-50" title="Переименовать">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  <button onClick={() => openEdit(a)} className="p-1.5 text-gray-300 hover:text-gray-500 transition-colors rounded-lg hover:bg-gray-50" title="Настройки">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                   </button>
                   <button onClick={() => { navigator.clipboard.writeText(`${location.origin}/album/${a.id}`); notify('Ссылка класса скопирована') }} className="px-2.5 py-1 text-xs text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors">Класс</button>
                   {(a as any).teacher_token && <button onClick={() => { navigator.clipboard.writeText(`${location.origin}/teacher/${(a as any).teacher_token}`); notify('Ссылка учителей скопирована') }} className="px-2.5 py-1 text-xs text-violet-500 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-colors">Учителя</button>}
