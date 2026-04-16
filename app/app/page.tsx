@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 // ============================================================
@@ -299,7 +299,10 @@ export default function AppPage() {
       {selectedAlbum && (
         <AlbumDetailModal
           album={selectedAlbum}
+          canEdit={canEdit}
           onClose={() => setSelectedAlbum(null)}
+          onNotify={(msg) => notify(msg, 'ok')}
+          onError={(msg) => notify(msg, 'err')}
         />
       )}
 
@@ -485,14 +488,34 @@ function StatCard({
 }
 
 // ============================================================
-// МОДАЛКА ДЕТАЛЕЙ АЛЬБОМА (read-only)
+// МОДАЛКА ДЕТАЛЕЙ АЛЬБОМА (с управлением учениками)
 // ============================================================
 
-function AlbumDetailModal({ album, onClose }: { album: Album; onClose: () => void }) {
+function AlbumDetailModal({
+  album,
+  canEdit,
+  onClose,
+  onNotify,
+  onError,
+}: {
+  album: Album
+  canEdit: boolean
+  onClose: () => void
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
   const [stats, setStats] = useState<AlbumStats | null>(null)
   const [children, setChildren] = useState<Child[]>([])
   const [loading, setLoading] = useState(true)
   const [backdropStart, setBackdropStart] = useState(false)
+
+  // UI состояние для добавления/импорта
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [addName, setAddName] = useState('')
+  const [addClass, setAddClass] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [selectedChild, setSelectedChild] = useState<Child | null>(null)
 
   const handleBackdropMouseDown = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) setBackdropStart(true)
@@ -502,18 +525,101 @@ function AlbumDetailModal({ album, onClose }: { album: Album; onClose: () => voi
     setBackdropStart(false)
   }
 
-  useEffect(() => {
-    Promise.all([
+  const load = async () => {
+    const [s, c] = await Promise.all([
       api(`/api/tenant?action=album_stats&album_id=${album.id}`).then(r => r.json()),
       api(`/api/tenant?action=children&album_id=${album.id}`).then(r => r.json()),
     ])
-      .then(([s, c]) => {
-        setStats(s)
-        setChildren(Array.isArray(c) ? c : [])
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+    setStats(s)
+    setChildren(Array.isArray(c) ? c : [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load().catch(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [album.id])
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!addName.trim() || !addClass.trim()) return
+    setBusy(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'add_child',
+        album_id: album.id,
+        full_name: addName,
+        class: addClass,
+      }),
+    })
+    if (r.ok) {
+      onNotify(`Добавлен: ${addName.trim()}`)
+      setAddName('')
+      // Класс оставляем — удобно добавлять подряд
+      await load()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось добавить')
+    }
+    setBusy(false)
+  }
+
+  const handleReset = async (child: Child) => {
+    if (!confirm(`Сбросить выбор у «${child.full_name}»? Все выбранные фото и контакты будут удалены.`)) return
+    setBusy(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'reset_child', child_id: child.id }),
+    })
+    if (r.ok) {
+      onNotify(`Выбор сброшен: ${child.full_name}`)
+      await load()
+      setSelectedChild(null)
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось сбросить')
+    }
+    setBusy(false)
+  }
+
+  const handleDelete = async (child: Child) => {
+    if (!confirm(`Полностью удалить «${child.full_name}»? Это действие необратимо.`)) return
+    setBusy(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'delete_child', child_id: child.id }),
+    })
+    if (r.ok) {
+      onNotify(`Удалён: ${child.full_name}`)
+      await load()
+      setSelectedChild(null)
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось удалить')
+    }
+    setBusy(false)
+  }
+
+  const copyChildLink = async (child: Child) => {
+    const url = `${window.location.origin}/${child.access_token}`
+    try {
+      await navigator.clipboard.writeText(url)
+      onNotify(`Ссылка скопирована для ${child.full_name}`)
+    } catch {
+      onError('Не удалось скопировать. Ссылка: ' + url)
+    }
+  }
+
+  const handleImportComplete = async (added: number, skipped: number) => {
+    setShowImport(false)
+    if (added > 0) {
+      onNotify(`Добавлено: ${added}${skipped > 0 ? `, пропущено: ${skipped}` : ''}`)
+      await load()
+    } else if (skipped > 0) {
+      onNotify(`Все ${skipped} строк пропущены (дубликаты)`)
+    }
+  }
 
   return (
     <div
@@ -580,12 +686,76 @@ function AlbumDetailModal({ album, onClose }: { album: Album; onClose: () => voi
 
               {/* Ученики */}
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-medium">Ученики</h4>
-                  <div className="text-xs text-gray-400">
-                    Просмотр. Редактирование — на следующем этапе.
-                  </div>
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h4 className="font-medium">
+                    Ученики
+                    <span className="text-gray-400 font-normal ml-2">{children.length}</span>
+                  </h4>
+                  {canEdit && (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowImport(false)
+                          setShowAddForm(s => !s)
+                        }}
+                        className="btn-secondary text-xs px-3 py-1.5"
+                      >
+                        {showAddForm ? 'Скрыть' : '+ Добавить'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAddForm(false)
+                          setShowImport(s => !s)
+                        }}
+                        className="btn-secondary text-xs px-3 py-1.5"
+                      >
+                        {showImport ? 'Скрыть' : 'Импорт CSV'}
+                      </button>
+                    </div>
+                  )}
                 </div>
+
+                {/* Форма добавления одного ученика */}
+                {canEdit && showAddForm && (
+                  <form
+                    onSubmit={handleAdd}
+                    className="bg-gray-50 rounded-xl p-4 mb-3 flex gap-2 flex-wrap"
+                  >
+                    <input
+                      type="text"
+                      value={addName}
+                      onChange={(e) => setAddName(e.target.value)}
+                      placeholder="Фамилия Имя"
+                      className="input flex-1 min-w-[180px]"
+                      autoFocus
+                      required
+                      disabled={busy}
+                    />
+                    <input
+                      type="text"
+                      value={addClass}
+                      onChange={(e) => setAddClass(e.target.value)}
+                      placeholder="11А"
+                      className="input w-24"
+                      required
+                      disabled={busy}
+                    />
+                    <button type="submit" className="btn-primary" disabled={busy}>
+                      {busy ? '...' : 'Добавить'}
+                    </button>
+                  </form>
+                )}
+
+                {/* Импорт CSV */}
+                {canEdit && showImport && (
+                  <CSVImportBlock
+                    albumId={album.id}
+                    onDone={handleImportComplete}
+                    onError={onError}
+                  />
+                )}
 
                 {children.length === 0 ? (
                   <div className="text-center text-gray-400 text-sm py-8 bg-gray-50 rounded-xl">
@@ -601,28 +771,87 @@ function AlbumDetailModal({ album, onClose }: { album: Album; onClose: () => voi
                             <th className="px-4 py-2.5">Класс</th>
                             <th className="px-4 py-2.5">Статус</th>
                             <th className="px-4 py-2.5">Телефон</th>
+                            <th className="px-4 py-2.5 text-right">Действия</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {children.map(c => (
-                            <tr key={c.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-2.5 font-medium text-gray-900">
-                                {c.full_name}
-                              </td>
-                              <td className="px-4 py-2.5 text-gray-500">{c.class}</td>
-                              <td className="px-4 py-2.5">
-                                {c.submitted_at ? (
-                                  <span className="badge-green">Завершил</span>
-                                ) : c.started_at ? (
-                                  <span className="badge-amber">В процессе</span>
-                                ) : (
-                                  <span className="badge-gray">Не начал</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-2.5 text-gray-500 text-xs">
-                                {c.contact?.phone ?? '—'}
-                              </td>
-                            </tr>
+                            <React.Fragment key={c.id}>
+                              <tr
+                                className={`hover:bg-gray-50 cursor-pointer ${
+                                  selectedChild?.id === c.id ? 'bg-gray-50' : ''
+                                }`}
+                                onClick={() =>
+                                  setSelectedChild(selectedChild?.id === c.id ? null : c)
+                                }
+                              >
+                                <td className="px-4 py-2.5 font-medium text-gray-900">
+                                  {c.full_name}
+                                </td>
+                                <td className="px-4 py-2.5 text-gray-500">{c.class}</td>
+                                <td className="px-4 py-2.5">
+                                  {c.submitted_at ? (
+                                    <span className="badge-green">Завершил</span>
+                                  ) : c.started_at ? (
+                                    <span className="badge-amber">В процессе</span>
+                                  ) : (
+                                    <span className="badge-gray">Не начал</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-gray-500 text-xs">
+                                  {c.contact?.phone ?? '—'}
+                                </td>
+                                <td className="px-4 py-2.5 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      copyChildLink(c)
+                                    }}
+                                    className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
+                                    title="Скопировать ссылку"
+                                  >
+                                    Ссылка
+                                  </button>
+                                </td>
+                              </tr>
+                              {selectedChild?.id === c.id && canEdit && (
+                                <tr className="bg-gray-50">
+                                  <td colSpan={5} className="px-4 py-3 border-t border-gray-100">
+                                    <div className="flex flex-wrap gap-2 items-center">
+                                      <span className="text-xs text-gray-500 mr-2">
+                                        Действия для {c.full_name}:
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => copyChildLink(c)}
+                                        className="text-xs btn-secondary px-3 py-1.5"
+                                      >
+                                        Скопировать ссылку
+                                      </button>
+                                      {(c.submitted_at || c.started_at) && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleReset(c)}
+                                          className="text-xs btn-secondary px-3 py-1.5 text-amber-700"
+                                          disabled={busy}
+                                        >
+                                          Сбросить выбор
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDelete(c)}
+                                        className="text-xs btn-secondary px-3 py-1.5 text-red-600"
+                                        disabled={busy}
+                                      >
+                                        Удалить ученика
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           ))}
                         </tbody>
                       </table>
@@ -1224,6 +1453,141 @@ function AlbumFormModal({
           )}
         </form>
       </div>
+    </div>
+  )
+}
+
+// ============================================================
+// БЛОК ИМПОРТА CSV
+// ============================================================
+
+function CSVImportBlock({
+  albumId,
+  onDone,
+  onError,
+}: {
+  albumId: string
+  onDone: (added: number, skipped: number) => void
+  onError: (msg: string) => void
+}) {
+  const [rawText, setRawText] = useState('')
+  const [preview, setPreview] = useState<Array<{ full_name: string; class: string }>>([])
+  const [busy, setBusy] = useState(false)
+
+  // Парсинг текста в режиме реального времени
+  useEffect(() => {
+    if (!rawText.trim()) {
+      setPreview([])
+      return
+    }
+    // Папа-парсер работает с тем что есть: либо таб/запятая/точка с запятой
+    // Автоопределение разделителя
+    import('papaparse').then((Papa: any) => {
+      const result = Papa.parse(rawText.trim(), {
+        header: false,
+        skipEmptyLines: true,
+      })
+
+      const rows: Array<{ full_name: string; class: string }> = []
+      for (const row of result.data as any[]) {
+        if (!Array.isArray(row)) continue
+        // Если первая ячейка — заголовок вроде "ФИО", пропускаем
+        const first = String(row[0] ?? '').trim().toLowerCase()
+        if (
+          first === 'фио' ||
+          first === 'name' ||
+          first === 'full_name' ||
+          first === 'имя'
+        ) {
+          continue
+        }
+        const full_name = String(row[0] ?? '').trim()
+        const childClass = String(row[1] ?? '').trim()
+        if (full_name && childClass) {
+          rows.push({ full_name, class: childClass })
+        }
+      }
+      setPreview(rows)
+    })
+  }, [rawText])
+
+  const handleImport = async () => {
+    if (preview.length === 0) return
+    setBusy(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'import_children',
+        album_id: albumId,
+        rows: preview,
+      }),
+    })
+    if (r.ok) {
+      const d = await r.json()
+      onDone(d.added ?? 0, d.skipped ?? 0)
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось импортировать')
+    }
+    setBusy(false)
+  }
+
+  return (
+    <div className="bg-gray-50 rounded-xl p-4 mb-3 space-y-3">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+          Вставьте список учеников
+        </label>
+        <p className="text-xs text-gray-500 mb-2">
+          Формат: <code className="bg-white px-1 py-0.5 rounded">ФИО</code>{' '}
+          <span className="text-gray-400">(таб/запятая)</span>{' '}
+          <code className="bg-white px-1 py-0.5 rounded">Класс</code>. Одна строка — один ученик.
+          Скопируйте из Excel или Google Таблиц.
+        </p>
+        <textarea
+          value={rawText}
+          onChange={(e) => setRawText(e.target.value)}
+          rows={6}
+          className="input font-mono text-xs"
+          placeholder={`Иванов Иван\t11А\nПетров Пётр\t11А\nСидорова Мария\t11Б`}
+          disabled={busy}
+        />
+      </div>
+
+      {preview.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 mb-2">
+            Распознано: <span className="font-semibold text-gray-900">{preview.length}</span>{' '}
+            {preview.length === 1 ? 'строка' : preview.length < 5 ? 'строки' : 'строк'}
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg max-h-40 overflow-y-auto">
+            <table className="w-full text-xs">
+              <tbody>
+                {preview.slice(0, 20).map((r, i) => (
+                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                    <td className="px-3 py-1.5">{r.full_name}</td>
+                    <td className="px-3 py-1.5 text-gray-500 w-20">{r.class}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {preview.length > 20 && (
+              <div className="text-center text-xs text-gray-400 py-1.5 border-t border-gray-100">
+                ... и ещё {preview.length - 20}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={handleImport}
+        className="btn-primary"
+        disabled={busy || preview.length === 0}
+      >
+        {busy ? 'Импортируем...' : `Импортировать ${preview.length || ''}`}
+      </button>
     </div>
   )
 }

@@ -21,6 +21,21 @@ async function assertAlbumAccess(auth: AuthContext, albumId: string): Promise<bo
 }
 
 // ============================================================
+// Хелпер: проверка, что ребёнок принадлежит альбому tenant'а
+// ============================================================
+async function assertChildAccess(auth: AuthContext, childId: string): Promise<boolean> {
+  if (auth.role === 'superadmin') return true
+
+  const { data } = await supabaseAdmin
+    .from('children')
+    .select('albums!inner(tenant_id)')
+    .eq('id', childId)
+    .single()
+
+  return (data as any)?.albums?.tenant_id === auth.tenantId
+}
+
+// ============================================================
 // GET /api/tenant — данные своего арендатора
 // ============================================================
 export async function GET(req: NextRequest) {
@@ -452,6 +467,191 @@ export async function POST(req: NextRequest) {
     }
 
     await logAction(auth, 'album.unarchive', 'album', album_id)
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // add_child — добавить одного ученика
+  // ----------------------------------------------------------
+  if (body.action === 'add_child') {
+    const { album_id, full_name, class: childClass } = body
+    if (!album_id || !full_name?.trim() || !childClass?.trim()) {
+      return NextResponse.json({ error: 'album_id, ФИО и класс обязательны' }, { status: 400 })
+    }
+
+    if (!(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('children')
+      .insert({
+        album_id,
+        full_name: full_name.trim(),
+        class: childClass.trim(),
+      })
+      .select()
+      .single()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    await logAction(auth, 'child.create', 'child', data.id, {
+      album_id,
+      full_name: data.full_name,
+      class: data.class,
+    })
+
+    return NextResponse.json(data)
+  }
+
+  // ----------------------------------------------------------
+  // import_children — массовый импорт учеников из CSV
+  // ----------------------------------------------------------
+  if (body.action === 'import_children') {
+    const { album_id, rows } = body
+    if (!album_id || !Array.isArray(rows)) {
+      return NextResponse.json({ error: 'album_id и rows обязательны' }, { status: 400 })
+    }
+
+    if (!(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    // Валидация и нормализация
+    const toInsert: Array<{ album_id: string; full_name: string; class: string }> = []
+    let skipped = 0
+    for (const row of rows) {
+      const full_name = String(row.full_name ?? row.name ?? '').trim()
+      const childClass = String(row.class ?? row['класс'] ?? '').trim()
+      if (!full_name || !childClass) {
+        skipped++
+        continue
+      }
+      toInsert.push({ album_id, full_name, class: childClass })
+    }
+
+    if (toInsert.length === 0) {
+      return NextResponse.json(
+        { error: 'Нет корректных строк для импорта', skipped },
+        { status: 400 }
+      )
+    }
+
+    // Получим существующих детей чтобы не дублировать
+    const { data: existing } = await supabaseAdmin
+      .from('children')
+      .select('full_name, class')
+      .eq('album_id', album_id)
+
+    const existingSet = new Set(
+      (existing ?? []).map((c: any) => `${c.full_name.toLowerCase()}|${c.class.toLowerCase()}`)
+    )
+
+    const filtered = toInsert.filter(c => {
+      const key = `${c.full_name.toLowerCase()}|${c.class.toLowerCase()}`
+      if (existingSet.has(key)) {
+        skipped++
+        return false
+      }
+      existingSet.add(key)
+      return true
+    })
+
+    if (filtered.length === 0) {
+      return NextResponse.json({ added: 0, skipped })
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('children')
+      .insert(filtered)
+      .select('id, full_name, class, access_token')
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    await logAction(auth, 'child.import', 'album', album_id, {
+      added: data?.length ?? 0,
+      skipped,
+    })
+
+    return NextResponse.json({ added: data?.length ?? 0, skipped, children: data })
+  }
+
+  // ----------------------------------------------------------
+  // reset_child — сбросить выбор ученика (без удаления)
+  // ----------------------------------------------------------
+  if (body.action === 'reset_child') {
+    const { child_id } = body
+    if (!child_id) {
+      return NextResponse.json({ error: 'child_id обязателен' }, { status: 400 })
+    }
+
+    if (!(await assertChildAccess(auth, child_id))) {
+      return NextResponse.json({ error: 'Ученик не найден' }, { status: 404 })
+    }
+
+    await Promise.all([
+      supabaseAdmin.from('selections').delete().eq('child_id', child_id),
+      supabaseAdmin.from('photo_locks').delete().eq('child_id', child_id),
+      supabaseAdmin.from('cover_selections').delete().eq('child_id', child_id),
+      supabaseAdmin.from('student_texts').delete().eq('child_id', child_id),
+      supabaseAdmin.from('parent_contacts').delete().eq('child_id', child_id),
+      supabaseAdmin.from('drafts').delete().eq('child_id', child_id),
+      supabaseAdmin.from('quote_selections').delete().eq('child_id', child_id),
+    ])
+
+    await supabaseAdmin
+      .from('children')
+      .update({ submitted_at: null, started_at: null })
+      .eq('id', child_id)
+
+    await logAction(auth, 'child.reset', 'child', child_id)
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // delete_child — полностью удалить ученика
+  // ----------------------------------------------------------
+  if (body.action === 'delete_child') {
+    const { child_id } = body
+    if (!child_id) {
+      return NextResponse.json({ error: 'child_id обязателен' }, { status: 400 })
+    }
+
+    if (!(await assertChildAccess(auth, child_id))) {
+      return NextResponse.json({ error: 'Ученик не найден' }, { status: 404 })
+    }
+
+    // Получим данные ребёнка для audit log
+    const { data: child } = await supabaseAdmin
+      .from('children')
+      .select('full_name, class, album_id')
+      .eq('id', child_id)
+      .single()
+
+    // Удаляем всё связанное
+    await Promise.all([
+      supabaseAdmin.from('photo_locks').delete().eq('child_id', child_id),
+      supabaseAdmin.from('selections').delete().eq('child_id', child_id),
+      supabaseAdmin.from('parent_contacts').delete().eq('child_id', child_id),
+      supabaseAdmin.from('cover_selections').delete().eq('child_id', child_id),
+      supabaseAdmin.from('quote_selections').delete().eq('child_id', child_id),
+      supabaseAdmin.from('student_texts').delete().eq('child_id', child_id),
+      supabaseAdmin.from('drafts').delete().eq('child_id', child_id),
+      supabaseAdmin.from('photo_children').delete().eq('child_id', child_id),
+    ])
+
+    await supabaseAdmin.from('children').delete().eq('id', child_id)
+
+    await logAction(auth, 'child.delete', 'child', child_id, {
+      full_name: child?.full_name,
+      class: child?.class,
+    })
 
     return NextResponse.json({ ok: true })
   }
