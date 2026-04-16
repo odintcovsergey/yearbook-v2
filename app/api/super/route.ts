@@ -370,7 +370,43 @@ export async function POST(req: NextRequest) {
       supabaseAdmin.from('users').select('id', { count: 'exact', head: true }).eq('tenant_id', tenant_id),
     ])
 
-    // Каскадное удаление через ON DELETE CASCADE (настроено в миграции)
+    // Получаем ID пользователей, чтобы удалить их сессии
+    const { data: tenantUsers } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('tenant_id', tenant_id)
+
+    const userIds = (tenantUsers ?? []).map(u => u.id)
+
+    // ЯВНОЕ ПОСЛЕДОВАТЕЛЬНОЕ УДАЛЕНИЕ
+    // Не полагаемся только на CASCADE — делаем каждый шаг проверяемым
+    // Порядок: от листьев к корню
+
+    // 1. Сессии пользователей этого tenant'а
+    if (userIds.length > 0) {
+      await supabaseAdmin.from('sessions').delete().in('user_id', userIds)
+    }
+
+    // 2. Пользователи tenant'а
+    await supabaseAdmin.from('users').delete().eq('tenant_id', tenant_id)
+
+    // 3. Приглашения
+    await supabaseAdmin.from('invitations').delete().eq('tenant_id', tenant_id)
+
+    // 4. Audit log этого tenant'а (оставляем запись об удалении через superadmin ниже)
+    await supabaseAdmin.from('audit_log').delete().eq('tenant_id', tenant_id)
+
+    // 5. Альбомы (каскадно удалят children, photos, selections и т.д. — эти связи между собой работают через album_id)
+    await supabaseAdmin.from('albums').delete().eq('tenant_id', tenant_id)
+
+    // 6. Шаблоны и цитаты этого tenant'а
+    await supabaseAdmin.from('album_templates').delete().eq('tenant_id', tenant_id)
+    await supabaseAdmin.from('quotes').delete().eq('tenant_id', tenant_id)
+
+    // 7. Лиды
+    await supabaseAdmin.from('referral_leads').delete().eq('tenant_id', tenant_id)
+
+    // 8. Наконец — сам tenant
     const { error } = await supabaseAdmin
       .from('tenants')
       .delete()
@@ -378,12 +414,12 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       return NextResponse.json(
-        { error: 'Не удалось удалить: ' + error.message },
+        { error: 'Не удалось удалить арендатора: ' + error.message },
         { status: 500 }
       )
     }
 
-    // Audit log — tenant_id уже удалён, поэтому логируем через meta
+    // Audit log — tenant_id=null чтобы запись не удалилась вместе с tenant'ом
     await logAction(auth, 'tenant.delete', 'tenant', tenant_id, {
       name: tenant.name,
       slug: tenant.slug,
