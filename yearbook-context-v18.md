@@ -1,6 +1,6 @@
 # КОНТЕКСТ ДЛЯ ПРОДОЛЖЕНИЯ РАБОТЫ
 # Система отбора фотографий для выпускных альбомов
-# Обновлено: 16.04.2026 (этап 3.2.a закрыт)
+# Обновлено: 16.04.2026 (этап 3.2.b.1 закрыт, старый /admin изолирован)
 
 ---
 
@@ -128,11 +128,45 @@ git remote set-url origin https://odintcovsergey:[ТОКЕН]@github.com/odintco
   - Empty state с кнопкой "Создать первый альбом"
   - Уведомления об успехе/ошибке
 
+### Изоляция старого /admin (готово)
+- Старая админка /api/admin теперь фильтрует всё по tenant_id = MAIN_TENANT_ID
+- Защита от подмены ID в delete/update/archive/rename альбомов
+- get_leads, update_lead_status, delete_lead также фильтруют
+- MAIN_TENANT_ID() helper из env DEFAULT_TENANT_ID
+- Тестовые альбомы партнёров больше не засоряют основную админку
+
+### Этап 3.2.b.1 — Управление учениками в /app (готово)
+- /api/tenant POST:
+  - add_child — одиночное добавление
+  - import_children — массовый импорт с автопропуском дубликатов (name+class)
+  - reset_child — сброс выбора (selections, photos, text, contacts)
+  - delete_child — полное удаление со всем связанным
+- assertChildAccess хелпер (через JOIN albums!inner(tenant_id))
+- AlbumDetailModal обновлён:
+  - Кнопки "+ Добавить" и "Импорт CSV" (только для canEdit)
+  - Форма добавления inline — после submit очищает имя, оставляет класс
+  - CSVImportBlock: textarea с живым парсингом через papaparse
+    - Автоопределение разделителя (tab/comma/semicolon)
+    - Пропуск заголовка (ФИО/name/full_name/имя)
+    - Превью первых 20 строк
+  - Клик по строке раскрывает панель действий: Копировать ссылку / Сбросить / Удалить
+  - Быстрая кнопка "Ссылка" в правой колонке
+  - Подтверждение через confirm() для destructive действий
+  - Виден только для canEdit (viewer видит чистую таблицу)
+
 ---
 
 ## ЧТО СДЕЛАТЬ ДАЛЬШЕ — ПЛАН
 
-### Этап 3.2.b — работа с учениками, учителями, ответственным родителем (СЛЕДУЮЩИЙ)
+### Этап 3.2.b.2 — учителя и ответственный родитель (СЛЕДУЮЩИЙ)
+- /api/tenant GET: teachers (по album_id, с проверкой доступа), responsible (по album_id)
+- /api/tenant POST:
+  - add_teacher, update_teacher, delete_teacher
+  - create_responsible (или update_responsible)
+- UI в AlbumDetailModal:
+  - Переход от плоской структуры к вкладкам: Обзор / Ученики / Учителя / Ответственный родитель
+  - Вкладка Учителя: добавление, редактирование имени/должности, текст от кл. руководителя у первого учителя, копирование ссылки
+  - Вкладка Ответственный: создание ссылки для заполнения данных учителей
 - POST /api/tenant:
   - add_child, delete_child, reset_child
   - add_teacher, update_teacher, delete_teacher
