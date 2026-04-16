@@ -4,6 +4,14 @@ import { supabaseAdmin, getPhotoUrl } from '@/lib/supabase'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+// Старая админка работает ТОЛЬКО с альбомами главного tenant'а (ваш аккаунт).
+// Чужие альбомы (например, тестовых партнёров) доступны только через /super.
+const MAIN_TENANT_ID = () => {
+  const id = process.env.DEFAULT_TENANT_ID
+  if (!id) throw new Error('DEFAULT_TENANT_ID not set')
+  return id
+}
+
 function checkAdmin(req: NextRequest) {
   return req.headers.get('x-admin-secret') === process.env.ADMIN_SECRET
 }
@@ -16,7 +24,11 @@ export async function GET(req: NextRequest) {
 
   // Список альбомов
   if (action === 'albums') {
-    const { data } = await supabaseAdmin.from('albums').select('*').order('created_at', { ascending: false })
+    const { data } = await supabaseAdmin
+      .from('albums')
+      .select('*')
+      .eq('tenant_id', MAIN_TENANT_ID())
+      .order('created_at', { ascending: false })
     return NextResponse.json(data ?? [])
   }
 
@@ -28,13 +40,25 @@ export async function GET(req: NextRequest) {
 
   // Список альбомов со статистикой (один запрос)
   if (action === 'albums_with_stats') {
-    const [albumsRes, childrenRes, teacherTokenRes, teachersRes] = await Promise.all([
-      supabaseAdmin.from('albums').select('*').order('created_at', { ascending: false }),
-      supabaseAdmin.from('children').select('album_id, submitted_at, started_at'),
-      supabaseAdmin.from('responsible_parents').select('album_id, access_token'),
-      supabaseAdmin.from('teachers').select('album_id, submitted_at'),
+    // Сначала получаем все альбомы главного tenant'а
+    const { data: albums } = await supabaseAdmin
+      .from('albums')
+      .select('*')
+      .eq('tenant_id', MAIN_TENANT_ID())
+      .order('created_at', { ascending: false })
+
+    const albumIds = (albums ?? []).map((a: any) => a.id)
+
+    // Если альбомов нет — сразу отдаём пустой массив
+    if (albumIds.length === 0) {
+      return NextResponse.json([])
+    }
+
+    const [childrenRes, teacherTokenRes, teachersRes] = await Promise.all([
+      supabaseAdmin.from('children').select('album_id, submitted_at, started_at').in('album_id', albumIds),
+      supabaseAdmin.from('responsible_parents').select('album_id, access_token').in('album_id', albumIds),
+      supabaseAdmin.from('teachers').select('album_id, submitted_at').in('album_id', albumIds),
     ])
-    const albums = albumsRes.data ?? []
     const children = childrenRes.data ?? []
     const tokenMap: Record<string, string> = {}
     for (const t of teacherTokenRes.data ?? []) tokenMap[t.album_id] = t.access_token
@@ -51,7 +75,7 @@ export async function GET(req: NextRequest) {
       teacherMap[t.album_id].total++
       if (t.submitted_at) teacherMap[t.album_id].done++
     }
-    return NextResponse.json(albums.map(a => ({
+    return NextResponse.json((albums ?? []).map(a => ({
       ...a,
       stats: statsMap[a.id] ?? { total: 0, submitted: 0, in_progress: 0 },
       teacher_token: tokenMap[a.id] ?? null,
@@ -380,7 +404,11 @@ export async function POST(req: NextRequest) {
     }
     await supabaseAdmin.from('photos').delete().eq('album_id', album_id)
     await supabaseAdmin.from('responsible_parents').delete().eq('album_id', album_id)
-    const { error: delErr } = await supabaseAdmin.from('albums').delete().eq('id', album_id)
+    const { error: delErr } = await supabaseAdmin
+      .from('albums')
+      .delete()
+      .eq('id', album_id)
+      .eq('tenant_id', MAIN_TENANT_ID())
     if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
     return NextResponse.json({ ok: true })
   }
@@ -397,13 +425,21 @@ export async function POST(req: NextRequest) {
       }
     }
     await supabaseAdmin.from('photos').delete().eq('album_id', album_id)
-    await supabaseAdmin.from('albums').update({ archived: true }).eq('id', album_id)
+    await supabaseAdmin
+      .from('albums')
+      .update({ archived: true })
+      .eq('id', album_id)
+      .eq('tenant_id', MAIN_TENANT_ID())
     return NextResponse.json({ ok: true, deleted: photos?.length ?? 0 })
   }
 
   // Переименовать альбом
   if (body.action === 'rename_album') {
-    await supabaseAdmin.from('albums').update({ title: body.title }).eq('id', body.album_id)
+    await supabaseAdmin
+      .from('albums')
+      .update({ title: body.title })
+      .eq('id', body.album_id)
+      .eq('tenant_id', MAIN_TENANT_ID())
     return NextResponse.json({ ok: true })
   }
 
@@ -423,7 +459,9 @@ export async function POST(req: NextRequest) {
       text_type: body.text_type ?? 'free',
       city: body.city ?? null,
       year: body.year ?? null,
-    }).eq('id', body.album_id)
+    })
+      .eq('id', body.album_id)
+      .eq('tenant_id', MAIN_TENANT_ID())
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })
   }
@@ -432,6 +470,7 @@ export async function POST(req: NextRequest) {
   if (body.action === 'create_album') {
     const { data, error } = await supabaseAdmin.from('albums')
       .insert({
+        tenant_id: MAIN_TENANT_ID(),
         title: body.title,
         classes: body.classes,
         cover_mode: body.cover_mode,
@@ -616,6 +655,7 @@ export async function POST(req: NextRequest) {
     const { data } = await supabaseAdmin
       .from('referral_leads')
       .select('id, name, phone, city, school, class_name, status, created_at, referrer_child_id')
+      .eq('tenant_id', MAIN_TENANT_ID())
       .order('created_at', { ascending: false })
 
     const childIds = Array.from(new Set((data ?? []).map((d: any) => d.referrer_child_id)))
@@ -646,12 +686,20 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.action === 'update_lead_status') {
-    await supabaseAdmin.from('referral_leads').update({ status: body.status }).eq('id', body.id)
+    await supabaseAdmin
+      .from('referral_leads')
+      .update({ status: body.status })
+      .eq('id', body.id)
+      .eq('tenant_id', MAIN_TENANT_ID())
     return NextResponse.json({ ok: true })
   }
 
   if (body.action === 'delete_lead') {
-    await supabaseAdmin.from('referral_leads').delete().eq('id', body.id)
+    await supabaseAdmin
+      .from('referral_leads')
+      .delete()
+      .eq('id', body.id)
+      .eq('tenant_id', MAIN_TENANT_ID())
     return NextResponse.json({ ok: true })
   }
 
