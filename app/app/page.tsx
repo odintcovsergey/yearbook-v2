@@ -707,34 +707,6 @@ function AlbumDetailModal({
                       )}
                     </div>
                   )}
-
-                  {/* Быстрые ссылки */}
-                  <div className="bg-gray-50 rounded-xl p-5">
-                    <h4 className="font-medium mb-3">Быстрые действия</h4>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setTab('children')}
-                        className="btn-secondary text-sm"
-                      >
-                        Управление учениками →
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTab('teachers')}
-                        className="btn-secondary text-sm"
-                      >
-                        Учителя →
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTab('responsible')}
-                        className="btn-secondary text-sm"
-                      >
-                        Ответственный родитель →
-                      </button>
-                    </div>
-                  </div>
                 </>
               )}
 
@@ -1782,15 +1754,12 @@ function TeachersTab({
     setBusy(false)
   }
 
-  const copyLink = async (t: Teacher) => {
-    const url = `${window.location.origin}/teacher/${t.access_token}`
-    try {
-      await navigator.clipboard.writeText(url)
-      onNotify('Ссылка учителя скопирована')
-    } catch {
-      onError('Не удалось скопировать. Ссылка: ' + url)
-    }
+  const copyLink = async (_t: Teacher) => {
+    // Устарело — у учителей нет отдельной ссылки.
+    // Ссылка для заполнения данных учителей = ссылка ответственного родителя (вкладка «Ответственный»)
+    onError('У учителя нет отдельной ссылки. Данные заполняет ответственный родитель.')
   }
+  void copyLink
 
   if (loading) {
     return <div className="text-center text-gray-400 text-sm py-8">Загрузка...</div>
@@ -1808,6 +1777,10 @@ function TeachersTab({
             + Добавить учителя
           </button>
         )}
+      </div>
+
+      <div className="bg-gray-50 rounded-xl p-4 mb-4 text-sm text-gray-600">
+        Данные учителей (ФИО, должность, текст от кл. руководителя) заполняет <strong>ответственный родитель</strong> через свою ссылку. Создайте нужное количество карточек здесь — и отправьте ссылку ответственного из соседней вкладки.
       </div>
 
       {teachers.length === 0 ? (
@@ -1907,13 +1880,6 @@ function TeachersTab({
                       )}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => copyLink(t)}
-                        className="btn-secondary text-xs px-3 py-1.5"
-                      >
-                        Ссылка
-                      </button>
                       {canEdit && (
                         <>
                           <button
@@ -2059,7 +2025,9 @@ function ResponsibleTab({
 
   const copyLink = async () => {
     if (!responsible) return
-    const url = `${window.location.origin}/responsible/${responsible.access_token}`
+    // В текущей системе /teacher/<token> — это страница ОТВЕТСТВЕННОГО РОДИТЕЛЯ
+    // (он заполняет данные учителей). У учителей отдельных ссылок нет.
+    const url = `${window.location.origin}/teacher/${responsible.access_token}`
     try {
       await navigator.clipboard.writeText(url)
       onNotify('Ссылка ответственного скопирована')
