@@ -327,5 +327,80 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  // --- ПОЛНОЕ УДАЛЕНИЕ арендатора (опасное действие) ---
+  if (body.action === 'delete_tenant') {
+    const { tenant_id, confirm_slug } = body
+    if (!tenant_id || !confirm_slug) {
+      return NextResponse.json(
+        { error: 'tenant_id и confirm_slug обязательны' },
+        { status: 400 }
+      )
+    }
+
+    // Получаем арендатора
+    const { data: tenant } = await supabaseAdmin
+      .from('tenants')
+      .select('id, slug, name')
+      .eq('id', tenant_id)
+      .single()
+
+    if (!tenant) {
+      return NextResponse.json({ error: 'Арендатор не найден' }, { status: 404 })
+    }
+
+    // Защита от удаления дефолтного tenant'а
+    if (tenant.slug === 'main') {
+      return NextResponse.json(
+        { error: 'Главный арендатор не может быть удалён' },
+        { status: 403 }
+      )
+    }
+
+    // Проверка подтверждения: введённый slug должен совпадать
+    if (confirm_slug !== tenant.slug) {
+      return NextResponse.json(
+        { error: 'Slug для подтверждения не совпадает' },
+        { status: 400 }
+      )
+    }
+
+    // Подсчитаем, что будет удалено (для audit log)
+    const [{ count: albumsCount }, { count: usersCount }] = await Promise.all([
+      supabaseAdmin.from('albums').select('id', { count: 'exact', head: true }).eq('tenant_id', tenant_id),
+      supabaseAdmin.from('users').select('id', { count: 'exact', head: true }).eq('tenant_id', tenant_id),
+    ])
+
+    // Каскадное удаление через ON DELETE CASCADE (настроено в миграции)
+    const { error } = await supabaseAdmin
+      .from('tenants')
+      .delete()
+      .eq('id', tenant_id)
+
+    if (error) {
+      return NextResponse.json(
+        { error: 'Не удалось удалить: ' + error.message },
+        { status: 500 }
+      )
+    }
+
+    // Audit log — tenant_id уже удалён, поэтому логируем через meta
+    await logAction(auth, 'tenant.delete', 'tenant', tenant_id, {
+      name: tenant.name,
+      slug: tenant.slug,
+      albums_deleted: albumsCount ?? 0,
+      users_deleted: usersCount ?? 0,
+    })
+
+    return NextResponse.json({
+      ok: true,
+      deleted: {
+        tenant_id,
+        name: tenant.name,
+        albums: albumsCount ?? 0,
+        users: usersCount ?? 0,
+      },
+    })
+  }
+
   return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })
 }

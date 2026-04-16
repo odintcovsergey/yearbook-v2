@@ -62,6 +62,7 @@ export default function SuperPage() {
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [stats, setStats] = useState<GlobalStats | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null)
   const [search, setSearch] = useState('')
   const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null)
 
@@ -212,7 +213,8 @@ export default function SuperPage() {
                   {filtered.map(t => (
                     <tr
                       key={t.id}
-                      className={`hover:bg-gray-50 transition-colors ${!t.is_active ? 'opacity-50' : ''}`}
+                      onClick={() => setSelectedTenant(t)}
+                      className={`hover:bg-gray-50 transition-colors cursor-pointer ${!t.is_active ? 'opacity-50' : ''}`}
                     >
                       <td className="px-5 py-3">
                         <div className="font-medium text-gray-900">{t.name}</div>
@@ -255,6 +257,25 @@ export default function SuperPage() {
             loadStats()
             notify(`Арендатор «${tenant.name}» создан. Логин: ${tenant.owner_email}`, 'ok')
           }}
+        />
+      )}
+
+      {selectedTenant && (
+        <TenantDetailModal
+          tenant={selectedTenant}
+          onClose={() => setSelectedTenant(null)}
+          onUpdate={() => {
+            loadTenants()
+            loadStats()
+          }}
+          onDeleted={(name) => {
+            setSelectedTenant(null)
+            loadTenants()
+            loadStats()
+            notify(`Арендатор «${name}» удалён`, 'ok')
+          }}
+          onError={(msg) => notify(msg, 'err')}
+          onNotify={(msg) => notify(msg, 'ok')}
         />
       )}
     </div>
@@ -569,6 +590,434 @@ function CreateTenantModal({
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+// ============================================================
+// МОДАЛКА ДЕТАЛЕЙ АРЕНДАТОРА
+// ============================================================
+
+type EditFormData = {
+  name: string
+  plan: string
+  city: string
+  email: string
+  phone: string
+  max_albums: number
+  max_storage_mb: number
+  plan_expires: string  // YYYY-MM-DD или пусто
+}
+
+function TenantDetailModal({
+  tenant,
+  onClose,
+  onUpdate,
+  onDeleted,
+  onError,
+  onNotify,
+}: {
+  tenant: Tenant
+  onClose: () => void
+  onUpdate: () => void
+  onDeleted: (name: string) => void
+  onError: (msg: string) => void
+  onNotify: (msg: string) => void
+}) {
+  const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view')
+  const [backdropStart, setBackdropStart] = useState(false)
+
+  const handleBackdropMouseDown = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) setBackdropStart(true)
+  }
+  const handleBackdropMouseUp = (e: React.MouseEvent) => {
+    if (backdropStart && e.target === e.currentTarget) onClose()
+    setBackdropStart(false)
+  }
+
+  const [form, setForm] = useState<EditFormData>({
+    name: tenant.name,
+    plan: tenant.plan,
+    city: tenant.city ?? '',
+    email: tenant.email ?? '',
+    phone: tenant.phone ?? '',
+    max_albums: tenant.max_albums,
+    max_storage_mb: tenant.max_storage_mb,
+    plan_expires: tenant.plan_expires ? tenant.plan_expires.slice(0, 10) : '',
+  })
+  const [loading, setLoading] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState('')
+
+  const set = <K extends keyof EditFormData>(k: K, v: EditFormData[K]) =>
+    setForm(f => ({ ...f, [k]: v }))
+
+  const handleSave = async () => {
+    setLoading(true)
+    const updates: Record<string, unknown> = {
+      name: form.name,
+      plan: form.plan,
+      city: form.city || null,
+      email: form.email || null,
+      phone: form.phone || null,
+      max_albums: form.max_albums,
+      max_storage_mb: form.max_storage_mb,
+      plan_expires: form.plan_expires ? new Date(form.plan_expires).toISOString() : null,
+    }
+
+    const r = await api('/api/super', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_tenant', tenant_id: tenant.id, updates }),
+    })
+
+    if (r.ok) {
+      onNotify('Изменения сохранены')
+      onUpdate()
+      setMode('view')
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось сохранить')
+    }
+    setLoading(false)
+  }
+
+  const handleToggleActive = async () => {
+    setLoading(true)
+    const action = tenant.is_active ? 'deactivate_tenant' : 'activate_tenant'
+    const r = await api('/api/super', {
+      method: 'POST',
+      body: JSON.stringify({ action, tenant_id: tenant.id }),
+    })
+    if (r.ok) {
+      onNotify(tenant.is_active ? 'Арендатор заблокирован' : 'Арендатор разблокирован')
+      onUpdate()
+      onClose()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось изменить статус')
+    }
+    setLoading(false)
+  }
+
+  const handleDelete = async () => {
+    if (deleteConfirm !== tenant.slug) {
+      onError('Slug для подтверждения не совпадает')
+      return
+    }
+    setLoading(true)
+    const r = await api('/api/super', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'delete_tenant',
+        tenant_id: tenant.id,
+        confirm_slug: deleteConfirm,
+      }),
+    })
+    if (r.ok) {
+      onDeleted(tenant.name)
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось удалить')
+      setLoading(false)
+    }
+  }
+
+  const isMainTenant = tenant.slug === 'main'
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-40 flex items-start justify-center py-8 px-4 overflow-y-auto"
+      onMouseDown={handleBackdropMouseDown}
+      onMouseUp={handleBackdropMouseUp}
+    >
+      <div className="bg-white rounded-2xl max-w-2xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">{tenant.name}</h3>
+            <div className="text-xs text-gray-500 mt-0.5">
+              <code className="bg-gray-100 px-1.5 py-0.5 rounded">{tenant.slug}</code>
+              {!tenant.is_active && <span className="ml-2 text-red-600">Заблокирован</span>}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            type="button"
+            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="p-6">
+          {mode === 'view' && (
+            <div className="space-y-5">
+              {/* Статистика */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="text-xs text-gray-500">Альбомов</div>
+                  <div className="text-xl font-semibold mt-1">
+                    {tenant.active_album_count}
+                    <span className="text-gray-400 text-sm"> / {tenant.album_count}</span>
+                  </div>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="text-xs text-gray-500">Сотрудников</div>
+                  <div className="text-xl font-semibold mt-1">{tenant.user_count}</div>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="text-xs text-gray-500">Тариф</div>
+                  <div className="mt-1">
+                    <span className={planColors[tenant.plan] ?? 'badge-gray'}>
+                      {planLabels[tenant.plan] ?? tenant.plan}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Информация */}
+              <div className="space-y-2 text-sm">
+                <InfoRow label="Город" value={tenant.city} />
+                <InfoRow label="Email" value={tenant.email} />
+                <InfoRow label="Телефон" value={tenant.phone} />
+                <InfoRow label="Лимит альбомов" value={tenant.max_albums.toString()} />
+                <InfoRow
+                  label="Лимит хранилища"
+                  value={
+                    tenant.max_storage_mb >= 1024
+                      ? `${(tenant.max_storage_mb / 1024).toFixed(1)} GB`
+                      : `${tenant.max_storage_mb} MB`
+                  }
+                />
+                <InfoRow
+                  label="Срок тарифа"
+                  value={
+                    tenant.plan_expires
+                      ? new Date(tenant.plan_expires).toLocaleDateString('ru-RU')
+                      : 'Без ограничения'
+                  }
+                />
+                <InfoRow label="Создан" value={new Date(tenant.created_at).toLocaleDateString('ru-RU')} />
+              </div>
+
+              {/* Действия */}
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
+                <button onClick={() => setMode('edit')} className="btn-primary">
+                  Редактировать
+                </button>
+                {!isMainTenant && (
+                  <>
+                    <button
+                      onClick={handleToggleActive}
+                      className="btn-secondary"
+                      disabled={loading}
+                    >
+                      {tenant.is_active ? 'Заблокировать' : 'Разблокировать'}
+                    </button>
+                    <button
+                      onClick={() => setMode('delete')}
+                      className="btn-secondary text-red-600 hover:bg-red-50"
+                    >
+                      Удалить
+                    </button>
+                  </>
+                )}
+                {isMainTenant && (
+                  <div className="text-xs text-gray-400 self-center">
+                    Главный арендатор — защищён от блокировки и удаления
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {mode === 'edit' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Название</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => set('name', e.target.value)}
+                  className="input"
+                  disabled={loading}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Тариф</label>
+                  <select
+                    value={form.plan}
+                    onChange={(e) => set('plan', e.target.value)}
+                    className="input"
+                    disabled={loading}
+                  >
+                    <option value="free">Free</option>
+                    <option value="basic">Basic</option>
+                    <option value="pro">Pro</option>
+                    <option value="enterprise">Enterprise</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Срок действия тарифа
+                  </label>
+                  <input
+                    type="date"
+                    value={form.plan_expires}
+                    onChange={(e) => set('plan_expires', e.target.value)}
+                    className="input"
+                    disabled={loading}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Пусто = без ограничения
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Лимит альбомов
+                  </label>
+                  <input
+                    type="number"
+                    value={form.max_albums}
+                    onChange={(e) => set('max_albums', parseInt(e.target.value) || 0)}
+                    className="input"
+                    min={1}
+                    disabled={loading}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Лимит хранилища (МБ)
+                  </label>
+                  <input
+                    type="number"
+                    value={form.max_storage_mb}
+                    onChange={(e) => set('max_storage_mb', parseInt(e.target.value) || 0)}
+                    className="input"
+                    min={1}
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Город</label>
+                <input
+                  type="text"
+                  value={form.city}
+                  onChange={(e) => set('city', e.target.value)}
+                  className="input"
+                  disabled={loading}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => set('email', e.target.value)}
+                    className="input"
+                    disabled={loading}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Телефон</label>
+                  <input
+                    type="tel"
+                    value={form.phone}
+                    onChange={(e) => set('phone', e.target.value)}
+                    className="input"
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-gray-100">
+                <button onClick={handleSave} className="btn-primary flex-1" disabled={loading}>
+                  {loading ? 'Сохраняем...' : 'Сохранить'}
+                </button>
+                <button
+                  onClick={() => setMode('view')}
+                  className="btn-secondary"
+                  disabled={loading}
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mode === 'delete' && (
+            <div className="space-y-4">
+              <div className="bg-red-50 border border-red-100 rounded-xl p-4">
+                <div className="font-medium text-red-700 mb-2">⚠ Опасное действие</div>
+                <p className="text-sm text-red-600">
+                  Вместе с арендатором <strong>«{tenant.name}»</strong> будут удалены:
+                </p>
+                <ul className="text-sm text-red-600 mt-2 ml-5 list-disc space-y-1">
+                  <li>Все альбомы арендатора ({tenant.album_count} шт.)</li>
+                  <li>Все сотрудники ({tenant.user_count} чел.)</li>
+                  <li>Все ученики, фото, выборы, заявки</li>
+                  <li>Вся история действий</li>
+                </ul>
+                <p className="text-sm text-red-700 font-medium mt-3">
+                  Это действие необратимо.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Для подтверждения введите slug арендатора:{' '}
+                  <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">{tenant.slug}</code>
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirm}
+                  onChange={(e) => setDeleteConfirm(e.target.value)}
+                  className="input font-mono"
+                  placeholder={tenant.slug}
+                  disabled={loading}
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={handleDelete}
+                  className="btn-primary flex-1 bg-red-600 hover:bg-red-700"
+                  disabled={loading || deleteConfirm !== tenant.slug}
+                >
+                  {loading ? 'Удаляем...' : 'Удалить безвозвратно'}
+                </button>
+                <button
+                  onClick={() => {
+                    setMode('view')
+                    setDeleteConfirm('')
+                  }}
+                  className="btn-secondary"
+                  disabled={loading}
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InfoRow({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+      <span className="text-gray-500">{label}</span>
+      <span className="text-gray-900 font-medium">{value || <span className="text-gray-300">—</span>}</span>
     </div>
   )
 }
