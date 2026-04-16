@@ -508,6 +508,7 @@ function AlbumDetailModal({
   const [children, setChildren] = useState<Child[]>([])
   const [loading, setLoading] = useState(true)
   const [backdropStart, setBackdropStart] = useState(false)
+  const [tab, setTab] = useState<'overview' | 'children' | 'teachers' | 'responsible'>('overview')
 
   // UI состояние для добавления/импорта
   const [showAddForm, setShowAddForm] = useState(false)
@@ -646,45 +647,99 @@ function AlbumDetailModal({
           </button>
         </div>
 
+        {/* Вкладки */}
+        <div className="px-6 pt-4 border-b border-gray-100 flex gap-1 overflow-x-auto">
+          {([
+            { id: 'overview', label: 'Обзор' },
+            { id: 'children', label: 'Ученики' },
+            { id: 'teachers', label: 'Учителя' },
+            { id: 'responsible', label: 'Ответственный' },
+          ] as const).map(t => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                tab === t.id
+                  ? 'border-gray-900 text-gray-900'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
         <div className="p-6">
           {loading ? (
             <div className="text-center text-gray-400 text-sm py-8">Загружаем данные...</div>
           ) : (
             <>
-              {/* Статистика */}
-              {stats && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                  <MiniStat label="Всего" value={stats.total} />
-                  <MiniStat label="Завершили" value={stats.submitted} tone="green" />
-                  <MiniStat label="В процессе" value={stats.in_progress} tone="amber" />
-                  <MiniStat label="Не начали" value={stats.not_started} tone="gray" />
-                </div>
-              )}
+              {/* Вкладка Обзор */}
+              {tab === 'overview' && stats && (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                    <MiniStat label="Всего" value={stats.total} />
+                    <MiniStat label="Завершили" value={stats.submitted} tone="green" />
+                    <MiniStat label="В процессе" value={stats.in_progress} tone="amber" />
+                    <MiniStat label="Не начали" value={stats.not_started} tone="gray" />
+                  </div>
 
-              {stats && (stats.teachers_total > 0 || stats.surcharge_count > 0) && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-                  {stats.teachers_total > 0 && (
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <div className="text-xs text-gray-500">Учителя</div>
-                      <div className="text-lg font-semibold mt-1">
-                        {stats.teachers_done}
-                        <span className="text-gray-400"> / {stats.teachers_total}</span>
-                      </div>
+                  {(stats.teachers_total > 0 || stats.surcharge_count > 0) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+                      {stats.teachers_total > 0 && (
+                        <div className="bg-gray-50 rounded-xl p-4">
+                          <div className="text-xs text-gray-500">Учителя</div>
+                          <div className="text-lg font-semibold mt-1">
+                            {stats.teachers_done}
+                            <span className="text-gray-400"> / {stats.teachers_total}</span>
+                          </div>
+                        </div>
+                      )}
+                      {stats.surcharge_count > 0 && (
+                        <div className="bg-gray-50 rounded-xl p-4">
+                          <div className="text-xs text-gray-500">Доплаты за обложку</div>
+                          <div className="text-lg font-semibold mt-1">
+                            {stats.surcharge_total}₽
+                            <span className="text-gray-400 text-sm"> · {stats.surcharge_count} чел.</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
-                  {stats.surcharge_count > 0 && (
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <div className="text-xs text-gray-500">Доплаты за обложку</div>
-                      <div className="text-lg font-semibold mt-1">
-                        {stats.surcharge_total}₽
-                        <span className="text-gray-400 text-sm"> · {stats.surcharge_count} чел.</span>
-                      </div>
+
+                  {/* Быстрые ссылки */}
+                  <div className="bg-gray-50 rounded-xl p-5">
+                    <h4 className="font-medium mb-3">Быстрые действия</h4>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setTab('children')}
+                        className="btn-secondary text-sm"
+                      >
+                        Управление учениками →
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTab('teachers')}
+                        className="btn-secondary text-sm"
+                      >
+                        Учителя →
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTab('responsible')}
+                        className="btn-secondary text-sm"
+                      >
+                        Ответственный родитель →
+                      </button>
                     </div>
-                  )}
-                </div>
+                  </div>
+                </>
               )}
 
-              {/* Ученики */}
+              {/* Вкладка Ученики */}
+              {tab === 'children' && (
               <div>
                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                   <h4 className="font-medium">
@@ -859,6 +914,27 @@ function AlbumDetailModal({
                   </div>
                 )}
               </div>
+              )}
+
+              {/* Вкладка Учителя */}
+              {tab === 'teachers' && (
+                <TeachersTab
+                  albumId={album.id}
+                  canEdit={canEdit}
+                  onNotify={onNotify}
+                  onError={onError}
+                />
+              )}
+
+              {/* Вкладка Ответственный родитель */}
+              {tab === 'responsible' && (
+                <ResponsibleTab
+                  albumId={album.id}
+                  canEdit={canEdit}
+                  onNotify={onNotify}
+                  onError={onError}
+                />
+              )}
             </>
           )}
         </div>
@@ -1588,6 +1664,528 @@ function CSVImportBlock({
       >
         {busy ? 'Импортируем...' : `Импортировать ${preview.length || ''}`}
       </button>
+    </div>
+  )
+}
+
+// ============================================================
+// ВКЛАДКА «УЧИТЕЛЯ»
+// ============================================================
+
+type Teacher = {
+  id: string
+  full_name: string | null
+  position: string | null
+  description: string | null
+  access_token: string
+  submitted_at: string | null
+}
+
+function TeachersTab({
+  albumId,
+  canEdit,
+  onNotify,
+  onError,
+}: {
+  albumId: string
+  canEdit: boolean
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<{ full_name: string; position: string; description: string }>({
+    full_name: '',
+    position: '',
+    description: '',
+  })
+
+  const load = async () => {
+    const r = await api(`/api/tenant?action=teachers&album_id=${albumId}`)
+    if (r.ok) {
+      setTeachers(await r.json())
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load().catch(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [albumId])
+
+  const handleAdd = async () => {
+    setBusy(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'add_teacher', album_id: albumId }),
+    })
+    if (r.ok) {
+      onNotify('Добавлен учитель. Данные заполнит ответственный родитель или вы через редактирование.')
+      await load()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось добавить')
+    }
+    setBusy(false)
+  }
+
+  const startEdit = (t: Teacher) => {
+    setEditingId(t.id)
+    setEditForm({
+      full_name: t.full_name ?? '',
+      position: t.position ?? '',
+      description: t.description ?? '',
+    })
+  }
+
+  const saveEdit = async () => {
+    if (!editingId) return
+    setBusy(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'update_teacher',
+        teacher_id: editingId,
+        full_name: editForm.full_name,
+        position: editForm.position,
+        description: editForm.description,
+      }),
+    })
+    if (r.ok) {
+      onNotify('Данные учителя сохранены')
+      setEditingId(null)
+      await load()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось сохранить')
+    }
+    setBusy(false)
+  }
+
+  const handleDelete = async (t: Teacher) => {
+    const name = t.full_name || 'учителя без имени'
+    if (!confirm(`Удалить «${name}»?`)) return
+    setBusy(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'delete_teacher', teacher_id: t.id }),
+    })
+    if (r.ok) {
+      onNotify('Учитель удалён')
+      await load()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось удалить')
+    }
+    setBusy(false)
+  }
+
+  const copyLink = async (t: Teacher) => {
+    const url = `${window.location.origin}/teacher/${t.access_token}`
+    try {
+      await navigator.clipboard.writeText(url)
+      onNotify('Ссылка учителя скопирована')
+    } catch {
+      onError('Не удалось скопировать. Ссылка: ' + url)
+    }
+  }
+
+  if (loading) {
+    return <div className="text-center text-gray-400 text-sm py-8">Загрузка...</div>
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h4 className="font-medium">
+          Учителя
+          <span className="text-gray-400 font-normal ml-2">{teachers.length}</span>
+        </h4>
+        {canEdit && (
+          <button type="button" onClick={handleAdd} className="btn-secondary text-xs px-3 py-1.5" disabled={busy}>
+            + Добавить учителя
+          </button>
+        )}
+      </div>
+
+      {teachers.length === 0 ? (
+        <div className="text-center text-gray-400 text-sm py-8 bg-gray-50 rounded-xl">
+          В альбоме пока нет учителей.
+          {canEdit && (
+            <>
+              <br />
+              Нажмите «+ Добавить учителя», чтобы создать карточку. Данные может заполнить ответственный родитель по своей ссылке.
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {teachers.map((t, i) => (
+            <div key={t.id} className="border border-gray-100 rounded-xl p-4">
+              {editingId === t.id ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">ФИО</label>
+                    <input
+                      type="text"
+                      value={editForm.full_name}
+                      onChange={(e) => setEditForm(f => ({ ...f, full_name: e.target.value }))}
+                      className="input"
+                      placeholder="Иванова Мария Петровна"
+                      disabled={busy}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Должность / предмет</label>
+                    <input
+                      type="text"
+                      value={editForm.position}
+                      onChange={(e) => setEditForm(f => ({ ...f, position: e.target.value }))}
+                      className="input"
+                      placeholder="Учитель математики"
+                      disabled={busy}
+                    />
+                  </div>
+                  {i === 0 && (
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        Текст от классного руководителя
+                      </label>
+                      <textarea
+                        value={editForm.description}
+                        onChange={(e) => setEditForm(f => ({ ...f, description: e.target.value }))}
+                        rows={4}
+                        className="input"
+                        placeholder="Напутствие, пожелания выпускникам..."
+                        disabled={busy}
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        Отображается только у первого учителя (классного руководителя)
+                      </p>
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button type="button" onClick={saveEdit} className="btn-primary" disabled={busy}>
+                      {busy ? 'Сохраняем...' : 'Сохранить'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingId(null)}
+                      className="btn-secondary"
+                      disabled={busy}
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="font-medium">
+                          {t.full_name || <span className="text-gray-400">Имя не заполнено</span>}
+                        </div>
+                        {i === 0 && (
+                          <span className="badge-blue">Классный руководитель</span>
+                        )}
+                        {t.submitted_at ? (
+                          <span className="badge-green">Заполнено</span>
+                        ) : (
+                          <span className="badge-gray">Ожидание</span>
+                        )}
+                      </div>
+                      {t.position && (
+                        <div className="text-sm text-gray-500 mt-0.5">{t.position}</div>
+                      )}
+                      {i === 0 && t.description && (
+                        <div className="text-sm text-gray-700 mt-2 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap">
+                          {t.description}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => copyLink(t)}
+                        className="btn-secondary text-xs px-3 py-1.5"
+                      >
+                        Ссылка
+                      </button>
+                      {canEdit && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => startEdit(t)}
+                            className="btn-secondary text-xs px-3 py-1.5"
+                          >
+                            Редактировать
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(t)}
+                            className="btn-secondary text-xs px-3 py-1.5 text-red-600"
+                            disabled={busy}
+                          >
+                            Удалить
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// ВКЛАДКА «ОТВЕТСТВЕННЫЙ РОДИТЕЛЬ»
+// ============================================================
+
+type Responsible = {
+  id: string
+  full_name: string | null
+  phone: string | null
+  access_token: string
+  submitted_at: string | null
+}
+
+function ResponsibleTab({
+  albumId,
+  canEdit,
+  onNotify,
+  onError,
+}: {
+  albumId: string
+  canEdit: boolean
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [responsible, setResponsible] = useState<Responsible | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState({ full_name: '', phone: '' })
+
+  const load = async () => {
+    const r = await api(`/api/tenant?action=responsible&album_id=${albumId}`)
+    if (r.ok) {
+      const data = await r.json()
+      setResponsible(data)
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load().catch(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [albumId])
+
+  const handleCreate = async () => {
+    setBusy(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'create_responsible', album_id: albumId }),
+    })
+    if (r.ok) {
+      onNotify('Ответственный создан. Скопируйте ссылку и отправьте родителю.')
+      await load()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось создать')
+    }
+    setBusy(false)
+  }
+
+  const startEdit = () => {
+    if (!responsible) return
+    setEditForm({
+      full_name: responsible.full_name ?? '',
+      phone: responsible.phone ?? '',
+    })
+    setEditing(true)
+  }
+
+  const saveEdit = async () => {
+    if (!responsible) return
+    setBusy(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'update_responsible',
+        responsible_id: responsible.id,
+        full_name: editForm.full_name,
+        phone: editForm.phone,
+      }),
+    })
+    if (r.ok) {
+      onNotify('Данные сохранены')
+      setEditing(false)
+      await load()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось сохранить')
+    }
+    setBusy(false)
+  }
+
+  const handleDelete = async () => {
+    if (!responsible) return
+    if (!confirm('Удалить ответственного родителя? Его ссылка перестанет работать. Данные учителей сохранятся.')) return
+    setBusy(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'delete_responsible',
+        responsible_id: responsible.id,
+      }),
+    })
+    if (r.ok) {
+      onNotify('Ответственный удалён')
+      await load()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось удалить')
+    }
+    setBusy(false)
+  }
+
+  const copyLink = async () => {
+    if (!responsible) return
+    const url = `${window.location.origin}/responsible/${responsible.access_token}`
+    try {
+      await navigator.clipboard.writeText(url)
+      onNotify('Ссылка ответственного скопирована')
+    } catch {
+      onError('Не удалось скопировать. Ссылка: ' + url)
+    }
+  }
+
+  if (loading) {
+    return <div className="text-center text-gray-400 text-sm py-8">Загрузка...</div>
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h4 className="font-medium">Ответственный родитель</h4>
+      </div>
+
+      <div className="bg-gray-50 rounded-xl p-4 mb-4 text-sm text-gray-600">
+        Один из родителей помогает с организацией. По своей ссылке он заполняет данные учителей (ФИО, должность, текст от кл. руководителя).
+      </div>
+
+      {!responsible ? (
+        <div className="text-center py-8">
+          <div className="text-gray-400 text-sm mb-4">
+            Ответственный родитель не назначен
+          </div>
+          {canEdit && (
+            <button type="button" onClick={handleCreate} className="btn-primary" disabled={busy}>
+              {busy ? 'Создаём...' : 'Назначить ответственного'}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="border border-gray-100 rounded-xl p-4">
+          {editing ? (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">ФИО</label>
+                <input
+                  type="text"
+                  value={editForm.full_name}
+                  onChange={(e) => setEditForm(f => ({ ...f, full_name: e.target.value }))}
+                  className="input"
+                  placeholder="Иванова Ольга Сергеевна"
+                  disabled={busy}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Телефон</label>
+                <input
+                  type="tel"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm(f => ({ ...f, phone: e.target.value }))}
+                  className="input"
+                  placeholder="+7 999 000-00-00"
+                  disabled={busy}
+                />
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={saveEdit} className="btn-primary" disabled={busy}>
+                  {busy ? 'Сохраняем...' : 'Сохранить'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  className="btn-secondary"
+                  disabled={busy}
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="font-medium">
+                      {responsible.full_name || (
+                        <span className="text-gray-400">Имя не указано</span>
+                      )}
+                    </div>
+                    {responsible.submitted_at ? (
+                      <span className="badge-green">Заполнил данные</span>
+                    ) : (
+                      <span className="badge-amber">Ожидает заполнения</span>
+                    )}
+                  </div>
+                  {responsible.phone && (
+                    <div className="text-sm text-gray-500 mt-0.5">{responsible.phone}</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={copyLink}
+                  className="btn-secondary text-xs px-3 py-1.5"
+                >
+                  Скопировать ссылку
+                </button>
+                {canEdit && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={startEdit}
+                      className="btn-secondary text-xs px-3 py-1.5"
+                    >
+                      Редактировать
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      className="btn-secondary text-xs px-3 py-1.5 text-red-600"
+                      disabled={busy}
+                    >
+                      Удалить
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

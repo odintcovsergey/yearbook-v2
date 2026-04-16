@@ -36,6 +36,36 @@ async function assertChildAccess(auth: AuthContext, childId: string): Promise<bo
 }
 
 // ============================================================
+// Хелпер: проверка, что учитель принадлежит альбому tenant'а
+// ============================================================
+async function assertTeacherAccess(auth: AuthContext, teacherId: string): Promise<boolean> {
+  if (auth.role === 'superadmin') return true
+
+  const { data } = await supabaseAdmin
+    .from('teachers')
+    .select('albums!inner(tenant_id)')
+    .eq('id', teacherId)
+    .single()
+
+  return (data as any)?.albums?.tenant_id === auth.tenantId
+}
+
+// ============================================================
+// Хелпер: проверка, что ответственный родитель принадлежит альбому tenant'а
+// ============================================================
+async function assertResponsibleAccess(auth: AuthContext, responsibleId: string): Promise<boolean> {
+  if (auth.role === 'superadmin') return true
+
+  const { data } = await supabaseAdmin
+    .from('responsible_parents')
+    .select('albums!inner(tenant_id)')
+    .eq('id', responsibleId)
+    .single()
+
+  return (data as any)?.albums?.tenant_id === auth.tenantId
+}
+
+// ============================================================
 // GET /api/tenant — данные своего арендатора
 // ============================================================
 export async function GET(req: NextRequest) {
@@ -227,6 +257,40 @@ export async function GET(req: NextRequest) {
       .order('created_at')
 
     return NextResponse.json(data ?? [])
+  }
+
+  // ----------------------------------------------------------
+  // teachers — список учителей альбома
+  // ----------------------------------------------------------
+  if (action === 'teachers' && albumId) {
+    if (!(await assertAlbumAccess(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    const { data } = await supabaseAdmin
+      .from('teachers')
+      .select('id, full_name, position, description, access_token, submitted_at, created_at')
+      .eq('album_id', albumId)
+      .order('created_at')
+
+    return NextResponse.json(data ?? [])
+  }
+
+  // ----------------------------------------------------------
+  // responsible — ответственный родитель альбома
+  // ----------------------------------------------------------
+  if (action === 'responsible' && albumId) {
+    if (!(await assertAlbumAccess(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    const { data } = await supabaseAdmin
+      .from('responsible_parents')
+      .select('id, full_name, phone, access_token, submitted_at, created_at')
+      .eq('album_id', albumId)
+      .maybeSingle()
+
+    return NextResponse.json(data ?? null)
   }
 
   return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })
@@ -652,6 +716,211 @@ export async function POST(req: NextRequest) {
       full_name: child?.full_name,
       class: child?.class,
     })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ============================================================
+  // УЧИТЕЛЯ
+  // ============================================================
+
+  // ----------------------------------------------------------
+  // add_teacher — добавить учителя (ФИО и должность опциональны)
+  // ----------------------------------------------------------
+  if (body.action === 'add_teacher') {
+    const { album_id, full_name, position } = body
+    if (!album_id) {
+      return NextResponse.json({ error: 'album_id обязателен' }, { status: 400 })
+    }
+
+    if (!(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('teachers')
+      .insert({
+        album_id,
+        full_name: full_name?.trim() || null,
+        position: position?.trim() || null,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    await logAction(auth, 'teacher.create', 'teacher', data.id, {
+      album_id,
+      full_name: data.full_name,
+    })
+
+    return NextResponse.json(data)
+  }
+
+  // ----------------------------------------------------------
+  // update_teacher — редактирование данных учителя
+  // ----------------------------------------------------------
+  if (body.action === 'update_teacher') {
+    const { teacher_id, full_name, position, description } = body
+    if (!teacher_id) {
+      return NextResponse.json({ error: 'teacher_id обязателен' }, { status: 400 })
+    }
+
+    if (!(await assertTeacherAccess(auth, teacher_id))) {
+      return NextResponse.json({ error: 'Учитель не найден' }, { status: 404 })
+    }
+
+    const updates: Record<string, unknown> = {}
+    if (full_name !== undefined) updates.full_name = full_name?.trim() || null
+    if (position !== undefined) updates.position = position?.trim() || null
+    if (description !== undefined) updates.description = description?.trim() || ''
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'Нет полей для обновления' }, { status: 400 })
+    }
+
+    const { error } = await supabaseAdmin
+      .from('teachers')
+      .update(updates)
+      .eq('id', teacher_id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    await logAction(auth, 'teacher.update', 'teacher', teacher_id, {
+      fields: Object.keys(updates),
+    })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // delete_teacher — удаление учителя
+  // ----------------------------------------------------------
+  if (body.action === 'delete_teacher') {
+    const { teacher_id } = body
+    if (!teacher_id) {
+      return NextResponse.json({ error: 'teacher_id обязателен' }, { status: 400 })
+    }
+
+    if (!(await assertTeacherAccess(auth, teacher_id))) {
+      return NextResponse.json({ error: 'Учитель не найден' }, { status: 404 })
+    }
+
+    await supabaseAdmin.from('photo_teachers').delete().eq('teacher_id', teacher_id)
+    await supabaseAdmin.from('teachers').delete().eq('id', teacher_id)
+
+    await logAction(auth, 'teacher.delete', 'teacher', teacher_id)
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ============================================================
+  // ОТВЕТСТВЕННЫЙ РОДИТЕЛЬ
+  // ============================================================
+
+  // ----------------------------------------------------------
+  // create_responsible — создать ответственного родителя (один на альбом)
+  // ----------------------------------------------------------
+  if (body.action === 'create_responsible') {
+    const { album_id, full_name, phone } = body
+    if (!album_id) {
+      return NextResponse.json({ error: 'album_id обязателен' }, { status: 400 })
+    }
+
+    if (!(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    // Проверяем, что нет уже существующего
+    const { data: existing } = await supabaseAdmin
+      .from('responsible_parents')
+      .select('id')
+      .eq('album_id', album_id)
+      .maybeSingle()
+
+    if (existing) {
+      return NextResponse.json(
+        { error: 'Ответственный родитель для этого альбома уже создан' },
+        { status: 409 }
+      )
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('responsible_parents')
+      .insert({
+        album_id,
+        full_name: full_name?.trim() || null,
+        phone: phone?.trim() || null,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    await logAction(auth, 'responsible.create', 'responsible', data.id, { album_id })
+
+    return NextResponse.json(data)
+  }
+
+  // ----------------------------------------------------------
+  // update_responsible — обновить данные ответственного
+  // ----------------------------------------------------------
+  if (body.action === 'update_responsible') {
+    const { responsible_id, full_name, phone } = body
+    if (!responsible_id) {
+      return NextResponse.json({ error: 'responsible_id обязателен' }, { status: 400 })
+    }
+
+    if (!(await assertResponsibleAccess(auth, responsible_id))) {
+      return NextResponse.json({ error: 'Ответственный не найден' }, { status: 404 })
+    }
+
+    const updates: Record<string, unknown> = {}
+    if (full_name !== undefined) updates.full_name = full_name?.trim() || null
+    if (phone !== undefined) updates.phone = phone?.trim() || null
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'Нет полей для обновления' }, { status: 400 })
+    }
+
+    const { error } = await supabaseAdmin
+      .from('responsible_parents')
+      .update(updates)
+      .eq('id', responsible_id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    await logAction(auth, 'responsible.update', 'responsible', responsible_id, {
+      fields: Object.keys(updates),
+    })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // delete_responsible — удалить ответственного
+  // ----------------------------------------------------------
+  if (body.action === 'delete_responsible') {
+    const { responsible_id } = body
+    if (!responsible_id) {
+      return NextResponse.json({ error: 'responsible_id обязателен' }, { status: 400 })
+    }
+
+    if (!(await assertResponsibleAccess(auth, responsible_id))) {
+      return NextResponse.json({ error: 'Ответственный не найден' }, { status: 404 })
+    }
+
+    await supabaseAdmin.from('responsible_parents').delete().eq('id', responsible_id)
+
+    await logAction(auth, 'responsible.delete', 'responsible', responsible_id)
 
     return NextResponse.json({ ok: true })
   }
