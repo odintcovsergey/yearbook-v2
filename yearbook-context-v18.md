@@ -1,6 +1,6 @@
 # КОНТЕКСТ ДЛЯ ПРОДОЛЖЕНИЯ РАБОТЫ
 # Система отбора фотографий для выпускных альбомов
-# Обновлено: 16.04.2026 (этап 3.2.b.1 закрыт, старый /admin изолирован)
+# Обновлено: 16.04.2026 (этап 3.2.b.2 закрыт)
 
 ---
 
@@ -154,36 +154,46 @@ git remote set-url origin https://odintcovsergey:[ТОКЕН]@github.com/odintco
   - Подтверждение через confirm() для destructive действий
   - Виден только для canEdit (viewer видит чистую таблицу)
 
+### Этап 3.2.b.2 — Учителя и ответственный родитель (готово)
+- /api/tenant GET:
+  - teachers (с assertAlbumAccess)
+  - responsible (maybeSingle, с assertAlbumAccess)
+- /api/tenant POST:
+  - add_teacher (ФИО и должность опциональны — можно заполнить позже)
+  - update_teacher (full_name, position, description)
+  - delete_teacher (каскадно удаляет photo_teachers)
+  - create_responsible (409 если уже есть)
+  - update_responsible (full_name, phone)
+  - delete_responsible
+- Новые хелперы: assertTeacherAccess, assertResponsibleAccess
+- AlbumDetailModal переработан:
+  - Tab bar: Обзор / Ученики / Учителя / Ответственный
+  - Вкладка "Обзор": статистика + быстрые ссылки на другие вкладки
+  - Вкладка "Ученики": всё что было в 3.2.b.1
+  - Вкладка "Учителя" (TeachersTab):
+    - Кнопка "+ Добавить учителя" создаёт пустую карточку
+    - Edit-in-place для каждой карточки
+    - У первого учителя бейдж "Классный руководитель" + поле "Текст от кл. руководителя"
+    - Бейджи статуса (Заполнено / Ожидание)
+    - Копирование ссылки учителя
+  - Вкладка "Ответственный" (ResponsibleTab):
+    - Объясняющий текст роли
+    - "Назначить ответственного" если не создан
+    - Редактирование ФИО/телефона
+    - Копирование ссылки (/responsible/<token>)
+    - Бейджи статуса (Заполнил / Ожидает)
+    - Удаление с confirm
+
 ---
 
 ## ЧТО СДЕЛАТЬ ДАЛЬШЕ — ПЛАН
 
-### Этап 3.2.b.2 — учителя и ответственный родитель (СЛЕДУЮЩИЙ)
-- /api/tenant GET: teachers (по album_id, с проверкой доступа), responsible (по album_id)
-- /api/tenant POST:
-  - add_teacher, update_teacher, delete_teacher
-  - create_responsible (или update_responsible)
-- UI в AlbumDetailModal:
-  - Переход от плоской структуры к вкладкам: Обзор / Ученики / Учителя / Ответственный родитель
-  - Вкладка Учителя: добавление, редактирование имени/должности, текст от кл. руководителя у первого учителя, копирование ссылки
-  - Вкладка Ответственный: создание ссылки для заполнения данных учителей
-- POST /api/tenant:
-  - add_child, delete_child, reset_child
-  - add_teacher, update_teacher, delete_teacher
-  - create_responsible
-  - import_children (CSV)
-- /app UI:
-  - Вкладка "Ученики" внутри модалки альбома
-  - Вкладка "Учителя"
-  - Вкладка "Ответственный родитель"
-  - CSV-импорт учеников
-
-### Этап 3.3 — фото и параллель с текущей админкой
+### Этап 3.3 — фото и параллель с текущей админкой (СЛЕДУЮЩИЙ)
 - POST /api/tenant: upload_photo, register_photo (+ WebP через sharp),
   delete_photo, tag_photo, import_tags
 - /app UI:
-  - Вкладка "Фото" — параллельная загрузка, WebP, сортировка
-  - Экспорт CSV
+  - Вкладка "Фото" в модалке альбома — параллельная загрузка, WebP, сортировка
+  - Экспорт CSV (статистика альбома)
   - Управление заявками (referral_leads)
   - Цитаты (свои + глобальные)
   - Напоминания родителям
