@@ -292,6 +292,18 @@ function CreateTenantModal({
   onClose: () => void
   onSuccess: (data: { name: string; owner_email: string }) => void
 }) {
+  // Защита от случайного закрытия: backdrop закрывает только если mousedown
+  // начался и завершился именно на backdrop (не на карточке)
+  const [backdropStart, setBackdropStart] = useState(false)
+
+  const handleBackdropMouseDown = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) setBackdropStart(true)
+  }
+  const handleBackdropMouseUp = (e: React.MouseEvent) => {
+    if (backdropStart && e.target === e.currentTarget) onClose()
+    setBackdropStart(false)
+  }
+
   const [form, setForm] = useState<CreateFormData>({
     name: '',
     slug: '',
@@ -367,15 +379,15 @@ function CreateTenantModal({
   return (
     <div
       className="fixed inset-0 bg-black/40 z-40 flex items-start justify-center py-8 px-4 overflow-y-auto"
-      onClick={onClose}
+      onMouseDown={handleBackdropMouseDown}
+      onMouseUp={handleBackdropMouseUp}
     >
       <div
         className="bg-white rounded-2xl max-w-2xl w-full shadow-xl my-auto"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-lg font-semibold">Новый арендатор</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none">
+          <button onClick={onClose} type="button" className="text-gray-400 hover:text-gray-700 text-xl leading-none">
             ×
           </button>
         </div>
