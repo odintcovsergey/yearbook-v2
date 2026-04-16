@@ -51,6 +51,23 @@ async function assertTeacherAccess(auth: AuthContext, teacherId: string): Promis
 }
 
 // ============================================================
+// Хелпер: проверка, что фото принадлежит альбому tenant'а
+// Возвращает saved photo row (вместе с storage_path и thumb_path), либо null
+// ============================================================
+async function getOwnedPhoto(auth: AuthContext, photoId: string) {
+  const { data } = await supabaseAdmin
+    .from('photos')
+    .select('id, album_id, storage_path, thumb_path, filename, type, albums!inner(tenant_id)')
+    .eq('id', photoId)
+    .single()
+
+  if (!data) return null
+  if (auth.role === 'superadmin') return data as any
+  if ((data as any).albums?.tenant_id !== auth.tenantId) return null
+  return data as any
+}
+
+// ============================================================
 // Хелпер: проверка, что ответственный родитель принадлежит альбому tenant'а
 // ============================================================
 async function assertResponsibleAccess(auth: AuthContext, responsibleId: string): Promise<boolean> {
@@ -293,6 +310,62 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(data ?? null)
   }
 
+  // ----------------------------------------------------------
+  // photos — список фото альбома (с опциональным фильтром по типу и тегами)
+  // ----------------------------------------------------------
+  if (action === 'photos' && albumId) {
+    if (!(await assertAlbumAccess(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    const photoType = req.nextUrl.searchParams.get('photo_type')
+
+    let query = supabaseAdmin
+      .from('photos')
+      .select('id, filename, storage_path, thumb_path, type, created_at')
+      .eq('album_id', albumId)
+      .order('created_at')
+
+    if (photoType) query = query.eq('type', photoType)
+
+    const { data: photos, error } = await query
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    const base = process.env.NEXT_PUBLIC_SUPABASE_URL + '/storage/v1/object/public/photos/'
+
+    // Привязки фото к детям (только для portrait/group)
+    let tagsByPhoto: Record<string, string[]> = {}
+    if (!photoType || photoType === 'portrait' || photoType === 'group') {
+      const photoIds = (photos ?? []).map((p: any) => p.id)
+      if (photoIds.length > 0) {
+        const { data: links } = await supabaseAdmin
+          .from('photo_children')
+          .select('photo_id, children(full_name)')
+          .in('photo_id', photoIds)
+        for (const link of links ?? []) {
+          const name = (link as any).children?.full_name ?? ''
+          if (!tagsByPhoto[(link as any).photo_id]) tagsByPhoto[(link as any).photo_id] = []
+          tagsByPhoto[(link as any).photo_id].push(name)
+        }
+      }
+    }
+
+    const result = (photos ?? []).map((p: any) => ({
+      id: p.id,
+      filename: p.filename,
+      storage_path: p.storage_path,
+      thumb_path: p.thumb_path,
+      type: p.type,
+      url: base + p.storage_path,
+      thumb_url: p.thumb_path
+        ? base + p.thumb_path
+        : base + p.storage_path + '?width=400&quality=70',
+      tags: tagsByPhoto[p.id] ?? [],
+    }))
+
+    return NextResponse.json({ photos: result })
+  }
+
   return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })
 }
 
@@ -300,9 +373,100 @@ export async function GET(req: NextRequest) {
 // POST /api/tenant — мутации (создание/редактирование альбомов)
 // ============================================================
 
+export const maxDuration = 60
+
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req, ['superadmin', 'owner', 'manager'])
   if (isAuthError(auth)) return auth
+
+  const contentType = req.headers.get('content-type') ?? ''
+
+  // ============================================================
+  // multipart/form-data — загрузка фото (upload_photo)
+  // Формат: file, type (portrait|group|teacher), album_id
+  // Делает WebP full (2048px) + thumb (400px) через sharp,
+  // заливает оба в Storage, создаёт запись в photos.
+  // ============================================================
+  if (contentType.includes('multipart/form-data')) {
+    const form = await req.formData()
+    const file = form.get('file') as File | null
+    const type = form.get('type') as string | null
+    const albumId = form.get('album_id') as string | null
+
+    if (!file || !type || !albumId) {
+      return NextResponse.json({ error: 'Не хватает данных (file, type, album_id)' }, { status: 400 })
+    }
+
+    if (!['portrait', 'group', 'teacher'].includes(type)) {
+      return NextResponse.json({ error: 'Неверный type' }, { status: 400 })
+    }
+
+    if (!(await assertAlbumAccess(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    // Проверим, что альбом не в архиве
+    const { data: album } = await supabaseAdmin
+      .from('albums')
+      .select('archived')
+      .eq('id', albumId)
+      .single()
+    if ((album as any)?.archived) {
+      return NextResponse.json({ error: 'Нельзя загружать фото в архивный альбом' }, { status: 403 })
+    }
+
+    const sharp = (await import('sharp')).default
+    const buffer = Buffer.from(await file.arrayBuffer())
+    const originalName = file.name.replace(/\.[^.]+$/, '')
+
+    const sharpInstance = sharp(buffer).rotate()
+
+    const [fullBuffer, thumbBuffer] = await Promise.all([
+      sharpInstance.clone()
+        .resize({ width: 2048, height: 2048, fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 85 })
+        .toBuffer(),
+      sharpInstance.clone()
+        .resize({ width: 400, height: 400, fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 75 })
+        .toBuffer(),
+    ])
+
+    const timestamp = Date.now()
+    const fullPath  = `${albumId}/${type}/${timestamp}_${originalName}.webp`
+    const thumbPath = `${albumId}/${type}/thumbs/${timestamp}_${originalName}.webp`
+
+    const [fullUpload, thumbUpload] = await Promise.all([
+      supabaseAdmin.storage.from('photos').upload(fullPath, fullBuffer, { contentType: 'image/webp', upsert: false }),
+      supabaseAdmin.storage.from('photos').upload(thumbPath, thumbBuffer, { contentType: 'image/webp', upsert: false }),
+    ])
+
+    if (fullUpload.error) {
+      return NextResponse.json({ error: fullUpload.error.message }, { status: 500 })
+    }
+
+    const { data: photo, error: dbError } = await supabaseAdmin
+      .from('photos')
+      .insert({
+        album_id: albumId,
+        filename: file.name,
+        storage_path: fullPath,
+        thumb_path: thumbUpload.error ? null : thumbPath,
+        type,
+      })
+      .select()
+      .single()
+
+    if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 })
+
+    await logAction(auth, 'photo.upload', 'photo', (photo as any).id, {
+      album_id: albumId,
+      type,
+      filename: file.name,
+    })
+
+    return NextResponse.json(photo)
+  }
 
   const body = await req.json()
 
@@ -923,6 +1087,241 @@ export async function POST(req: NextRequest) {
     await logAction(auth, 'responsible.delete', 'responsible', responsible_id)
 
     return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // register_photo — регистрация уже загруженного файла в БД
+  // Используется при клиентской компрессии (быстрая параллельная загрузка).
+  // Клиент сам заливает файл в Storage под путём album_id/type/ts_name.webp,
+  // затем вызывает этот endpoint для создания записи в photos.
+  // ----------------------------------------------------------
+  if (body.action === 'register_photo') {
+    const { album_id, filename, storage_path, thumb_path, type } = body
+
+    if (!album_id || !filename || !storage_path || !type) {
+      return NextResponse.json({ error: 'Не хватает данных' }, { status: 400 })
+    }
+
+    if (!['portrait', 'group', 'teacher'].includes(type)) {
+      return NextResponse.json({ error: 'Неверный type' }, { status: 400 })
+    }
+
+    if (!(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    // Защита: клиент не может подсунуть чужой путь — требуем,
+    // чтобы storage_path начинался с album_id/
+    if (!storage_path.startsWith(`${album_id}/`)) {
+      return NextResponse.json({ error: 'Недопустимый storage_path' }, { status: 400 })
+    }
+    if (thumb_path && !thumb_path.startsWith(`${album_id}/`)) {
+      return NextResponse.json({ error: 'Недопустимый thumb_path' }, { status: 400 })
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('photos')
+      .insert({
+        album_id,
+        filename,
+        storage_path,
+        thumb_path: thumb_path ?? null,
+        type,
+      })
+      .select()
+      .single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'photo.register', 'photo', (data as any).id, {
+      album_id,
+      type,
+      filename,
+    })
+
+    return NextResponse.json(data)
+  }
+
+  // ----------------------------------------------------------
+  // delete_photo — удалить фото (+ thumb из Storage, + связи из БД)
+  // Автоматически сбрасывает submitted_at у детей, которые выбрали это фото.
+  // ----------------------------------------------------------
+  if (body.action === 'delete_photo') {
+    const { photo_id } = body
+    if (!photo_id) {
+      return NextResponse.json({ error: 'photo_id обязателен' }, { status: 400 })
+    }
+
+    const photo = await getOwnedPhoto(auth, photo_id)
+    if (!photo) {
+      return NextResponse.json({ error: 'Фото не найдено' }, { status: 404 })
+    }
+
+    // Кто выбирал это фото — им надо сбросить submitted_at
+    const { data: affectedSelections } = await supabaseAdmin
+      .from('selections').select('child_id').eq('photo_id', photo_id)
+    const affectedChildIds = Array.from(
+      new Set((affectedSelections ?? []).map((s: any) => s.child_id))
+    )
+
+    // Удалить файлы из Storage
+    const pathsToDelete: string[] = []
+    if (photo.storage_path) pathsToDelete.push(photo.storage_path)
+    if (photo.thumb_path) pathsToDelete.push(photo.thumb_path)
+    if (pathsToDelete.length > 0) {
+      await supabaseAdmin.storage.from('photos').remove(pathsToDelete)
+    }
+
+    // Удалить все связи
+    await supabaseAdmin.from('selections').delete().eq('photo_id', photo_id)
+    await supabaseAdmin.from('photo_teachers').delete().eq('photo_id', photo_id)
+    await supabaseAdmin.from('photo_children').delete().eq('photo_id', photo_id)
+    await supabaseAdmin.from('photo_locks').delete().eq('photo_id', photo_id)
+    await supabaseAdmin.from('photos').delete().eq('id', photo_id)
+
+    // Сбросить submitted_at у затронутых
+    if (affectedChildIds.length > 0) {
+      await supabaseAdmin.from('children')
+        .update({ submitted_at: null })
+        .in('id', affectedChildIds)
+    }
+
+    await logAction(auth, 'photo.delete', 'photo', photo_id, {
+      album_id: photo.album_id,
+      filename: photo.filename,
+      reset_children: affectedChildIds.length,
+    })
+
+    return NextResponse.json({ ok: true, resetChildren: affectedChildIds.length })
+  }
+
+  // ----------------------------------------------------------
+  // tag_photo — привязать фото к ребёнку
+  // ----------------------------------------------------------
+  if (body.action === 'tag_photo') {
+    const { photo_id, child_id } = body
+    if (!photo_id || !child_id) {
+      return NextResponse.json({ error: 'photo_id и child_id обязательны' }, { status: 400 })
+    }
+
+    const photo = await getOwnedPhoto(auth, photo_id)
+    if (!photo) return NextResponse.json({ error: 'Фото не найдено' }, { status: 404 })
+    if (!(await assertChildAccess(auth, child_id))) {
+      return NextResponse.json({ error: 'Ученик не найден' }, { status: 404 })
+    }
+
+    const { error } = await supabaseAdmin
+      .from('photo_children')
+      .upsert({ photo_id, child_id }, { onConflict: 'photo_id,child_id' })
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'photo.tag', 'photo', photo_id, { child_id })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // untag_photo — убрать привязку фото от ребёнка
+  // ----------------------------------------------------------
+  if (body.action === 'untag_photo') {
+    const { photo_id, child_id } = body
+    if (!photo_id || !child_id) {
+      return NextResponse.json({ error: 'photo_id и child_id обязательны' }, { status: 400 })
+    }
+
+    const photo = await getOwnedPhoto(auth, photo_id)
+    if (!photo) return NextResponse.json({ error: 'Фото не найдено' }, { status: 404 })
+
+    await supabaseAdmin
+      .from('photo_children')
+      .delete()
+      .eq('photo_id', photo_id)
+      .eq('child_id', child_id)
+
+    await logAction(auth, 'photo.untag', 'photo', photo_id, { child_id })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // import_tags — массовая разметка из CSV
+  // rows: [{ child_name, photo_filename }]
+  // Имена и имена файлов матчатся по ilike (регистронезависимо).
+  // Возвращает { linked, skipped, skipped_rows } для отладки.
+  // ----------------------------------------------------------
+  if (body.action === 'import_tags') {
+    const { album_id, rows } = body
+    if (!album_id || !Array.isArray(rows)) {
+      return NextResponse.json({ error: 'album_id и rows обязательны' }, { status: 400 })
+    }
+
+    if (!(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    // Подтягиваем всех детей и все фото альбома одним запросом —
+    // так намного быстрее чем по одному запросу на строку CSV.
+    const [childrenRes, photosRes] = await Promise.all([
+      supabaseAdmin.from('children').select('id, full_name').eq('album_id', album_id),
+      supabaseAdmin.from('photos').select('id, filename').eq('album_id', album_id),
+    ])
+
+    const childByName: Record<string, string> = {}
+    for (const c of childrenRes.data ?? []) {
+      childByName[(c as any).full_name.trim().toLowerCase()] = (c as any).id
+    }
+
+    const photoByFilename: Record<string, string> = {}
+    for (const p of photosRes.data ?? []) {
+      photoByFilename[(p as any).filename.trim().toLowerCase()] = (p as any).id
+    }
+
+    let linked = 0
+    let skipped = 0
+    const skippedRows: Array<{ child_name: string; photo_filename: string; reason: string }> = []
+    const inserts: Array<{ photo_id: string; child_id: string }> = []
+
+    for (const row of rows) {
+      const childName = (row?.child_name ?? '').toString().trim().toLowerCase()
+      const photoName = (row?.photo_filename ?? '').toString().trim().toLowerCase()
+
+      if (!childName || !photoName) { skipped++; continue }
+
+      const childId = childByName[childName]
+      const photoId = photoByFilename[photoName]
+
+      if (!childId && !photoId) {
+        skipped++
+        skippedRows.push({ child_name: row.child_name, photo_filename: row.photo_filename, reason: 'не найдены ни ученик, ни фото' })
+        continue
+      }
+      if (!childId) {
+        skipped++
+        skippedRows.push({ child_name: row.child_name, photo_filename: row.photo_filename, reason: 'ученик не найден' })
+        continue
+      }
+      if (!photoId) {
+        skipped++
+        skippedRows.push({ child_name: row.child_name, photo_filename: row.photo_filename, reason: 'фото не найдено' })
+        continue
+      }
+
+      inserts.push({ photo_id: photoId, child_id: childId })
+    }
+
+    // Пачкой делаем upsert (onConflict — игнор дубликатов)
+    if (inserts.length > 0) {
+      const { error } = await supabaseAdmin
+        .from('photo_children')
+        .upsert(inserts, { onConflict: 'photo_id,child_id', ignoreDuplicates: true })
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      linked = inserts.length
+    }
+
+    await logAction(auth, 'photo.import_tags', 'album', album_id, { linked, skipped })
+
+    return NextResponse.json({ linked, skipped, skipped_rows: skippedRows.slice(0, 50) })
   }
 
   return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })
