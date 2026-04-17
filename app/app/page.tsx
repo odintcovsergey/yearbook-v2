@@ -95,6 +95,7 @@ export default function AppPage() {
   const [search, setSearch] = useState('')
   const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null)
   const [showLeads, setShowLeads] = useState(false)
+  const [showQuotes, setShowQuotes] = useState(false)
 
   const notify = (text: string, type: 'ok' | 'err' = 'ok') => {
     setMsg({ text, type })
@@ -251,6 +252,15 @@ export default function AppPage() {
               </button>
             </div>
 
+            <button
+              onClick={() => setShowQuotes(true)}
+              className="btn-ghost text-sm"
+              type="button"
+              title="Управление цитатами"
+            >
+              Цитаты
+            </button>
+
             {canEdit && (
               <button onClick={() => setShowCreate(true)} className="btn-primary">
                 + Новый альбом
@@ -352,6 +362,15 @@ export default function AppPage() {
             setShowLeads(false)
             loadDashboard() // пересчёт leads_new в summary
           }}
+          onNotify={(text) => notify(text, 'ok')}
+          onError={(text) => notify(text, 'err')}
+        />
+      )}
+
+      {showQuotes && (
+        <QuotesModal
+          canEdit={canEdit}
+          onClose={() => setShowQuotes(false)}
           onNotify={(text) => notify(text, 'ok')}
           onError={(text) => notify(text, 'err')}
         />
@@ -3015,6 +3034,404 @@ function LeadsModal({
                 )
               })}
             </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// МОДАЛКА ЦИТАТ (quotes)
+// Свои цитаты tenant'а + глобальные (глобальные read-only)
+// ============================================================
+
+type Quote = {
+  id: string
+  text: string
+  category: string
+  is_global: boolean
+  created_at: string
+  use_count: number
+}
+
+function QuotesModal({
+  canEdit,
+  onClose,
+  onNotify,
+  onError,
+}: {
+  canEdit: boolean
+  onClose: () => void
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [quotes, setQuotes] = useState<Quote[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState<'all' | 'own' | 'global'>('all')
+  const [search, setSearch] = useState('')
+  const [showForm, setShowForm] = useState(false)
+  const [editingQuote, setEditingQuote] = useState<Quote | null>(null)
+  const [formText, setFormText] = useState('')
+  const [formCategory, setFormCategory] = useState('general')
+  const [busy, setBusy] = useState(false)
+  const [backdropStart, setBackdropStart] = useState(false)
+
+  const handleBackdropMouseDown = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) setBackdropStart(true)
+  }
+  const handleBackdropMouseUp = (e: React.MouseEvent) => {
+    if (backdropStart && e.target === e.currentTarget) onClose()
+    setBackdropStart(false)
+  }
+
+  const load = async () => {
+    setLoading(true)
+    const r = await api('/api/tenant?action=quotes')
+    if (r.ok) {
+      const d = await r.json()
+      setQuotes(Array.isArray(d) ? d : [])
+    } else {
+      onError('Не удалось загрузить цитаты')
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load().catch(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const startCreate = () => {
+    setEditingQuote(null)
+    setFormText('')
+    setFormCategory('general')
+    setShowForm(true)
+  }
+
+  const startEdit = (q: Quote) => {
+    setEditingQuote(q)
+    setFormText(q.text)
+    setFormCategory(q.category)
+    setShowForm(true)
+  }
+
+  const cancelForm = () => {
+    setShowForm(false)
+    setEditingQuote(null)
+    setFormText('')
+    setFormCategory('general')
+  }
+
+  const saveForm = async () => {
+    const text = formText.trim()
+    const category = formCategory.trim() || 'general'
+    if (!text) return
+    if (text.length > 500) {
+      onError('Цитата слишком длинная (макс. 500 символов)')
+      return
+    }
+
+    setBusy(true)
+    const action = editingQuote ? 'update_quote' : 'create_quote'
+    const payload: any = { action, text, category }
+    if (editingQuote) payload.id = editingQuote.id
+
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+
+    if (r.ok) {
+      onNotify(editingQuote ? 'Цитата обновлена' : 'Цитата добавлена')
+      cancelForm()
+      await load()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось сохранить')
+    }
+    setBusy(false)
+  }
+
+  const deleteQuote = async (q: Quote, force = false) => {
+    if (!force) {
+      const txt = q.text.length > 60 ? q.text.slice(0, 60) + '...' : q.text
+      if (!confirm(`Удалить цитату «${txt}»?`)) return
+    }
+
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'delete_quote', id: q.id, force }),
+    })
+
+    if (r.ok) {
+      const d = await r.json()
+      setQuotes(prev => prev.filter(x => x.id !== q.id))
+      if (d.reset_selections > 0) {
+        onNotify(`Цитата удалена. Сброшено выборов: ${d.reset_selections}`)
+      } else {
+        onNotify('Цитата удалена')
+      }
+    } else {
+      const d = await r.json().catch(() => ({}))
+      if (d.requires_force) {
+        if (confirm(`${d.error}\n\nПродолжить?`)) {
+          await deleteQuote(q, true)
+        }
+      } else {
+        onError(d.error ?? 'Не удалось удалить')
+      }
+    }
+  }
+
+  const categories = Array.from(new Set(quotes.map(q => q.category))).sort()
+
+  const visible = quotes.filter(q => {
+    if (filter === 'own' && q.is_global) return false
+    if (filter === 'global' && !q.is_global) return false
+    if (search && !q.text.toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  })
+
+  const counts = {
+    all: quotes.length,
+    own: quotes.filter(q => !q.is_global).length,
+    global: quotes.filter(q => q.is_global).length,
+  }
+
+  // Группируем по категории
+  const byCategory: Record<string, Quote[]> = {}
+  for (const q of visible) {
+    if (!byCategory[q.category]) byCategory[q.category] = []
+    byCategory[q.category].push(q)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-40 flex items-start justify-center py-8 px-4 overflow-y-auto"
+      onMouseDown={handleBackdropMouseDown}
+      onMouseUp={handleBackdropMouseUp}
+    >
+      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl z-10">
+          <div>
+            <h3 className="text-lg font-semibold">Цитаты</h3>
+            <div className="text-xs text-gray-500 mt-0.5">
+              Свои цитаты + глобальные (общие для всех арендаторов)
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {canEdit && !showForm && (
+              <button
+                type="button"
+                onClick={startCreate}
+                className="btn-primary text-xs px-3 py-1.5"
+              >
+                + Добавить
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              type="button"
+              className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        {/* Фильтр + поиск */}
+        {!showForm && (
+          <div className="px-6 pt-4 pb-3 border-b border-gray-100 flex items-center gap-3 flex-wrap">
+            <div className="flex gap-1 overflow-x-auto">
+              {([
+                { id: 'all' as const, label: 'Все' },
+                { id: 'own' as const, label: 'Свои' },
+                { id: 'global' as const, label: 'Глобальные' },
+              ]).map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setFilter(t.id)}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
+                    filter === t.id
+                      ? 'bg-gray-900 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {t.label}
+                  <span className={`font-normal ml-1.5 ${filter === t.id ? 'text-gray-300' : 'text-gray-400'}`}>
+                    {counts[t.id]}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Поиск по тексту..."
+              className="input text-sm max-w-xs ml-auto"
+            />
+          </div>
+        )}
+
+        <div className="p-6">
+          {/* Форма создания/редактирования */}
+          {showForm && (
+            <div className="space-y-4">
+              <h4 className="font-medium text-gray-800">
+                {editingQuote ? 'Редактирование цитаты' : 'Новая цитата'}
+              </h4>
+
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">
+                  Текст цитаты
+                  <span className="text-gray-400 ml-2">
+                    {formText.length} / 500
+                  </span>
+                </label>
+                <textarea
+                  value={formText}
+                  onChange={e => setFormText(e.target.value)}
+                  rows={4}
+                  maxLength={500}
+                  className="input w-full"
+                  placeholder="Введите текст цитаты..."
+                  disabled={busy}
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">
+                  Категория
+                </label>
+                <input
+                  type="text"
+                  value={formCategory}
+                  onChange={e => setFormCategory(e.target.value)}
+                  list="quote-categories"
+                  className="input w-full"
+                  placeholder="general"
+                  disabled={busy}
+                />
+                <datalist id="quote-categories">
+                  {categories.map(c => <option key={c} value={c} />)}
+                </datalist>
+                <p className="text-xs text-gray-400 mt-1">
+                  Например: мотивация, юмор, дружба. Можно использовать существующую или создать новую.
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={saveForm}
+                  disabled={!formText.trim() || busy}
+                  className="btn-primary"
+                >
+                  {busy ? 'Сохраняю...' : (editingQuote ? 'Сохранить' : 'Добавить')}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelForm}
+                  disabled={busy}
+                  className="btn-secondary"
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Список цитат */}
+          {!showForm && (
+            <>
+              {loading ? (
+                <div className="text-center text-gray-400 text-sm py-8">Загружаем...</div>
+              ) : visible.length === 0 ? (
+                <div className="text-center text-gray-400 text-sm py-8">
+                  {search
+                    ? 'Ничего не найдено'
+                    : filter === 'own'
+                    ? 'У вас пока нет своих цитат'
+                    : filter === 'global'
+                    ? 'Нет глобальных цитат'
+                    : 'Нет цитат'}
+                  {!search && filter !== 'global' && canEdit && (
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={startCreate}
+                        className="btn-primary text-sm"
+                      >
+                        + Добавить первую
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {Object.keys(byCategory).sort().map(cat => (
+                    <div key={cat}>
+                      <h5 className="text-xs uppercase tracking-wide text-gray-400 mb-2">
+                        {cat}
+                        <span className="ml-2 normal-case">{byCategory[cat].length}</span>
+                      </h5>
+                      <div className="space-y-2">
+                        {byCategory[cat].map(q => (
+                          <div
+                            key={q.id}
+                            className="border border-gray-200 rounded-xl p-3 group hover:border-gray-300 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="text-sm text-gray-800 flex-1 whitespace-pre-wrap">
+                                {q.text}
+                              </p>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {q.is_global && (
+                                  <span className="text-[10px] uppercase tracking-wide text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                                    глобальная
+                                  </span>
+                                )}
+                                {q.use_count > 0 && (
+                                  <span
+                                    className="text-[10px] text-gray-500 bg-green-50 px-1.5 py-0.5 rounded"
+                                    title={`Выбрана ${q.use_count} учениками`}
+                                  >
+                                    ✓ {q.use_count}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {canEdit && !q.is_global && (
+                              <div className="flex items-center gap-3 mt-2 pt-2 border-t border-gray-100 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  onClick={() => startEdit(q)}
+                                  className="text-xs text-gray-500 hover:text-gray-800"
+                                >
+                                  Изменить
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteQuote(q)}
+                                  className="text-xs text-red-500 hover:text-red-700 ml-auto"
+                                >
+                                  Удалить
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

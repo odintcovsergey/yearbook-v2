@@ -423,6 +423,58 @@ export async function GET(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
+  // quotes — список цитат (свои tenant + глобальные)
+  // Обогащено: use_count — сколько раз цитата была выбрана
+  // детьми этого tenant'а (для статистики и для owner — прежде
+  // чем удалять цитату, понятно, используют ли её).
+  // is_global — флаг, чтобы UI отличал глобальные (read-only)
+  // от собственных (editable).
+  // ----------------------------------------------------------
+  if (action === 'quotes') {
+    const { data: quotes, error } = await supabaseAdmin
+      .from('quotes')
+      .select('id, text, category, tenant_id, created_at')
+      .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+      .order('category')
+      .order('created_at')
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Подсчёт use_count — через JOIN с albums по tenant_id,
+    // чтобы считать только выборы из альбомов этого tenant'а
+    const quoteIds = (quotes ?? []).map((q: any) => q.id)
+    let useCountMap: Record<string, number> = {}
+
+    if (quoteIds.length > 0) {
+      let selQuery = supabaseAdmin
+        .from('quote_selections')
+        .select('quote_id, albums!inner(tenant_id)')
+        .in('quote_id', quoteIds)
+
+      if (auth.role !== 'superadmin') {
+        selQuery = selQuery.eq('albums.tenant_id', auth.tenantId)
+      }
+
+      const { data: sels } = await selQuery
+      for (const s of sels ?? []) {
+        const qid = (s as any).quote_id
+        useCountMap[qid] = (useCountMap[qid] ?? 0) + 1
+      }
+    }
+
+    const result = (quotes ?? []).map((q: any) => ({
+      id: q.id,
+      text: q.text,
+      category: q.category,
+      is_global: q.tenant_id === null,
+      created_at: q.created_at,
+      use_count: useCountMap[q.id] ?? 0,
+    }))
+
+    return NextResponse.json(result)
+  }
+
+  // ----------------------------------------------------------
   // export_csv — экспорт CSV для вёрстки альбома
   // Совместим со старым /api/admin?action=export по ключевым колонкам:
   // Класс, Ученик, Портрет_страница, Обложка, Портрет_обложка, Текст,
@@ -1618,6 +1670,156 @@ export async function POST(req: NextRequest) {
     await logAction(auth, 'lead.delete', 'lead', id)
 
     return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // create_quote — создать свою цитату
+  // ----------------------------------------------------------
+  if (body.action === 'create_quote') {
+    const text = (body.text ?? '').toString().trim()
+    const category = (body.category ?? 'general').toString().trim() || 'general'
+
+    if (!text) {
+      return NextResponse.json({ error: 'Текст цитаты обязателен' }, { status: 400 })
+    }
+    if (text.length > 500) {
+      return NextResponse.json({ error: 'Цитата слишком длинная (макс. 500 символов)' }, { status: 400 })
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('quotes')
+      .insert({
+        tenant_id: auth.tenantId,
+        text,
+        category,
+      })
+      .select('id, text, category, tenant_id, created_at')
+      .single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'quote.create', 'quote', (data as any).id, { category })
+
+    return NextResponse.json({
+      id: (data as any).id,
+      text: (data as any).text,
+      category: (data as any).category,
+      is_global: false,
+      created_at: (data as any).created_at,
+      use_count: 0,
+    })
+  }
+
+  // ----------------------------------------------------------
+  // update_quote — обновить свою цитату
+  // Глобальные цитаты (tenant_id=null) редактировать нельзя.
+  // ----------------------------------------------------------
+  if (body.action === 'update_quote') {
+    const { id } = body
+    const text = (body.text ?? '').toString().trim()
+    const category = (body.category ?? 'general').toString().trim() || 'general'
+
+    if (!id) {
+      return NextResponse.json({ error: 'id обязателен' }, { status: 400 })
+    }
+    if (!text) {
+      return NextResponse.json({ error: 'Текст цитаты обязателен' }, { status: 400 })
+    }
+    if (text.length > 500) {
+      return NextResponse.json({ error: 'Цитата слишком длинная (макс. 500 символов)' }, { status: 400 })
+    }
+
+    // Проверяем владение
+    const { data: existing } = await supabaseAdmin
+      .from('quotes')
+      .select('tenant_id')
+      .eq('id', id)
+      .single()
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Цитата не найдена' }, { status: 404 })
+    }
+    if ((existing as any).tenant_id === null) {
+      return NextResponse.json({ error: 'Глобальные цитаты нельзя редактировать' }, { status: 403 })
+    }
+    if (auth.role !== 'superadmin' && (existing as any).tenant_id !== auth.tenantId) {
+      return NextResponse.json({ error: 'Цитата не найдена' }, { status: 404 })
+    }
+
+    const { error } = await supabaseAdmin
+      .from('quotes')
+      .update({ text, category })
+      .eq('id', id)
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'quote.update', 'quote', id, { category })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // delete_quote — удалить свою цитату
+  // Глобальные цитаты удалить нельзя через /api/tenant.
+  // Если цитата уже выбрана детьми — возвращаем 409 с use_count.
+  // ----------------------------------------------------------
+  if (body.action === 'delete_quote') {
+    const { id, force } = body
+    if (!id) {
+      return NextResponse.json({ error: 'id обязателен' }, { status: 400 })
+    }
+
+    const { data: existing } = await supabaseAdmin
+      .from('quotes')
+      .select('tenant_id')
+      .eq('id', id)
+      .single()
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Цитата не найдена' }, { status: 404 })
+    }
+    if ((existing as any).tenant_id === null) {
+      return NextResponse.json({ error: 'Глобальные цитаты нельзя удалять' }, { status: 403 })
+    }
+    if (auth.role !== 'superadmin' && (existing as any).tenant_id !== auth.tenantId) {
+      return NextResponse.json({ error: 'Цитата не найдена' }, { status: 404 })
+    }
+
+    // Проверим, выбрана ли цитата где-то
+    const { count: useCount } = await supabaseAdmin
+      .from('quote_selections')
+      .select('id', { count: 'exact', head: true })
+      .eq('quote_id', id)
+
+    if ((useCount ?? 0) > 0 && !force) {
+      return NextResponse.json(
+        {
+          error: `Цитата уже выбрана ${useCount} учениками. Передайте force=true для принудительного удаления — у них выбор сбросится.`,
+          use_count: useCount,
+          requires_force: true,
+        },
+        { status: 409 }
+      )
+    }
+
+    // force=true → удаляем selections каскадно
+    if ((useCount ?? 0) > 0) {
+      await supabaseAdmin.from('quote_selections').delete().eq('quote_id', id)
+    }
+
+    const { error } = await supabaseAdmin
+      .from('quotes')
+      .delete()
+      .eq('id', id)
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'quote.delete', 'quote', id, {
+      had_selections: useCount ?? 0,
+      force: !!force,
+    })
+
+    return NextResponse.json({ ok: true, reset_selections: useCount ?? 0 })
   }
 
   return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })
