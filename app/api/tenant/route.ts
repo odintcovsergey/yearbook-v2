@@ -367,6 +367,62 @@ export async function GET(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
+  // leads — список реферальных заявок tenant'а
+  // Возвращает заявки с именем реферера и названием альбома
+  // (чтобы понять откуда пришла заявка).
+  // ----------------------------------------------------------
+  if (action === 'leads') {
+    let query = supabaseAdmin
+      .from('referral_leads')
+      .select('id, name, phone, city, school, class_name, status, created_at, referrer_child_id')
+      .order('created_at', { ascending: false })
+
+    if (auth.role !== 'superadmin') {
+      query = query.eq('tenant_id', auth.tenantId)
+    }
+
+    const { data, error } = await query
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    const childIds = Array.from(
+      new Set((data ?? []).map((d: any) => d.referrer_child_id).filter(Boolean))
+    )
+
+    const [childrenRes, contactsRes] = childIds.length > 0
+      ? await Promise.all([
+          supabaseAdmin.from('children').select('id, full_name, album_id').in('id', childIds),
+          supabaseAdmin.from('parent_contacts').select('child_id, parent_name').in('child_id', childIds),
+        ])
+      : [{ data: [] }, { data: [] }]
+
+    const childMap = Object.fromEntries(
+      (childrenRes.data ?? []).map((c: any) => [c.id, c])
+    )
+    const contactMap = Object.fromEntries(
+      (contactsRes.data ?? []).map((c: any) => [c.child_id, c.parent_name])
+    )
+
+    const albumIds = Array.from(
+      new Set((childrenRes.data ?? []).map((c: any) => c.album_id).filter(Boolean))
+    )
+    const { data: albums } = albumIds.length > 0
+      ? await supabaseAdmin.from('albums').select('id, title').in('id', albumIds)
+      : { data: [] }
+    const albumMap = Object.fromEntries((albums ?? []).map((a: any) => [a.id, a.title]))
+
+    const leads = (data ?? []).map((d: any) => ({
+      ...d,
+      referrer_name:
+        contactMap[d.referrer_child_id] ||
+        childMap[d.referrer_child_id]?.full_name ||
+        '—',
+      referrer_album: albumMap[childMap[d.referrer_child_id]?.album_id] || '',
+    }))
+
+    return NextResponse.json(leads)
+  }
+
+  // ----------------------------------------------------------
   // export_csv — экспорт CSV для вёрстки альбома
   // Совместим со старым /api/admin?action=export по ключевым колонкам:
   // Класс, Ученик, Портрет_страница, Обложка, Портрет_обложка, Текст,
@@ -1491,6 +1547,77 @@ export async function POST(req: NextRequest) {
     await logAction(auth, 'photo.import_tags', 'album', album_id, { linked, skipped })
 
     return NextResponse.json({ linked, skipped, skipped_rows: skippedRows.slice(0, 50) })
+  }
+
+  // ----------------------------------------------------------
+  // update_lead_status — обновить статус заявки
+  // Статусы: new / in_progress / done / rejected
+  // ----------------------------------------------------------
+  if (body.action === 'update_lead_status') {
+    const { id, status } = body
+    if (!id || !status) {
+      return NextResponse.json({ error: 'id и status обязательны' }, { status: 400 })
+    }
+
+    const ALLOWED = ['new', 'in_progress', 'done', 'rejected']
+    if (!ALLOWED.includes(status)) {
+      return NextResponse.json({ error: 'Неверный статус' }, { status: 400 })
+    }
+
+    // Проверка, что заявка принадлежит tenant'у
+    if (auth.role !== 'superadmin') {
+      const { data: lead } = await supabaseAdmin
+        .from('referral_leads')
+        .select('tenant_id')
+        .eq('id', id)
+        .single()
+      if (!lead || (lead as any).tenant_id !== auth.tenantId) {
+        return NextResponse.json({ error: 'Заявка не найдена' }, { status: 404 })
+      }
+    }
+
+    const { error } = await supabaseAdmin
+      .from('referral_leads')
+      .update({ status })
+      .eq('id', id)
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'lead.update_status', 'lead', id, { status })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // delete_lead — удалить заявку
+  // ----------------------------------------------------------
+  if (body.action === 'delete_lead') {
+    const { id } = body
+    if (!id) {
+      return NextResponse.json({ error: 'id обязателен' }, { status: 400 })
+    }
+
+    if (auth.role !== 'superadmin') {
+      const { data: lead } = await supabaseAdmin
+        .from('referral_leads')
+        .select('tenant_id')
+        .eq('id', id)
+        .single()
+      if (!lead || (lead as any).tenant_id !== auth.tenantId) {
+        return NextResponse.json({ error: 'Заявка не найдена' }, { status: 404 })
+      }
+    }
+
+    const { error } = await supabaseAdmin
+      .from('referral_leads')
+      .delete()
+      .eq('id', id)
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'lead.delete', 'lead', id)
+
+    return NextResponse.json({ ok: true })
   }
 
   return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })

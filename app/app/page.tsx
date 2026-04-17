@@ -94,6 +94,7 @@ export default function AppPage() {
   const [filter, setFilter] = useState<'active' | 'archive'>('active')
   const [search, setSearch] = useState('')
   const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null)
+  const [showLeads, setShowLeads] = useState(false)
 
   const notify = (text: string, type: 'ok' | 'err' = 'ok') => {
     setMsg({ text, type })
@@ -221,6 +222,7 @@ export default function AppPage() {
               value={summary.leads_total}
               subValue={summary.leads_new > 0 ? `${summary.leads_new} новых` : undefined}
               highlight={summary.leads_new > 0}
+              onClick={() => setShowLeads(true)}
             />
           </div>
         )}
@@ -340,6 +342,18 @@ export default function AppPage() {
             loadDashboard()
             notify('Альбом возвращён из архива', 'ok')
           }}
+        />
+      )}
+
+      {showLeads && (
+        <LeadsModal
+          canEdit={canEdit}
+          onClose={() => {
+            setShowLeads(false)
+            loadDashboard() // пересчёт leads_new в summary
+          }}
+          onNotify={(text) => notify(text, 'ok')}
+          onError={(text) => notify(text, 'err')}
         />
       )}
     </div>
@@ -466,14 +480,17 @@ function StatCard({
   value,
   subValue,
   highlight,
+  onClick,
 }: {
   label: string
   value: number
   subValue?: string
   highlight?: boolean
+  onClick?: () => void
 }) {
-  return (
-    <div className={`card p-5 ${highlight ? 'border-blue-200 bg-blue-50' : ''}`}>
+  const baseClass = `card p-5 ${highlight ? 'border-blue-200 bg-blue-50' : ''}`
+  const content = (
+    <>
       <div className="text-xs text-gray-500 mb-1">{label}</div>
       <div className="flex items-baseline gap-2">
         <div className="text-2xl font-semibold text-gray-900">{value}</div>
@@ -483,8 +500,22 @@ function StatCard({
           </div>
         )}
       </div>
-    </div>
+    </>
   )
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${baseClass} text-left hover:border-gray-300 transition-colors cursor-pointer w-full`}
+      >
+        {content}
+      </button>
+    )
+  }
+
+  return <div className={baseClass}>{content}</div>
 }
 
 // ============================================================
@@ -2744,6 +2775,247 @@ function ImportTagsModal({
               </button>
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// МОДАЛКА ЗАЯВОК (referral_leads)
+// ============================================================
+
+type Lead = {
+  id: string
+  name: string
+  phone: string
+  city: string | null
+  school: string | null
+  class_name: string | null
+  status: 'new' | 'in_progress' | 'done' | 'rejected'
+  created_at: string
+  referrer_child_id: string | null
+  referrer_name: string
+  referrer_album: string
+}
+
+type LeadStatus = 'new' | 'in_progress' | 'done' | 'rejected'
+
+const LEAD_STATUSES: { id: LeadStatus; label: string; badge: string; btn: string }[] = [
+  { id: 'new',         label: 'Новая',   badge: 'bg-blue-100 text-blue-700',   btn: 'text-blue-700' },
+  { id: 'in_progress', label: 'В работе', badge: 'bg-amber-100 text-amber-700', btn: 'text-amber-700' },
+  { id: 'done',        label: 'Заказ',   badge: 'bg-green-100 text-green-700', btn: 'text-green-700' },
+  { id: 'rejected',    label: 'Отказ',   badge: 'bg-gray-100 text-gray-500',   btn: 'text-gray-500' },
+]
+
+function LeadsModal({
+  canEdit,
+  onClose,
+  onNotify,
+  onError,
+}: {
+  canEdit: boolean
+  onClose: () => void
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState<'all' | LeadStatus>('all')
+  const [backdropStart, setBackdropStart] = useState(false)
+
+  const handleBackdropMouseDown = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) setBackdropStart(true)
+  }
+  const handleBackdropMouseUp = (e: React.MouseEvent) => {
+    if (backdropStart && e.target === e.currentTarget) onClose()
+    setBackdropStart(false)
+  }
+
+  const load = async () => {
+    setLoading(true)
+    const r = await api('/api/tenant?action=leads')
+    if (r.ok) {
+      const d = await r.json()
+      setLeads(Array.isArray(d) ? d : [])
+    } else {
+      onError('Не удалось загрузить заявки')
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load().catch(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const updateStatus = async (id: string, status: LeadStatus) => {
+    const prev = leads
+    // оптимистично
+    setLeads(p => p.map(l => (l.id === id ? { ...l, status } : l)))
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_lead_status', id, status }),
+    })
+    if (r.ok) {
+      const st = LEAD_STATUSES.find(s => s.id === status)
+      onNotify(`Статус: ${st?.label ?? status}`)
+    } else {
+      setLeads(prev) // откат
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось обновить статус')
+    }
+  }
+
+  const deleteLead = async (lead: Lead) => {
+    if (!confirm(`Удалить заявку от ${lead.name}?\n\nЭто действие нельзя отменить.`)) return
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'delete_lead', id: lead.id }),
+    })
+    if (r.ok) {
+      setLeads(p => p.filter(l => l.id !== lead.id))
+      onNotify('Заявка удалена')
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось удалить')
+    }
+  }
+
+  const counts = {
+    all: leads.length,
+    new: leads.filter(l => l.status === 'new').length,
+    in_progress: leads.filter(l => l.status === 'in_progress').length,
+    done: leads.filter(l => l.status === 'done').length,
+    rejected: leads.filter(l => l.status === 'rejected').length,
+  }
+
+  const visible = filter === 'all' ? leads : leads.filter(l => l.status === filter)
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-40 flex items-start justify-center py-8 px-4 overflow-y-auto"
+      onMouseDown={handleBackdropMouseDown}
+      onMouseUp={handleBackdropMouseUp}
+    >
+      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl">
+          <div>
+            <h3 className="text-lg font-semibold">Заявки</h3>
+            <div className="text-xs text-gray-500 mt-0.5">
+              Реферальные заявки от родителей других классов
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            type="button"
+            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Фильтр по статусу */}
+        <div className="px-6 pt-4 border-b border-gray-100 flex gap-1 overflow-x-auto">
+          {([
+            { id: 'all' as const, label: 'Все' },
+            ...LEAD_STATUSES.map(s => ({ id: s.id, label: s.label })),
+          ]).map(t => {
+            const c = counts[t.id as keyof typeof counts] ?? 0
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setFilter(t.id)}
+                className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                  filter === t.id
+                    ? 'border-gray-900 text-gray-900'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {t.label}
+                <span className="text-gray-400 font-normal ml-1.5">{c}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="p-6">
+          {loading ? (
+            <div className="text-center text-gray-400 text-sm py-8">Загружаем заявки...</div>
+          ) : visible.length === 0 ? (
+            <div className="text-center text-gray-400 text-sm py-8">
+              {filter === 'all' ? 'Заявок пока нет' : 'Нет заявок в этом статусе'}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {visible.map(lead => {
+                const st = LEAD_STATUSES.find(s => s.id === lead.status) ?? LEAD_STATUSES[0]
+                return (
+                  <div key={lead.id} className="border border-gray-200 rounded-xl p-4">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900">{lead.name}</p>
+                        <a
+                          href={`tel:${lead.phone.replace(/\s+/g, '')}`}
+                          className="text-sm text-gray-600 hover:text-gray-900"
+                        >
+                          {lead.phone}
+                        </a>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap ${st.badge}`}>
+                        {st.label}
+                      </span>
+                    </div>
+
+                    {(lead.city || lead.school || lead.class_name) && (
+                      <p className="text-sm text-gray-600 mb-2">
+                        {[lead.city, lead.school, lead.class_name].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+
+                    <p className="text-xs text-gray-400 mb-3">
+                      От: <strong className="text-gray-500">{lead.referrer_name}</strong>
+                      {lead.referrer_album && ` · ${lead.referrer_album}`}
+                      {' · '}
+                      {new Date(lead.created_at).toLocaleDateString('ru-RU', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </p>
+
+                    {canEdit && (
+                      <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-gray-100">
+                        {LEAD_STATUSES.map(s => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => updateStatus(lead.id, s.id)}
+                            disabled={lead.status === s.id}
+                            className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                              lead.status === s.id
+                                ? 'border-gray-400 bg-gray-50 text-gray-700 font-medium cursor-default'
+                                : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                            }`}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => deleteLead(lead)}
+                          className="text-xs text-red-500 hover:text-red-700 ml-auto"
+                        >
+                          Удалить
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
