@@ -141,6 +141,109 @@ export async function POST(req: NextRequest) {
   // ----------------------------------------------------------
   // SETUP — одноразовое создание superadmin-аккаунта
   // ----------------------------------------------------------
+  // ----------------------------------------------------------
+  // ACCEPT_INVITATION — принять приглашение и создать аккаунт
+  // Создаёт user в правильном tenant_id с ролью из invitation.
+  // Помечает invitation как accepted_at и сразу логинит пользователя.
+  // ----------------------------------------------------------
+  if (action === 'accept_invitation') {
+    const { token, password, full_name } = body
+    if (!token || !password || !full_name) {
+      return NextResponse.json({ error: 'token, password и full_name обязательны' }, { status: 400 })
+    }
+    if (password.length < 8) {
+      return NextResponse.json({ error: 'Пароль должен быть не короче 8 символов' }, { status: 400 })
+    }
+
+    // Проверяем токен
+    const { data: invitation } = await supabaseAdmin
+      .from('invitations')
+      .select('id, tenant_id, email, role, expires_at, accepted_at')
+      .eq('token', token)
+      .maybeSingle()
+
+    if (!invitation) {
+      return NextResponse.json({ error: 'Приглашение не найдено' }, { status: 404 })
+    }
+    if ((invitation as any).accepted_at) {
+      return NextResponse.json({ error: 'Приглашение уже использовано' }, { status: 410 })
+    }
+    if (new Date((invitation as any).expires_at) < new Date()) {
+      return NextResponse.json({ error: 'Приглашение просрочено' }, { status: 410 })
+    }
+
+    // На всякий случай — не создаём дубликат пользователя
+    const { data: existing } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('tenant_id', (invitation as any).tenant_id)
+      .eq('email', (invitation as any).email)
+      .maybeSingle()
+
+    if (existing) {
+      return NextResponse.json(
+        { error: 'Пользователь с таким email уже существует в этой команде. Войдите через /login' },
+        { status: 409 }
+      )
+    }
+
+    const passwordHash = await hashPassword(password)
+
+    const { data: user, error: userError } = await supabaseAdmin
+      .from('users')
+      .insert({
+        tenant_id: (invitation as any).tenant_id,
+        email: (invitation as any).email,
+        password_hash: passwordHash,
+        full_name: full_name.trim(),
+        role: (invitation as any).role,
+        is_active: true,
+      })
+      .select('id, email, full_name, role, tenant_id')
+      .single()
+
+    if (userError) {
+      return NextResponse.json({ error: userError.message }, { status: 500 })
+    }
+
+    // Помечаем приглашение как принятое
+    await supabaseAdmin
+      .from('invitations')
+      .update({ accepted_at: new Date().toISOString() })
+      .eq('id', (invitation as any).id)
+
+    // Сразу логиним пользователя
+    const accessToken = await createAccessToken(
+      (user as any).id,
+      (user as any).tenant_id,
+      (user as any).role,
+    )
+    const refreshToken = await createRefreshToken((user as any).id, req)
+
+    await supabaseAdmin
+      .from('users')
+      .update({ last_login: new Date().toISOString() })
+      .eq('id', (user as any).id)
+
+    const { data: tenant } = await supabaseAdmin
+      .from('tenants')
+      .select('id, name, slug, plan, settings')
+      .eq('id', (user as any).tenant_id)
+      .single()
+
+    const response = NextResponse.json({
+      user: {
+        id: (user as any).id,
+        email: (user as any).email,
+        full_name: (user as any).full_name,
+        role: (user as any).role,
+      },
+      tenant,
+    })
+
+    return setAuthCookies(response, accessToken, refreshToken)
+  }
+
   if (action === 'setup') {
     // Защита: работает только если superadmin ещё не создан
     const { count } = await supabaseAdmin
@@ -189,9 +292,52 @@ export async function POST(req: NextRequest) {
 
 // ============================================================
 // GET /api/auth — информация о текущем пользователе
+// либо валидация приглашения по токену
 // ============================================================
 
 export async function GET(req: NextRequest) {
+  const action = req.nextUrl.searchParams.get('action')
+
+  // ----------------------------------------------------------
+  // invitation — валидация токена (для страницы /invite/[token])
+  // Возвращает только email и название tenant'а — никаких секретов.
+  // ----------------------------------------------------------
+  if (action === 'invitation') {
+    const token = req.nextUrl.searchParams.get('token')
+    if (!token) {
+      return NextResponse.json({ error: 'Нет токена' }, { status: 400 })
+    }
+
+    const { data: invitation } = await supabaseAdmin
+      .from('invitations')
+      .select('id, tenant_id, email, role, expires_at, accepted_at')
+      .eq('token', token)
+      .maybeSingle()
+
+    if (!invitation) {
+      return NextResponse.json({ error: 'Приглашение не найдено' }, { status: 404 })
+    }
+    if ((invitation as any).accepted_at) {
+      return NextResponse.json({ error: 'Приглашение уже использовано' }, { status: 410 })
+    }
+    if (new Date((invitation as any).expires_at) < new Date()) {
+      return NextResponse.json({ error: 'Приглашение просрочено' }, { status: 410 })
+    }
+
+    // Подтягиваем название tenant'а
+    const { data: tenant } = await supabaseAdmin
+      .from('tenants')
+      .select('name')
+      .eq('id', (invitation as any).tenant_id)
+      .single()
+
+    return NextResponse.json({
+      email: (invitation as any).email,
+      role: (invitation as any).role,
+      tenant_name: (tenant as any)?.name ?? '',
+    })
+  }
+
   const auth = await getAuth(req)
 
   if (!auth) {

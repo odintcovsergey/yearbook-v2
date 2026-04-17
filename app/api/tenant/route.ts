@@ -475,7 +475,69 @@ export async function GET(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
-  // export_csv — экспорт CSV для вёрстки альбома
+  // users — список сотрудников tenant'а (только owner и superadmin)
+  // ----------------------------------------------------------
+  if (action === 'users') {
+    if (auth.role !== 'owner' && auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Только владелец может управлять командой' }, { status: 403 })
+    }
+
+    let query = supabaseAdmin
+      .from('users')
+      .select('id, email, full_name, role, is_active, last_login, created_at')
+      .neq('role', 'superadmin') // superadmin'ов не показываем в списке команды
+      .order('created_at')
+
+    if (auth.role !== 'superadmin') {
+      query = query.eq('tenant_id', auth.tenantId)
+    }
+
+    const { data, error } = await query
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    return NextResponse.json(data ?? [])
+  }
+
+  // ----------------------------------------------------------
+  // invitations — список активных (непринятых, не просроченных) приглашений
+  // ----------------------------------------------------------
+  if (action === 'invitations') {
+    if (auth.role !== 'owner' && auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Только владелец может управлять командой' }, { status: 403 })
+    }
+
+    let query = supabaseAdmin
+      .from('invitations')
+      .select('id, email, role, token, expires_at, accepted_at, created_at, invited_by')
+      .is('accepted_at', null)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+
+    if (auth.role !== 'superadmin') {
+      query = query.eq('tenant_id', auth.tenantId)
+    }
+
+    const { data, error } = await query
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Подтягиваем имена пригласивших для UI
+    const inviterIds = Array.from(
+      new Set((data ?? []).map((i: any) => i.invited_by).filter(Boolean))
+    )
+    const { data: inviters } = inviterIds.length > 0
+      ? await supabaseAdmin.from('users').select('id, full_name, email').in('id', inviterIds)
+      : { data: [] }
+    const inviterMap = Object.fromEntries(
+      (inviters ?? []).map((u: any) => [u.id, u])
+    )
+
+    const result = (data ?? []).map((i: any) => ({
+      ...i,
+      invited_by_name: inviterMap[i.invited_by]?.full_name ?? inviterMap[i.invited_by]?.email ?? null,
+    }))
+
+    return NextResponse.json(result)
+  }
   // Совместим со старым /api/admin?action=export по ключевым колонкам:
   // Класс, Ученик, Портрет_страница, Обложка, Портрет_обложка, Текст,
   // Фото_друзья_1..10
@@ -1668,6 +1730,283 @@ export async function POST(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     await logAction(auth, 'lead.delete', 'lead', id)
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // invite_user — создать приглашение нового сотрудника
+  // Только для owner. Возвращает ссылку приглашения.
+  // ----------------------------------------------------------
+  if (body.action === 'invite_user') {
+    if (auth.role !== 'owner' && auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Только владелец может приглашать сотрудников' }, { status: 403 })
+    }
+
+    const email = (body.email ?? '').toString().toLowerCase().trim()
+    const role = (body.role ?? 'manager').toString().trim()
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: 'Введите корректный email' }, { status: 400 })
+    }
+
+    const ALLOWED_ROLES = ['owner', 'manager', 'viewer']
+    if (!ALLOWED_ROLES.includes(role)) {
+      return NextResponse.json({ error: 'Неверная роль' }, { status: 400 })
+    }
+
+    // Проверим, нет ли уже такого пользователя в этом tenant'е
+    const { data: existingUser } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('tenant_id', auth.tenantId)
+      .eq('email', email)
+      .maybeSingle()
+
+    if (existingUser) {
+      return NextResponse.json(
+        { error: 'Пользователь с таким email уже есть в вашей команде' },
+        { status: 409 }
+      )
+    }
+
+    // Есть ли активное приглашение на этот email?
+    const { data: existingInvite } = await supabaseAdmin
+      .from('invitations')
+      .select('id, token, expires_at')
+      .eq('tenant_id', auth.tenantId)
+      .eq('email', email)
+      .is('accepted_at', null)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle()
+
+    if (existingInvite) {
+      return NextResponse.json(
+        {
+          error: 'На этот email уже есть активное приглашение',
+          token: (existingInvite as any).token,
+          existing: true,
+        },
+        { status: 409 }
+      )
+    }
+
+    // Создаём приглашение. Token и expires_at генерирует БД (default'ы).
+    const { data: invitation, error } = await supabaseAdmin
+      .from('invitations')
+      .insert({
+        tenant_id: auth.tenantId,
+        email,
+        role,
+        invited_by: auth.userId,
+      })
+      .select('id, email, role, token, expires_at, created_at')
+      .single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'user.invite', 'invitation', (invitation as any).id, {
+      email,
+      role,
+    })
+
+    return NextResponse.json(invitation)
+  }
+
+  // ----------------------------------------------------------
+  // revoke_invitation — отозвать активное приглашение
+  // ----------------------------------------------------------
+  if (body.action === 'revoke_invitation') {
+    if (auth.role !== 'owner' && auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Только владелец может отзывать приглашения' }, { status: 403 })
+    }
+
+    const { id } = body
+    if (!id) {
+      return NextResponse.json({ error: 'id обязателен' }, { status: 400 })
+    }
+
+    // Проверка владения
+    if (auth.role !== 'superadmin') {
+      const { data: inv } = await supabaseAdmin
+        .from('invitations')
+        .select('tenant_id')
+        .eq('id', id)
+        .single()
+      if (!inv || (inv as any).tenant_id !== auth.tenantId) {
+        return NextResponse.json({ error: 'Приглашение не найдено' }, { status: 404 })
+      }
+    }
+
+    const { error } = await supabaseAdmin
+      .from('invitations')
+      .delete()
+      .eq('id', id)
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'user.revoke_invitation', 'invitation', id)
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // remove_user — удалить/отключить сотрудника
+  // Нельзя удалить себя. Нельзя удалить последнего owner'а.
+  // Действие — hard delete (вместе с сессиями), т.к. users внутри tenant'а
+  // немного. Если передать soft=true — только is_active=false.
+  // ----------------------------------------------------------
+  if (body.action === 'remove_user') {
+    if (auth.role !== 'owner' && auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Только владелец может удалять сотрудников' }, { status: 403 })
+    }
+
+    const { user_id, soft } = body
+    if (!user_id) {
+      return NextResponse.json({ error: 'user_id обязателен' }, { status: 400 })
+    }
+
+    if (user_id === auth.userId) {
+      return NextResponse.json({ error: 'Нельзя удалить самого себя' }, { status: 400 })
+    }
+
+    // Проверка принадлежности tenant'у
+    const { data: target } = await supabaseAdmin
+      .from('users')
+      .select('tenant_id, role, full_name, email')
+      .eq('id', user_id)
+      .single()
+
+    if (!target) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 })
+    }
+    if ((target as any).role === 'superadmin') {
+      return NextResponse.json({ error: 'Нельзя удалить superadmin' }, { status: 403 })
+    }
+    if (auth.role !== 'superadmin' && (target as any).tenant_id !== auth.tenantId) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 })
+    }
+
+    // Защита от удаления последнего owner'а
+    if ((target as any).role === 'owner') {
+      const { count: ownersCount } = await supabaseAdmin
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', (target as any).tenant_id)
+        .eq('role', 'owner')
+        .eq('is_active', true)
+
+      if ((ownersCount ?? 0) <= 1) {
+        return NextResponse.json(
+          { error: 'Нельзя удалить последнего владельца. Сначала назначьте другого owner.' },
+          { status: 400 }
+        )
+      }
+    }
+
+    if (soft) {
+      const { error } = await supabaseAdmin
+        .from('users')
+        .update({ is_active: false })
+        .eq('id', user_id)
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    } else {
+      // Hard delete — явно сносим связанные данные
+      await supabaseAdmin.from('sessions').delete().eq('user_id', user_id)
+      // Приглашения invited_by ON DELETE SET NULL — не трогаем
+      const { error } = await supabaseAdmin
+        .from('users')
+        .delete()
+        .eq('id', user_id)
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    await logAction(auth, soft ? 'user.deactivate' : 'user.delete', 'user', user_id, {
+      full_name: (target as any).full_name,
+      email: (target as any).email,
+      role: (target as any).role,
+    })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // change_role — сменить роль сотрудника
+  // Нельзя сменить свою собственную роль.
+  // Нельзя оставить tenant без owner'ов.
+  // ----------------------------------------------------------
+  if (body.action === 'change_role') {
+    if (auth.role !== 'owner' && auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Только владелец может менять роли' }, { status: 403 })
+    }
+
+    const { user_id, role } = body
+    if (!user_id || !role) {
+      return NextResponse.json({ error: 'user_id и role обязательны' }, { status: 400 })
+    }
+
+    const ALLOWED = ['owner', 'manager', 'viewer']
+    if (!ALLOWED.includes(role)) {
+      return NextResponse.json({ error: 'Неверная роль' }, { status: 400 })
+    }
+
+    if (user_id === auth.userId) {
+      return NextResponse.json(
+        { error: 'Нельзя сменить свою собственную роль' },
+        { status: 400 }
+      )
+    }
+
+    const { data: target } = await supabaseAdmin
+      .from('users')
+      .select('tenant_id, role')
+      .eq('id', user_id)
+      .single()
+
+    if (!target) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 })
+    }
+    if ((target as any).role === 'superadmin') {
+      return NextResponse.json({ error: 'Роль superadmin нельзя менять' }, { status: 403 })
+    }
+    if (auth.role !== 'superadmin' && (target as any).tenant_id !== auth.tenantId) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 })
+    }
+
+    if ((target as any).role === role) {
+      return NextResponse.json({ ok: true, unchanged: true })
+    }
+
+    // Если понижаем последнего owner'а — блокируем
+    if ((target as any).role === 'owner' && role !== 'owner') {
+      const { count: ownersCount } = await supabaseAdmin
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', (target as any).tenant_id)
+        .eq('role', 'owner')
+        .eq('is_active', true)
+
+      if ((ownersCount ?? 0) <= 1) {
+        return NextResponse.json(
+          { error: 'Нельзя понизить последнего владельца. Сначала назначьте другого owner.' },
+          { status: 400 }
+        )
+      }
+    }
+
+    const { error } = await supabaseAdmin
+      .from('users')
+      .update({ role })
+      .eq('id', user_id)
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'user.change_role', 'user', user_id, {
+      from: (target as any).role,
+      to: role,
+    })
 
     return NextResponse.json({ ok: true })
   }
