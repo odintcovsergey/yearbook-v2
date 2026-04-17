@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
+import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, type AuthContext } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -538,6 +538,28 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(result)
   }
+
+  // ----------------------------------------------------------
+  // tenant_settings — данные своего арендатора (для формы настроек)
+  // Доступно всем ролям (viewer тоже может просматривать),
+  // редактирование — только owner (update_tenant_settings).
+  // ----------------------------------------------------------
+  if (action === 'tenant_settings') {
+    if (auth.role === 'superadmin') {
+      return NextResponse.json({ error: 'Superadmin использует /super' }, { status: 400 })
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('tenants')
+      .select('id, name, slug, logo_url, city, phone, email, plan, plan_expires, max_albums, max_storage_mb, settings, is_active, created_at')
+      .eq('id', auth.tenantId)
+      .single()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    return NextResponse.json(data)
+  }
+
   // Совместим со старым /api/admin?action=export по ключевым колонкам:
   // Класс, Ученик, Портрет_страница, Обложка, Портрет_обложка, Текст,
   // Фото_друзья_1..10
@@ -2007,6 +2029,122 @@ export async function POST(req: NextRequest) {
       from: (target as any).role,
       to: role,
     })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // update_tenant_settings — обновить базовые настройки tenant'а
+  // Только для owner. Обновляемые поля: name, city, phone, email.
+  // Логотип, брендинг, план, лимиты — НЕ здесь (логотип в 3.5.b,
+  // план и лимиты меняет только superadmin через /super).
+  // ----------------------------------------------------------
+  if (body.action === 'update_tenant_settings') {
+    if (auth.role !== 'owner' && auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Только владелец может менять настройки' }, { status: 403 })
+    }
+
+    const update: Record<string, any> = {}
+
+    if (body.name !== undefined) {
+      const name = body.name.toString().trim()
+      if (!name) {
+        return NextResponse.json({ error: 'Название не может быть пустым' }, { status: 400 })
+      }
+      if (name.length > 100) {
+        return NextResponse.json({ error: 'Название слишком длинное (макс. 100 символов)' }, { status: 400 })
+      }
+      update.name = name
+    }
+
+    if (body.city !== undefined) {
+      update.city = body.city ? body.city.toString().trim() : null
+    }
+
+    if (body.phone !== undefined) {
+      update.phone = body.phone ? body.phone.toString().trim() : null
+    }
+
+    if (body.email !== undefined) {
+      const email = body.email ? body.email.toString().trim().toLowerCase() : null
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return NextResponse.json({ error: 'Неверный формат email' }, { status: 400 })
+      }
+      update.email = email
+    }
+
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json({ ok: true, unchanged: true })
+    }
+
+    const { error } = await supabaseAdmin
+      .from('tenants')
+      .update(update)
+      .eq('id', auth.tenantId)
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'tenant.update_settings', 'tenant', auth.tenantId, {
+      fields: Object.keys(update),
+    })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // change_password — смена пароля текущего пользователя
+  // Доступно всем ролям (owner, manager, viewer).
+  // Требует текущий пароль для подтверждения.
+  // ----------------------------------------------------------
+  if (body.action === 'change_password') {
+    if (!auth.userId) {
+      return NextResponse.json({ error: 'Не авторизован' }, { status: 401 })
+    }
+
+    const current = (body.current_password ?? '').toString()
+    const next = (body.new_password ?? '').toString()
+
+    if (!current || !next) {
+      return NextResponse.json({ error: 'Укажите текущий и новый пароль' }, { status: 400 })
+    }
+    if (next.length < 8) {
+      return NextResponse.json({ error: 'Новый пароль должен быть не короче 8 символов' }, { status: 400 })
+    }
+    if (next === current) {
+      return NextResponse.json({ error: 'Новый пароль совпадает с текущим' }, { status: 400 })
+    }
+
+    const { data: user } = await supabaseAdmin
+      .from('users')
+      .select('id, password_hash')
+      .eq('id', auth.userId)
+      .single()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 })
+    }
+
+    const valid = await verifyPassword(current, (user as any).password_hash)
+    if (!valid) {
+      return NextResponse.json({ error: 'Неверный текущий пароль' }, { status: 401 })
+    }
+
+    const newHash = await hashPassword(next)
+
+    const { error } = await supabaseAdmin
+      .from('users')
+      .update({ password_hash: newHash })
+      .eq('id', auth.userId)
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Выкидываем все остальные сессии (кроме текущей —
+    // чтобы не разлогинить пользователя, который только что сменил пароль).
+    // Упрощение: выкидываем все, пользователь заново залогинится
+    // на всех устройствах. Это безопаснее.
+    await supabaseAdmin.from('sessions').delete().eq('user_id', auth.userId)
+
+    await logAction(auth, 'user.change_password', 'user', auth.userId)
 
     return NextResponse.json({ ok: true })
   }

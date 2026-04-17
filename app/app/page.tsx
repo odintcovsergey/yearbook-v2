@@ -97,6 +97,7 @@ export default function AppPage() {
   const [showLeads, setShowLeads] = useState(false)
   const [showQuotes, setShowQuotes] = useState(false)
   const [showTeam, setShowTeam] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   const notify = (text: string, type: 'ok' | 'err' = 'ok') => {
     setMsg({ text, type })
@@ -275,6 +276,15 @@ export default function AppPage() {
               </button>
             )}
 
+            <button
+              onClick={() => setShowSettings(true)}
+              className="btn-ghost text-sm"
+              type="button"
+              title="Настройки аккаунта"
+            >
+              Настройки
+            </button>
+
             {canEdit && (
               <button onClick={() => setShowCreate(true)} className="btn-primary">
                 + Новый альбом
@@ -394,6 +404,15 @@ export default function AppPage() {
         <TeamModal
           currentUserId={currentUserId}
           onClose={() => setShowTeam(false)}
+          onNotify={(text) => notify(text, 'ok')}
+          onError={(text) => notify(text, 'err')}
+        />
+      )}
+
+      {showSettings && auth && (
+        <SettingsModal
+          userRole={auth.user?.role ?? 'viewer'}
+          onClose={() => setShowSettings(false)}
           onNotify={(text) => notify(text, 'ok')}
           onError={(text) => notify(text, 'err')}
         />
@@ -4233,6 +4252,400 @@ function TeamModal({
                 })}
               </div>
             )
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// МОДАЛКА НАСТРОЕК (профиль + аккаунт tenant'а)
+// - Вкладка "Пароль" — для всех ролей
+// - Вкладка "Аккаунт" — только для owner (название, контакты tenant'а)
+// ============================================================
+
+type TenantSettings = {
+  id: string
+  name: string
+  slug: string
+  city: string | null
+  phone: string | null
+  email: string | null
+  plan: string
+  plan_expires: string | null
+  max_albums: number
+  is_active: boolean
+  created_at: string
+}
+
+function SettingsModal({
+  userRole,
+  onClose,
+  onNotify,
+  onError,
+}: {
+  userRole: string
+  onClose: () => void
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const isOwner = userRole === 'owner'
+  const [tab, setTab] = useState<'password' | 'account'>(isOwner ? 'account' : 'password')
+  const [backdropStart, setBackdropStart] = useState(false)
+
+  // Аккаунт
+  const [tenant, setTenant] = useState<TenantSettings | null>(null)
+  const [loadingTenant, setLoadingTenant] = useState(true)
+  const [name, setName] = useState('')
+  const [city, setCity] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [savingAccount, setSavingAccount] = useState(false)
+
+  // Пароль
+  const [current, setCurrent] = useState('')
+  const [next1, setNext1] = useState('')
+  const [next2, setNext2] = useState('')
+  const [savingPassword, setSavingPassword] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+
+  const handleBackdropMouseDown = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) setBackdropStart(true)
+  }
+  const handleBackdropMouseUp = (e: React.MouseEvent) => {
+    if (backdropStart && e.target === e.currentTarget) onClose()
+    setBackdropStart(false)
+  }
+
+  const loadTenant = async () => {
+    setLoadingTenant(true)
+    const r = await api('/api/tenant?action=tenant_settings')
+    if (r.ok) {
+      const d = await r.json()
+      setTenant(d)
+      setName(d.name ?? '')
+      setCity(d.city ?? '')
+      setPhone(d.phone ?? '')
+      setEmail(d.email ?? '')
+    } else {
+      onError('Не удалось загрузить настройки аккаунта')
+    }
+    setLoadingTenant(false)
+  }
+
+  useEffect(() => {
+    if (isOwner) loadTenant().catch(() => setLoadingTenant(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const saveAccount = async () => {
+    if (!name.trim()) {
+      onError('Название не может быть пустым')
+      return
+    }
+    setSavingAccount(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'update_tenant_settings',
+        name: name.trim(),
+        city: city.trim() || null,
+        phone: phone.trim() || null,
+        email: email.trim() || null,
+      }),
+    })
+    if (r.ok) {
+      onNotify('Настройки аккаунта сохранены')
+      await loadTenant()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось сохранить')
+    }
+    setSavingAccount(false)
+  }
+
+  const savePassword = async () => {
+    setPasswordError(null)
+
+    if (!current || !next1 || !next2) {
+      setPasswordError('Заполните все поля')
+      return
+    }
+    if (next1.length < 8) {
+      setPasswordError('Новый пароль должен быть не короче 8 символов')
+      return
+    }
+    if (next1 !== next2) {
+      setPasswordError('Новые пароли не совпадают')
+      return
+    }
+    if (next1 === current) {
+      setPasswordError('Новый пароль совпадает с текущим')
+      return
+    }
+
+    setSavingPassword(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'change_password',
+        current_password: current,
+        new_password: next1,
+      }),
+    })
+    if (r.ok) {
+      onNotify('Пароль изменён. На других устройствах потребуется войти заново.')
+      setCurrent('')
+      setNext1('')
+      setNext2('')
+    } else {
+      const d = await r.json().catch(() => ({}))
+      setPasswordError(d.error ?? 'Не удалось сменить пароль')
+    }
+    setSavingPassword(false)
+  }
+
+  const PLAN_LABELS: Record<string, string> = {
+    free:       'Free',
+    basic:      'Basic',
+    pro:        'Pro',
+    enterprise: 'Enterprise',
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-40 flex items-start justify-center py-8 px-4 overflow-y-auto"
+      onMouseDown={handleBackdropMouseDown}
+      onMouseUp={handleBackdropMouseUp}
+    >
+      <div className="bg-white rounded-2xl max-w-xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl z-10">
+          <div>
+            <h3 className="text-lg font-semibold">Настройки</h3>
+            <div className="text-xs text-gray-500 mt-0.5">
+              Параметры аккаунта и пароль
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            type="button"
+            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Табы — показываем только если есть доступ к обоим */}
+        {isOwner && (
+          <div className="px-6 pt-4 border-b border-gray-100 flex gap-1">
+            <button
+              type="button"
+              onClick={() => setTab('account')}
+              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                tab === 'account'
+                  ? 'border-gray-900 text-gray-900'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Аккаунт
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('password')}
+              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                tab === 'password'
+                  ? 'border-gray-900 text-gray-900'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Пароль
+            </button>
+          </div>
+        )}
+
+        <div className="p-6">
+          {/* ========== Вкладка АККАУНТ ========== */}
+          {isOwner && tab === 'account' && (
+            loadingTenant ? (
+              <div className="text-center text-gray-400 text-sm py-8">Загружаем...</div>
+            ) : tenant ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">
+                    Название <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    className="input w-full"
+                    maxLength={100}
+                    disabled={savingAccount}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Город</label>
+                    <input
+                      type="text"
+                      value={city}
+                      onChange={e => setCity(e.target.value)}
+                      className="input w-full"
+                      disabled={savingAccount}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Телефон</label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={e => setPhone(e.target.value)}
+                      placeholder="+7 ..."
+                      className="input w-full"
+                      disabled={savingAccount}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="hello@example.com"
+                    className="input w-full"
+                    disabled={savingAccount}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={saveAccount}
+                  disabled={savingAccount || !name.trim()}
+                  className="btn-primary"
+                >
+                  {savingAccount ? 'Сохраняю...' : 'Сохранить'}
+                </button>
+
+                {/* Read-only блок: план, лимиты, slug */}
+                <div className="mt-6 pt-4 border-t border-gray-100 space-y-2">
+                  <h5 className="text-xs uppercase tracking-wide text-gray-400">
+                    Тариф
+                  </h5>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <div className="text-xs text-gray-500">План</div>
+                      <div className="font-medium text-gray-800">
+                        {PLAN_LABELS[tenant.plan] ?? tenant.plan}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500">Лимит альбомов</div>
+                      <div className="font-medium text-gray-800">
+                        {tenant.max_albums}
+                      </div>
+                    </div>
+                    {tenant.plan_expires && (
+                      <div className="col-span-2">
+                        <div className="text-xs text-gray-500">Действует до</div>
+                        <div className="font-medium text-gray-800">
+                          {new Date(tenant.plan_expires).toLocaleDateString('ru-RU', {
+                            day: 'numeric', month: 'long', year: 'numeric',
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <div className="text-xs text-gray-500">Идентификатор</div>
+                      <div className="font-mono text-xs text-gray-700">
+                        {tenant.slug}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500">Создан</div>
+                      <div className="text-xs text-gray-700">
+                        {new Date(tenant.created_at).toLocaleDateString('ru-RU')}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">
+                    Для смены тарифа или лимитов обратитесь в поддержку.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-gray-400 text-sm py-8">Нет данных</div>
+            )
+          )}
+
+          {/* ========== Вкладка ПАРОЛЬ ========== */}
+          {tab === 'password' && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500">
+                При смене пароля вы будете разлогинены на других устройствах.
+              </p>
+
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">
+                  Текущий пароль
+                </label>
+                <input
+                  type="password"
+                  value={current}
+                  onChange={e => setCurrent(e.target.value)}
+                  className="input w-full"
+                  disabled={savingPassword}
+                  autoComplete="current-password"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">
+                  Новый пароль <span className="text-gray-400">(не короче 8 символов)</span>
+                </label>
+                <input
+                  type="password"
+                  value={next1}
+                  onChange={e => setNext1(e.target.value)}
+                  className="input w-full"
+                  minLength={8}
+                  disabled={savingPassword}
+                  autoComplete="new-password"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">
+                  Повторите новый пароль
+                </label>
+                <input
+                  type="password"
+                  value={next2}
+                  onChange={e => setNext2(e.target.value)}
+                  className="input w-full"
+                  disabled={savingPassword}
+                  autoComplete="new-password"
+                />
+              </div>
+
+              {passwordError && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  {passwordError}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={savePassword}
+                disabled={savingPassword || !current || !next1 || !next2}
+                className="btn-primary"
+              >
+                {savingPassword ? 'Меняю...' : 'Сменить пароль'}
+              </button>
+            </div>
           )}
         </div>
       </div>
