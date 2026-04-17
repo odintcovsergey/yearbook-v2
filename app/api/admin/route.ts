@@ -1,17 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin, getPhotoUrl } from '@/lib/supabase'
-import { requireAuth, isAuthError } from '@/lib/auth'
+import { requireAuth, isAuthError, type AuthContext } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-// Старая админка работает ТОЛЬКО с альбомами главного tenant'а (ваш аккаунт).
-// Чужие альбомы (например, тестовых партнёров) доступны только через /super.
-const MAIN_TENANT_ID = () => {
-  const id = process.env.DEFAULT_TENANT_ID
-  if (!id) throw new Error('DEFAULT_TENANT_ID not set')
-  return id
-}
 
 // Двойная авторизация (этап 4.a):
 // - Legacy: заголовок x-admin-secret — старый фронт /admin.
@@ -21,6 +13,33 @@ const MAIN_TENANT_ID = () => {
 // при валидном x-admin-secret).
 async function adminAuth(req: NextRequest) {
   return requireAuth(req, ['superadmin', 'owner', 'manager'])
+}
+
+// ============================================================
+// Хелпер: проверка, что альбом принадлежит tenant'у авторизованного
+// пользователя. Для legacy-режима (x-admin-secret) tenantId совпадает
+// с DEFAULT_TENANT_ID — то же, что фильтр auth.tenantId в GET albums.
+// Поведение старой админки не меняется.
+// ============================================================
+async function assertAlbumInTenant(auth: AuthContext, albumId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from('albums')
+    .select('tenant_id')
+    .eq('id', albumId)
+    .single()
+  if (!data) return false
+  return (data as any).tenant_id === auth.tenantId
+}
+
+// Для child_details — проверяем принадлежность ребёнка
+async function assertChildInTenant(auth: AuthContext, childId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin
+    .from('children')
+    .select('albums!inner(tenant_id)')
+    .eq('id', childId)
+    .single()
+  if (!data) return false
+  return (data as any).albums?.tenant_id === auth.tenantId
 }
 
 export async function GET(req: NextRequest) {
@@ -35,24 +54,28 @@ export async function GET(req: NextRequest) {
     const { data } = await supabaseAdmin
       .from('albums')
       .select('*')
-      .eq('tenant_id', MAIN_TENANT_ID())
+      .eq('tenant_id', auth.tenantId)
       .order('created_at', { ascending: false })
     return NextResponse.json(data ?? [])
   }
 
-  // Шаблоны
+  // Шаблоны — свои + глобальные (глобальные tenant_id=null)
   if (action === 'templates') {
-    const { data } = await supabaseAdmin.from('album_templates').select('*').order('created_at')
+    const { data } = await supabaseAdmin
+      .from('album_templates')
+      .select('*')
+      .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+      .order('created_at')
     return NextResponse.json(data ?? [])
   }
 
   // Список альбомов со статистикой (один запрос)
   if (action === 'albums_with_stats') {
-    // Сначала получаем все альбомы главного tenant'а
+    // Сначала получаем все альбомы своего tenant'а
     const { data: albums } = await supabaseAdmin
       .from('albums')
       .select('*')
-      .eq('tenant_id', MAIN_TENANT_ID())
+      .eq('tenant_id', auth.tenantId)
       .order('created_at', { ascending: false })
 
     const albumIds = (albums ?? []).map((a: any) => a.id)
@@ -93,6 +116,9 @@ export async function GET(req: NextRequest) {
 
   // Статистика по альбому
   if (action === 'stats' && albumId) {
+    if (!(await assertAlbumInTenant(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
     const [children, teachers, surcharges] = await Promise.all([
       supabaseAdmin.from('children').select('id, submitted_at, started_at').eq('album_id', albumId),
       supabaseAdmin.from('teachers').select('id, submitted_at').eq('album_id', albumId),
@@ -119,6 +145,9 @@ export async function GET(req: NextRequest) {
 
   // Список детей с деталями
   if (action === 'children' && albumId) {
+    if (!(await assertAlbumInTenant(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
     const { data: children } = await supabaseAdmin
       .from('children')
       .select('id, full_name, class, access_token, submitted_at, started_at')
@@ -147,6 +176,10 @@ export async function GET(req: NextRequest) {
     const childId = req.nextUrl.searchParams.get('child_id')
     if (!childId) return NextResponse.json({ error: 'Нет child_id' }, { status: 400 })
 
+    if (!(await assertChildInTenant(auth, childId))) {
+      return NextResponse.json({ error: 'Ученик не найден' }, { status: 404 })
+    }
+
     const [selectionsRes, textRes, contactRes, coverRes] = await Promise.all([
       supabaseAdmin.from('selections').select('photo_id, selection_type, photos(filename, storage_path, thumb_path)').eq('child_id', childId),
       supabaseAdmin.from('student_texts').select('text').eq('child_id', childId).maybeSingle(),
@@ -173,6 +206,9 @@ export async function GET(req: NextRequest) {
 
   // Список учителей
   if (action === 'teachers' && albumId) {
+    if (!(await assertAlbumInTenant(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
     const { data } = await supabaseAdmin
       .from('teachers')
       .select('id, full_name, position, submitted_at')
@@ -183,6 +219,9 @@ export async function GET(req: NextRequest) {
 
   // Ответственный родитель
   if (action === 'responsible' && albumId) {
+    if (!(await assertAlbumInTenant(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
     const { data } = await supabaseAdmin
       .from('responsible_parents')
       .select('id, full_name, phone, access_token, submitted_at')
@@ -193,6 +232,9 @@ export async function GET(req: NextRequest) {
 
   // Доплаты
   if (action === 'surcharges' && albumId) {
+    if (!(await assertAlbumInTenant(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
     const { data } = await supabaseAdmin
       .from('cover_selections')
       .select('surcharge, cover_option, children(id, full_name, class, album_id)')
@@ -217,6 +259,9 @@ export async function GET(req: NextRequest) {
 
   // Список фото альбома по типу
   if (action === 'photos' && albumId) {
+    if (!(await assertAlbumInTenant(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
     const photoType = req.nextUrl.searchParams.get('photo_type')
     let query = supabaseAdmin.from('photos').select('id, filename, storage_path, type').eq('album_id', albumId).order('created_at')
     if (photoType) query = (query as any).eq('type', photoType)
@@ -230,6 +275,9 @@ export async function GET(req: NextRequest) {
 
   // Экспорт CSV для вёрстки
   if (action === 'export' && albumId) {
+    if (!(await assertAlbumInTenant(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
     const { data: children } = await supabaseAdmin
       .from('children').select('id, full_name, class').eq('album_id', albumId).order('class').order('full_name')
 
@@ -361,14 +409,19 @@ export async function POST(req: NextRequest) {
   // Удалить фото
   if (body.action === 'delete_photo') {
     const { photo_id, storage_path } = body
+    // Проверяем что фото принадлежит нашему tenant'у
+    const { data: photoOwner } = await supabaseAdmin
+      .from('photos').select('thumb_path, albums!inner(tenant_id)').eq('id', photo_id).single()
+    if (!photoOwner || (photoOwner as any).albums?.tenant_id !== auth.tenantId) {
+      return NextResponse.json({ error: 'Фото не найдено' }, { status: 404 })
+    }
     // Найти детей, у которых было выбрано это фото — им нужно сбросить submitted_at
     const { data: affectedSelections } = await supabaseAdmin
       .from('selections').select('child_id').eq('photo_id', photo_id)
     const affectedChildIds = Array.from(new Set((affectedSelections ?? []).map((s: any) => s.child_id)))
     // Удалить фото и миниатюру из хранилища
-    const { data: photoData } = await supabaseAdmin.from('photos').select('thumb_path').eq('id', photo_id).single()
     const pathsToDelete = [storage_path]
-    if ((photoData as any)?.thumb_path) pathsToDelete.push((photoData as any).thumb_path)
+    if ((photoOwner as any).thumb_path) pathsToDelete.push((photoOwner as any).thumb_path)
     await supabaseAdmin.storage.from('photos').remove(pathsToDelete)
     await supabaseAdmin.from('selections').delete().eq('photo_id', photo_id)
     await supabaseAdmin.from('photo_teachers').delete().eq('photo_id', photo_id)
@@ -417,7 +470,7 @@ export async function POST(req: NextRequest) {
       .from('albums')
       .delete()
       .eq('id', album_id)
-      .eq('tenant_id', MAIN_TENANT_ID())
+      .eq('tenant_id', auth.tenantId)
     if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
     return NextResponse.json({ ok: true })
   }
@@ -438,7 +491,7 @@ export async function POST(req: NextRequest) {
       .from('albums')
       .update({ archived: true })
       .eq('id', album_id)
-      .eq('tenant_id', MAIN_TENANT_ID())
+      .eq('tenant_id', auth.tenantId)
     return NextResponse.json({ ok: true, deleted: photos?.length ?? 0 })
   }
 
@@ -448,7 +501,7 @@ export async function POST(req: NextRequest) {
       .from('albums')
       .update({ title: body.title })
       .eq('id', body.album_id)
-      .eq('tenant_id', MAIN_TENANT_ID())
+      .eq('tenant_id', auth.tenantId)
     return NextResponse.json({ ok: true })
   }
 
@@ -470,7 +523,7 @@ export async function POST(req: NextRequest) {
       year: body.year ?? null,
     })
       .eq('id', body.album_id)
-      .eq('tenant_id', MAIN_TENANT_ID())
+      .eq('tenant_id', auth.tenantId)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })
   }
@@ -479,7 +532,7 @@ export async function POST(req: NextRequest) {
   if (body.action === 'create_album') {
     const { data, error } = await supabaseAdmin.from('albums')
       .insert({
-        tenant_id: MAIN_TENANT_ID(),
+        tenant_id: auth.tenantId,
         title: body.title,
         classes: body.classes,
         cover_mode: body.cover_mode,
@@ -501,34 +554,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(data)
   }
 
-  // Цитаты — получить список
+  // Цитаты — получить список (свои + глобальные)
   if (body.action === 'get_quotes') {
-    const { data } = await supabaseAdmin.from('quotes').select('*').order('category').order('created_at')
+    const { data } = await supabaseAdmin.from('quotes')
+      .select('*')
+      .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+      .order('category').order('created_at')
     return NextResponse.json(data ?? [])
   }
 
-  // Цитаты — создать
+  // Цитаты — создать (привязывается к своему tenant'у)
   if (body.action === 'create_quote') {
     const { data, error } = await supabaseAdmin.from('quotes')
-      .insert({ text: body.text, category: body.category ?? 'general' })
+      .insert({ text: body.text, category: body.category ?? 'general', tenant_id: auth.tenantId })
       .select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   }
 
-  // Цитаты — удалить
+  // Цитаты — удалить (только свои, глобальные защищены)
   if (body.action === 'delete_quote') {
+    const { data: q } = await supabaseAdmin.from('quotes').select('tenant_id').eq('id', body.id).single()
+    if (!q) return NextResponse.json({ error: 'Цитата не найдена' }, { status: 404 })
+    if ((q as any).tenant_id === null) {
+      return NextResponse.json({ error: 'Глобальные цитаты нельзя удалять отсюда' }, { status: 403 })
+    }
+    if ((q as any).tenant_id !== auth.tenantId) {
+      return NextResponse.json({ error: 'Цитата не найдена' }, { status: 404 })
+    }
     await supabaseAdmin.from('quotes').delete().eq('id', body.id)
     return NextResponse.json({ ok: true })
   }
 
-  // Шаблоны — получить список
+  // Шаблоны — получить список (свои + глобальные)
   if (body.action === 'get_templates') {
-    const { data } = await supabaseAdmin.from('album_templates').select('*').order('created_at')
+    const { data } = await supabaseAdmin.from('album_templates')
+      .select('*')
+      .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+      .order('created_at')
     return NextResponse.json(data ?? [])
   }
 
-  // Шаблоны — создать
+  // Шаблоны — создать (привязывается к своему tenant'у)
   if (body.action === 'create_template') {
     const { data, error } = await supabaseAdmin.from('album_templates')
       .insert({
@@ -542,20 +609,32 @@ export async function POST(req: NextRequest) {
         text_enabled: body.text_enabled ?? true,
         text_max_chars: body.text_max_chars ?? 500,
         text_type: body.text_type ?? 'free',
+        tenant_id: auth.tenantId,
       })
       .select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   }
 
-  // Шаблоны — удалить
+  // Шаблоны — удалить (только свои, глобальные защищены)
   if (body.action === 'delete_template') {
+    const { data: t } = await supabaseAdmin.from('album_templates').select('tenant_id').eq('id', body.id).single()
+    if (!t) return NextResponse.json({ error: 'Шаблон не найден' }, { status: 404 })
+    if ((t as any).tenant_id === null) {
+      return NextResponse.json({ error: 'Глобальные шаблоны нельзя удалять отсюда' }, { status: 403 })
+    }
+    if ((t as any).tenant_id !== auth.tenantId) {
+      return NextResponse.json({ error: 'Шаблон не найден' }, { status: 404 })
+    }
     await supabaseAdmin.from('album_templates').delete().eq('id', body.id)
     return NextResponse.json({ ok: true })
   }
 
   // Добавить ученика
   if (body.action === 'add_child') {
+    if (!(await assertAlbumInTenant(auth, body.album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
     const { data, error } = await supabaseAdmin.from('children')
       .insert({ album_id: body.album_id, full_name: body.full_name, class: body.class })
       .select().single()
@@ -565,6 +644,9 @@ export async function POST(req: NextRequest) {
 
   // Добавить учителя
   if (body.action === 'add_teacher') {
+    if (!(await assertAlbumInTenant(auth, body.album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
     const { data, error } = await supabaseAdmin.from('teachers')
       .insert({ album_id: body.album_id })
       .select().single()
@@ -574,6 +656,9 @@ export async function POST(req: NextRequest) {
 
   // Создать ответственного родителя
   if (body.action === 'create_responsible') {
+    if (!(await assertAlbumInTenant(auth, body.album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
     const { data, error } = await supabaseAdmin.from('responsible_parents')
       .insert({ album_id: body.album_id, full_name: body.full_name, phone: body.phone })
       .select().single()
@@ -583,6 +668,9 @@ export async function POST(req: NextRequest) {
 
   // Обновить дедлайн альбома
   if (body.action === 'update_deadline') {
+    if (!(await assertAlbumInTenant(auth, body.album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
     const { error } = await supabaseAdmin
       .from('albums')
       .update({ deadline: body.deadline ?? null })
@@ -609,6 +697,9 @@ export async function POST(req: NextRequest) {
   // Сбросить выбор ребёнка (без удаления)
   if (body.action === 'reset_child') {
     const { child_id } = body
+    if (!(await assertChildInTenant(auth, child_id))) {
+      return NextResponse.json({ error: 'Ученик не найден' }, { status: 404 })
+    }
     await supabaseAdmin.from('selections').delete().eq('child_id', child_id)
     await supabaseAdmin.from('photo_locks').delete().eq('child_id', child_id)
     await supabaseAdmin.from('cover_selections').delete().eq('child_id', child_id)
@@ -621,6 +712,9 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.action === 'delete_child') {
+    if (!(await assertChildInTenant(auth, body.child_id))) {
+      return NextResponse.json({ error: 'Ученик не найден' }, { status: 404 })
+    }
     // Разблокировать все фото которые он выбрал
     await supabaseAdmin.from('photo_locks').delete().eq('child_id', body.child_id)
     await supabaseAdmin.from('selections').delete().eq('child_id', body.child_id)
@@ -636,6 +730,15 @@ export async function POST(req: NextRequest) {
 
   // Привязать фото к ребёнку
   if (body.action === 'tag_photo') {
+    if (!(await assertChildInTenant(auth, body.child_id))) {
+      return NextResponse.json({ error: 'Ученик не найден' }, { status: 404 })
+    }
+    // Проверяем что фото тоже принадлежит нашему tenant'у
+    const { data: photo } = await supabaseAdmin
+      .from('photos').select('albums!inner(tenant_id)').eq('id', body.photo_id).single()
+    if (!photo || (photo as any).albums?.tenant_id !== auth.tenantId) {
+      return NextResponse.json({ error: 'Фото не найдено' }, { status: 404 })
+    }
     const { error } = await supabaseAdmin.from('photo_children')
       .upsert({ photo_id: body.photo_id, child_id: body.child_id }, { onConflict: 'photo_id,child_id' })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -645,6 +748,9 @@ export async function POST(req: NextRequest) {
   // Массовый импорт разметки из CSV
   if (body.action === 'import_tags') {
     const { rows, album_id } = body
+    if (!(await assertAlbumInTenant(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
     let linked = 0, skipped = 0
     for (const row of rows) {
       const { data: child } = await supabaseAdmin
@@ -664,7 +770,7 @@ export async function POST(req: NextRequest) {
     const { data } = await supabaseAdmin
       .from('referral_leads')
       .select('id, name, phone, city, school, class_name, status, created_at, referrer_child_id')
-      .eq('tenant_id', MAIN_TENANT_ID())
+      .eq('tenant_id', auth.tenantId)
       .order('created_at', { ascending: false })
 
     const childIds = Array.from(new Set((data ?? []).map((d: any) => d.referrer_child_id)))
@@ -699,7 +805,7 @@ export async function POST(req: NextRequest) {
       .from('referral_leads')
       .update({ status: body.status })
       .eq('id', body.id)
-      .eq('tenant_id', MAIN_TENANT_ID())
+      .eq('tenant_id', auth.tenantId)
     return NextResponse.json({ ok: true })
   }
 
@@ -708,7 +814,7 @@ export async function POST(req: NextRequest) {
       .from('referral_leads')
       .delete()
       .eq('id', body.id)
-      .eq('tenant_id', MAIN_TENANT_ID())
+      .eq('tenant_id', auth.tenantId)
     return NextResponse.json({ ok: true })
   }
 
