@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { requireAuth, isAuthError } from '@/lib/auth'
 import sharp from 'sharp'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-function checkAdmin(req: NextRequest) {
-  return req.headers.get('x-admin-secret') === process.env.ADMIN_SECRET
-}
-
 export async function POST(req: NextRequest) {
-  if (!checkAdmin(req)) return NextResponse.json({ error: 'Нет доступа' }, { status: 401 })
+  const auth = await requireAuth(req, ['superadmin', 'owner', 'manager'])
+  if (isAuthError(auth)) return auth
 
   const form = await req.formData()
   const file = form.get('file') as File

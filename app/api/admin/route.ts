@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin, getPhotoUrl } from '@/lib/supabase'
+import { requireAuth, isAuthError } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -12,12 +13,19 @@ const MAIN_TENANT_ID = () => {
   return id
 }
 
-function checkAdmin(req: NextRequest) {
-  return req.headers.get('x-admin-secret') === process.env.ADMIN_SECRET
+// Двойная авторизация (этап 4.a):
+// - Legacy: заголовок x-admin-secret — старый фронт /admin.
+// - JWT: cookies auth_token — пользователи /app с ролью owner/manager.
+// Обе ветки поддерживаются requireAuth из lib/auth.ts.
+// superadmin разрешён для legacy-режима (он ставится автоматически
+// при валидном x-admin-secret).
+async function adminAuth(req: NextRequest) {
+  return requireAuth(req, ['superadmin', 'owner', 'manager'])
 }
 
 export async function GET(req: NextRequest) {
-  if (!checkAdmin(req)) return NextResponse.json({ error: 'Нет доступа' }, { status: 401 })
+  const auth = await adminAuth(req)
+  if (isAuthError(auth)) return auth
 
   const action = req.nextUrl.searchParams.get('action')
   const albumId = req.nextUrl.searchParams.get('album_id')
@@ -320,7 +328,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!checkAdmin(req)) return NextResponse.json({ error: 'Нет доступа' }, { status: 401 })
+  const auth = await adminAuth(req)
+  if (isAuthError(auth)) return auth
 
   const contentType = req.headers.get('content-type') ?? ''
 

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { requireAuth, isAuthError } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get('x-admin-secret')
-  if (secret !== process.env.ADMIN_SECRET)
-    return NextResponse.json({ error: 'Нет доступа' }, { status: 401 })
+  const auth = await requireAuth(req, ['superadmin', 'owner', 'manager'])
+  if (isAuthError(auth)) return auth
 
   const { album_id, filename, storage_path, type } = await req.json()
 
