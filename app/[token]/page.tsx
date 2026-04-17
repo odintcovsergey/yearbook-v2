@@ -38,6 +38,13 @@ export default function ParentPage() {
   const [textType, setTextType] = useState<string>('free')
   const [quotes, setQuotes] = useState<any[]>([])
   const [takenQuoteIds, setTakenQuoteIds] = useState<string[]>([])
+
+  // Брендинг tenant'а (3.6)
+  const [tenantName, setTenantName] = useState<string>('')
+  const [tenantLogoUrl, setTenantLogoUrl] = useState<string | null>(null)
+  const [tenantBrandColor, setTenantBrandColor] = useState<string | null>(null)
+  const [tenantWelcomeText, setTenantWelcomeText] = useState<string>('')
+  const [tenantFooterText, setTenantFooterText] = useState<string>('')
   const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null)
   const [portraits, setPortraits] = useState<Photo[]>([])
   const [groups, setGroups] = useState<Photo[]>([])
@@ -77,6 +84,15 @@ export default function ParentPage() {
         if (data.selectedQuoteId) setSelectedQuoteId(data.selectedQuoteId)
         setPortraits(data.portraits)
         setGroups(data.groups)
+
+        // Брендинг tenant'а (3.6)
+        if (data.tenant) {
+          setTenantName(data.tenant.name ?? '')
+          setTenantLogoUrl(data.tenant.logo_url ?? null)
+          setTenantBrandColor(data.tenant.settings?.brand_color ?? null)
+          setTenantWelcomeText(data.tenant.settings?.welcome_text ?? '')
+          setTenantFooterText(data.tenant.settings?.footer_text ?? '')
+        }
 
         const ex = data.existing
         if (ex.contact) { setParentName(ex.contact.parent_name); setPhone(ex.contact.phone) }
@@ -266,13 +282,33 @@ export default function ParentPage() {
 
       <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-3">
+          {(tenantLogoUrl || tenantName) && (
+            <div className="flex items-center gap-2 mb-1.5">
+              {tenantLogoUrl && (
+                <img
+                  src={tenantLogoUrl}
+                  alt={tenantName || ''}
+                  className="h-5 w-5 rounded object-cover"
+                />
+              )}
+              {tenantName && (
+                <span className="text-xs text-gray-500">{tenantName}</span>
+              )}
+            </div>
+          )}
           <p className="text-xs text-gray-400 mb-1">{albumTitle}</p>
           <div className="flex items-center justify-between mb-2">
             <h1 className="text-sm font-medium text-gray-700">{childName}</h1>
             <span className="text-xs text-gray-400">{currentIdx + 1} / {totalSteps}</span>
           </div>
           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 rounded-full transition-all duration-500" style={{ width: `${done ? 100 : progress}%` }} />
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{
+                width: `${done ? 100 : progress}%`,
+                backgroundColor: tenantBrandColor ?? '#3b82f6',
+              }}
+            />
           </div>
         </div>
       </div>
@@ -294,6 +330,12 @@ export default function ParentPage() {
       })()}
 
       <div className="max-w-6xl mx-auto px-4 py-6">
+
+        {step === 1 && tenantWelcomeText && (
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-gray-700 mb-5 whitespace-pre-wrap">
+            {tenantWelcomeText}
+          </div>
+        )}
 
         {step === 1 && (
           <StepCard wide title="Портрет для личной страницы" subtitle="Это фото появится на вашей личной странице в альбоме.">
@@ -637,6 +679,12 @@ export default function ParentPage() {
           </div>
         )}
       </div>
+
+      {tenantFooterText && (
+        <div className="max-w-6xl mx-auto px-4 pb-8 text-xs text-gray-400 text-center whitespace-pre-wrap">
+          {tenantFooterText}
+        </div>
+      )}
     </div>
   )
 }

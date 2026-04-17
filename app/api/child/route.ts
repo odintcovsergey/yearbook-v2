@@ -19,12 +19,33 @@ export async function GET(req: NextRequest) {
 
   const { data: album } = await supabaseAdmin
     .from('albums')
-    .select('id, title, cover_mode, cover_price, deadline, group_enabled, group_min, group_max, group_exclusive, text_enabled, text_max_chars, text_type')
+    .select('id, title, tenant_id, cover_mode, cover_price, deadline, group_enabled, group_min, group_max, group_exclusive, text_enabled, text_max_chars, text_type')
     .eq('id', child.album_id)
     .single()
 
   if (album?.deadline && new Date(album.deadline) < new Date())
     return NextResponse.json({ error: 'Срок выбора фотографий истёк.' }, { status: 410 })
+
+  // Tenant для брендинга на странице родителя (3.6)
+  let tenant: any = null
+  if ((album as any)?.tenant_id) {
+    const { data: t } = await supabaseAdmin
+      .from('tenants')
+      .select('id, name, slug, logo_url, settings')
+      .eq('id', (album as any).tenant_id)
+      .single()
+    if (t) {
+      const logoUrl = (t as any).logo_url
+        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${(t as any).logo_url}`
+        : null
+      tenant = {
+        name: (t as any).name,
+        slug: (t as any).slug,
+        logo_url: logoUrl,
+        settings: (t as any).settings ?? {},
+      }
+    }
+  }
 
   const { data: allPortraits } = await supabaseAdmin
     .from('photos')
@@ -97,8 +118,16 @@ export async function GET(req: NextRequest) {
   let quotes: any[] = []
   let takenQuoteIds: string[] = []
   if ((album as any)?.text_type === 'grade11') {
+    // Цитаты: свои tenant'а + глобальные (3.6)
+    const tenantId = (album as any).tenant_id
+    let quotesQuery = supabaseAdmin.from('quotes').select('id, text, category').order('category').order('created_at')
+    if (tenantId) {
+      quotesQuery = quotesQuery.or(`tenant_id.is.null,tenant_id.eq.${tenantId}`)
+    } else {
+      quotesQuery = quotesQuery.is('tenant_id', null)
+    }
     const [quotesRes, takenRes] = await Promise.all([
-      supabaseAdmin.from('quotes').select('id, text, category').order('category').order('created_at'),
+      quotesQuery,
       supabaseAdmin.from('quote_selections').select('quote_id, child_id').eq('album_id', child.album_id),
     ])
     quotes = quotesRes.data ?? []
@@ -113,7 +142,7 @@ export async function GET(req: NextRequest) {
     .select('quote_id').eq('child_id', child.id).maybeSingle()
 
   return NextResponse.json({
-    child, album, portraits, groups, referral: existingContact.data?.referral ?? null,
+    child, album, tenant, portraits, groups, referral: existingContact.data?.referral ?? null,
     quotes, takenQuoteIds,
     selectedQuoteId: myQuote.data?.quote_id ?? null,
     existing: {
