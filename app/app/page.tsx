@@ -517,6 +517,7 @@ function AlbumDetailModal({
   const [addClass, setAddClass] = useState('')
   const [busy, setBusy] = useState(false)
   const [selectedChild, setSelectedChild] = useState<Child | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const handleBackdropMouseDown = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) setBackdropStart(true)
@@ -524,6 +525,39 @@ function AlbumDetailModal({
   const handleBackdropMouseUp = (e: React.MouseEvent) => {
     if (backdropStart && e.target === e.currentTarget) onClose()
     setBackdropStart(false)
+  }
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const res = await api(`/api/tenant?action=export_csv&album_id=${album.id}`)
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        onError(d.error ?? 'Не удалось экспортировать')
+        return
+      }
+      const blob = await res.blob()
+
+      // имя файла из Content-Disposition (url-encoded)
+      const cd = res.headers.get('Content-Disposition') ?? ''
+      const m = cd.match(/filename="([^"]+)"/)
+      const filename = m ? decodeURIComponent(m[1]) : `album-${album.id}.csv`
+
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      onNotify('CSV скачан')
+    } catch (e: any) {
+      onError(e?.message ?? 'Ошибка экспорта')
+    } finally {
+      setExporting(false)
+    }
   }
 
   const load = async () => {
@@ -638,13 +672,24 @@ function AlbumDetailModal({
               {album.deadline && `до ${new Date(album.deadline).toLocaleDateString('ru-RU')}`}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            type="button"
-            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
-          >
-            ×
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExport}
+              type="button"
+              disabled={exporting}
+              className="btn-secondary text-xs px-3 py-1.5"
+              title="Скачать CSV для вёрстки"
+            >
+              {exporting ? 'Готовим…' : '⬇ CSV'}
+            </button>
+            <button
+              onClick={onClose}
+              type="button"
+              className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         {/* Вкладки */}

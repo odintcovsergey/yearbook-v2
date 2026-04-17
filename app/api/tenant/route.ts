@@ -366,6 +366,175 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ photos: result })
   }
 
+  // ----------------------------------------------------------
+  // export_csv — экспорт CSV для вёрстки альбома
+  // Совместим со старым /api/admin?action=export по ключевым колонкам:
+  // Класс, Ученик, Портрет_страница, Обложка, Портрет_обложка, Текст,
+  // Фото_друзья_1..10
+  // Добавлены справа: Статус, Родитель, Телефон, Доплата
+  // Учителя идут в конце после пустой строки-разделителя с Класс=УЧИТЕЛЬ
+  // ----------------------------------------------------------
+  if (action === 'export_csv' && albumId) {
+    if (!(await assertAlbumAccess(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    const { data: album } = await supabaseAdmin
+      .from('albums')
+      .select('title, city, year')
+      .eq('id', albumId)
+      .single()
+
+    const { data: children } = await supabaseAdmin
+      .from('children')
+      .select('id, full_name, class, submitted_at, started_at')
+      .eq('album_id', albumId)
+      .order('class')
+      .order('full_name')
+
+    const ids = (children ?? []).map((c: any) => c.id)
+
+    const [selectionsRes, contactsRes, textsRes, coversRes] = ids.length > 0
+      ? await Promise.all([
+          supabaseAdmin.from('selections').select('child_id, photo_id, selection_type, photos(filename)').in('child_id', ids),
+          supabaseAdmin.from('parent_contacts').select('child_id, parent_name, phone').in('child_id', ids),
+          supabaseAdmin.from('student_texts').select('child_id, text').in('child_id', ids),
+          supabaseAdmin.from('cover_selections').select('child_id, cover_option, surcharge').in('child_id', ids),
+        ])
+      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }]
+
+    const selMap: Record<string, any[]> = {}
+    for (const s of selectionsRes.data ?? []) {
+      if (!selMap[(s as any).child_id]) selMap[(s as any).child_id] = []
+      selMap[(s as any).child_id].push(s)
+    }
+    const contactMap = Object.fromEntries((contactsRes.data ?? []).map((c: any) => [c.child_id, c]))
+    const textMap = Object.fromEntries((textsRes.data ?? []).map((t: any) => [t.child_id, t.text]))
+    const coverMap = Object.fromEntries((coversRes.data ?? []).map((c: any) => [c.child_id, c]))
+
+    const statusLabel = (c: any): string => {
+      if (c.submitted_at) return 'Завершил'
+      if (c.started_at) return 'В процессе'
+      return 'Не начал'
+    }
+
+    const rows = (children ?? []).map((c: any) => {
+      const sels = selMap[c.id] ?? []
+      const pp = sels.find((s: any) => s.selection_type === 'portrait_page')
+      const pc = sels.find((s: any) => s.selection_type === 'portrait_cover')
+      const gr = sels.filter((s: any) => s.selection_type === 'group')
+      const cover = coverMap[c.id]
+      const contact = contactMap[c.id]
+
+      const grCols: Record<string, string> = {}
+      for (let i = 0; i < 10; i++) {
+        grCols[`Фото_друзья_${i + 1}`] = gr[i] ? (gr[i] as any).photos?.filename ?? '' : ''
+      }
+
+      return {
+        Класс: c.class ?? '',
+        Ученик: c.full_name ?? '',
+        Портрет_страница: (pp as any)?.photos?.filename ?? '',
+        Обложка: cover?.cover_option ?? 'none',
+        Портрет_обложка: pc
+          ? (pc as any).photos?.filename
+          : (cover?.cover_option === 'same' ? (pp as any)?.photos?.filename ?? '' : ''),
+        Текст: textMap[c.id] ?? '',
+        ...grCols,
+        Статус: statusLabel(c),
+        Родитель: contact?.parent_name ?? '',
+        Телефон: contact?.phone ?? '',
+        Доплата: cover?.surcharge ? String(cover.surcharge) : '',
+      }
+    })
+
+    // Учителя
+    const { data: teachers } = await supabaseAdmin
+      .from('teachers')
+      .select('id, full_name, position, description')
+      .eq('album_id', albumId)
+      .order('created_at')
+
+    const teacherIds = (teachers ?? []).map((t: any) => t.id)
+    const { data: photoLinks } = teacherIds.length > 0
+      ? await supabaseAdmin
+          .from('photo_teachers')
+          .select('teacher_id, photos(filename)')
+          .in('teacher_id', teacherIds)
+      : { data: [] }
+
+    const photoByTeacher: Record<string, any> = {}
+    for (const link of photoLinks ?? []) {
+      photoByTeacher[(link as any).teacher_id] = (link as any).photos
+    }
+
+    const teacherRows = (teachers ?? []).map((t: any) => {
+      const photo = photoByTeacher[t.id]
+      const grTeacherCols: Record<string, string> = {}
+      for (let i = 0; i < 10; i++) { grTeacherCols[`Фото_друзья_${i + 1}`] = '' }
+      return {
+        Класс: 'УЧИТЕЛЬ',
+        Ученик: t.full_name ?? '',
+        Портрет_страница: photo?.filename ?? '',
+        Обложка: t.position ?? '',
+        Портрет_обложка: '',
+        Текст: t.description ?? '',
+        ...grTeacherCols,
+        Статус: photo ? 'Заполнено' : 'Ожидание',
+        Родитель: '',
+        Телефон: '',
+        Доплата: '',
+      }
+    })
+
+    const allRows = [
+      ...rows,
+      ...(teacherRows.length > 0 ? [null as any, ...teacherRows] : []),
+    ]
+
+    const headers = Object.keys(rows[0] ?? teacherRows[0] ?? {})
+    if (headers.length === 0) {
+      return NextResponse.json({ error: 'Альбом пуст — нечего экспортировать' }, { status: 400 })
+    }
+
+    const csv = [
+      headers.join(','),
+      ...allRows.map(r =>
+        r === null
+          ? headers.map(() => '""').join(',')
+          : headers.map(h => `"${String((r as any)[h] ?? '').replace(/"/g, '""')}"`).join(',')
+      ),
+    ].join('\n')
+
+    // Имя файла: title-city-year.csv, со слагификацией
+    const slugify = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[^a-z0-9а-яё\s-]/gi, '')
+        .trim()
+        .replace(/\s+/g, '-')
+        .slice(0, 60)
+
+    const parts = [
+      slugify((album as any)?.title ?? 'album'),
+      (album as any)?.city ? slugify((album as any).city) : '',
+      (album as any)?.year ? String((album as any).year) : '',
+    ].filter(Boolean)
+    const filename = parts.join('-') + '.csv'
+
+    await logAction(auth, 'album.export_csv', 'album', albumId, {
+      rows: rows.length,
+      teachers: teacherRows.length,
+    })
+
+    return new NextResponse('\uFEFF' + csv, {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
+      },
+    })
+  }
+
   return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })
 }
 
