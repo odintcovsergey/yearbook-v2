@@ -508,7 +508,7 @@ function AlbumDetailModal({
   const [children, setChildren] = useState<Child[]>([])
   const [loading, setLoading] = useState(true)
   const [backdropStart, setBackdropStart] = useState(false)
-  const [tab, setTab] = useState<'overview' | 'children' | 'teachers' | 'responsible'>('overview')
+  const [tab, setTab] = useState<'overview' | 'children' | 'teachers' | 'responsible' | 'photos'>('overview')
 
   // UI состояние для добавления/импорта
   const [showAddForm, setShowAddForm] = useState(false)
@@ -652,6 +652,7 @@ function AlbumDetailModal({
           {([
             { id: 'overview', label: 'Обзор' },
             { id: 'children', label: 'Ученики' },
+            { id: 'photos', label: 'Фото' },
             { id: 'teachers', label: 'Учителя' },
             { id: 'responsible', label: 'Ответственный' },
           ] as const).map(t => (
@@ -886,6 +887,18 @@ function AlbumDetailModal({
                   </div>
                 )}
               </div>
+              )}
+
+              {/* Вкладка Фото */}
+              {tab === 'photos' && (
+                <PhotosTab
+                  albumId={album.id}
+                  archived={album.archived}
+                  canEdit={canEdit}
+                  children={children}
+                  onNotify={onNotify}
+                  onError={onError}
+                />
               )}
 
               {/* Вкладка Учителя */}
@@ -2154,6 +2167,540 @@ function ResponsibleTab({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ============================================================
+// Вкладка Фото — загрузка, галерея, удаление, теги
+// ============================================================
+
+type Photo = {
+  id: string
+  filename: string
+  storage_path: string
+  thumb_path: string | null
+  type: 'portrait' | 'group' | 'teacher'
+  url: string
+  thumb_url: string
+  tags: string[]
+}
+
+type PhotoKind = 'portrait' | 'group' | 'teacher'
+
+const UPLOAD_CONCURRENCY = 5
+
+function photoKindLabel(k: PhotoKind): string {
+  return k === 'portrait' ? 'Портреты' : k === 'group' ? 'Групповые' : 'Учителя'
+}
+
+/**
+ * Параллельная клиентская загрузка:
+ * 1. browser-image-compression → WebP ~2048px
+ * 2. Прямая заливка в Supabase Storage под путём album_id/type/ts_name.webp
+ * 3. POST register_photo для создания записи в БД
+ *
+ * Thumb генерируется Supabase on-the-fly через ?width=400 (серверная
+ * трансформация). Это компромисс: зато загрузка быстрее.
+ *
+ * Для принудительной генерации настоящего thumb_path через sharp
+ * используется серверный upload_photo (multipart) — fallback, если
+ * клиентская компрессия упала.
+ */
+async function uploadFilesParallel(
+  files: File[],
+  type: PhotoKind,
+  albumId: string,
+  onProgress: (done: number) => void,
+  onFileError: (name: string, msg: string) => void,
+) {
+  const { createClient } = await import('@supabase/supabase-js')
+  const imageCompression = (await import('browser-image-compression')).default
+  const sb = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  )
+
+  let done = 0
+  const queue = [...files]
+
+  const worker = async () => {
+    while (queue.length > 0) {
+      const file = queue.shift()!
+      try {
+        let compressed: File | Blob = file
+        try {
+          compressed = await imageCompression(file, {
+            maxSizeMB: 1.2,
+            maxWidthOrHeight: 2048,
+            useWebWorker: true,
+            initialQuality: 0.85,
+            fileType: 'image/webp',
+          })
+        } catch {
+          // если компрессия упала — заливаем оригинал
+        }
+
+        const cleanName = file.name.replace(/\.[^.]+$/, '').replace(/[^\w.\-а-яёА-ЯЁ]/g, '_')
+        const path = `${albumId}/${type}/${Date.now()}_${cleanName}.webp`
+
+        const { error: upErr } = await sb.storage
+          .from('photos')
+          .upload(path, compressed, { contentType: 'image/webp', upsert: false })
+
+        if (upErr) {
+          onFileError(file.name, upErr.message)
+        } else {
+          const res = await fetch('/api/tenant', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'register_photo',
+              album_id: albumId,
+              filename: file.name,
+              storage_path: path,
+              type,
+            }),
+          })
+          if (!res.ok) {
+            const d = await res.json().catch(() => ({}))
+            onFileError(file.name, d.error ?? 'Ошибка регистрации')
+          }
+        }
+      } catch (e: any) {
+        onFileError(file.name, e?.message ?? 'Неизвестная ошибка')
+      }
+      done++
+      onProgress(done)
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(UPLOAD_CONCURRENCY, files.length) }, worker),
+  )
+}
+
+function PhotosTab({
+  albumId,
+  archived,
+  canEdit,
+  children: childList,
+  onNotify,
+  onError,
+}: {
+  albumId: string
+  archived: boolean
+  canEdit: boolean
+  children: Child[]
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [activeKind, setActiveKind] = useState<PhotoKind>('portrait')
+  const [photos, setPhotos] = useState<Photo[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showImportTags, setShowImportTags] = useState(false)
+
+  // состояние загрузки по каждому типу
+  const [upload, setUpload] = useState<
+    Record<PhotoKind, { files: File[]; uploading: boolean; done: number; errors: string[] }>
+  >({
+    portrait: { files: [], uploading: false, done: 0, errors: [] },
+    group:    { files: [], uploading: false, done: 0, errors: [] },
+    teacher:  { files: [], uploading: false, done: 0, errors: [] },
+  })
+
+  const setUploadState = (
+    type: PhotoKind,
+    patch: Partial<{ files: File[]; uploading: boolean; done: number; errors: string[] }>,
+  ) => setUpload(prev => ({ ...prev, [type]: { ...prev[type], ...patch } }))
+
+  const load = async (kind: PhotoKind) => {
+    setLoading(true)
+    const r = await api(`/api/tenant?action=photos&album_id=${albumId}&photo_type=${kind}`)
+    if (r.ok) {
+      const d = await r.json()
+      setPhotos(d.photos ?? [])
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load(activeKind).catch(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [albumId, activeKind])
+
+  const runUpload = async (type: PhotoKind) => {
+    const files = upload[type].files
+    if (!files.length) return
+    setUploadState(type, { uploading: true, done: 0, errors: [] })
+    const errors: string[] = []
+    await uploadFilesParallel(
+      files,
+      type,
+      albumId,
+      done => setUploadState(type, { done }),
+      (name, msg) => errors.push(`${name}: ${msg}`),
+    )
+    setUploadState(type, { uploading: false, files: [], done: 0, errors })
+    const ok = files.length - errors.length
+    if (errors.length === 0) {
+      onNotify(`Загружено ${ok} фото (${photoKindLabel(type)})`)
+    } else if (ok === 0) {
+      onError(`Не удалось загрузить ни одно фото. Первая ошибка: ${errors[0]}`)
+    } else {
+      onNotify(`Загружено ${ok} из ${files.length}. Ошибок: ${errors.length}`)
+    }
+    if (activeKind === type) load(type)
+  }
+
+  const uploadAll = () => {
+    ;(['portrait', 'group', 'teacher'] as PhotoKind[])
+      .filter(t => upload[t].files.length > 0)
+      .forEach(t => runUpload(t))
+  }
+
+  const deletePhoto = async (photo: Photo) => {
+    if (!confirm(`Удалить фото «${photo.filename}»?\n\nБудет удалено из всех выборов учеников. Если его уже выбрали — таких учеников вернут в статус «В процессе».`)) return
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'delete_photo', photo_id: photo.id }),
+    })
+    if (r.ok) {
+      const d = await r.json()
+      setPhotos(prev => prev.filter(p => p.id !== photo.id))
+      if (d.resetChildren > 0) {
+        onNotify(`Фото удалено. Сброшено учеников: ${d.resetChildren}`)
+      } else {
+        onNotify('Фото удалено')
+      }
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось удалить')
+    }
+  }
+
+  const totalFiles = Object.values(upload).reduce((s, v) => s + v.files.length, 0)
+  const anyUploading = Object.values(upload).some(v => v.uploading)
+  const totalDone = Object.values(upload).reduce((s, v) => s + v.done, 0)
+
+  if (archived) {
+    return (
+      <div className="text-center text-gray-500 text-sm py-12">
+        Альбом в архиве — фотографии удалены из хранилища при архивировании.
+        <br />
+        Верните альбом из архива, чтобы снова загрузить фото.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Загрузка — только для редакторов */}
+      {canEdit && (
+        <div className="card p-5 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h4 className="font-medium text-gray-800">Загрузка фотографий</h4>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Выберите файлы для каждого типа — загружаются параллельно, сжимаются в WebP
+              </p>
+            </div>
+            <button
+              onClick={() => setShowImportTags(true)}
+              className="btn-ghost text-xs"
+              type="button"
+            >
+              Импорт тегов CSV
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {(['portrait', 'group', 'teacher'] as PhotoKind[]).map(t => {
+              const s = upload[t]
+              const pct = s.files.length > 0 && s.uploading ? Math.round(s.done / s.files.length * 100) : 0
+              return (
+                <div key={t} className="border border-gray-200 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-2 gap-2">
+                    <span className="text-sm font-medium text-gray-700">{photoKindLabel(t)}</span>
+                    {s.files.length > 0 && !s.uploading && (
+                      <span className="text-xs text-gray-500">{s.files.length} файлов выбрано</span>
+                    )}
+                    {s.uploading && (
+                      <span className="text-xs text-blue-600">{s.done} / {s.files.length}</span>
+                    )}
+                  </div>
+                  {s.uploading ? (
+                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 rounded-full transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  ) : (
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={e => setUploadState(t, { files: Array.from(e.target.files ?? []) })}
+                      className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                    />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          <button
+            className="btn-primary w-full"
+            onClick={uploadAll}
+            disabled={totalFiles === 0 || anyUploading}
+            type="button"
+          >
+            {anyUploading
+              ? `Загружаю... (${totalDone} / ${totalFiles})`
+              : totalFiles > 0
+                ? `▶ Загрузить все (${totalFiles} фото)`
+                : 'Выберите файлы выше'}
+          </button>
+        </div>
+      )}
+
+      {/* Галерея */}
+      <div className="card p-5">
+        <div className="flex gap-1 mb-4 border-b border-gray-100">
+          {(['portrait', 'group', 'teacher'] as PhotoKind[]).map(t => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setActiveKind(t)}
+              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeKind === t
+                  ? 'border-gray-900 text-gray-900'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {photoKindLabel(t)}
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="text-sm text-gray-400 py-8 text-center">Загрузка...</div>
+        ) : photos.length === 0 ? (
+          <div className="text-sm text-gray-400 py-8 text-center">
+            Нет загруженных фото{canEdit ? ' — загрузите выше' : ''}
+          </div>
+        ) : (
+          <>
+            <p className="text-xs text-gray-400 mb-3">{photos.length} фото</p>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              {photos.map(photo => (
+                <div key={photo.id} className="relative group aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                  <img
+                    src={photo.thumb_url}
+                    alt={photo.filename}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => deletePhoto(photo)}
+                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 text-xs items-center justify-center hidden group-hover:flex"
+                      title="Удалить"
+                    >
+                      ✕
+                    </button>
+                  )}
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="truncate">{photo.filename}</div>
+                    {photo.tags.length > 0 && (
+                      <div className="truncate text-green-200 mt-0.5">
+                        {photo.tags.length === 1 ? photo.tags[0] : `${photo.tags.length} привязок`}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Модалка импорта тегов */}
+      {showImportTags && (
+        <ImportTagsModal
+          albumId={albumId}
+          childList={childList}
+          onClose={() => setShowImportTags(false)}
+          onDone={result => {
+            setShowImportTags(false)
+            if (result.skipped === 0) {
+              onNotify(`Привязано: ${result.linked}`)
+            } else {
+              onNotify(`Привязано: ${result.linked}, пропущено: ${result.skipped}`)
+            }
+            // перезагрузить текущую вкладку чтобы обновить tags
+            load(activeKind)
+          }}
+          onError={onError}
+        />
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// Модалка импорта CSV-тегов
+// ============================================================
+
+function ImportTagsModal({
+  albumId,
+  childList,
+  onClose,
+  onDone,
+  onError,
+}: {
+  albumId: string
+  childList: Child[]
+  onClose: () => void
+  onDone: (result: { linked: number; skipped: number; skipped_rows: any[] }) => void
+  onError: (msg: string) => void
+}) {
+  const [csv, setCsv] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ linked: number; skipped: number; skipped_rows: any[] } | null>(null)
+
+  const handleImport = async () => {
+    if (!csv.trim()) return
+    setBusy(true)
+
+    const Papa = (await import('papaparse')).default
+    const parsed = Papa.parse<Record<string, string>>(csv.trim(), {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: h => h.trim().toLowerCase().replace(/\s+/g, '_'),
+    })
+
+    const rows = (parsed.data ?? [])
+      .map(row => ({
+        child_name: row.child_name ?? row['фио'] ?? row['имя'] ?? row['ученик'] ?? '',
+        photo_filename: row.photo_filename ?? row['файл'] ?? row['фото'] ?? '',
+      }))
+      .filter(r => r.child_name && r.photo_filename)
+
+    if (rows.length === 0) {
+      onError('Не найдено ни одной строки. Проверьте формат CSV.')
+      setBusy(false)
+      return
+    }
+
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'import_tags', album_id: albumId, rows }),
+    })
+
+    if (r.ok) {
+      const d = await r.json()
+      setResult(d)
+      if (d.skipped === 0) {
+        onDone(d)
+      }
+      // если есть пропуски — показываем детали, пользователь закроет сам
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось импортировать')
+    }
+    setBusy(false)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Импорт тегов из CSV</h3>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none" type="button">×</button>
+          </div>
+
+          <div className="bg-gray-50 rounded-xl p-4 text-sm">
+            <p className="font-medium text-gray-700 mb-2">Формат:</p>
+            <pre className="bg-white border border-gray-200 rounded-lg p-3 text-xs overflow-auto text-gray-700 whitespace-pre">{`child_name,photo_filename
+Иванов Иван,IMG_001.jpg
+Иванов Иван,IMG_045.jpg
+Петрова Маша,IMG_001.jpg`}</pre>
+            <p className="text-gray-500 text-xs mt-2">
+              Имена и имена файлов матчатся без учёта регистра. В альбоме сейчас {childList.length} учеников.
+              Одно фото можно привязать к нескольким детям.
+            </p>
+          </div>
+
+          <textarea
+            value={csv}
+            onChange={e => setCsv(e.target.value)}
+            placeholder="Вставьте CSV..."
+            rows={10}
+            className="input w-full font-mono text-xs"
+            disabled={busy || !!result}
+          />
+
+          {result && (
+            <div className="space-y-2">
+              <div className={`rounded-xl p-3 text-sm ${result.skipped === 0 ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800'}`}>
+                Привязано: {result.linked}, пропущено: {result.skipped}
+              </div>
+              {result.skipped_rows.length > 0 && (
+                <div className="border border-gray-200 rounded-xl p-3 max-h-40 overflow-auto">
+                  <p className="text-xs text-gray-500 mb-2">Пропущенные строки (первые 50):</p>
+                  <ul className="text-xs space-y-1 text-gray-700">
+                    {result.skipped_rows.map((r, i) => (
+                      <li key={i} className="font-mono">
+                        <span className="text-gray-400">[{r.reason}]</span>{' '}
+                        {r.child_name} → {r.photo_filename}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            {!result ? (
+              <>
+                <button
+                  onClick={handleImport}
+                  disabled={!csv.trim() || busy}
+                  className="btn-primary flex-1"
+                  type="button"
+                >
+                  {busy ? 'Импортирую...' : 'Импортировать'}
+                </button>
+                <button
+                  onClick={onClose}
+                  disabled={busy}
+                  className="btn-secondary"
+                  type="button"
+                >
+                  Отмена
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => onDone(result)}
+                className="btn-primary flex-1"
+                type="button"
+              >
+                Готово
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
