@@ -757,7 +757,7 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
         ) : null}
       </div>
 
-      <div className="flex gap-2 px-4 pb-4 overflow-x-auto scroll-smooth" style={{scrollSnapType:'x mandatory', WebkitOverflowScrolling:'touch'}}>
+      <div className="flex gap-2 px-4 pb-4 overflow-x-auto scroll-smooth justify-center" style={{scrollSnapType:'x mandatory', WebkitOverflowScrolling:'touch'}}>
         {photos.map((p, i) => (
           <button key={p.id} onClick={() => onNavigate(i)}
             style={{scrollSnapAlign:'start'}}

@@ -3379,16 +3379,32 @@ function QuotesModal({
                   type="text"
                   value={formCategory}
                   onChange={e => setFormCategory(e.target.value)}
-                  list="quote-categories"
                   className="input w-full"
                   placeholder="general"
                   disabled={busy}
+                  autoComplete="off"
                 />
-                <datalist id="quote-categories">
-                  {categories.map(c => <option key={c} value={c} />)}
-                </datalist>
-                <p className="text-xs text-gray-400 mt-1">
-                  Например: мотивация, юмор, дружба. Можно использовать существующую или создать новую.
+                {categories.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {categories.map(c => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setFormCategory(c)}
+                        disabled={busy}
+                        className={`text-xs px-2 py-1 rounded-lg border transition-colors ${
+                          formCategory === c
+                            ? 'border-gray-900 bg-gray-900 text-white'
+                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-gray-400 mt-2">
+                  Например: мотивация, юмор, дружба. Можно выбрать из существующих выше или ввести новую.
                 </p>
               </div>
 
@@ -4667,6 +4683,155 @@ function SettingsModal({
                   </div>
                   <p className="text-xs text-gray-400 mt-2">
                     Для смены тарифа или лимитов обратитесь в поддержку.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-gray-400 text-sm py-8">Нет данных</div>
+            )
+          )}
+
+          {/* ========== Вкладка БРЕНДИНГ ========== */}
+          {isOwner && tab === 'branding' && (
+            loadingTenant ? (
+              <div className="text-center text-gray-400 text-sm py-8">Загружаем...</div>
+            ) : tenant ? (
+              <div className="space-y-5">
+                {/* Логотип */}
+                <div>
+                  <label className="text-xs text-gray-500 block mb-2">
+                    Логотип
+                    <span className="text-gray-400 ml-2">PNG или JPG до 5 МБ · будет обрезан до квадрата</span>
+                  </label>
+                  <div className="flex items-center gap-4">
+                    {tenant.logo_url ? (
+                      <img
+                        key={logoPreviewKey}
+                        src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${tenant.logo_url}?t=${logoPreviewKey}`}
+                        alt="Логотип"
+                        className="w-16 h-16 rounded-lg object-cover border border-gray-200"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-xs border border-gray-200">
+                        Нет
+                      </div>
+                    )}
+                    <div className="flex-1 flex items-center gap-2 flex-wrap">
+                      <label className="btn-secondary text-sm cursor-pointer">
+                        {uploadingLogo ? 'Загружаю...' : (tenant.logo_url ? 'Заменить' : 'Загрузить')}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={uploadingLogo}
+                          onChange={async e => {
+                            const f = e.target.files?.[0]
+                            if (f) {
+                              await uploadLogo(f)
+                              setLogoPreviewKey(k => k + 1)
+                            }
+                            e.target.value = ''
+                          }}
+                        />
+                      </label>
+                      {tenant.logo_url && (
+                        <button
+                          type="button"
+                          onClick={deleteLogo}
+                          disabled={uploadingLogo}
+                          className="text-sm text-red-500 hover:text-red-700"
+                        >
+                          Удалить
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Цвет бренда */}
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">
+                    Фирменный цвет
+                    <span className="text-gray-400 ml-2">HEX вида #RRGGBB</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={brandColor || '#3b82f6'}
+                      onChange={e => setBrandColor(e.target.value)}
+                      className="h-10 w-14 rounded border border-gray-200 cursor-pointer"
+                      disabled={savingBranding}
+                    />
+                    <input
+                      type="text"
+                      value={brandColor}
+                      onChange={e => setBrandColor(e.target.value)}
+                      placeholder="#3b82f6"
+                      className="input flex-1 font-mono text-sm"
+                      disabled={savingBranding}
+                    />
+                    {brandColor && (
+                      <button
+                        type="button"
+                        onClick={() => setBrandColor('')}
+                        className="text-xs text-gray-500 hover:text-gray-800"
+                        disabled={savingBranding}
+                      >
+                        Сбросить
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Welcome-text */}
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">
+                    Приветствие для родителей
+                    <span className="text-gray-400 ml-2">
+                      {welcomeText.length} / 1000 · показывается на первом шаге
+                    </span>
+                  </label>
+                  <textarea
+                    value={welcomeText}
+                    onChange={e => setWelcomeText(e.target.value)}
+                    rows={4}
+                    maxLength={1000}
+                    className="input w-full"
+                    placeholder="Здравствуйте! Выберите, пожалуйста, 5–7 портретов для альбома..."
+                    disabled={savingBranding}
+                  />
+                </div>
+
+                {/* Footer-text */}
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">
+                    Подпись внизу страницы
+                    <span className="text-gray-400 ml-2">
+                      {footerText.length} / 500
+                    </span>
+                  </label>
+                  <textarea
+                    value={footerText}
+                    onChange={e => setFooterText(e.target.value)}
+                    rows={2}
+                    maxLength={500}
+                    className="input w-full"
+                    placeholder="По вопросам: фотограф Сергей, +7 900 000-00-00"
+                    disabled={savingBranding}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={saveBranding}
+                    disabled={savingBranding}
+                    className="btn-primary"
+                  >
+                    {savingBranding ? 'Сохраняю...' : 'Сохранить брендинг'}
+                  </button>
+                  <p className="text-xs text-gray-400">
+                    Логотип сохраняется сразу при загрузке
                   </p>
                 </div>
               </div>
