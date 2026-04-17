@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 // ============================================================
@@ -568,6 +568,7 @@ function AlbumDetailModal({
   const [busy, setBusy] = useState(false)
   const [selectedChild, setSelectedChild] = useState<Child | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [showReminder, setShowReminder] = useState(false)
 
   const handleBackdropMouseDown = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) setBackdropStart(true)
@@ -723,6 +724,20 @@ function AlbumDetailModal({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {(() => {
+              const unfinished = children.filter(c => !c.submitted_at).length
+              if (unfinished === 0) return null
+              return (
+                <button
+                  onClick={() => setShowReminder(true)}
+                  type="button"
+                  className="btn-secondary text-xs px-3 py-1.5"
+                  title="Сгенерировать текст напоминания"
+                >
+                  🔔 Напомнить · {unfinished}
+                </button>
+              )
+            })()}
             <button
               onClick={handleExport}
               type="button"
@@ -1019,6 +1034,16 @@ function AlbumDetailModal({
           )}
         </div>
       </div>
+
+      {showReminder && (
+        <ReminderModal
+          album={album}
+          childList={children}
+          onClose={() => setShowReminder(false)}
+          onNotify={onNotify}
+          onError={onError}
+        />
+      )}
     </div>
   )
 }
@@ -3431,6 +3456,249 @@ function QuotesModal({
                   ))}
                 </div>
               )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// МОДАЛКА НАПОМИНАНИЙ РОДИТЕЛЯМ
+// Генерирует текст-шаблон из списка незавершивших детей
+// с персональными ссылками, для рассылки в чат класса
+// ============================================================
+
+type ReminderFilter = 'all' | 'not_started' | 'in_progress'
+
+function ReminderModal({
+  album,
+  childList,
+  onClose,
+  onNotify,
+  onError,
+}: {
+  album: Album
+  childList: Child[]
+  onClose: () => void
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [filter, setFilter] = useState<ReminderFilter>('all')
+  const [groupByClass, setGroupByClass] = useState(true)
+  const [backdropStart, setBackdropStart] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const handleBackdropMouseDown = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) setBackdropStart(true)
+  }
+  const handleBackdropMouseUp = (e: React.MouseEvent) => {
+    if (backdropStart && e.target === e.currentTarget) onClose()
+    setBackdropStart(false)
+  }
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+
+  // Фильтруем детей
+  const targets = childList.filter(c => {
+    if (c.submitted_at) return false
+    if (filter === 'not_started') return !c.started_at
+    if (filter === 'in_progress') return !!c.started_at
+    return true
+  })
+
+  const counts = {
+    all: childList.filter(c => !c.submitted_at).length,
+    not_started: childList.filter(c => !c.submitted_at && !c.started_at).length,
+    in_progress: childList.filter(c => !c.submitted_at && !!c.started_at).length,
+  }
+
+  // Проверим, есть ли смысл в groupByClass (больше одного класса среди целей)
+  const uniqueClasses = Array.from(new Set(targets.map(c => c.class ?? ''))).sort()
+  const hasMultipleClasses = uniqueClasses.length > 1
+
+  // Строим текст
+  const buildText = (): string => {
+    if (targets.length === 0) return ''
+
+    const header: string[] = []
+    header.push(
+      `Здравствуйте! Напоминаем: нужно выбрать фотографии для выпускного альбома.`,
+    )
+    const albumLine = [album.title]
+    if (album.city) albumLine.push(album.city)
+    if (album.year) albumLine.push(String(album.year))
+    header.push(`Альбом: ${albumLine.join(', ')}`)
+    if (album.deadline) {
+      header.push(
+        `Срок: до ${new Date(album.deadline).toLocaleDateString('ru-RU')}`,
+      )
+    }
+    header.push('')
+    header.push(
+      `Ваша персональная ссылка — не пересылайте её, она привязана к конкретному ученику:`,
+    )
+    header.push('')
+
+    const lines: string[] = []
+
+    if (groupByClass && hasMultipleClasses) {
+      // Группируем по классу
+      for (const cls of uniqueClasses) {
+        const group = targets.filter(c => (c.class ?? '') === cls)
+        if (group.length === 0) continue
+        lines.push(cls ? `— ${cls} —` : '— без класса —')
+        for (const c of group) {
+          lines.push(`${c.full_name} → ${origin}/${c.access_token}`)
+        }
+        lines.push('')
+      }
+    } else {
+      for (const c of targets) {
+        lines.push(`${c.full_name} → ${origin}/${c.access_token}`)
+      }
+    }
+
+    lines.push('Спасибо!')
+
+    return [...header, ...lines].join('\n')
+  }
+
+  const text = buildText()
+
+  const handleCopy = async () => {
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      onNotify('Текст скопирован в буфер обмена')
+    } catch {
+      // Fallback: выделяем в textarea
+      if (textareaRef.current) {
+        textareaRef.current.select()
+        try {
+          document.execCommand('copy')
+          onNotify('Текст скопирован в буфер обмена')
+        } catch {
+          onError('Не удалось скопировать. Выделите текст вручную.')
+        }
+      } else {
+        onError('Не удалось скопировать. Выделите текст вручную.')
+      }
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center py-8 px-4 overflow-y-auto"
+      onMouseDown={handleBackdropMouseDown}
+      onMouseUp={handleBackdropMouseUp}
+    >
+      <div className="bg-white rounded-2xl max-w-2xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold">Напоминание родителям</h3>
+            <div className="text-xs text-gray-500 mt-0.5">
+              Скопируйте текст и отправьте в чат класса
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            type="button"
+            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Фильтр кого включить */}
+          <div>
+            <label className="text-xs text-gray-500 block mb-2">
+              Кого включить
+            </label>
+            <div className="flex gap-1 flex-wrap">
+              {([
+                { id: 'all' as const,         label: 'Все незавершившие' },
+                { id: 'not_started' as const, label: 'Не начали' },
+                { id: 'in_progress' as const, label: 'В процессе' },
+              ]).map(f => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setFilter(f.id)}
+                  disabled={counts[f.id] === 0}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${
+                    filter === f.id
+                      ? 'border-gray-900 bg-gray-900 text-white font-medium'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed'
+                  }`}
+                >
+                  {f.label}
+                  <span className={`font-normal ml-1.5 ${filter === f.id ? 'text-gray-300' : 'text-gray-400'}`}>
+                    {counts[f.id]}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Группировка */}
+          {hasMultipleClasses && (
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={groupByClass}
+                onChange={e => setGroupByClass(e.target.checked)}
+                className="rounded"
+              />
+              Группировать по классу ({uniqueClasses.length})
+            </label>
+          )}
+
+          {/* Превью */}
+          {targets.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">
+              Нет учеников для напоминания в выбранном фильтре
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">
+                  Текст · {targets.length} учеников
+                </label>
+                <textarea
+                  ref={textareaRef}
+                  value={text}
+                  readOnly
+                  rows={14}
+                  className="input w-full font-mono text-xs resize-none"
+                  onClick={e => (e.target as HTMLTextAreaElement).select()}
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="btn-primary flex-1"
+                >
+                  Скопировать
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="btn-secondary"
+                >
+                  Закрыть
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-400">
+                Ссылки персональные: каждая привязана к конкретному ученику.
+                Рекомендуем отправлять в личные сообщения, а не в общий чат —
+                чтобы родители не перепутали и не открыли чужую ссылку.
+              </p>
             </>
           )}
         </div>
