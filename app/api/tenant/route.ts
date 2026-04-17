@@ -743,13 +743,103 @@ export async function POST(req: NextRequest) {
   const contentType = req.headers.get('content-type') ?? ''
 
   // ============================================================
-  // multipart/form-data — загрузка фото (upload_photo)
-  // Формат: file, type (portrait|group|teacher), album_id
-  // Делает WebP full (2048px) + thumb (400px) через sharp,
-  // заливает оба в Storage, создаёт запись в photos.
+  // multipart/form-data — загрузка файлов
+  // Разветвление по action-полю формы:
+  //   upload_photo (default) — фото альбома
+  //   upload_logo — логотип tenant'а
   // ============================================================
   if (contentType.includes('multipart/form-data')) {
     const form = await req.formData()
+    const formAction = (form.get('action') as string | null) ?? 'upload_photo'
+
+    // ----------------------------------------------------------
+    // upload_logo — логотип tenant'а (только owner)
+    // Формат: file
+    // Делает WebP 256x256 (fit=cover, attention), кладёт в
+    // photos/tenants/<tenant_id>/logo.webp, перезаписывает старый,
+    // сохраняет путь в tenants.logo_url.
+    // ----------------------------------------------------------
+    if (formAction === 'upload_logo') {
+      if (auth.role !== 'owner' && auth.role !== 'superadmin') {
+        return NextResponse.json(
+          { error: 'Только владелец может менять логотип' },
+          { status: 403 }
+        )
+      }
+
+      const file = form.get('file') as File | null
+      if (!file) {
+        return NextResponse.json({ error: 'Файл обязателен' }, { status: 400 })
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        return NextResponse.json(
+          { error: 'Размер файла не должен превышать 5 МБ' },
+          { status: 400 }
+        )
+      }
+
+      const sharp = (await import('sharp')).default
+      const buffer = Buffer.from(await file.arrayBuffer())
+
+      let processed: Buffer
+      try {
+        processed = await sharp(buffer)
+          .rotate()
+          .resize(256, 256, { fit: 'cover', position: 'attention' })
+          .webp({ quality: 90 })
+          .toBuffer()
+      } catch {
+        return NextResponse.json({ error: 'Не удалось обработать изображение' }, { status: 400 })
+      }
+
+      const logoPath = `tenants/${auth.tenantId}/logo.webp`
+
+      // Старый путь может отличаться (если раньше был с timestamp или другим расширением)
+      const { data: currentTenant } = await supabaseAdmin
+        .from('tenants')
+        .select('logo_url')
+        .eq('id', auth.tenantId)
+        .single()
+      const oldPath = (currentTenant as any)?.logo_url
+      if (oldPath && oldPath !== logoPath) {
+        await supabaseAdmin.storage.from('photos').remove([oldPath])
+      }
+
+      // upsert=true, чтобы перезаписывать
+      const { error: upErr } = await supabaseAdmin.storage
+        .from('photos')
+        .upload(logoPath, processed, {
+          contentType: 'image/webp',
+          upsert: true,
+        })
+
+      if (upErr) {
+        return NextResponse.json({ error: upErr.message }, { status: 500 })
+      }
+
+      const { error: dbErr } = await supabaseAdmin
+        .from('tenants')
+        .update({ logo_url: logoPath })
+        .eq('id', auth.tenantId)
+
+      if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 })
+
+      // Public URL (обходим кэш CDN с timestamp'ом, чтобы UI сразу увидел новый логотип)
+      const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${logoPath}?t=${Date.now()}`
+
+      await logAction(auth, 'tenant.upload_logo', 'tenant', auth.tenantId, {
+        size: file.size,
+      })
+
+      return NextResponse.json({ ok: true, logo_url: logoPath, public_url: publicUrl })
+    }
+
+    // ----------------------------------------------------------
+    // upload_photo (default multipart action) — фото альбома
+    // Формат: file, type (portrait|group|teacher), album_id
+    // Делает WebP full (2048px) + thumb (400px) через sharp,
+    // заливает оба в Storage, создаёт запись в photos.
+    // ----------------------------------------------------------
     const file = form.get('file') as File | null
     const type = form.get('type') as string | null
     const albumId = form.get('album_id') as string | null
@@ -2147,6 +2237,110 @@ export async function POST(req: NextRequest) {
     await logAction(auth, 'user.change_password', 'user', auth.userId)
 
     return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // update_branding — обновить брендинг tenant'а
+  // Только для owner. Хранит:
+  //   tenants.logo_url — в колонке (строка)
+  //   tenants.settings — JSONB с ключами:
+  //     brand_color — hex-цвет (#rrggbb)
+  //     welcome_text — текст приветствия для родителей
+  //     footer_text — подпись в письмах
+  // ----------------------------------------------------------
+  if (body.action === 'update_branding') {
+    if (auth.role !== 'owner' && auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Только владелец может менять брендинг' }, { status: 403 })
+    }
+
+    // Сначала читаем текущие settings чтобы мержить
+    const { data: current } = await supabaseAdmin
+      .from('tenants')
+      .select('settings')
+      .eq('id', auth.tenantId)
+      .single()
+
+    const existingSettings = ((current as any)?.settings ?? {}) as Record<string, any>
+    const newSettings = { ...existingSettings }
+
+    // brand_color — hex-цвет
+    if (body.brand_color !== undefined) {
+      const color = body.brand_color ? body.brand_color.toString().trim() : ''
+      if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) {
+        return NextResponse.json(
+          { error: 'Цвет должен быть в формате #RRGGBB' },
+          { status: 400 }
+        )
+      }
+      if (color) {
+        newSettings.brand_color = color.toLowerCase()
+      } else {
+        delete newSettings.brand_color
+      }
+    }
+
+    // welcome_text
+    if (body.welcome_text !== undefined) {
+      const text = body.welcome_text ? body.welcome_text.toString() : ''
+      if (text.length > 1000) {
+        return NextResponse.json(
+          { error: 'Текст приветствия слишком длинный (макс. 1000 символов)' },
+          { status: 400 }
+        )
+      }
+      if (text.trim()) {
+        newSettings.welcome_text = text
+      } else {
+        delete newSettings.welcome_text
+      }
+    }
+
+    // footer_text
+    if (body.footer_text !== undefined) {
+      const text = body.footer_text ? body.footer_text.toString() : ''
+      if (text.length > 500) {
+        return NextResponse.json(
+          { error: 'Подпись слишком длинная (макс. 500 символов)' },
+          { status: 400 }
+        )
+      }
+      if (text.trim()) {
+        newSettings.footer_text = text
+      } else {
+        delete newSettings.footer_text
+      }
+    }
+
+    const update: Record<string, any> = { settings: newSettings }
+
+    // Удаление логотипа — передают logo_url: null
+    if (body.logo_url === null) {
+      // Читаем текущий logo_url чтобы удалить файл
+      const { data: tenantRow } = await supabaseAdmin
+        .from('tenants')
+        .select('logo_url')
+        .eq('id', auth.tenantId)
+        .single()
+      const oldPath = (tenantRow as any)?.logo_url
+      if (oldPath) {
+        // oldPath — это путь в bucket'е photos, удаляем файл
+        await supabaseAdmin.storage.from('photos').remove([oldPath])
+      }
+      update.logo_url = null
+    }
+
+    const { error } = await supabaseAdmin
+      .from('tenants')
+      .update(update)
+      .eq('id', auth.tenantId)
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'tenant.update_branding', 'tenant', auth.tenantId, {
+      fields: Object.keys(body).filter(k => k !== 'action'),
+    })
+
+    return NextResponse.json({ ok: true, settings: newSettings })
   }
 
   // ----------------------------------------------------------

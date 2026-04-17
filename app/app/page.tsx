@@ -4269,6 +4269,7 @@ type TenantSettings = {
   id: string
   name: string
   slug: string
+  logo_url: string | null
   city: string | null
   phone: string | null
   email: string | null
@@ -4277,6 +4278,12 @@ type TenantSettings = {
   max_albums: number
   is_active: boolean
   created_at: string
+  settings: {
+    brand_color?: string
+    welcome_text?: string
+    footer_text?: string
+    [k: string]: any
+  }
 }
 
 function SettingsModal({
@@ -4291,7 +4298,7 @@ function SettingsModal({
   onError: (msg: string) => void
 }) {
   const isOwner = userRole === 'owner'
-  const [tab, setTab] = useState<'password' | 'account'>(isOwner ? 'account' : 'password')
+  const [tab, setTab] = useState<'password' | 'account' | 'branding'>(isOwner ? 'account' : 'password')
   const [backdropStart, setBackdropStart] = useState(false)
 
   // Аккаунт
@@ -4309,6 +4316,14 @@ function SettingsModal({
   const [next2, setNext2] = useState('')
   const [savingPassword, setSavingPassword] = useState(false)
   const [passwordError, setPasswordError] = useState<string | null>(null)
+
+  // Брендинг
+  const [brandColor, setBrandColor] = useState('')
+  const [welcomeText, setWelcomeText] = useState('')
+  const [footerText, setFooterText] = useState('')
+  const [logoPreviewKey, setLogoPreviewKey] = useState(0) // для сброса кэша img
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [savingBranding, setSavingBranding] = useState(false)
 
   const handleBackdropMouseDown = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) setBackdropStart(true)
@@ -4328,6 +4343,10 @@ function SettingsModal({
       setCity(d.city ?? '')
       setPhone(d.phone ?? '')
       setEmail(d.email ?? '')
+      setBrandColor(d.settings?.brand_color ?? '')
+      setWelcomeText(d.settings?.welcome_text ?? '')
+      setFooterText(d.settings?.footer_text ?? '')
+      setLogoPreviewKey(k => k + 1) // обновить превью
     } else {
       onError('Не удалось загрузить настройки аккаунта')
     }
@@ -4406,6 +4425,70 @@ function SettingsModal({
     setSavingPassword(false)
   }
 
+  const saveBranding = async () => {
+    setSavingBranding(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'update_branding',
+        brand_color: brandColor.trim() || '',
+        welcome_text: welcomeText,
+        footer_text: footerText,
+      }),
+    })
+    if (r.ok) {
+      onNotify('Брендинг сохранён')
+      await loadTenant()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось сохранить')
+    }
+    setSavingBranding(false)
+  }
+
+  const uploadLogo = async (file: File) => {
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) {
+      onError('Размер файла не должен превышать 5 МБ')
+      return
+    }
+
+    setUploadingLogo(true)
+    const form = new FormData()
+    form.append('action', 'upload_logo')
+    form.append('file', file)
+
+    const res = await fetch('/api/tenant', {
+      method: 'POST',
+      credentials: 'include',
+      body: form,
+    })
+
+    if (res.ok) {
+      onNotify('Логотип загружен')
+      await loadTenant()
+    } else {
+      const d = await res.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось загрузить логотип')
+    }
+    setUploadingLogo(false)
+  }
+
+  const deleteLogo = async () => {
+    if (!confirm('Удалить логотип?')) return
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'update_branding', logo_url: null }),
+    })
+    if (r.ok) {
+      onNotify('Логотип удалён')
+      await loadTenant()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось удалить')
+    }
+  }
+
   const PLAN_LABELS: Record<string, string> = {
     free:       'Free',
     basic:      'Basic',
@@ -4449,6 +4532,17 @@ function SettingsModal({
               }`}
             >
               Аккаунт
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('branding')}
+              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                tab === 'branding'
+                  ? 'border-gray-900 text-gray-900'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Брендинг
             </button>
             <button
               type="button"
