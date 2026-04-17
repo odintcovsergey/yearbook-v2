@@ -96,6 +96,7 @@ export default function AppPage() {
   const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null)
   const [showLeads, setShowLeads] = useState(false)
   const [showQuotes, setShowQuotes] = useState(false)
+  const [showTeam, setShowTeam] = useState(false)
 
   const notify = (text: string, type: 'ok' | 'err' = 'ok') => {
     setMsg({ text, type })
@@ -103,6 +104,8 @@ export default function AppPage() {
   }
 
   const canEdit = auth?.user?.role === 'owner' || auth?.user?.role === 'manager'
+  const canManageTeam = auth?.user?.role === 'owner'
+  const currentUserId = auth?.user?.id ?? null
 
   // --- Проверка авторизации ---
   useEffect(() => {
@@ -261,6 +264,17 @@ export default function AppPage() {
               Цитаты
             </button>
 
+            {canManageTeam && (
+              <button
+                onClick={() => setShowTeam(true)}
+                className="btn-ghost text-sm"
+                type="button"
+                title="Сотрудники и приглашения"
+              >
+                Команда
+              </button>
+            )}
+
             {canEdit && (
               <button onClick={() => setShowCreate(true)} className="btn-primary">
                 + Новый альбом
@@ -371,6 +385,15 @@ export default function AppPage() {
         <QuotesModal
           canEdit={canEdit}
           onClose={() => setShowQuotes(false)}
+          onNotify={(text) => notify(text, 'ok')}
+          onError={(text) => notify(text, 'err')}
+        />
+      )}
+
+      {showTeam && currentUserId && (
+        <TeamModal
+          currentUserId={currentUserId}
+          onClose={() => setShowTeam(false)}
           onNotify={(text) => notify(text, 'ok')}
           onError={(text) => notify(text, 'err')}
         />
@@ -3700,6 +3723,516 @@ function ReminderModal({
                 чтобы родители не перепутали и не открыли чужую ссылку.
               </p>
             </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// МОДАЛКА УПРАВЛЕНИЯ КОМАНДОЙ (users + invitations)
+// Доступна только для owner
+// ============================================================
+
+type TeamUser = {
+  id: string
+  email: string
+  full_name: string
+  role: 'owner' | 'manager' | 'viewer'
+  is_active: boolean
+  last_login: string | null
+  created_at: string
+}
+
+type Invitation = {
+  id: string
+  email: string
+  role: 'owner' | 'manager' | 'viewer'
+  token: string
+  expires_at: string
+  accepted_at: string | null
+  created_at: string
+  invited_by: string | null
+  invited_by_name: string | null
+}
+
+const ROLE_LABELS: Record<string, string> = {
+  owner:   'Владелец',
+  manager: 'Менеджер',
+  viewer:  'Наблюдатель',
+}
+
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+  owner:   'Полный доступ, включая команду и настройки',
+  manager: 'Управление альбомами и учениками',
+  viewer:  'Только просмотр',
+}
+
+function TeamModal({
+  currentUserId,
+  onClose,
+  onNotify,
+  onError,
+}: {
+  currentUserId: string
+  onClose: () => void
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [tab, setTab] = useState<'users' | 'invitations'>('users')
+  const [users, setUsers] = useState<TeamUser[]>([])
+  const [invitations, setInvitations] = useState<Invitation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [backdropStart, setBackdropStart] = useState(false)
+
+  // Форма приглашения
+  const [showInviteForm, setShowInviteForm] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<'owner' | 'manager' | 'viewer'>('manager')
+  const [busy, setBusy] = useState(false)
+
+  const handleBackdropMouseDown = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) setBackdropStart(true)
+  }
+  const handleBackdropMouseUp = (e: React.MouseEvent) => {
+    if (backdropStart && e.target === e.currentTarget) onClose()
+    setBackdropStart(false)
+  }
+
+  const load = async () => {
+    setLoading(true)
+    const [ur, ir] = await Promise.all([
+      api('/api/tenant?action=users').then(r => r.ok ? r.json() : []),
+      api('/api/tenant?action=invitations').then(r => r.ok ? r.json() : []),
+    ])
+    setUsers(Array.isArray(ur) ? ur : [])
+    setInvitations(Array.isArray(ir) ? ir : [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    load().catch(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const submitInvite = async () => {
+    const email = inviteEmail.trim().toLowerCase()
+    if (!email) return
+    setBusy(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'invite_user',
+        email,
+        role: inviteRole,
+      }),
+    })
+    if (r.ok) {
+      const inv = await r.json()
+      setInviteEmail('')
+      setInviteRole('manager')
+      setShowInviteForm(false)
+      onNotify(`Приглашение создано. Отправьте ссылку ${email}.`)
+      // Автоматически копируем ссылку
+      const url = `${window.location.origin}/invite/${inv.token}`
+      try { await navigator.clipboard.writeText(url) } catch {}
+      await load()
+      setTab('invitations')
+    } else {
+      const d = await r.json().catch(() => ({}))
+      if (d.existing && d.token) {
+        // Уже было — копируем старую ссылку
+        const url = `${window.location.origin}/invite/${d.token}`
+        try {
+          await navigator.clipboard.writeText(url)
+          onNotify(`${d.error}. Ссылка скопирована.`)
+        } catch {
+          onError(d.error)
+        }
+        await load()
+      } else {
+        onError(d.error ?? 'Не удалось создать приглашение')
+      }
+    }
+    setBusy(false)
+  }
+
+  const copyInviteLink = async (inv: Invitation) => {
+    const url = `${window.location.origin}/invite/${inv.token}`
+    try {
+      await navigator.clipboard.writeText(url)
+      onNotify(`Ссылка скопирована: отправьте ${inv.email}`)
+    } catch {
+      onError('Не удалось скопировать. Ссылка: ' + url)
+    }
+  }
+
+  const revokeInvitation = async (inv: Invitation) => {
+    if (!confirm(`Отозвать приглашение для ${inv.email}?`)) return
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'revoke_invitation', id: inv.id }),
+    })
+    if (r.ok) {
+      setInvitations(prev => prev.filter(x => x.id !== inv.id))
+      onNotify('Приглашение отозвано')
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось отозвать')
+    }
+  }
+
+  const changeRole = async (u: TeamUser, newRole: 'owner' | 'manager' | 'viewer') => {
+    if (newRole === u.role) return
+    const prev = users
+    // оптимистично
+    setUsers(p => p.map(x => x.id === u.id ? { ...x, role: newRole } : x))
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'change_role', user_id: u.id, role: newRole }),
+    })
+    if (r.ok) {
+      onNotify(`${u.full_name || u.email}: роль изменена на «${ROLE_LABELS[newRole]}»`)
+    } else {
+      setUsers(prev) // откат
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось сменить роль')
+    }
+  }
+
+  const removeUser = async (u: TeamUser) => {
+    if (!confirm(`Удалить ${u.full_name || u.email} из команды?\n\nДоступ будет отозван немедленно. Это действие нельзя отменить.`)) return
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'remove_user', user_id: u.id }),
+    })
+    if (r.ok) {
+      setUsers(p => p.filter(x => x.id !== u.id))
+      onNotify(`${u.full_name || u.email} удалён из команды`)
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось удалить')
+    }
+  }
+
+  const formatDate = (s: string | null) => {
+    if (!s) return '—'
+    return new Date(s).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+
+  const formatLastLogin = (s: string | null) => {
+    if (!s) return 'никогда'
+    const d = new Date(s)
+    const diff = Date.now() - d.getTime()
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    if (days === 0) return 'сегодня'
+    if (days === 1) return 'вчера'
+    if (days < 7) return `${days} дн. назад`
+    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 z-40 flex items-start justify-center py-8 px-4 overflow-y-auto"
+      onMouseDown={handleBackdropMouseDown}
+      onMouseUp={handleBackdropMouseUp}
+    >
+      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl z-10">
+          <div>
+            <h3 className="text-lg font-semibold">Команда</h3>
+            <div className="text-xs text-gray-500 mt-0.5">
+              Сотрудники вашего аккаунта и активные приглашения
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {!showInviteForm && (
+              <button
+                type="button"
+                onClick={() => setShowInviteForm(true)}
+                className="btn-primary text-xs px-3 py-1.5"
+              >
+                + Пригласить
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              type="button"
+              className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        {/* Табы */}
+        {!showInviteForm && (
+          <div className="px-6 pt-4 border-b border-gray-100 flex gap-1">
+            <button
+              type="button"
+              onClick={() => setTab('users')}
+              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                tab === 'users'
+                  ? 'border-gray-900 text-gray-900'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Сотрудники
+              <span className="text-gray-400 font-normal ml-1.5">{users.length}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('invitations')}
+              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                tab === 'invitations'
+                  ? 'border-gray-900 text-gray-900'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Приглашения
+              <span className="text-gray-400 font-normal ml-1.5">{invitations.length}</span>
+            </button>
+          </div>
+        )}
+
+        <div className="p-6">
+          {/* Форма приглашения */}
+          {showInviteForm ? (
+            <div className="space-y-4">
+              <h4 className="font-medium text-gray-800">Новое приглашение</h4>
+
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Email</label>
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={e => setInviteEmail(e.target.value)}
+                  placeholder="colleague@example.com"
+                  className="input w-full"
+                  disabled={busy}
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-500 block mb-2">Роль</label>
+                <div className="space-y-2">
+                  {(['owner', 'manager', 'viewer'] as const).map(r => (
+                    <label
+                      key={r}
+                      className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                        inviteRole === r
+                          ? 'border-gray-900 bg-gray-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="role"
+                        checked={inviteRole === r}
+                        onChange={() => setInviteRole(r)}
+                        className="mt-0.5"
+                      />
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{ROLE_LABELS[r]}</div>
+                        <div className="text-xs text-gray-500">{ROLE_DESCRIPTIONS[r]}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700">
+                После создания вы получите ссылку-приглашение — отправьте её
+                сотруднику любым удобным способом (мессенджер, email).
+                Ссылка действует 7 дней.
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={submitInvite}
+                  disabled={!inviteEmail.trim() || busy}
+                  className="btn-primary"
+                >
+                  {busy ? 'Создаю...' : 'Создать приглашение'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInviteForm(false)
+                    setInviteEmail('')
+                    setInviteRole('manager')
+                  }}
+                  disabled={busy}
+                  className="btn-secondary"
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          ) : loading ? (
+            <div className="text-center text-gray-400 text-sm py-8">Загружаем...</div>
+          ) : tab === 'users' ? (
+            // ========== СОТРУДНИКИ ==========
+            users.length === 0 ? (
+              <div className="text-center text-gray-400 text-sm py-8">
+                Кроме вас пока никого.
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowInviteForm(true)}
+                    className="btn-primary text-sm"
+                  >
+                    + Пригласить первого сотрудника
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {users.map(u => {
+                  const isSelf = u.id === currentUserId
+                  return (
+                    <div
+                      key={u.id}
+                      className={`border rounded-xl p-4 ${
+                        isSelf ? 'border-gray-300 bg-gray-50' : 'border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium text-gray-900 truncate">
+                              {u.full_name || u.email}
+                            </p>
+                            {isSelf && (
+                              <span className="text-[10px] uppercase tracking-wide text-gray-500 bg-white border border-gray-200 px-1.5 py-0.5 rounded">
+                                это вы
+                              </span>
+                            )}
+                            {!u.is_active && (
+                              <span className="text-[10px] uppercase tracking-wide text-red-600 bg-red-50 px-1.5 py-0.5 rounded">
+                                отключён
+                              </span>
+                            )}
+                          </div>
+                          {u.full_name && (
+                            <p className="text-sm text-gray-500 truncate">{u.email}</p>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-400 whitespace-nowrap">
+                          {formatLastLogin(u.last_login)}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-gray-100">
+                        {(['owner', 'manager', 'viewer'] as const).map(r => (
+                          <button
+                            key={r}
+                            type="button"
+                            onClick={() => !isSelf && changeRole(u, r)}
+                            disabled={isSelf || u.role === r}
+                            title={isSelf ? 'Нельзя сменить свою роль' : ''}
+                            className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${
+                              u.role === r
+                                ? 'border-gray-400 bg-white text-gray-800 font-medium cursor-default'
+                                : isSelf
+                                ? 'border-gray-200 text-gray-300 cursor-not-allowed'
+                                : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                            }`}
+                          >
+                            {ROLE_LABELS[r]}
+                          </button>
+                        ))}
+                        {!isSelf && (
+                          <button
+                            type="button"
+                            onClick={() => removeUser(u)}
+                            className="text-xs text-red-500 hover:text-red-700 ml-auto"
+                          >
+                            Удалить
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          ) : (
+            // ========== ПРИГЛАШЕНИЯ ==========
+            invitations.length === 0 ? (
+              <div className="text-center text-gray-400 text-sm py-8">
+                Нет активных приглашений
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowInviteForm(true)}
+                    className="btn-primary text-sm"
+                  >
+                    + Пригласить
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {invitations.map(inv => {
+                  const expiresIn = Math.ceil(
+                    (new Date(inv.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+                  )
+                  return (
+                    <div key={inv.id} className="border border-gray-200 rounded-xl p-4">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-gray-900 truncate">{inv.email}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            Роль: <strong>{ROLE_LABELS[inv.role]}</strong>
+                            {inv.invited_by_name && (
+                              <> · пригласил(а) {inv.invited_by_name}</>
+                            )}
+                            {' · создано '}
+                            {formatDate(inv.created_at)}
+                          </p>
+                        </div>
+                        <span
+                          className={`text-xs px-2 py-1 rounded-full whitespace-nowrap ${
+                            expiresIn <= 1
+                              ? 'bg-red-50 text-red-600'
+                              : expiresIn <= 3
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {expiresIn <= 0
+                            ? 'истекает'
+                            : expiresIn === 1
+                            ? 'ещё 1 день'
+                            : `ещё ${expiresIn} дн.`}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={() => copyInviteLink(inv)}
+                          className="text-xs text-gray-600 hover:text-gray-900 font-medium"
+                        >
+                          Скопировать ссылку
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => revokeInvitation(inv)}
+                          className="text-xs text-red-500 hover:text-red-700 ml-auto"
+                        >
+                          Отозвать
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )
           )}
         </div>
       </div>
