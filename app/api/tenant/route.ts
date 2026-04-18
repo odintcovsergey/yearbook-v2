@@ -267,7 +267,7 @@ export async function GET(req: NextRequest) {
   // child_details — выбор конкретного ученика (фото, текст, контакт)
   // ----------------------------------------------------------
   if (action === 'child_details') {
-    const childId = url.searchParams.get('child_id')
+    const childId = req.nextUrl.searchParams.get('child_id')
     if (!childId) return NextResponse.json({ error: 'Нет child_id' }, { status: 400 })
 
     // Проверяем принадлежность ребёнка tenant'у
