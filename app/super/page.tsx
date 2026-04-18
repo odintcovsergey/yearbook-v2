@@ -624,7 +624,7 @@ function TenantDetailModal({
   onError: (msg: string) => void
   onNotify: (msg: string) => void
 }) {
-  const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view')
+  const [mode, setMode] = useState<'view' | 'edit' | 'delete' | 'create_user'>('view')
   const [backdropStart, setBackdropStart] = useState(false)
 
   const handleBackdropMouseDown = (e: React.MouseEvent) => {
@@ -694,6 +694,49 @@ function TenantDetailModal({
     } else {
       const d = await r.json().catch(() => ({}))
       onError(d.error ?? 'Не удалось изменить статус')
+    }
+    setLoading(false)
+  }
+
+  // Форма создания нового пользователя в существующем tenant'е
+  const [userForm, setUserForm] = useState({
+    email: '',
+    password: '',
+    full_name: '',
+    role: 'owner' as 'owner' | 'manager' | 'viewer',
+  })
+  const [createdUser, setCreatedUser] = useState<{ email: string; password: string } | null>(null)
+
+  const handleCreateUser = async () => {
+    if (!userForm.email || !userForm.password || !userForm.full_name) {
+      onError('Заполните email, пароль и имя')
+      return
+    }
+    if (userForm.password.length < 8) {
+      onError('Пароль должен быть не короче 8 символов')
+      return
+    }
+    setLoading(true)
+    const r = await api('/api/super', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'create_owner',
+        tenant_id: tenant.id,
+        email: userForm.email,
+        password: userForm.password,
+        full_name: userForm.full_name,
+        role: userForm.role,
+      }),
+    })
+    if (r.ok) {
+      // Показываем carousel-карточку с данными для передачи пользователю
+      setCreatedUser({ email: userForm.email.trim(), password: userForm.password })
+      setUserForm({ email: '', password: '', full_name: '', role: 'owner' })
+      onNotify('Пользователь создан')
+      onUpdate()
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось создать пользователя')
     }
     setLoading(false)
   }
@@ -802,6 +845,9 @@ function TenantDetailModal({
               <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
                 <button onClick={() => setMode('edit')} className="btn-primary">
                   Редактировать
+                </button>
+                <button onClick={() => setMode('create_user')} className="btn-secondary">
+                  + Создать пользователя
                 </button>
                 {!isMainTenant && (
                   <>
@@ -947,6 +993,114 @@ function TenantDetailModal({
                   disabled={loading}
                 >
                   Отмена
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mode === 'create_user' && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500">
+                Создать сотрудника в «{tenant.name}». Пользователь сможет войти в кабинет /app
+                с указанными email и паролем. Укажите свой email если создаёте аккаунт для себя.
+              </p>
+
+              {createdUser && (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
+                  <div className="text-sm font-medium text-green-800">Пользователь создан</div>
+                  <div className="text-sm text-green-700">
+                    <div><strong>Email:</strong> <code className="bg-white px-1.5 py-0.5 rounded text-xs">{createdUser.email}</code></div>
+                    <div className="mt-1"><strong>Пароль:</strong> <code className="bg-white px-1.5 py-0.5 rounded text-xs">{createdUser.password}</code></div>
+                  </div>
+                  <div className="text-xs text-green-700 pt-2">
+                    Пароль больше не будет показан. Запишите его или передайте сотруднику прямо сейчас.
+                    Пользователь сможет сменить пароль после входа в /app → Настройки.
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+                <input
+                  type="email"
+                  value={userForm.email}
+                  onChange={e => setUserForm(f => ({ ...f, email: e.target.value }))}
+                  className="input"
+                  placeholder="user@example.com"
+                  disabled={loading}
+                  autoComplete="off"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Имя</label>
+                <input
+                  type="text"
+                  value={userForm.full_name}
+                  onChange={e => setUserForm(f => ({ ...f, full_name: e.target.value }))}
+                  className="input"
+                  placeholder="Иван Иванов"
+                  disabled={loading}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Пароль <span className="text-gray-400 font-normal">(не короче 8 символов)</span>
+                </label>
+                <input
+                  type="text"
+                  value={userForm.password}
+                  onChange={e => setUserForm(f => ({ ...f, password: e.target.value }))}
+                  className="input font-mono"
+                  placeholder="Минимум 8 символов"
+                  disabled={loading}
+                  autoComplete="off"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Показан открытым, чтобы вы его запомнили. Пользователь сможет его сменить после входа.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Роль</label>
+                <div className="flex gap-2 flex-wrap">
+                  {(['owner', 'manager', 'viewer'] as const).map(r => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setUserForm(f => ({ ...f, role: r }))}
+                      disabled={loading}
+                      className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${
+                        userForm.role === r
+                          ? 'border-gray-900 bg-gray-900 text-white'
+                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      }`}
+                    >
+                      {r === 'owner' ? 'Владелец' : r === 'manager' ? 'Менеджер' : 'Наблюдатель'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Владелец — полный доступ, включая команду и настройки. Менеджер — работа с альбомами.
+                  Наблюдатель — только просмотр.
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t border-gray-100">
+                <button
+                  onClick={handleCreateUser}
+                  className="btn-primary"
+                  disabled={loading || !userForm.email || !userForm.password || !userForm.full_name}
+                >
+                  {loading ? 'Создаю...' : 'Создать пользователя'}
+                </button>
+                <button
+                  onClick={() => { setMode('view'); setCreatedUser(null) }}
+                  className="btn-secondary"
+                  disabled={loading}
+                >
+                  {createdUser ? 'Закрыть' : 'Отмена'}
                 </button>
               </div>
             </div>

@@ -247,6 +247,90 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ tenant, owner })
   }
 
+  // --- Создать owner'а в существующем tenant'е ---
+  // Используется superadmin'ом для выдачи доступа. Например, для
+  // создания первого owner'а в tenant'е, который был создан раньше
+  // без owner'а, или для выдачи запасного доступа.
+  if (body.action === 'create_owner') {
+    const { tenant_id, email, password, full_name, role = 'owner' } = body
+
+    if (!tenant_id || !email || !password || !full_name) {
+      return NextResponse.json(
+        { error: 'Обязательные поля: tenant_id, email, password, full_name' },
+        { status: 400 }
+      )
+    }
+
+    if (password.length < 8) {
+      return NextResponse.json(
+        { error: 'Пароль должен быть не короче 8 символов' },
+        { status: 400 }
+      )
+    }
+
+    if (!['owner', 'manager', 'viewer'].includes(role)) {
+      return NextResponse.json({ error: 'Неверная роль' }, { status: 400 })
+    }
+
+    const normalizedEmail = email.toLowerCase().trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return NextResponse.json({ error: 'Неверный формат email' }, { status: 400 })
+    }
+
+    // Проверяем что tenant существует
+    const { data: tenant } = await supabaseAdmin
+      .from('tenants')
+      .select('id, name')
+      .eq('id', tenant_id)
+      .maybeSingle()
+
+    if (!tenant) {
+      return NextResponse.json({ error: 'Арендатор не найден' }, { status: 404 })
+    }
+
+    // Проверяем что email ещё не занят (в любом tenant'е — email глобально уникален)
+    const { data: existingUser } = await supabaseAdmin
+      .from('users')
+      .select('id, tenant_id')
+      .eq('email', normalizedEmail)
+      .maybeSingle()
+
+    if (existingUser) {
+      return NextResponse.json(
+        { error: 'Пользователь с таким email уже существует' },
+        { status: 409 }
+      )
+    }
+
+    const passwordHash = await hashPassword(password)
+
+    const { data: user, error: userError } = await supabaseAdmin
+      .from('users')
+      .insert({
+        tenant_id,
+        email: normalizedEmail,
+        password_hash: passwordHash,
+        full_name: full_name.trim(),
+        role,
+        is_active: true,
+      })
+      .select('id, email, full_name, role')
+      .single()
+
+    if (userError) {
+      return NextResponse.json({ error: userError.message }, { status: 500 })
+    }
+
+    await logAction(auth, 'superadmin.create_owner', 'user', (user as any).id, {
+      tenant_id,
+      tenant_name: (tenant as any).name,
+      email: normalizedEmail,
+      role,
+    })
+
+    return NextResponse.json({ user })
+  }
+
   // --- Обновить tenant ---
   if (body.action === 'update_tenant') {
     const { tenant_id, updates } = body
