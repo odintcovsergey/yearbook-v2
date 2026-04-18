@@ -2403,7 +2403,7 @@ async function uploadFilesParallel(
           // если компрессия упала — заливаем оригинал
         }
 
-        const cleanName = file.name.replace(/\.[^.]+$/, '').replace(/[^\w.\-а-яёА-ЯЁ]/g, '_')
+        const cleanName = file.name.replace(/\.[^.]+$/, '').replace(/[^\w.\-]/g, '_')
         const path = `${albumId}/${type}/${Date.now()}_${cleanName}.webp`
 
         const { error: upErr } = await sb.storage
