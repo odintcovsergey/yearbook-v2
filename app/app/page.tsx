@@ -634,6 +634,22 @@ function AlbumDetailModal({
   const [addClass, setAddClass] = useState('')
   const [busy, setBusy] = useState(false)
   const [selectedChild, setSelectedChild] = useState<Child | null>(null)
+  const [childDetails, setChildDetails] = useState<Record<string, any>>({})
+  const [loadingDetail, setLoadingDetail] = useState<string | null>(null)
+
+  const loadChildDetails = async (childId: string) => {
+    if (childDetails[childId]) return
+    setLoadingDetail(childId)
+    try {
+      const r = await api(`/api/tenant?action=child_details&child_id=${childId}`)
+      if (r.ok) {
+        const d = await r.json()
+        setChildDetails(prev => ({ ...prev, [childId]: d }))
+      }
+    } finally {
+      setLoadingDetail(null)
+    }
+  }
   const [exporting, setExporting] = useState(false)
   const [showReminder, setShowReminder] = useState(false)
 
@@ -986,9 +1002,11 @@ function AlbumDetailModal({
                                 className={`hover:bg-gray-50 cursor-pointer ${
                                   selectedChild?.id === c.id ? 'bg-gray-50' : ''
                                 }`}
-                                onClick={() =>
-                                  setSelectedChild(selectedChild?.id === c.id ? null : c)
-                                }
+                                onClick={() => {
+                                  const next = selectedChild?.id === c.id ? null : c
+                                  setSelectedChild(next)
+                                  if (next && next.submitted_at) loadChildDetails(next.id)
+                                }}
                               >
                                 <td className="px-4 py-2.5 font-medium text-gray-900">
                                   {c.full_name}
@@ -1020,39 +1038,89 @@ function AlbumDetailModal({
                                   </button>
                                 </td>
                               </tr>
-                              {selectedChild?.id === c.id && canEdit && (
+                              {selectedChild?.id === c.id && (
                                 <tr className="bg-gray-50">
                                   <td colSpan={5} className="px-4 py-3 border-t border-gray-100">
-                                    <div className="flex flex-wrap gap-2 items-center">
-                                      <span className="text-xs text-gray-500 mr-2">
-                                        Действия для {c.full_name}:
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => copyChildLink(c)}
-                                        className="text-xs btn-secondary px-3 py-1.5"
-                                      >
-                                        Скопировать ссылку
-                                      </button>
-                                      {(c.submitted_at || c.started_at) && (
+                                    {/* Кнопки действий — только для canEdit */}
+                                    {canEdit && (
+                                      <div className="flex flex-wrap gap-2 items-center mb-3">
+                                        <span className="text-xs text-gray-500 mr-2">
+                                          Действия для {c.full_name}:
+                                        </span>
                                         <button
                                           type="button"
-                                          onClick={() => handleReset(c)}
-                                          className="text-xs btn-secondary px-3 py-1.5 text-amber-700"
+                                          onClick={() => copyChildLink(c)}
+                                          className="text-xs btn-secondary px-3 py-1.5"
+                                        >
+                                          Скопировать ссылку
+                                        </button>
+                                        {(c.submitted_at || c.started_at) && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleReset(c)}
+                                            className="text-xs btn-secondary px-3 py-1.5 text-amber-700"
+                                            disabled={busy}
+                                          >
+                                            Сбросить выбор
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDelete(c)}
+                                          className="text-xs btn-secondary px-3 py-1.5 text-red-600"
                                           disabled={busy}
                                         >
-                                          Сбросить выбор
+                                          Удалить ученика
                                         </button>
-                                      )}
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDelete(c)}
-                                        className="text-xs btn-secondary px-3 py-1.5 text-red-600"
-                                        disabled={busy}
-                                      >
-                                        Удалить ученика
-                                      </button>
-                                    </div>
+                                      </div>
+                                    )}
+                                    {/* Детали выбора — если завершил */}
+                                    {c.submitted_at && (() => {
+                                      const det = childDetails[c.id]
+                                      if (loadingDetail === c.id) return (
+                                        <p className="text-xs text-gray-400 py-1">Загружаем выбор…</p>
+                                      )
+                                      if (!det) return null
+                                      const portrait = det.selections?.find((s: any) => s.type === 'portrait_page')
+                                      const cover = det.selections?.find((s: any) => s.type === 'portrait_cover')
+                                      const groups = det.selections?.filter((s: any) => s.type === 'group') ?? []
+                                      return (
+                                        <div className="flex flex-wrap gap-4 items-start">
+                                          {portrait && (
+                                            <div className="flex flex-col gap-1 items-center">
+                                              <img src={portrait.thumb || portrait.url} alt="Портрет"
+                                                className="w-20 h-20 object-cover rounded-lg border border-gray-200" />
+                                              <span className="text-xs text-gray-400">Портрет</span>
+                                            </div>
+                                          )}
+                                          {cover && (
+                                            <div className="flex flex-col gap-1 items-center">
+                                              <img src={cover.thumb || cover.url} alt="Обложка"
+                                                className="w-20 h-20 object-cover rounded-lg border border-gray-200" />
+                                              <span className="text-xs text-amber-600">Обложка +{det.cover?.surcharge ?? 0} ₽</span>
+                                            </div>
+                                          )}
+                                          {groups.map((g: any, i: number) => (
+                                            <div key={i} className="flex flex-col gap-1 items-center">
+                                              <img src={g.thumb || g.url} alt={`Фото ${i+1}`}
+                                                className="w-20 h-20 object-cover rounded-lg border border-gray-200" />
+                                              <span className="text-xs text-gray-400">С друзьями {i+1}</span>
+                                            </div>
+                                          ))}
+                                          <div className="flex flex-col gap-1 text-xs text-gray-600 justify-center min-w-0">
+                                            {det.text && (
+                                              <div className="italic text-gray-500 max-w-xs">«{det.text}»</div>
+                                            )}
+                                            {det.contact && (
+                                              <div className="text-gray-500">
+                                                {det.contact.parent_name && <div>{det.contact.parent_name}</div>}
+                                                {det.contact.phone && <div>{det.contact.phone}</div>}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )
+                                    })()}
                                   </td>
                                 </tr>
                               )}
