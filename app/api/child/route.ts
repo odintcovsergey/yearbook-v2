@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
   const { data: confirmedPortraits } = await supabaseAdmin
     .from('selections')
     .select('photo_id, child_id')
-    .eq('selection_type', 'portrait_page')
+    .in('selection_type', ['portrait_page', 'portrait_cover'])
     .in('photo_id', (allPortraits ?? []).map((p: any) => p.id))
 
   const portraitLockedByOther = new Set([
