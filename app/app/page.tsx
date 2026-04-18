@@ -70,12 +70,37 @@ type AlbumStats = {
 // ============================================================
 // API-хелпер
 // ============================================================
-const api = (path: string, opts?: RequestInit) =>
-  fetch(path, {
+let _refreshing: Promise<boolean> | null = null
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (_refreshing) return _refreshing
+  _refreshing = fetch('/api/auth', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'refresh' }),
+  }).then(r => r.ok).catch(() => false).finally(() => { _refreshing = null })
+  return _refreshing
+}
+
+async function api(path: string, opts?: RequestInit): Promise<Response> {
+  const res = await fetch(path, {
     ...opts,
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...opts?.headers },
   })
+  if (res.status === 401) {
+    const ok = await refreshAccessToken()
+    if (ok) {
+      return fetch(path, {
+        ...opts,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...opts?.headers },
+      })
+    }
+  }
+  return res
+}
 
 // ============================================================
 // ОСНОВНАЯ СТРАНИЦА
