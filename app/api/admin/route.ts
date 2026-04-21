@@ -278,6 +278,8 @@ export async function GET(req: NextRequest) {
     if (!(await assertAlbumInTenant(auth, albumId))) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
+    const { data: album } = await supabaseAdmin
+      .from('albums').select('title, city, year').eq('id', albumId).single()
     const { data: children } = await supabaseAdmin
       .from('children').select('id, full_name, class').eq('album_id', albumId).order('class').order('full_name')
 
@@ -357,7 +359,14 @@ export async function GET(req: NextRequest) {
 
     const allRows = [...rows, ...(teacherRows.length > 0 ? [null, ...teacherRows] : [])]
     const headers = Object.keys(rows[0] ?? teacherRows[0] ?? {})
+
+    // META-строка для скрипта автовёрстки InDesign
+    const metaCols = ['META', (album as any)?.city ?? '', (album as any)?.title ?? '', String((album as any)?.year ?? '')]
+    while (metaCols.length < headers.length) metaCols.push('')
+    const metaRow = metaCols.map(v => `"${v.replace(/"/g, '""')}"`).join(',')
+
     const csv = [
+      metaRow,
       headers.join(','),
       ...allRows.map(r => r === null
         ? headers.map(() => '""').join(',')

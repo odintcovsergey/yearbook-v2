@@ -731,7 +731,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Альбом пуст — нечего экспортировать' }, { status: 400 })
     }
 
+    // META-строка для скрипта автовёрстки InDesign
+    // Формат: META,город,название школы,год,,,... (пустые колонки до конца)
+    const metaCols = ['META', (album as any)?.city ?? '', (album as any)?.title ?? '', String((album as any)?.year ?? '')]
+    while (metaCols.length < headers.length) metaCols.push('')
+    const metaRow = metaCols.map(v => `"${v.replace(/"/g, '""')}"`).join(',')
+
     const csv = [
+      metaRow,
       headers.join(','),
       ...allRows.map(r =>
         r === null
