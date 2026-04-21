@@ -30,6 +30,9 @@ type Album = {
   deadline: string | null
   archived: boolean
   created_at: string
+  template_title: string
+  class_name: string | null
+  classes: string[]
   stats: { total: number; submitted: number; in_progress: number }
   teacher_token: string | null
   teachers: { total: number; done: number } | null
@@ -504,6 +507,12 @@ function AlbumCard({
                 <span>{album.year}</span>
               </>
             )}
+            {album.classes && album.classes.length > 0 && (
+              <>
+                <span>·</span>
+                <span className="font-medium text-gray-700">{album.classes.join(', ')}</span>
+              </>
+            )}
             {deadline && (
               <>
                 <span>·</span>
@@ -517,6 +526,11 @@ function AlbumCard({
               </>
             )}
           </div>
+          {album.template_title && (
+            <div className="mt-1 text-xs text-gray-400">
+              Шаблон: {album.template_title}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1264,6 +1278,7 @@ function emptyForm(): FormData {
     text_max_chars: '500',
     text_type: 'free',
     template_title: '',
+    class_name: '',
   }
 }
 
@@ -1301,6 +1316,7 @@ function AlbumFormModal({
         text_max_chars: String((album as any).text_max_chars ?? 500),
         text_type: (album as any).text_type ?? 'free',
         template_title: (album as any).template_title ?? '',
+        class_name: ((album as any).classes ?? []).join(', '),
       }
     }
     return emptyForm()
@@ -1309,6 +1325,7 @@ function AlbumFormModal({
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(false)
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [backdropStart, setBackdropStart] = useState(false)
 
   const handleBackdropMouseDown = (e: React.MouseEvent) => {
@@ -1371,6 +1388,9 @@ function AlbumFormModal({
       text_enabled: form.text_enabled,
       text_max_chars: parseInt(form.text_max_chars) || 500,
       text_type: form.text_type,
+      classes: form.class_name.trim()
+        ? form.class_name.split(',').map(s => s.trim()).filter(Boolean)
+        : [],
     }
 
     if (mode === 'create') {
@@ -1427,6 +1447,22 @@ function AlbumFormModal({
     }
   }
 
+  const handleDelete = async () => {
+    if (!album) return
+    setLoading(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'delete_album', album_id: album.id }),
+    })
+    if (r.ok) {
+      onArchive?.() // reuse callback — обновляет список
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось удалить альбом')
+      setLoading(false)
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 bg-black/40 z-40 flex items-start justify-center py-8 px-4 overflow-y-auto"
@@ -1448,6 +1484,24 @@ function AlbumFormModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {/* Класс */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Класс
+            </label>
+            <input
+              type="text"
+              value={form.class_name}
+              onChange={(e) => set('class_name', e.target.value)}
+              className="input"
+              placeholder="11А или 4Б, 4В"
+              disabled={loading}
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Отображается на карточке проекта. Несколько классов — через запятую.
+            </p>
+          </div>
+
           {/* Шаблон — только при создании */}
           {mode === 'create' && templates.length > 0 && (
             <div>
@@ -1756,14 +1810,56 @@ function AlbumFormModal({
                   </div>
                 )
               ) : (
+                <div className="flex items-center gap-4">
+                  <button
+                    type="button"
+                    onClick={handleUnarchive}
+                    className="btn-secondary"
+                    disabled={loading}
+                  >
+                    Вернуть из архива
+                  </button>
+                </div>
+              )}
+
+              {/* Удаление — всегда в режиме edit */}
+              {!showDeleteConfirm ? (
                 <button
                   type="button"
-                  onClick={handleUnarchive}
-                  className="btn-secondary"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="text-sm text-gray-400 hover:text-red-600 transition-colors mt-3 block"
                   disabled={loading}
                 >
-                  Вернуть из архива
+                  Удалить альбом навсегда
                 </button>
+              ) : (
+                <div className="bg-red-50 border border-red-100 rounded-xl p-4 mt-3">
+                  <div className="font-medium text-red-800 mb-2 text-sm">
+                    Удаление необратимо
+                  </div>
+                  <p className="text-sm text-red-700 mb-3">
+                    Альбом, все ученики, фотографии, выборы и контакты будут{' '}
+                    <strong>удалены без возможности восстановления</strong>.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      className="px-3 py-1.5 rounded-xl text-sm bg-red-600 hover:bg-red-700 text-white transition-colors"
+                      disabled={loading}
+                    >
+                      {loading ? 'Удаляем...' : 'Удалить навсегда'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="btn-secondary text-sm px-3 py-1.5"
+                      disabled={loading}
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}

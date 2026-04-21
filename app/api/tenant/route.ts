@@ -1072,6 +1072,7 @@ export async function POST(req: NextRequest) {
       'cover_mode', 'cover_price',
       'group_enabled', 'group_min', 'group_max', 'group_exclusive',
       'text_enabled', 'text_max_chars', 'text_type',
+      'classes',
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {
@@ -1195,6 +1196,59 @@ export async function POST(req: NextRequest) {
     }
 
     await logAction(auth, 'album.unarchive', 'album', album_id)
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // delete_album — полное удаление альбома (необратимо)
+  // ----------------------------------------------------------
+  if (body.action === 'delete_album') {
+    const { album_id } = body
+    if (!album_id) {
+      return NextResponse.json({ error: 'album_id обязателен' }, { status: 400 })
+    }
+
+    if (!(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    // 1. Удаляем файлы фото из Storage
+    const { data: photos } = await supabaseAdmin
+      .from('photos')
+      .select('storage_path, thumb_path')
+      .eq('album_id', album_id)
+
+    if (photos && photos.length > 0) {
+      const paths: string[] = []
+      for (const p of photos as any[]) {
+        if (p.storage_path) paths.push(p.storage_path)
+        if (p.thumb_path) paths.push(p.thumb_path)
+      }
+      for (let i = 0; i < paths.length; i += 100) {
+        await supabaseAdmin.storage.from('photos').remove(paths.slice(i, i + 100))
+      }
+    }
+
+    // 2. Удаляем связанные записи (явно, без CASCADE через PostgREST)
+    await supabaseAdmin.from('photos').delete().eq('album_id', album_id)
+    await supabaseAdmin.from('children').delete().eq('album_id', album_id)
+    await supabaseAdmin.from('teachers').delete().eq('album_id', album_id)
+    await supabaseAdmin.from('responsible_parents').delete().eq('album_id', album_id)
+
+    // 3. Удаляем сам альбом
+    const { error } = await supabaseAdmin
+      .from('albums')
+      .delete()
+      .eq('id', album_id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    await logAction(auth, 'album.delete', 'album', album_id, {
+      photos_deleted: photos?.length ?? 0,
+    })
 
     return NextResponse.json({ ok: true })
   }
