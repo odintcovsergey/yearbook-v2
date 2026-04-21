@@ -1072,7 +1072,7 @@ export async function POST(req: NextRequest) {
       'cover_mode', 'cover_price',
       'group_enabled', 'group_min', 'group_max', 'group_exclusive',
       'text_enabled', 'text_max_chars', 'text_type',
-      'classes',
+      'classes', 'template_title',
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {

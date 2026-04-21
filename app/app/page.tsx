@@ -528,7 +528,7 @@ function AlbumCard({
           </div>
           {album.template_title && (
             <div className="mt-1 text-xs text-gray-400">
-              Шаблон: {album.template_title}
+              {album.template_title}
             </div>
           )}
         </div>
@@ -1396,11 +1396,11 @@ function AlbumFormModal({
 
     if (mode === 'create') {
       payload.action = 'create_album'
-      payload.template_title = form.template_title || null
     } else {
       payload.action = 'update_album'
       payload.album_id = album!.id
     }
+    payload.template_title = form.template_title || null
 
     const r = await api('/api/tenant', {
       method: 'POST',
@@ -1503,13 +1503,13 @@ function AlbumFormModal({
             </p>
           </div>
 
-          {/* Шаблон — только при создании */}
-          {mode === 'create' && templates.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Шаблон
-              </label>
-              <div className="flex flex-wrap gap-2">
+          {/* Комплектация */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Комплектация
+            </label>
+            {mode === 'create' && templates.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
                 {templates.map(t => (
                   <button
                     key={t.id}
@@ -1525,11 +1525,20 @@ function AlbumFormModal({
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Применяет все настройки шаблона. Их потом можно поменять.
-              </p>
-            </div>
-          )}
+            )}
+            <input
+              type="text"
+              value={form.template_title}
+              onChange={(e) => set('template_title', e.target.value)}
+              className="input"
+              placeholder="Стандарт, Расширенный..."
+              disabled={loading}
+            />
+            {mode === 'create'
+              ? <p className="text-xs text-gray-500 mt-1">Выберите шаблон выше — он заполнит все настройки автоматически.</p>
+              : <p className="text-xs text-gray-400 mt-1">Смена комплектации не сбрасывает уже сделанные выборы.</p>
+            }
+          </div>
 
           {/* Название */}
           <div>
