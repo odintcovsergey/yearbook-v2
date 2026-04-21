@@ -1253,6 +1253,7 @@ type FormData = {
   text_max_chars: string
   text_type: string
   template_title: string
+  class_name: string
 }
 
 const textTypeOptions = [
