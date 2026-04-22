@@ -385,10 +385,10 @@ export default function ParentPage() {
 
             {coverMode !== 'required' && (
               <div className="space-y-3 mb-6">
-                <RadioCard active={coverOption === 'none'} onClick={() => setCoverOption('none')} label="Без портрета на обложке" sub="Бесплатно" />
-                <RadioCard active={coverOption === 'same'} onClick={() => setCoverOption('same')} label="Тот же портрет что на странице" sub="Бесплатно" />
+                <RadioCard active={coverOption === 'none'} onClick={() => setCoverOption('none')} label="Без портрета на обложке" sub={coverMode === 'optional_blind' ? '' : 'Бесплатно'} />
+                <RadioCard active={coverOption === 'same'} onClick={() => setCoverOption('same')} label="Тот же портрет что на странице" sub={coverMode === 'optional_blind' ? '' : 'Бесплатно'} />
                 {portraits.length > 1 && (
-                  <RadioCard active={coverOption === 'other'} onClick={() => setCoverOption('other')} label="Другой портрет на обложку" sub={coverPrice > 0 ? `+ ${coverPrice} ₽` : 'Бесплатно'} paid={coverPrice > 0} />
+                  <RadioCard active={coverOption === 'other'} onClick={() => setCoverOption('other')} label="Другой портрет на обложку" sub={coverMode === 'optional_blind' ? '' : coverPrice > 0 ? `+ ${coverPrice} ₽` : 'Бесплатно'} paid={coverMode !== 'optional_blind' && coverPrice > 0} />
                 )}
               </div>
             )}
@@ -894,7 +894,7 @@ function RadioCard({ active, onClick, label, sub, paid }: { active: boolean; onC
       </div>
       <div>
         <p className="text-sm font-medium text-gray-800">{label}</p>
-        <p className={`text-xs mt-0.5 ${paid ? 'text-green-600 font-medium' : 'text-gray-400'}`}>{sub}</p>
+        {sub && <p className={`text-xs mt-0.5 ${paid ? 'text-green-600 font-medium' : 'text-gray-400'}`}>{sub}</p>}
       </div>
     </button>
   )

@@ -1624,6 +1624,7 @@ function AlbumFormModal({
               {[
                 { v: 'required', l: 'Обязательна (все платят)' },
                 { v: 'optional', l: 'На выбор (+ доплата)' },
+                { v: 'optional_blind', l: 'На выбор (без цен)' },
               ].map(({ v, l }) => (
                 <button
                   key={v}
@@ -1640,7 +1641,7 @@ function AlbumFormModal({
                 </button>
               ))}
             </div>
-            {form.cover_mode === 'optional' && (
+            {(form.cover_mode === 'optional' || form.cover_mode === 'optional_blind') && (
               <div>
                 <label className="block text-xs text-gray-500 mb-1">
                   Доплата за другое фото на обложку (₽)
