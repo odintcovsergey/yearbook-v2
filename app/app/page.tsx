@@ -836,6 +836,17 @@ function AlbumDetailModal({
               )
             })()}
             <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(`${location.origin}/album/${album.id}`)
+                onNotify('Ссылка на класс скопирована')
+              }}
+              className="btn-secondary text-xs px-3 py-1.5"
+              title="Общая ссылка — родитель выбирает ребёнка из списка"
+            >
+              🔗 Класс
+            </button>
+            <button
               onClick={handleExport}
               type="button"
               disabled={exporting}
