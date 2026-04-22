@@ -538,7 +538,7 @@ function AlbumCard({
       <div className="flex items-center gap-3 mb-3">
         <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gray-900 transition-all duration-500"
+            className={`h-full transition-all duration-500 ${progress >= 100 ? 'bg-green-500' : 'bg-gray-900'}`}
             style={{ width: `${progress}%` }}
           />
         </div>
