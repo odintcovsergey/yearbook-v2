@@ -37,7 +37,7 @@ jobs:
           DATE=$(date +%Y-%m-%d)
           mkdir -p dump
           pg_dump \
-            "postgresql://postgres.bnotiyhamfyllcrqwquq:${PGPASSWORD}@aws-0-eu-central-1.pooler.supabase.com:5432/postgres" \
+            "postgresql://postgres.bnotiyhamfyllcrqwquq:${PGPASSWORD}@aws-1-eu-west-2.pooler.supabase.com:5432/postgres" \
             --no-owner --no-acl \
             --schema=public \
             -Fc \
