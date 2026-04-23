@@ -1,0 +1,112 @@
+name: Daily Backup
+
+on:
+  schedule:
+    # БД — каждый день в 03:00 UTC (06:00 по Москве)
+    - cron: '0 3 * * *'
+    # Storage metadata — каждое воскресенье в 04:00 UTC
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+    inputs:
+      run_storage:
+        description: 'Включить бэкап Storage (yes/no)'
+        required: false
+        default: 'no'
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Бэкап БД — ежедневно
+  # ─────────────────────────────────────────────
+  backup-database:
+    name: PostgreSQL dump
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.schedule == '0 3 * * *'
+
+    steps:
+      - name: Install postgresql-client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Dump database
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          DATE=$(date +%Y-%m-%d)
+          mkdir -p dump
+          pg_dump \
+            "postgresql://postgres:${PGPASSWORD}@db.bnotiyhamfyllcrqwquq.supabase.co:5432/postgres" \
+            --no-owner --no-acl \
+            --schema=public \
+            -Fc \
+            -f "dump/db-${DATE}.dump"
+          echo "Dump size: $(du -sh dump/db-${DATE}.dump | cut -f1)"
+
+      - name: Push to yearbook-backups
+        env:
+          BACKUP_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
+        run: |
+          DATE=$(date +%Y-%m-%d)
+          git clone https://odintcovsergey:${BACKUP_TOKEN}@github.com/odintcovsergey/yearbook-backups.git backup-repo
+          cd backup-repo
+          git config user.email "backup@yearbook.app"
+          git config user.name "Backup Bot"
+          mkdir -p database
+          cp "../dump/db-${DATE}.dump" "database/db-${DATE}.dump"
+          find database/ -name "db-*.dump" -mtime +30 -delete
+          git add -A
+          git commit -m "backup: db ${DATE}" || echo "Nothing new"
+          git push
+
+  # ─────────────────────────────────────────────
+  # Список файлов Storage — еженедельно
+  # ─────────────────────────────────────────────
+  backup-storage:
+    name: Storage file list
+    runs-on: ubuntu-latest
+    if: >
+      github.event.schedule == '0 4 * * 0' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_storage == 'yes')
+
+    steps:
+      - name: Fetch storage file list
+        env:
+          SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          DATE=$(date +%Y-%m-%d)
+          mkdir -p storage-meta
+
+          curl -s \
+            -H "apikey: ${SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
+            "https://bnotiyhamfyllcrqwquq.supabase.co/storage/v1/bucket" \
+            -o storage-meta/buckets.json
+
+          curl -s -X POST \
+            -H "apikey: ${SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{"prefix":"","limit":10000,"offset":0}' \
+            "https://bnotiyhamfyllcrqwquq.supabase.co/storage/v1/object/list/yearbook-photos" \
+            -o "storage-meta/files-${DATE}.json"
+
+          echo "Files listed: $(grep -o '"name"' storage-meta/files-${DATE}.json | wc -l)"
+
+      - name: Push to yearbook-backups
+        env:
+          BACKUP_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
+        run: |
+          DATE=$(date +%Y-%m-%d)
+          git clone https://odintcovsergey:${BACKUP_TOKEN}@github.com/odintcovsergey/yearbook-backups.git backup-repo
+          cd backup-repo
+          git config user.email "backup@yearbook.app"
+          git config user.name "Backup Bot"
+          mkdir -p storage
+          cp ../storage-meta/buckets.json storage/buckets.json
+          cp "../storage-meta/files-${DATE}.json" "storage/files-${DATE}.json"
+          find storage/ -name "files-*.json" -mtime +28 -delete
+          git add -A
+          git commit -m "backup: storage meta ${DATE}" || echo "Nothing new"
+          git push
