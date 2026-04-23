@@ -1017,6 +1017,7 @@ function AlbumDetailModal({
                             <th className="px-4 py-2.5">Класс</th>
                             <th className="px-4 py-2.5">Статус</th>
                             <th className="px-4 py-2.5">Телефон</th>
+                            <th className="px-4 py-2.5 text-right">Обложка</th>
                             <th className="px-4 py-2.5 text-right">Действия</th>
                           </tr>
                         </thead>
@@ -1049,6 +1050,17 @@ function AlbumDetailModal({
                                 <td className="px-4 py-2.5 text-gray-500 text-xs">
                                   {c.contact?.phone ?? '—'}
                                 </td>
+                                <td className="px-4 py-2.5 text-right text-xs">
+                                  {c.cover?.cover_option === 'other' && c.cover?.surcharge > 0 ? (
+                                    <span className="text-amber-600 font-medium">+{c.cover.surcharge} ₽</span>
+                                  ) : c.cover?.cover_option === 'other' ? (
+                                    <span className="text-gray-400">др.</span>
+                                  ) : c.cover?.cover_option === 'same' ? (
+                                    <span className="text-gray-400">тот же</span>
+                                  ) : (
+                                    <span className="text-gray-300">—</span>
+                                  )}
+                                </td>
                                 <td className="px-4 py-2.5 text-right">
                                   <button
                                     type="button"
@@ -1065,7 +1077,7 @@ function AlbumDetailModal({
                               </tr>
                               {selectedChild?.id === c.id && (
                                 <tr className="bg-gray-50">
-                                  <td colSpan={5} className="px-4 py-3 border-t border-gray-100">
+                                  <td colSpan={6} className="px-4 py-3 border-t border-gray-100">
                                     {/* Кнопки действий — только для canEdit */}
                                     {canEdit && (
                                       <div className="flex flex-wrap gap-2 items-center mb-3">
