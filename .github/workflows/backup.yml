@@ -40,7 +40,7 @@ jobs:
         run: |
           DATE=$(date +%Y-%m-%d)
           mkdir -p dump
-          pg_dump \
+          /usr/lib/postgresql/17/bin/pg_dump \
             "postgresql://postgres.bnotiyhamfyllcrqwquq:${PGPASSWORD}@aws-1-eu-west-2.pooler.supabase.com:5432/postgres" \
             --no-owner --no-acl \
             --schema=public \
