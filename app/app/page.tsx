@@ -1121,28 +1121,46 @@ function AlbumDetailModal({
                                       const portrait = det.selections?.find((s: any) => s.type === 'portrait_page')
                                       const cover = det.selections?.find((s: any) => s.type === 'portrait_cover')
                                       const groups = det.selections?.filter((s: any) => s.type === 'group') ?? []
+                                      const PhotoThumb = ({ src, fullSrc, label, sub, subClass }: { src: string; fullSrc: string; label: string; sub?: string; subClass?: string }) => (
+                                        <div className="flex flex-col gap-1 items-center w-28">
+                                          <div className="relative group cursor-zoom-in" onClick={() => window.open(fullSrc, '_blank')}>
+                                            <img src={src} alt={label}
+                                              className="w-28 h-28 object-cover rounded-lg border border-gray-200 group-hover:opacity-90 transition-opacity" />
+                                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                              <span className="bg-black/50 text-white text-xs px-2 py-1 rounded-full">⛶ открыть</span>
+                                            </div>
+                                          </div>
+                                          <span className={`text-xs ${subClass ?? 'text-gray-500'}`}>{label}</span>
+                                          {sub && <span className="text-xs text-gray-400 truncate w-full text-center" title={sub}>{sub}</span>}
+                                        </div>
+                                      )
                                       return (
                                         <div className="flex flex-wrap gap-4 items-start">
                                           {portrait && (
-                                            <div className="flex flex-col gap-1 items-center">
-                                              <img src={portrait.thumb || portrait.url} alt="Портрет"
-                                                className="w-20 h-20 object-cover rounded-lg border border-gray-200" />
-                                              <span className="text-xs text-gray-400">Портрет</span>
-                                            </div>
+                                            <PhotoThumb
+                                              src={portrait.thumb || portrait.url}
+                                              fullSrc={portrait.url}
+                                              label="Портрет"
+                                              sub={portrait.filename}
+                                            />
                                           )}
                                           {cover && (
-                                            <div className="flex flex-col gap-1 items-center">
-                                              <img src={cover.thumb || cover.url} alt="Обложка"
-                                                className="w-20 h-20 object-cover rounded-lg border border-gray-200" />
-                                              <span className="text-xs text-amber-600">Обложка +{det.cover?.surcharge ?? 0} ₽</span>
-                                            </div>
+                                            <PhotoThumb
+                                              src={cover.thumb || cover.url}
+                                              fullSrc={cover.url}
+                                              label={`Обложка${det.cover?.surcharge ? ` +${det.cover.surcharge} ₽` : ''}`}
+                                              subClass={det.cover?.surcharge ? 'text-amber-600 font-medium' : 'text-gray-500'}
+                                              sub={cover.filename}
+                                            />
                                           )}
                                           {groups.map((g: any, i: number) => (
-                                            <div key={i} className="flex flex-col gap-1 items-center">
-                                              <img src={g.thumb || g.url} alt={`Фото ${i+1}`}
-                                                className="w-20 h-20 object-cover rounded-lg border border-gray-200" />
-                                              <span className="text-xs text-gray-400">С друзьями {i+1}</span>
-                                            </div>
+                                            <PhotoThumb
+                                              key={i}
+                                              src={g.thumb || g.url}
+                                              fullSrc={g.url}
+                                              label={`С друзьями ${i + 1}`}
+                                              sub={g.filename}
+                                            />
                                           ))}
                                           <div className="flex flex-col gap-1 text-xs text-gray-600 justify-center min-w-0">
                                             {det.text && (
