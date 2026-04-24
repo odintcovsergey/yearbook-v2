@@ -724,6 +724,7 @@ export async function GET(req: NextRequest) {
     })
 
     const allRows = [
+      ...rows,
       ...(teacherRows.length > 0 ? [null as any, ...teacherRows] : []),
     ]
 
