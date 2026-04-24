@@ -291,10 +291,10 @@ export async function GET(req: NextRequest) {
     const selections = (selectionsRes.data ?? []).map((s: any) => ({
       type: s.selection_type,
       filename: s.photos?.filename ?? '',
-      url: s.photos?.storage_path ? `${supabaseUrl}/storage/v1/object/public/photos/${s.photos.storage_path}` : '',
+      url: s.photos?.storage_path ? `/api/img/${s.photos.storage_path}` : '',
       thumb: s.photos?.thumb_path
-        ? `${supabaseUrl}/storage/v1/object/public/photos/${s.photos.thumb_path}`
-        : s.photos?.storage_path ? `${supabaseUrl}/storage/v1/object/public/photos/${s.photos.storage_path}` : '',
+        ? `/api/img/${s.photos.thumb_path}`
+        : s.photos?.storage_path ? `/api/img/${s.photos.storage_path}` : '',
     }))
 
     return NextResponse.json({
@@ -373,7 +373,7 @@ export async function GET(req: NextRequest) {
     const { data: photos, error } = await query
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    const base = process.env.NEXT_PUBLIC_SUPABASE_URL + '/storage/v1/object/public/photos/'
+    const base = '/api/img/'
 
     // Привязки фото к детям (только для portrait/group)
     let tagsByPhoto: Record<string, string[]> = {}
