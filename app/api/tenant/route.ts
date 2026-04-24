@@ -294,7 +294,7 @@ export async function GET(req: NextRequest) {
       url: s.photos?.storage_path ? `${supabaseUrl}/storage/v1/object/public/photos/${s.photos.storage_path}` : '',
       thumb: s.photos?.thumb_path
         ? `${supabaseUrl}/storage/v1/object/public/photos/${s.photos.thumb_path}`
-        : s.photos?.storage_path ? `${supabaseUrl}/storage/v1/object/public/photos/${s.photos.storage_path}?width=400&quality=70` : '',
+        : s.photos?.storage_path ? `${supabaseUrl}/storage/v1/object/public/photos/${s.photos.storage_path}` : '',
     }))
 
     return NextResponse.json({
@@ -401,7 +401,7 @@ export async function GET(req: NextRequest) {
       url: base + p.storage_path,
       thumb_url: p.thumb_path
         ? base + p.thumb_path
-        : base + p.storage_path + '?width=400&quality=70',
+        : base + p.storage_path,
       tags: tagsByPhoto[p.id] ?? [],
     }))
 

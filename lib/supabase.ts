@@ -16,18 +16,15 @@ export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-export function getPhotoUrl(storagePath: string, thumb = false): string {
+export function getPhotoUrl(storagePath: string, _thumb = false): string {
   if (!storagePath) return ''
-  const base = supabaseAdmin.storage.from('photos').getPublicUrl(storagePath).data.publicUrl
-  if (!thumb) return base
-  // Если есть отдельная миниатюра (новые WebP фото) — используем её
-  // Иначе fallback на Supabase трансформацию
-  return base + '?width=400&quality=70'
+  return supabaseAdmin.storage.from('photos').getPublicUrl(storagePath).data.publicUrl
 }
 
 export function getThumbUrl(storagePath: string, thumbPath: string | null): string {
   if (thumbPath) {
     return supabaseAdmin.storage.from('photos').getPublicUrl(thumbPath).data.publicUrl
   }
-  return getPhotoUrl(storagePath, true)
+  // Отдельный thumb нет — используем оригинал (Supabase Image Transform не работает на Free)
+  return getPhotoUrl(storagePath)
 }
