@@ -25,7 +25,6 @@ export function getThumbUrl(storagePath: string, thumbPath: string | null): stri
   if (thumbPath) {
     return supabaseAdmin.storage.from('photos').getPublicUrl(thumbPath).data.publicUrl
   }
-  // Нет отдельного thumb — используем Supabase Image Transform (доступно на Pro)
-  const base = supabaseAdmin.storage.from('photos').getPublicUrl(storagePath).data.publicUrl
-  return base + '?width=400&quality=70'
+  // Нет отдельного thumb — отдаём оригинал напрямую
+  return supabaseAdmin.storage.from('photos').getPublicUrl(storagePath).data.publicUrl
 }

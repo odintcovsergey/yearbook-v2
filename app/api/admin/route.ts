@@ -190,10 +190,10 @@ export async function GET(req: NextRequest) {
     const selections = (selectionsRes.data ?? []).map((s: any) => ({
       type: s.selection_type,
       filename: s.photos?.filename ?? '',
-      url: s.photos?.storage_path ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${s.photos.storage_path}?width=400&quality=70` : '',
+      url: s.photos?.storage_path ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${s.photos.storage_path}` : '',
       thumb: s.photos?.thumb_path
         ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${s.photos.thumb_path}`
-        : s.photos?.storage_path ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${s.photos.storage_path}?width=400&quality=70` : '',
+        : s.photos?.storage_path ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${s.photos.storage_path}` : '',
     }))
 
     return NextResponse.json({
