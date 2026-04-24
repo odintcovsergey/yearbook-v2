@@ -615,7 +615,7 @@ export async function GET(req: NextRequest) {
 
     const { data: album } = await supabaseAdmin
       .from('albums')
-      .select('title, city, year')
+      .select('title, city, year, template_title')
       .eq('id', albumId)
       .single()
 
@@ -679,6 +679,7 @@ export async function GET(req: NextRequest) {
         Родитель: contact?.parent_name ?? '',
         Телефон: contact?.phone ?? '',
         Доплата: cover?.surcharge ? String(cover.surcharge) : '',
+        Комплектация: (album as any)?.template_title ?? '',
       }
     })
 
@@ -718,11 +719,11 @@ export async function GET(req: NextRequest) {
         Родитель: '',
         Телефон: '',
         Доплата: '',
+        Комплектация: (album as any)?.template_title ?? '',
       }
     })
 
     const allRows = [
-      ...rows,
       ...(teacherRows.length > 0 ? [null as any, ...teacherRows] : []),
     ]
 
