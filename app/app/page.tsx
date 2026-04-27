@@ -639,7 +639,7 @@ function AlbumDetailModal({
   const [children, setChildren] = useState<Child[]>([])
   const [loading, setLoading] = useState(true)
   const [backdropStart, setBackdropStart] = useState(false)
-  const [tab, setTab] = useState<'overview' | 'children' | 'teachers' | 'responsible' | 'photos'>('overview')
+  const [tab, setTab] = useState<'overview' | 'children' | 'teachers' | 'responsible' | 'photos' | 'surcharges'>('overview')
 
   // UI состояние для добавления/импорта
   const [showAddForm, setShowAddForm] = useState(false)
