@@ -873,6 +873,7 @@ function AlbumDetailModal({
             { id: 'photos', label: 'Фото' },
             { id: 'teachers', label: 'Учителя' },
             { id: 'responsible', label: 'Ответственный' },
+            { id: 'surcharges', label: 'Доплаты' },
           ] as const).map(t => (
             <button
               key={t.id}
@@ -1051,10 +1052,8 @@ function AlbumDetailModal({
                                   {c.contact?.phone ?? '—'}
                                 </td>
                                 <td className="px-4 py-2.5 text-right text-xs">
-                                  {c.cover?.cover_option === 'other' && c.cover?.surcharge > 0 ? (
-                                    <span className="text-amber-600 font-medium">+{c.cover.surcharge} ₽</span>
-                                  ) : c.cover?.cover_option === 'other' ? (
-                                    <span className="text-gray-400">др.</span>
+                                  {c.cover?.cover_option === 'other' ? (
+                                    <span className="text-amber-600 font-medium">+{c.cover.surcharge ?? 0} ₽</span>
                                   ) : c.cover?.cover_option === 'same' ? (
                                     <span className="text-gray-400">тот же</span>
                                   ) : (
@@ -1210,6 +1209,59 @@ function AlbumDetailModal({
                   onError={onError}
                 />
               )}
+
+              {/* Вкладка Доплаты */}
+              {tab === 'surcharges' && (() => {
+                const surchargeChildren = children.filter(c => c.cover?.cover_option === 'other')
+                const total = surchargeChildren.reduce((sum, c) => sum + (c.cover?.surcharge ?? 0), 0)
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold text-gray-800">
+                        Доплаты
+                        {surchargeChildren.length > 0 && (
+                          <span className="ml-2 text-sm font-normal text-gray-400">{surchargeChildren.length} чел.</span>
+                        )}
+                      </h3>
+                      {total > 0 && (
+                        <span className="text-amber-600 font-semibold text-lg">{total} ₽</span>
+                      )}
+                    </div>
+                    {surchargeChildren.length === 0 ? (
+                      <p className="text-sm text-gray-400 text-center py-8">Доплат нет</p>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-xs text-gray-400 uppercase tracking-wide border-b border-gray-100">
+                            <th className="pb-2 pr-4">Ученик</th>
+                            <th className="pb-2 pr-4">Класс</th>
+                            <th className="pb-2 pr-4">За что</th>
+                            <th className="pb-2 text-right">Сумма</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {surchargeChildren.map(c => (
+                            <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                              <td className="py-2.5 pr-4 font-medium">{c.full_name}</td>
+                              <td className="py-2.5 pr-4 text-gray-500">{c.class ?? '—'}</td>
+                              <td className="py-2.5 pr-4 text-gray-500">Другой портрет на обложку</td>
+                              <td className="py-2.5 text-right text-amber-600 font-medium">
+                                +{c.cover?.surcharge ?? 0} ₽
+                              </td>
+                            </tr>
+                          ))}
+                          {total > 0 && (
+                            <tr className="border-t-2 border-gray-200">
+                              <td colSpan={3} className="pt-2.5 pr-4 font-semibold text-gray-700">Итого</td>
+                              <td className="pt-2.5 text-right font-bold text-amber-600">{total} ₽</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* Вкладка Ответственный родитель */}
               {tab === 'responsible' && (
