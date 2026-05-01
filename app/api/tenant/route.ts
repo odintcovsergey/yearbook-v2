@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, type AuthContext } from '@/lib/auth'
 import { ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
 
@@ -399,10 +399,8 @@ export async function GET(req: NextRequest) {
       storage_path: p.storage_path,
       thumb_path: p.thumb_path,
       type: p.type,
-      url: base + p.storage_path,
-      thumb_url: p.thumb_path
-        ? base + p.thumb_path
-        : base + p.storage_path,
+      url: getPhotoUrl(p.storage_path),
+      thumb_url: getThumbUrl(p.storage_path, p.thumb_path),
       tags: tagsByPhoto[p.id] ?? [],
     }))
 
