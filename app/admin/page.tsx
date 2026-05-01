@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Papa from 'papaparse'
 
 const secret = () => typeof window !== 'undefined' ? localStorage.getItem('admin_secret') ?? '' : ''
@@ -15,6 +16,7 @@ type Stats = { total: number; submitted: number; in_progress: number; not_starte
 type Child = { id: string; full_name: string; class: string; access_token: string; submitted_at: string | null; started_at: string | null; contact: any; cover: any }
 
 export default function AdminPage() {
+  const router = useRouter()
   const [authed, setAuthed] = useState(false)
   const [pwd, setPwd] = useState('')
   const [albums, setAlbums] = useState<Album[]>([])
@@ -47,8 +49,19 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    const saved = localStorage.getItem('admin_secret')
-    if (saved) { setPwd(saved); setAuthed(true); loadAlbums() }
+    // 4.c: если залогинен через JWT → редирект в /app
+    fetch('/api/auth', { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d?.user) { router.replace('/app'); return }
+        // Нет JWT — проверяем legacy ADMIN_SECRET
+        const saved = localStorage.getItem('admin_secret')
+        if (saved) { setPwd(saved); setAuthed(true); loadAlbums() }
+      })
+      .catch(() => {
+        const saved = localStorage.getItem('admin_secret')
+        if (saved) { setPwd(saved); setAuthed(true); loadAlbums() }
+      })
   }, [])
 
   const login = () => {
