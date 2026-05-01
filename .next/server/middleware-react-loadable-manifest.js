@@ -1,1 +1,0 @@
-self.__REACT_LOADABLE_MANIFEST='{"app/admin/page.tsx -> @supabase/supabase-js":{"id":3309,"files":["static/chunks/44530001.89129ba9ff7544ae.js","static/chunks/730.558b61c7476ff783.js"]},"app/admin/page.tsx -> browser-image-compression":{"id":2107,"files":["static/chunks/107.0881ef2ef9d09c41.js"]}}';
