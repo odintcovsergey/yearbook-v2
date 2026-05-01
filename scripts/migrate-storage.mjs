@@ -106,11 +106,16 @@ async function uploadToYC(key, buffer) {
 async function updateDbPaths(photoId, newStoragePath, newThumbPath) {
   const update = { storage_path: newStoragePath }
   if (newThumbPath !== undefined) update.thumb_path = newThumbPath
-  const { error } = await supabase
-    .from('photos')
-    .update(update)
-    .eq('id', photoId)
-  if (error) throw new Error(`DB update failed: ${error.message}`)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const freshClient = createClient(SUPABASE_URL, SUPABASE_KEY)
+    const { error } = await freshClient
+      .from('photos')
+      .update(update)
+      .eq('id', photoId)
+    if (!error) return
+    if (attempt < 3) await new Promise(r => setTimeout(r, 2000))
+    else throw new Error(`DB update failed: ${error.message}`)
+  }
 }
 
 /** Мигрировать один путь (storage_path или thumb_path). */
@@ -201,15 +206,24 @@ async function main() {
   let processed = 0
 
   while (true) {
-    const { data: batch, error: batchErr } = await supabase
-      .from('photos')
-      .select('id, storage_path, thumb_path, album_id, filename')
-      .not('storage_path', 'like', 'yc:%')
-      .order('id')
-      .range(offset, offset + BATCH_SIZE - 1)
+    // Retry до 5 раз — Supabase иногда рвёт соединение
+    let batch, batchErr
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      // Пересоздаём клиент на каждой попытке — сбрасываем зависшее соединение
+      const freshClient = createClient(SUPABASE_URL, SUPABASE_KEY)
+      ;({ data: batch, error: batchErr } = await freshClient
+        .from('photos')
+        .select('id, storage_path, thumb_path, album_id, filename')
+        .not('storage_path', 'like', 'yc:%')
+        .order('id')
+        .range(offset, offset + BATCH_SIZE - 1))
+      if (!batchErr) break
+      console.log(`   ⚠️  Ошибка запроса (попытка ${attempt}/5): ${batchErr.message} — повтор через 3с...`)
+      await new Promise(r => setTimeout(r, 3000))
+    }
 
     if (batchErr) {
-      console.error('❌ Ошибка выборки батча:', batchErr.message)
+      console.error('❌ Не удалось получить батч после 5 попыток:', batchErr.message)
       break
     }
     if (!batch || batch.length === 0) break
