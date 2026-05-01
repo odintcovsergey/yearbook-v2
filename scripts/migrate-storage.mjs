@@ -70,12 +70,14 @@ const yc = new S3Client({
 
 // ─── Вспомогательные функции ─────────────────────────────────────────────────
 
-/** Скачать файл из Supabase Storage. Возвращает Buffer или null если 404. */
+/** Скачать файл через /api/img/ прокси (работает из РФ/КЗ). */
 async function downloadFromSupabase(storagePath) {
-  const url = `${SUPABASE_URL}/storage/v1/object/public/photos/${storagePath}`
-  const res = await fetch(url)
+  // Прямой Supabase Storage заблокирован в РФ/КЗ.
+  // Качаем через Vercel-прокси — он забирает файл сервер→сервер.
+  const url = `https://yearbook-v2.vercel.app/api/img/${storagePath}`
+  const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
   if (res.status === 404) return null
-  if (!res.ok) throw new Error(`Supabase HTTP ${res.status} для ${storagePath}`)
+  if (!res.ok) throw new Error(`Proxy HTTP ${res.status} для ${storagePath}`)
   return Buffer.from(await res.arrayBuffer())
 }
 
