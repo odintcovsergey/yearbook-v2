@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, type AuthContext } from '@/lib/auth'
+import { ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -1720,13 +1721,19 @@ export async function POST(req: NextRequest) {
       new Set((affectedSelections ?? []).map((s: any) => s.child_id))
     )
 
-    // Удалить файлы из Storage
-    const pathsToDelete: string[] = []
-    if (photo.storage_path) pathsToDelete.push(photo.storage_path)
-    if (photo.thumb_path) pathsToDelete.push(photo.thumb_path)
-    if (pathsToDelete.length > 0) {
-      await supabaseAdmin.storage.from('photos').remove(pathsToDelete)
+    // Удалить файлы из Storage (Supabase или YC)
+    const deleteFromStorage = async (path: string) => {
+      if (!path) return
+      if (isYcPath(path)) {
+        await ycDelete(stripYcPrefix(path))
+      } else {
+        await supabaseAdmin.storage.from('photos').remove([path])
+      }
     }
+    await Promise.all([
+      photo.storage_path ? deleteFromStorage(photo.storage_path) : Promise.resolve(),
+      photo.thumb_path ? deleteFromStorage(photo.thumb_path) : Promise.resolve(),
+    ])
 
     // Удалить все связи
     await supabaseAdmin.from('selections').delete().eq('photo_id', photo_id)

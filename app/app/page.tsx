@@ -2696,32 +2696,22 @@ async function uploadFilesParallel(
           // если компрессия упала — заливаем оригинал
         }
 
-        const cleanName = file.name.replace(/\.[^.]+$/, '').replace(/[^\w.\-]/g, '_')
-        const path = `${albumId}/${type}/${Date.now()}_${cleanName}.webp`
+        // Загружаем через сервер → Yandex Object Storage
+        const formData = new FormData()
+        const webpFile = new File([compressed], file.name.replace(/\.[^.]+$/, '.webp'), { type: 'image/webp' })
+        formData.append('file', webpFile)
+        formData.append('album_id', albumId)
+        formData.append('type', type)
+        formData.append('original_name', file.name)
 
-        const { error: upErr } = await sb.storage
-          .from('photos')
-          .upload(path, compressed, { contentType: 'image/webp', upsert: false })
-
-        if (upErr) {
-          onFileError(file.name, upErr.message)
-        } else {
-          const res = await fetch('/api/tenant', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'register_photo',
-              album_id: albumId,
-              filename: file.name,
-              storage_path: path,
-              type,
-            }),
-          })
-          if (!res.ok) {
-            const d = await res.json().catch(() => ({}))
-            onFileError(file.name, d.error ?? 'Ошибка регистрации')
-          }
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          credentials: 'include',
+          body: formData,
+        })
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}))
+          onFileError(file.name, d.error ?? 'Ошибка загрузки')
         }
       } catch (e: any) {
         onFileError(file.name, e?.message ?? 'Неизвестная ошибка')

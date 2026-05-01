@@ -16,14 +16,16 @@ export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// Фото отдаются через /api/img/... прокси на Vercel —
-// прямой доступ к supabase.co заблокирован в РФ/Казахстане без VPN
+import { getPhotoUrlUniversal } from '@/lib/storage'
+
+// Фото отдаются через универсальную функцию:
+// - новые (yc:...) → напрямую из Yandex Object Storage
+// - старые (без префикса) → через /api/img/ прокси (Supabase)
 export function getPhotoUrl(storagePath: string): string {
-  if (!storagePath) return ''
-  return `/api/img/${storagePath}`
+  return getPhotoUrlUniversal(storagePath)
 }
 
 export function getThumbUrl(storagePath: string, thumbPath: string | null): string {
-  if (thumbPath) return `/api/img/${thumbPath}`
-  return `/api/img/${storagePath}`
+  if (thumbPath) return getPhotoUrlUniversal(thumbPath)
+  return getPhotoUrlUniversal(storagePath)
 }
