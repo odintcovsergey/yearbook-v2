@@ -603,7 +603,7 @@ export default function ParentPage() {
                 поездок или любых других памятных моментов. Они займут отдельный разворот в вашем альбоме рядом
                 с классными фото. Через 10 лет вы откроете альбом — и это будут именно ваши воспоминания.
               </p>
-              <p className="mt-2 font-medium text-blue-800">Доплата всего +{personalSpreadPrice} ₽</p>
+              <p className="mt-2 font-medium text-blue-800">Доплата всего +{personalSpreadPrice} ₽ к стоимости альбома</p>
             </div>
 
             {/* Предупреждения о низком разрешении */}
