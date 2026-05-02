@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import CRMModal from './CRMModal'
-import AnalyticsModal from './AnalyticsModal'
 
 // ============================================================
 // ТИПЫ
@@ -129,7 +128,6 @@ export default function AppPage() {
   const [showTeam, setShowTeam] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showCRM, setShowCRM] = useState(false)
-  const [showAnalytics, setShowAnalytics] = useState(false)
 
   const notify = (text: string, type: 'ok' | 'err' = 'ok') => {
     setMsg({ text, type })
@@ -288,16 +286,7 @@ export default function AppPage() {
               </button>
             </div>
 
-            <button
-              onClick={() => setShowAnalytics(true)}
-              className="btn-ghost text-sm"
-              type="button"
-              title="Аналитика отбора"
-            >
-              📊 Аналитика
-            </button>
-
-            <button
+<button
               onClick={() => setShowCRM(true)}
               className="btn-ghost text-sm"
               type="button"
@@ -468,11 +457,7 @@ export default function AppPage() {
         />
       )}
 
-      {showAnalytics && (
-        <AnalyticsModal onClose={() => setShowAnalytics(false)} />
-      )}
-
-      {showCRM && currentUserId && (
+{showCRM && currentUserId && (
         <CRMModal
           onClose={() => setShowCRM(false)}
           currentUserId={currentUserId}
@@ -669,6 +654,7 @@ function AlbumDetailModal({
   onError: (msg: string) => void
 }) {
   const [stats, setStats] = useState<AlbumStats | null>(null)
+  const [daily, setDaily] = useState<{date:string;submitted:number;started:number}[]>([])
   const [children, setChildren] = useState<Child[]>([])
   const [loading, setLoading] = useState(true)
   const [backdropStart, setBackdropStart] = useState(false)
@@ -742,12 +728,14 @@ function AlbumDetailModal({
   }
 
   const load = async () => {
-    const [s, c] = await Promise.all([
+    const [s, c, an] = await Promise.all([
       api(`/api/tenant?action=album_stats&album_id=${album.id}`).then(r => r.json()),
       api(`/api/tenant?action=children&album_id=${album.id}`).then(r => r.json()),
+      api(`/api/tenant?action=analytics&album_id=${album.id}`).then(r => r.json()),
     ])
     setStats(s)
     setChildren(Array.isArray(c) ? c : [])
+    setDaily(an.daily ?? [])
     setLoading(false)
   }
 
@@ -958,6 +946,16 @@ function AlbumDetailModal({
                           </div>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* График динамики */}
+                  {daily.length > 0 && (
+                    <div className="mt-2">
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                        Динамика отбора
+                      </div>
+                      <AlbumDailyChart daily={daily} />
                     </div>
                   )}
                 </>
@@ -5215,6 +5213,97 @@ function SettingsModal({
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── График динамики отбора (встроен в AlbumDetailModal → Обзор) ──────────────
+
+function AlbumDailyChart({ daily }: { daily: { date: string; submitted: number; started: number }[] }) {
+  const maxVal = Math.max(...daily.map(d => Math.max(d.submitted, d.started)), 1)
+  const W = 600
+  const H = 140
+  const PAD = { top: 14, right: 12, bottom: 28, left: 28 }
+  const chartW = W - PAD.left - PAD.right
+  const chartH = H - PAD.top - PAD.bottom
+
+  const x = (i: number) => PAD.left + (i / (daily.length - 1 || 1)) * chartW
+  const y = (v: number) => PAD.top + chartH - (v / maxVal) * chartH
+
+  const line = (pts: { x: number; y: number }[]) =>
+    pts.map((p, i) => {
+      if (i === 0) return `M ${p.x} ${p.y}`
+      const prev = pts[i - 1]
+      const cpx = (prev.x + p.x) / 2
+      return `C ${cpx} ${prev.y} ${cpx} ${p.y} ${p.x} ${p.y}`
+    }).join(' ')
+
+  const sPts = daily.map((d, i) => ({ x: x(i), y: y(d.submitted) }))
+  const oPts = daily.map((d, i) => ({ x: x(i), y: y(d.started) }))
+
+  const areaPath = daily.length < 2 ? '' :
+    line(sPts) +
+    ` L ${sPts[sPts.length - 1].x} ${PAD.top + chartH} L ${sPts[0].x} ${PAD.top + chartH} Z`
+
+  const gridYs = [0, 0.5, 1].map(f => ({
+    y: PAD.top + chartH * (1 - f),
+    label: Math.round(maxVal * f),
+  }))
+
+  const formatD = (iso: string) => {
+    const d = new Date(iso + 'T00:00:00')
+    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+  }
+
+  return (
+    <div className="bg-gray-50 rounded-xl p-4 overflow-x-auto">
+      <div className="flex gap-4 mb-2 text-xs text-gray-500">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-0.5 bg-green-500 rounded" />Завершили
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-0.5 bg-blue-400 rounded" />Открыли
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 280 }}>
+        <defs>
+          <linearGradient id="ag2" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#22c55e" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#22c55e" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {gridYs.map(g => (
+          <g key={g.y}>
+            <line x1={PAD.left} y1={g.y} x2={W - PAD.right} y2={g.y} stroke="#e5e7eb" strokeWidth="1" />
+            <text x={PAD.left - 4} y={g.y + 4} textAnchor="end" fontSize="8" fill="#9ca3af">{g.label || ''}</text>
+          </g>
+        ))}
+        {daily.length >= 2 && <path d={areaPath} fill="url(#ag2)" />}
+        {daily.length >= 2 && (
+          <path d={line(oPts)} fill="none" stroke="#60a5fa" strokeWidth="1.5" strokeDasharray="4 3" strokeLinecap="round" />
+        )}
+        {daily.length >= 2 && (
+          <path d={line(sPts)} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" />
+        )}
+        {daily.map((d, i) => {
+          const showLabel = daily.length <= 10 || i % Math.ceil(daily.length / 10) === 0 || i === daily.length - 1
+          return (
+            <g key={d.date}>
+              <circle cx={x(i)} cy={y(d.submitted)} r="3" fill="#22c55e" />
+              {d.submitted > 0 && (
+                <text x={x(i)} y={y(d.submitted) - 5} textAnchor="middle" fontSize="8" fill="#16a34a" fontWeight="600">
+                  {d.submitted}
+                </text>
+              )}
+              {showLabel && (
+                <text x={x(i)} y={H - 4} textAnchor="middle" fontSize="8" fill="#9ca3af">
+                  {formatD(d.date)}
+                </text>
+              )}
+            </g>
+          )
+        })}
+      </svg>
     </div>
   )
 }
