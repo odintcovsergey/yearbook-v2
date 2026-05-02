@@ -603,6 +603,99 @@ export async function GET(req: NextRequest) {
 
   // Совместим со старым /api/admin?action=export по ключевым колонкам:
   // Класс, Ученик, Портрет_страница, Обложка, Портрет_обложка, Текст,
+  // ----------------------------------------------------------
+  // analytics — сводная аналитика по всем альбомам tenant'а
+  // + динамика submitted_at/started_at по дням для конкретного альбома
+  // ----------------------------------------------------------
+  if (action === 'analytics') {
+    // Все дети по всем активным альбомам tenant'а
+    const { data: allChildren } = await supabaseAdmin
+      .from('children')
+      .select('album_id, submitted_at, started_at, albums!inner(id, title, city, year, archived, tenant_id, deadline)')
+      .eq('albums.tenant_id', auth.tenantId)
+      .eq('albums.archived', false)
+
+    const children = allChildren ?? []
+
+    // Группируем по альбому
+    const albumMap: Record<string, {
+      album_id: string
+      title: string
+      city: string
+      year: number
+      deadline: string | null
+      total: number
+      submitted: number
+      in_progress: number
+      not_started: number
+    }> = {}
+
+    for (const c of children) {
+      const alb = (c as any).albums
+      if (!alb) continue
+      if (!albumMap[c.album_id]) {
+        albumMap[c.album_id] = {
+          album_id: c.album_id,
+          title: alb.title,
+          city: alb.city ?? '',
+          year: alb.year,
+          deadline: alb.deadline ?? null,
+          total: 0,
+          submitted: 0,
+          in_progress: 0,
+          not_started: 0,
+        }
+      }
+      const a = albumMap[c.album_id]
+      a.total++
+      if (c.submitted_at) a.submitted++
+      else if (c.started_at) a.in_progress++
+      else a.not_started++
+    }
+
+    const albums_stats = Object.values(albumMap)
+      .sort((a, b) => b.submitted - a.submitted)
+
+    // Динамика по дням — если запрошен конкретный альбом
+    let daily: { date: string; submitted: number; started: number }[] = []
+    if (albumId) {
+      if (!(await assertAlbumAccess(auth, albumId))) {
+        return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+      }
+      const albumChildren = children.filter(c => c.album_id === albumId)
+
+      // Собираем все даты событий
+      const dateMap: Record<string, { submitted: number; started: number }> = {}
+      for (const c of albumChildren) {
+        if (c.submitted_at) {
+          const d = c.submitted_at.slice(0, 10)
+          if (!dateMap[d]) dateMap[d] = { submitted: 0, started: 0 }
+          dateMap[d].submitted++
+        }
+        if (c.started_at) {
+          const d = c.started_at.slice(0, 10)
+          if (!dateMap[d]) dateMap[d] = { submitted: 0, started: 0 }
+          dateMap[d].started++
+        }
+      }
+      daily = Object.entries(dateMap)
+        .map(([date, v]) => ({ date, ...v }))
+        .sort((a, b) => a.date.localeCompare(b.date))
+    }
+
+    // Итого по всему тенанту
+    const total_all = children.length
+    const submitted_all = children.filter(c => c.submitted_at).length
+    const in_progress_all = children.filter(c => !c.submitted_at && c.started_at).length
+    const not_started_all = children.filter(c => !c.submitted_at && !c.started_at).length
+
+    return NextResponse.json({
+      summary: { total: total_all, submitted: submitted_all, in_progress: in_progress_all, not_started: not_started_all },
+      albums: albums_stats,
+      daily,
+    })
+  }
+
   // Фото_друзья_1..10
   // Добавлены справа: Статус, Родитель, Телефон, Доплата
   // Учителя идут в конце после пустой строки-разделителя с Класс=УЧИТЕЛЬ
