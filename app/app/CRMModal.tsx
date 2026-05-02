@@ -1,5 +1,17 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragStartEvent,
+  type DragOverEvent,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { useDraggable, useDroppable } from '@dnd-kit/core'
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -265,6 +277,59 @@ export default function CRMModal({ onClose, currentUserId }: {
 
 // ─── Канбан ───────────────────────────────────────────────────────────────────
 
+// Droppable-колонка
+function KanbanColumn({ stage, deals, isOver, children }: {
+  stage: Stage
+  deals: Deal[]
+  isOver: boolean
+  children: React.ReactNode
+}) {
+  const { setNodeRef } = useDroppable({ id: stage.id })
+  const total = deals.reduce((s, d) => s + (d.amount ?? 0), 0)
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex flex-col w-60 flex-shrink-0 rounded-xl transition-colors ${
+        isOver ? 'bg-blue-50 ring-2 ring-blue-200' : 'bg-gray-50'
+      }`}
+    >
+      <div className="px-3 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: stage.color }} />
+          <span className="text-sm font-semibold text-gray-700">{stage.name}</span>
+          <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-1.5">{deals.length}</span>
+        </div>
+        {total > 0 && (
+          <span className="text-xs text-gray-400">{total.toLocaleString('ru-RU')} ₽</span>
+        )}
+      </div>
+      <div className="flex-1 overflow-y-auto px-2 pb-2 flex flex-col gap-2 min-h-[60px]">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// Draggable-обёртка для карточки
+function DraggableDealCard({ deal, ...props }: { deal: Deal } & Omit<Parameters<typeof DealCard>[0], 'isDragging'>) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: deal.id })
+  const style = transform
+    ? { transform: `translate(${transform.x}px, ${transform.y}px)`, zIndex: 50 }
+    : undefined
+
+  return (
+    <div ref={setNodeRef} style={style} className={isDragging ? 'opacity-40' : ''}>
+      <DealCard
+        deal={deal}
+        {...props}
+        dragHandleProps={{ ...attributes, ...listeners }}
+        isDragging={isDragging}
+      />
+    </div>
+  )
+}
+
 function KanbanView({
   stages, deals, clients, members, albums,
   onMoveDeal, onCreateDeal, onUpdateDeal, onDeleteDeal, onAlbumCreated,
@@ -282,57 +347,96 @@ function KanbanView({
 }) {
   const [editDeal, setEditDeal] = useState<Deal | null | 'new'>(null)
   const [newStageId, setNewStageId] = useState('')
+  const [activeDealId, setActiveDealId] = useState<string | null>(null)
+  const [overStageId, setOverStageId] = useState<string | null>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  )
 
   const openNew = (stageId: string) => {
     setNewStageId(stageId)
     setEditDeal('new')
   }
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDealId(event.active.id as string)
+  }
+
+  const handleDragOver = (event: DragOverEvent) => {
+    setOverStageId(event.over ? String(event.over.id) : null)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    setActiveDealId(null)
+    setOverStageId(null)
+    if (!over) return
+    const dealId = String(active.id)
+    const targetStageId = String(over.id)
+    const deal = deals.find(d => d.id === dealId)
+    if (!deal || deal.stage_id === targetStageId) return
+    // Проверяем что over — это именно stage (не другая карточка)
+    const isStage = stages.some(s => s.id === targetStageId)
+    if (isStage) onMoveDeal(dealId, targetStageId)
+  }
+
+  const activeDeal = deals.find(d => d.id === activeDealId)
+
   return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragEnd={handleDragEnd}
+    >
     <div className="h-full overflow-x-auto overflow-y-hidden">
       <div className="flex gap-3 p-4 h-full" style={{ minWidth: `${stages.length * 260}px` }}>
         {stages.map(stage => {
           const stageDeals = deals.filter(d => d.stage_id === stage.id)
-          const total = stageDeals.reduce((s, d) => s + (d.amount ?? 0), 0)
           return (
-            <div key={stage.id} className="flex flex-col w-60 flex-shrink-0 bg-gray-50 rounded-xl overflow-hidden">
-              {/* Заголовок колонки */}
-              <div className="px-3 py-2.5 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: stage.color }} />
-                  <span className="text-sm font-semibold text-gray-700">{stage.name}</span>
-                  <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-1.5">{stageDeals.length}</span>
-                </div>
-                {total > 0 && (
-                  <span className="text-xs text-gray-400">{total.toLocaleString('ru-RU')} ₽</span>
-                )}
-              </div>
-
-              {/* Карточки */}
-              <div className="flex-1 overflow-y-auto px-2 pb-2 flex flex-col gap-2">
-                {stageDeals.map(deal => (
-                  <DealCard
-                    key={deal.id}
-                    deal={deal}
-                    stages={stages}
-                    clients={clients}
-                    onMove={onMoveDeal}
-                    onEdit={() => setEditDeal(deal)}
-                    onDelete={() => onDeleteDeal(deal.id)}
-                    onAlbumCreated={(albumId) => onAlbumCreated(deal.id, albumId)}
-                  />
-                ))}
-                <button
-                  onClick={() => openNew(stage.id)}
-                  className="w-full py-1.5 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-left px-2"
-                >
-                  + Сделка
-                </button>
-              </div>
-            </div>
+            <KanbanColumn
+              key={stage.id}
+              stage={stage}
+              deals={stageDeals}
+              isOver={overStageId === stage.id}
+            >
+              {stageDeals.map(deal => (
+                <DraggableDealCard
+                  key={deal.id}
+                  deal={deal}
+                  stages={stages}
+                  clients={clients}
+                  onMove={onMoveDeal}
+                  onEdit={() => setEditDeal(deal)}
+                  onDelete={() => onDeleteDeal(deal.id)}
+                  onAlbumCreated={(albumId) => onAlbumCreated(deal.id, albumId)}
+                />
+              ))}
+              <button
+                onClick={() => openNew(stage.id)}
+                className="w-full py-1.5 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-left px-2"
+              >
+                + Сделка
+              </button>
+            </KanbanColumn>
           )
         })}
       </div>
+
+      {/* Ghost-карточка под курсором во время перетаскивания */}
+      <DragOverlay dropAnimation={null}>
+        {activeDeal ? (
+          <div className="bg-white rounded-lg p-3 shadow-2xl border border-blue-200 w-56 rotate-2 opacity-95">
+            <p className="text-sm font-medium text-gray-900">{activeDeal.title}</p>
+            {activeDeal.clients && (
+              <p className="text-xs text-gray-400 mt-1">{activeDeal.clients.name}</p>
+            )}
+          </div>
+        ) : null}
+      </DragOverlay>
+    </div>
 
       {/* Форма создания/редактирования сделки */}
       {editDeal !== null && (
@@ -351,11 +455,11 @@ function KanbanView({
           onClose={() => setEditDeal(null)}
         />
       )}
-    </div>
+    </DndContext>
   )
 }
 
-function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCreated }: {
+function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCreated, dragHandleProps, isDragging }: {
   deal: Deal
   stages: Stage[]
   clients: Client[]
@@ -363,6 +467,8 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
   onEdit: () => void
   onDelete: () => void
   onAlbumCreated: (albumId: string) => void
+  dragHandleProps?: Record<string, unknown>
+  isDragging?: boolean
 }) {
   const [showMove, setShowMove] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
@@ -381,15 +487,26 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
   }
 
   return (
-    <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-100 hover:border-gray-200 transition-all group cursor-pointer"
+    <div className={`bg-white rounded-lg shadow-sm border transition-all group cursor-pointer ${
+      isDragging ? 'border-blue-200 shadow-md' : 'border-gray-100 hover:border-gray-200'
+    }`}
       onClick={onEdit}>
-      <div className="flex items-start justify-between gap-1">
-        <p className="text-sm font-medium text-gray-900 leading-snug flex-1">{deal.title}</p>
-        <button
-          className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-lg leading-none flex-shrink-0"
-          onClick={e => { e.stopPropagation(); if (confirm('Удалить сделку?')) onDelete() }}
-        >×</button>
+      {/* Ручка перетаскивания */}
+      <div
+        className="flex items-center justify-between px-3 pt-2.5 pb-1"
+        onClick={e => e.stopPropagation()}
+        {...(dragHandleProps ?? {})}
+      >
+        <p className="text-sm font-medium text-gray-900 leading-snug flex-1 cursor-pointer" onClick={onEdit}>{deal.title}</p>
+        <div className="flex items-center gap-1">
+          <span className="text-gray-200 hover:text-gray-400 cursor-grab active:cursor-grabbing text-lg select-none" title="Перетащить">⠿</span>
+          <button
+            className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-lg leading-none"
+            onClick={e => { e.stopPropagation(); if (confirm('Удалить сделку?')) onDelete() }}
+          >×</button>
+        </div>
       </div>
+      <div className="px-3 pb-3">
       {deal.clients && (
         <p className="text-xs text-gray-400 mt-1">{deal.clients.name}</p>
       )}
@@ -461,6 +578,7 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
           onClose={() => setShowAlbumForm(false)}
         />
       )}
+      </div>
     </div>
   )
 }
