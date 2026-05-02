@@ -100,7 +100,6 @@ export async function GET(req: NextRequest) {
 
   // ── deals (канбан — все сделки + вложения) ───────────────
   if (action === 'deals') {
-    await ensureStages(tid)
     const { data, error } = await supabaseAdmin
       .from('deals')
       .select('*, deal_stages(name, color), clients(name, city), albums(title, city, year)')

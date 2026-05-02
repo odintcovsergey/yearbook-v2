@@ -80,3 +80,15 @@ create index if not exists deals_client_id_idx on deals(client_id);
 create index if not exists deals_stage_id_idx on deals(stage_id);
 create index if not exists tasks_tenant_id_idx on tasks(tenant_id);
 create index if not exists tasks_deal_id_idx on tasks(deal_id);
+
+-- Удалить дубли этапов (оставить первую запись по sort_order)
+DELETE FROM deal_stages
+WHERE id NOT IN (
+  SELECT DISTINCT ON (tenant_id, name) id
+  FROM deal_stages
+  ORDER BY tenant_id, name, sort_order
+);
+
+-- Защита от дублей в будущем
+CREATE UNIQUE INDEX IF NOT EXISTS deal_stages_tenant_name_unique
+  ON deal_stages(tenant_id, name);
