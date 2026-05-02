@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Регистрируем в БД
-  const filename = originalName.replace(/\.[^.]+$/, '') + '.webp'  // убираем любое расширение, добавляем .webp
+  const filename = originalName  // сохраняем оригинальное имя как есть
   const { error: dbErr } = await supabaseAdmin
     .from('photos')
     .insert({
