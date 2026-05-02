@@ -20,7 +20,7 @@ import { getPhotoUrlUniversal } from '@/lib/storage'
 
 // Фото отдаются через универсальную функцию:
 // - новые (yc:...) → напрямую из Yandex Object Storage
-// - старые (без префикса) → через /api/img/ прокси (Supabase)
+// - все пути теперь yc: после миграции 02.05.2026
 export function getPhotoUrl(storagePath: string): string {
   return getPhotoUrlUniversal(storagePath)
 }

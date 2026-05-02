@@ -1,7 +1,6 @@
 /**
  * Yandex Object Storage client (S3-совместимый)
- * Используется для всех новых загрузок фото.
- * Старые фото в Supabase продолжают отдаваться через /api/img/ прокси.
+ * Все фото хранятся в YC. Пути в БД имеют префикс yc:
  */
 
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
@@ -54,8 +53,6 @@ export async function ycDelete(storagePath: string): Promise<void> {
   }
 }
 
-// Определяем провайдер по пути — новые файлы помечаем префиксом yc:/
-// Старые пути (без префикса) — Supabase, отдаём через /api/img/
 export function isYcPath(storagePath: string): boolean {
   return storagePath?.startsWith('yc:')
 }
@@ -64,11 +61,8 @@ export function stripYcPrefix(storagePath: string): string {
   return storagePath.startsWith('yc:') ? storagePath.slice(3) : storagePath
 }
 
+// Все пути теперь yc: — прокси /api/img/ удалён (миграция завершена 02.05.2026)
 export function getPhotoUrlUniversal(storagePath: string): string {
   if (!storagePath) return ''
-  if (isYcPath(storagePath)) {
-    return ycPhotoUrl(stripYcPrefix(storagePath))
-  }
-  // Старый путь Supabase — через прокси
-  return `/api/img/${storagePath}`
+  return ycPhotoUrl(stripYcPrefix(storagePath))
 }
