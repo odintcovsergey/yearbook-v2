@@ -365,9 +365,20 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
   onAlbumCreated: (albumId: string) => void
 }) {
   const [showMove, setShowMove] = useState(false)
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const [showAlbumForm, setShowAlbumForm] = useState(false)
+  const moveButtonRef = React.useRef<HTMLButtonElement>(null)
   const isOverdueFlag = deal.deadline && new Date(deal.deadline) < new Date() && !deal.closed_at
   const clientForDeal = clients.find(c => c.id === deal.client_id)
+
+  const openMoveMenu = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (moveButtonRef.current) {
+      const rect = moveButtonRef.current.getBoundingClientRect()
+      setMenuPos({ top: rect.bottom + 4, left: rect.left })
+    }
+    setShowMove(!showMove)
+  }
 
   return (
     <div className="bg-white rounded-lg p-3 shadow-sm border border-gray-100 hover:border-gray-200 transition-all group cursor-pointer"
@@ -396,11 +407,12 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
         )}
       </div>
       {/* Быстрое перемещение */}
-      <div className="mt-2 relative">
+      <div className="mt-2">
         <div className="flex gap-2 items-center">
           <button
+            ref={moveButtonRef}
             className="text-xs text-gray-300 hover:text-gray-500 transition-colors"
-            onClick={e => { e.stopPropagation(); setShowMove(!showMove) }}
+            onClick={openMoveMenu}
           >
             Переместить ▾
           </button>
@@ -416,21 +428,29 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
             <span className="text-xs text-green-500 ml-auto">✓ Альбом</span>
           )}
         </div>
-        {showMove && (
-          <div className="absolute top-5 left-0 z-10 bg-white rounded-lg shadow-lg border border-gray-100 py-1 min-w-[180px]">
+      </div>
+
+      {/* Дропдаун — fixed, не обрезается колонкой */}
+      {showMove && (
+        <>
+          <div className="fixed inset-0 z-[80]" onClick={e => { e.stopPropagation(); setShowMove(false) }} />
+          <div
+            className="fixed z-[90] bg-white rounded-lg shadow-xl border border-gray-100 py-1 min-w-[180px]"
+            style={{ top: menuPos.top, left: menuPos.left }}
+          >
             {stages.filter(s => s.id !== deal.stage_id).map(s => (
               <button
                 key={s.id}
-                className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50 flex items-center gap-2"
+                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
                 onClick={e => { e.stopPropagation(); onMove(deal.id, s.id); setShowMove(false) }}
               >
-                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: s.color }} />
                 {s.name}
               </button>
             ))}
           </div>
-        )}
-      </div>
+        </>
+      )}
 
       {showAlbumForm && (
         <QuickAlbumModal
