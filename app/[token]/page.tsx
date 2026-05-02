@@ -593,9 +593,19 @@ export default function ParentPage() {
 
         {step === 7 && personalSpreadEnabled && (
           <StepCard
-            title="Личный разворот"
-            subtitle={`Загрузите от ${personalSpreadMin} до ${personalSpreadMax} своих фото — они войдут в отдельный разворот (+${personalSpreadPrice} ₽)`}
+            title="📸 Личный разворот"
+            subtitle="Сделайте альбом по-настоящему своим"
           >
+            <div className="bg-blue-50 rounded-xl p-4 mb-4 text-sm text-blue-900 leading-relaxed">
+              <p className="font-medium mb-1">+2 страницы только ваших фотографий</p>
+              <p className="text-blue-700">
+                Загрузите {personalSpreadMin}–{personalSpreadMax} архивных снимков — из детства, с друзьями, семейных
+                поездок или любых других памятных моментов. Они займут отдельный разворот в вашем альбоме рядом
+                с классными фото. Через 10 лет вы откроете альбом — и это будут именно ваши воспоминания.
+              </p>
+              <p className="mt-2 font-medium text-blue-800">Доплата всего +{personalSpreadPrice} ₽</p>
+            </div>
+
             {/* Предупреждения о низком разрешении */}
             {spreadWarnings.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
