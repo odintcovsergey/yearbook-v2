@@ -4,13 +4,14 @@ import { useEffect, useState, useCallback, memo, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import type { Photo } from '@/types'
 
-type StepId = 1 | 2 | 3 | 4 | 5 | 6
+type StepId = 1 | 2 | 3 | 4 | 5 | 6 | 7
 
 const STEPS = [
   { id: 1, label: 'Портрет' },
   { id: 2, label: 'Обложка' },
   { id: 4, label: 'Фото' },
   { id: 3, label: 'Текст' },
+  { id: 7, label: 'Разворот' },
   { id: 5, label: 'Контакт' },
   { id: 6, label: 'Готово' },
 ]
@@ -36,6 +37,13 @@ export default function ParentPage() {
   const [textEnabled, setTextEnabled] = useState(true)
   const [textMaxChars, setTextMaxChars] = useState(500)
   const [textType, setTextType] = useState<string>('free')
+  const [personalSpreadEnabled, setPersonalSpreadEnabled] = useState(false)
+  const [personalSpreadPrice, setPersonalSpreadPrice] = useState(300)
+  const [personalSpreadMin, setPersonalSpreadMin] = useState(4)
+  const [personalSpreadMax, setPersonalSpreadMax] = useState(12)
+  const [spreadPhotos, setSpreadPhotos] = useState<{id:string;filename:string;storage_path:string;width:number;height:number;file_size:number}[]>([])
+  const [spreadUploading, setSpreadUploading] = useState(false)
+  const [spreadWarnings, setSpreadWarnings] = useState<string[]>([])
   const [quotes, setQuotes] = useState<any[]>([])
   const [takenQuoteIds, setTakenQuoteIds] = useState<string[]>([])
 
@@ -79,6 +87,17 @@ export default function ParentPage() {
         setTextEnabled(data.album?.text_enabled ?? true)
         setTextMaxChars(data.album?.text_max_chars ?? 500)
         setTextType(data.album?.text_type ?? 'free')
+        setPersonalSpreadEnabled(data.album?.personal_spread_enabled ?? false)
+        setPersonalSpreadPrice(data.album?.personal_spread_price ?? 300)
+        setPersonalSpreadMin(data.album?.personal_spread_min ?? 4)
+        setPersonalSpreadMax(data.album?.personal_spread_max ?? 12)
+        // Загружаем уже загруженные фото разворота
+        if (data.album?.personal_spread_enabled) {
+          fetch(`/api/personal-spread?token=${(token as string)}`)
+            .then(r => r.json())
+            .then(d => { if (d.photos) setSpreadPhotos(d.photos) })
+            .catch(() => {})
+        }
         if (data.quotes) setQuotes(data.quotes)
         if (data.takenQuoteIds) setTakenQuoteIds(data.takenQuoteIds)
         if (data.selectedQuoteId) setSelectedQuoteId(data.selectedQuoteId)
@@ -212,7 +231,7 @@ export default function ParentPage() {
     setStep(6)
   }
 
-  const effectiveSteps = STEPS.filter(s => !(s.id === 2 && coverMode === 'none') && !(s.id === 4 && !groupEnabled) && !(s.id === 3 && !textEnabled))
+  const effectiveSteps = STEPS.filter(s => !(s.id === 2 && coverMode === 'none') && !(s.id === 4 && !groupEnabled) && !(s.id === 3 && !textEnabled) && !(s.id === 7 && !personalSpreadEnabled))
   const totalSteps = effectiveSteps.length
   const currentIdx = effectiveSteps.findIndex(s => s.id === step)
   const progress = ((currentIdx + 1) / totalSteps) * 100
@@ -569,6 +588,119 @@ export default function ParentPage() {
               <button className="btn-primary px-8" onClick={goNext} disabled={groupPhotos.length < groupMin || groupPhotos.length > groupMax}>Далее →</button>
             </div>
           </div>
+        )}
+
+        {step === 7 && personalSpreadEnabled && (
+          <StepCard
+            title="Личный разворот"
+            subtitle={`Загрузите от ${personalSpreadMin} до ${personalSpreadMax} своих фото — они войдут в отдельный разворот (+${personalSpreadPrice} ₽)`}
+          >
+            {/* Предупреждения о низком разрешении */}
+            {spreadWarnings.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                {spreadWarnings.map((w, i) => (
+                  <p key={i} className="text-xs text-amber-700">⚠️ {w}</p>
+                ))}
+              </div>
+            )}
+
+            {/* Сетка загруженных фото */}
+            {spreadPhotos.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {spreadPhotos.map(p => (
+                  <div key={p.id} className="relative group aspect-square">
+                    <img
+                      src={`https://storage.yandexcloud.net/yearbook-photos/${p.storage_path.replace('yc:', '')}`}
+                      alt={p.filename}
+                      className="w-full h-full object-cover rounded-lg"
+                    />
+                    <button
+                      className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                      onClick={async () => {
+                        const res = await fetch('/api/personal-spread', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ action: 'delete', token, photo_id: p.id }),
+                        })
+                        if (res.ok) setSpreadPhotos(prev => prev.filter(x => x.id !== p.id))
+                      }}
+                    >×</button>
+                    <div className="absolute bottom-1 left-1 right-1 bg-black/50 rounded text-white text-xs px-1 py-0.5 truncate opacity-0 group-hover:opacity-100 transition-opacity">
+                      {p.width && p.height ? `${p.width}×${p.height}` : p.filename}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Кнопка загрузки */}
+            {spreadPhotos.length < personalSpreadMax && (
+              <label className={`flex items-center justify-center gap-2 w-full py-3 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors mb-4 ${spreadUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/heic,image/heif"
+                  multiple
+                  className="hidden"
+                  onChange={async (e) => {
+                    const files = Array.from(e.target.files ?? [])
+                    if (!files.length) return
+                    setSpreadUploading(true)
+                    const newWarnings: string[] = []
+                    for (const file of files) {
+                      if (spreadPhotos.length >= personalSpreadMax) break
+                      const fd = new FormData()
+                      fd.append('token', token as string)
+                      fd.append('file', file)
+                      try {
+                        const res = await fetch('/api/personal-spread', { method: 'POST', body: fd })
+                        const data = await res.json()
+                        if (data.photo) {
+                          setSpreadPhotos(prev => [...prev, data.photo])
+                          if (data.warning) newWarnings.push(data.warning)
+                        } else if (data.error) {
+                          newWarnings.push(data.error)
+                        }
+                      } catch {
+                        newWarnings.push(`Ошибка загрузки ${file.name}`)
+                      }
+                    }
+                    setSpreadWarnings(newWarnings)
+                    setSpreadUploading(false)
+                    e.target.value = ''
+                  }}
+                />
+                {spreadUploading ? (
+                  <span className="text-sm text-gray-400">Загружаем...</span>
+                ) : (
+                  <>
+                    <span className="text-2xl">📷</span>
+                    <span className="text-sm text-gray-500">
+                      Добавить фото ({spreadPhotos.length}/{personalSpreadMax})
+                    </span>
+                  </>
+                )}
+              </label>
+            )}
+
+            <p className="text-xs text-gray-400 mb-4">
+              Форматы: JPG, PNG, HEIC · до 10 МБ каждое · рекомендуем не менее 800×1200px
+            </p>
+
+            <div className="flex items-center justify-between">
+              <button className="btn-ghost" onClick={goPrev}>← Назад</button>
+              <button
+                className="btn-primary"
+                onClick={goNext}
+                disabled={spreadPhotos.length > 0 && spreadPhotos.length < personalSpreadMin}
+              >
+                {spreadPhotos.length === 0
+                  ? 'Пропустить →'
+                  : spreadPhotos.length < personalSpreadMin
+                    ? `Нужно ещё ${personalSpreadMin - spreadPhotos.length} фото`
+                    : 'Далее →'}
+              </button>
+            </div>
+          </StepCard>
         )}
 
         {step === 5 && (

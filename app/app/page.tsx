@@ -654,11 +654,12 @@ function AlbumDetailModal({
   onError: (msg: string) => void
 }) {
   const [stats, setStats] = useState<AlbumStats | null>(null)
+  const [spreadData, setSpreadData] = useState<{child_id:string;full_name:string;class:string;photos:{id:string;filename:string;storage_path:string;sort_order:number}[]}[]>([])
   const [daily, setDaily] = useState<{date:string;submitted:number;started:number}[]>([])
   const [children, setChildren] = useState<Child[]>([])
   const [loading, setLoading] = useState(true)
   const [backdropStart, setBackdropStart] = useState(false)
-  const [tab, setTab] = useState<'overview' | 'children' | 'teachers' | 'responsible' | 'photos' | 'surcharges'>('overview')
+  const [tab, setTab] = useState<'overview' | 'children' | 'teachers' | 'responsible' | 'photos' | 'surcharges' | 'spread'>('overview')
 
   // UI состояние для добавления/импорта
   const [showAddForm, setShowAddForm] = useState(false)
@@ -743,6 +744,15 @@ function AlbumDetailModal({
     load().catch(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [album.id])
+
+  useEffect(() => {
+    if (tab === 'spread' && (album as any).personal_spread_enabled) {
+      api(`/api/tenant?action=personal_spread_stats&album_id=${album.id}`)
+        .then(r => r.json())
+        .then(d => setSpreadData(d.children ?? []))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, album.id])
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -895,6 +905,7 @@ function AlbumDetailModal({
             { id: 'teachers', label: 'Учителя' },
             { id: 'responsible', label: 'Ответственный' },
             { id: 'surcharges', label: 'Доплаты' },
+            ...((album as any).personal_spread_enabled ? [{ id: 'spread' as const, label: 'Разворот' }] : []),
           ] as const).map(t => (
             <button
               key={t.id}
@@ -1303,6 +1314,14 @@ function AlbumDetailModal({
                   onError={onError}
                 />
               )}
+
+              {/* Вкладка Личный разворот */}
+              {tab === 'spread' && (
+                <SpreadTab
+                  spreadData={spreadData}
+                  album={album}
+                />
+              )}
             </>
           )}
         </div>
@@ -1357,6 +1376,10 @@ type Template = {
   group_min: number
   group_max: number
   group_exclusive: boolean
+  personal_spread_enabled: boolean
+  personal_spread_price: number
+  personal_spread_min: number
+  personal_spread_max: number
   text_enabled: boolean
   text_max_chars: number
   text_type?: string
@@ -1373,6 +1396,10 @@ type FormData = {
   group_min: string
   group_max: string
   group_exclusive: boolean
+  personal_spread_enabled: boolean
+  personal_spread_price: string
+  personal_spread_min: string
+  personal_spread_max: string
   text_enabled: boolean
   text_max_chars: string
   text_type: string
@@ -1399,6 +1426,10 @@ function emptyForm(): FormData {
     group_min: '2',
     group_max: '2',
     group_exclusive: true,
+    personal_spread_enabled: false,
+    personal_spread_price: '300',
+    personal_spread_min: '4',
+    personal_spread_max: '12',
     text_enabled: true,
     text_max_chars: '500',
     text_type: 'free',
@@ -1437,6 +1468,10 @@ function AlbumFormModal({
         group_min: String((album as any).group_min ?? 2),
         group_max: String((album as any).group_max ?? 2),
         group_exclusive: (album as any).group_exclusive ?? true,
+        personal_spread_enabled: (album as any).personal_spread_enabled ?? false,
+        personal_spread_price: String((album as any).personal_spread_price ?? 300),
+        personal_spread_min: String((album as any).personal_spread_min ?? 4),
+        personal_spread_max: String((album as any).personal_spread_max ?? 12),
         text_enabled: (album as any).text_enabled ?? true,
         text_max_chars: String((album as any).text_max_chars ?? 500),
         text_type: (album as any).text_type ?? 'free',
@@ -1483,6 +1518,10 @@ function AlbumFormModal({
       group_min: String(t.group_min),
       group_max: String(t.group_max),
       group_exclusive: t.group_exclusive,
+      personal_spread_enabled: t.personal_spread_enabled ?? false,
+      personal_spread_price: String(t.personal_spread_price ?? 300),
+      personal_spread_min: String(t.personal_spread_min ?? 4),
+      personal_spread_max: String(t.personal_spread_max ?? 12),
       text_enabled: t.text_enabled,
       text_max_chars: String(t.text_max_chars),
       text_type: t.text_type ?? 'free',
@@ -1510,6 +1549,10 @@ function AlbumFormModal({
       group_min: parseInt(form.group_min) || 0,
       group_max: parseInt(form.group_max) || 0,
       group_exclusive: form.group_exclusive,
+      personal_spread_enabled: form.personal_spread_enabled,
+      personal_spread_price: parseInt(form.personal_spread_price) || 300,
+      personal_spread_min: parseInt(form.personal_spread_min) || 4,
+      personal_spread_max: parseInt(form.personal_spread_max) || 12,
       text_enabled: form.text_enabled,
       text_max_chars: parseInt(form.text_max_chars) || 500,
       text_type: form.text_type,
@@ -1823,6 +1866,48 @@ function AlbumFormModal({
                   />
                   Эксклюзивность: если ученик выбрал групповое фото — оно резервируется
                 </label>
+              </div>
+            )}
+          </div>
+
+          {/* Личный разворот */}
+          <div className="border-t border-gray-100 pt-5">
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
+              <input
+                type="checkbox"
+                checked={form.personal_spread_enabled}
+                onChange={(e) => set('personal_spread_enabled', e.target.checked)}
+                className="rounded"
+                disabled={loading}
+              />
+              Личный разворот (родитель загружает свои фото)
+            </label>
+            {form.personal_spread_enabled && (
+              <div className="space-y-3 pl-6">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Мин. фото</label>
+                    <input type="number" value={form.personal_spread_min}
+                      onChange={(e) => set('personal_spread_min', e.target.value)}
+                      className="input" min={1} max={12} disabled={loading} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Макс. фото</label>
+                    <input type="number" value={form.personal_spread_max}
+                      onChange={(e) => set('personal_spread_max', e.target.value)}
+                      className="input" min={1} max={12} disabled={loading} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Цена (₽)</label>
+                    <input type="number" value={form.personal_spread_price}
+                      onChange={(e) => set('personal_spread_price', e.target.value)}
+                      className="input" min={0} disabled={loading} />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400">
+                  Родитель загружает до {form.personal_spread_max} своих фото (10×15 см, до 10 МБ каждое).
+                  Доплата +{form.personal_spread_price} ₽ к заказу.
+                </p>
               </div>
             )}
           </div>
@@ -5304,6 +5389,93 @@ function AlbumDailyChart({ daily }: { daily: { date: string; submitted: number; 
           )
         })}
       </svg>
+    </div>
+  )
+}
+
+// ============================================================
+// ВКЛАДКА ЛИЧНЫЙ РАЗВОРОТ
+// ============================================================
+
+function SpreadTab({ spreadData, album }: {
+  spreadData: {
+    child_id: string
+    full_name: string
+    class: string
+    photos: { id: string; filename: string; storage_path: string; sort_order: number }[]
+  }[]
+  album: Album
+}) {
+  const price = (album as any).personal_spread_price ?? 300
+  const min = (album as any).personal_spread_min ?? 4
+  const max = (album as any).personal_spread_max ?? 12
+
+  const withPhotos = spreadData.filter(c => c.photos.length > 0)
+  const totalPhotos = withPhotos.reduce((s, c) => s + c.photos.length, 0)
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-gray-800">
+          Личный разворот
+          {withPhotos.length > 0 && (
+            <span className="ml-2 text-sm font-normal text-gray-400">
+              {withPhotos.length} чел. · {totalPhotos} фото
+            </span>
+          )}
+        </h3>
+        <div className="text-xs text-gray-400">
+          {min}–{max} фото · +{price} ₽
+        </div>
+      </div>
+
+      {withPhotos.length === 0 ? (
+        <p className="text-sm text-gray-400 text-center py-8">
+          Пока никто не загружал фото для личного разворота
+        </p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-400 uppercase tracking-wide border-b border-gray-100">
+              <th className="pb-2 pr-4">Ученик</th>
+              <th className="pb-2 pr-4">Класс</th>
+              <th className="pb-2 pr-4">Фото</th>
+              <th className="pb-2 text-right">Доплата</th>
+            </tr>
+          </thead>
+          <tbody>
+            {withPhotos.map(c => (
+              <tr key={c.child_id} className="border-b border-gray-50 hover:bg-gray-50">
+                <td className="py-2.5 pr-4 font-medium">{c.full_name}</td>
+                <td className="py-2.5 pr-4 text-gray-500">{c.class ?? '—'}</td>
+                <td className="py-2.5 pr-4">
+                  <div className="flex items-center gap-2">
+                    <span className={`font-medium ${c.photos.length < min ? 'text-amber-500' : 'text-green-600'}`}>
+                      {c.photos.length}
+                    </span>
+                    <span className="text-gray-300">/</span>
+                    <span className="text-gray-400">{max}</span>
+                    {c.photos.length < min && (
+                      <span className="text-xs text-amber-500">мало</span>
+                    )}
+                  </div>
+                </td>
+                <td className="py-2.5 text-right text-amber-600 font-medium">
+                  +{price} ₽
+                </td>
+              </tr>
+            ))}
+            {withPhotos.length > 0 && (
+              <tr className="border-t-2 border-gray-200">
+                <td colSpan={3} className="pt-2.5 pr-4 font-semibold text-gray-700">Итого</td>
+                <td className="pt-2.5 text-right font-bold text-amber-600">
+                  {withPhotos.length * price} ₽
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }

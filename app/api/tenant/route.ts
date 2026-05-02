@@ -603,6 +603,46 @@ export async function GET(req: NextRequest) {
   // analytics — сводная аналитика по всем альбомам tenant'а
   // + динамика submitted_at/started_at по дням для конкретного альбома
   // ----------------------------------------------------------
+  // ----------------------------------------------------------
+  // personal_spread_stats — статистика по личным разворотам альбома
+  // для вкладки "Разворот" в AlbumDetailModal
+  // ----------------------------------------------------------
+  if (action === 'personal_spread_stats' && albumId) {
+    if (!(await assertAlbumAccess(auth, albumId))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const { data, error } = await supabaseAdmin
+      .from('personal_spread_photos')
+      .select('child_id, filename, storage_path, sort_order, id, children(full_name, class)')
+      .eq('album_id', albumId)
+      .order('sort_order')
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Группируем по ученику
+    const byChild: Record<string, {
+      child_id: string; full_name: string; class: string
+      photos: { id: string; filename: string; storage_path: string; sort_order: number }[]
+    }> = {}
+    for (const p of data ?? []) {
+      const ch = (p as any).children
+      if (!byChild[p.child_id]) {
+        byChild[p.child_id] = {
+          child_id: p.child_id,
+          full_name: ch?.full_name ?? '',
+          class: ch?.class ?? '',
+          photos: [],
+        }
+      }
+      byChild[p.child_id].photos.push({
+        id: p.id,
+        filename: p.filename,
+        storage_path: p.storage_path,
+        sort_order: p.sort_order,
+      })
+    }
+    return NextResponse.json({ children: Object.values(byChild) })
+  }
+
   if (action === 'analytics') {
     // Все дети по всем активным альбомам tenant'а
     const { data: allChildren } = await supabaseAdmin
@@ -716,14 +756,21 @@ export async function GET(req: NextRequest) {
 
     const ids = (children ?? []).map((c: any) => c.id)
 
-    const [selectionsRes, contactsRes, textsRes, coversRes] = ids.length > 0
+    const [selectionsRes, contactsRes, textsRes, coversRes, spreadRes] = ids.length > 0
       ? await Promise.all([
           supabaseAdmin.from('selections').select('child_id, photo_id, selection_type, photos(filename)').in('child_id', ids),
           supabaseAdmin.from('parent_contacts').select('child_id, parent_name, phone').in('child_id', ids),
           supabaseAdmin.from('student_texts').select('child_id, text').in('child_id', ids),
           supabaseAdmin.from('cover_selections').select('child_id, cover_option, surcharge').in('child_id', ids),
+          supabaseAdmin.from('personal_spread_photos').select('child_id, filename').in('child_id', ids).order('sort_order'),
         ])
-      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }]
+      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }]
+
+    const spreadMap: Record<string, string[]> = {}
+    for (const p of (spreadRes as any).data ?? []) {
+      if (!spreadMap[p.child_id]) spreadMap[p.child_id] = []
+      spreadMap[p.child_id].push(p.filename)
+    }
 
     const selMap: Record<string, any[]> = {}
     for (const s of selectionsRes.data ?? []) {
@@ -763,6 +810,12 @@ export async function GET(req: NextRequest) {
           : (cover?.cover_option === 'same' ? (pp as any)?.photos?.filename ?? '' : ''),
         Текст: textMap[c.id] ?? '',
         ...grCols,
+        ...Object.fromEntries(
+          Array.from({ length: 12 }, (_, i) => [
+            `Личный_${i + 1}`,
+            spreadMap[c.id]?.[i] ?? '',
+          ])
+        ),
         Статус: statusLabel(c),
         Родитель: contact?.parent_name ?? '',
         Телефон: contact?.phone ?? '',
@@ -795,6 +848,8 @@ export async function GET(req: NextRequest) {
       const photo = photoByTeacher[t.id]
       const grTeacherCols: Record<string, string> = {}
       for (let i = 0; i < 10; i++) { grTeacherCols[`Фото_друзья_${i + 1}`] = '' }
+      const spreadTeacherCols: Record<string, string> = {}
+      for (let i = 0; i < 12; i++) { spreadTeacherCols[`Личный_${i + 1}`] = '' }
       return {
         Класс: 'УЧИТЕЛЬ',
         Ученик: t.full_name ?? '',
@@ -803,6 +858,7 @@ export async function GET(req: NextRequest) {
         Портрет_обложка: '',
         Текст: t.description ?? '',
         ...grTeacherCols,
+        ...spreadTeacherCols,
         Статус: photo ? 'Заполнено' : 'Ожидание',
         Родитель: '',
         Телефон: '',
@@ -1120,6 +1176,10 @@ export async function POST(req: NextRequest) {
         group_min: body.group_min ?? 2,
         group_max: body.group_max ?? 2,
         group_exclusive: body.group_exclusive ?? true,
+        personal_spread_enabled: body.personal_spread_enabled ?? false,
+        personal_spread_price: body.personal_spread_price ?? 300,
+        personal_spread_min: body.personal_spread_min ?? 4,
+        personal_spread_max: body.personal_spread_max ?? 12,
         text_enabled: body.text_enabled ?? true,
         text_max_chars: body.text_max_chars ?? 500,
         text_type: body.text_type ?? 'free',
@@ -1161,6 +1221,7 @@ export async function POST(req: NextRequest) {
       'title', 'city', 'year', 'deadline',
       'cover_mode', 'cover_price',
       'group_enabled', 'group_min', 'group_max', 'group_exclusive',
+      'personal_spread_enabled', 'personal_spread_price', 'personal_spread_min', 'personal_spread_max',
       'text_enabled', 'text_max_chars', 'text_type',
       'classes', 'template_title',
     ]
