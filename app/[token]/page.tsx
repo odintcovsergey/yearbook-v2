@@ -649,11 +649,32 @@ export default function ParentPage() {
                     setSpreadUploading(true)
                     setSpreadProgress({ done: 0, total: toUpload.length })
                     const newWarnings: string[] = []
-                    let done = 0
+                    let doneCount = 0
+                    // Загружаем компрессор один раз
+                    const imageCompression = (await import('browser-image-compression')).default
                     for (const file of toUpload) {
                       const fd = new FormData()
                       fd.append('token', token as string)
-                      fd.append('file', file)
+                      // Сжимаем до 4 МБ чтобы уложиться в лимит Vercel (4.5 МБ)
+                      // Оригинальный формат сохраняем (не WebP — важно для качества печати)
+                      let fileToSend: File | Blob = file
+                      try {
+                        if (file.size > 4 * 1024 * 1024) {
+                          fileToSend = await imageCompression(file, {
+                            maxSizeMB: 3.5,
+                            useWebWorker: true,
+                            initialQuality: 0.92,
+                            // Не задаём fileType — сохраняем оригинальный формат
+                          })
+                        }
+                      } catch {
+                        // Если компрессия упала — отправляем оригинал
+                        fileToSend = file
+                      }
+                      const sendFile = fileToSend instanceof File
+                        ? fileToSend
+                        : new File([fileToSend], file.name, { type: file.type })
+                      fd.append('file', sendFile)
                       try {
                         const res = await fetch('/api/personal-spread', { method: 'POST', body: fd })
                         const data = await res.json()
@@ -666,8 +687,8 @@ export default function ParentPage() {
                       } catch {
                         newWarnings.push(`Ошибка загрузки ${file.name}`)
                       }
-                      done++
-                      setSpreadProgress({ done, total: toUpload.length })
+                      doneCount++
+                      setSpreadProgress({ done: doneCount, total: toUpload.length })
                     }
                     setSpreadWarnings(newWarnings)
                     setSpreadUploading(false)

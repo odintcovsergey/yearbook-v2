@@ -4,6 +4,9 @@ import { ycUpload, ycDelete, stripYcPrefix } from '@/lib/storage'
 import sharp from 'sharp'
 
 export const dynamic = 'force-dynamic'
+// Vercel App Router: для multipart/form-data нужно отключить встроенный парсер
+// и указать увеличенный лимит через next.config
+export const maxDuration = 30
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024  // 10 MB
 const WARN_MIN_WIDTH = 800
