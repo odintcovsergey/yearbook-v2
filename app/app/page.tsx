@@ -5451,34 +5451,16 @@ function SpreadTab({ spreadData, album }: {
   const photoUrl = (storagePath: string) => ycBase + storagePath.replace('yc:', '')
 
   // Скачать ZIP через браузер — открываем ссылки по одной через <a download>
-  const downloadAll = async () => {
+  const downloadAll = () => {
     if (!withPhotos.length) return
     setDownloading(true)
-    try {
-      // Собираем все фото и скачиваем через fetch+blob
-      const allPhotos = withPhotos.flatMap(c =>
-        c.photos.map(p => ({
-          url: photoUrl(p.storage_path),
-          filename: `${c.class ?? 'без_класса'}_${c.full_name}_${p.filename}`,
-        }))
-      )
-      const JSZip = (await import('jszip')).default
-      const zip = new JSZip()
-      await Promise.all(allPhotos.map(async (p) => {
-        const blob = await fetch(p.url).then(r => r.blob())
-        zip.file(p.filename, blob)
-      }))
-      const content = await zip.generateAsync({ type: 'blob' })
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(content)
-      a.download = `разворот_${album.title}.zip`
-      a.click()
-      URL.revokeObjectURL(a.href)
-    } catch {
-      alert('Ошибка при создании архива')
-    } finally {
-      setDownloading(false)
-    }
+    const a = document.createElement('a')
+    a.href = `/api/spread-download?album_id=${(album as any).id}`
+    a.download = ''
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => setDownloading(false), 3000)
   }
 
   return (
