@@ -339,9 +339,15 @@ export default function ParentPage() {
 
         {step === 1 && (
           <StepCard wide title="Портрет для личной страницы" subtitle="Это фото появится на вашей личной странице в альбоме.">
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-3 mb-4 flex-wrap">
               <span className={`badge-${portraitPage ? 'green' : 'blue'}`}>Выбрано: {portraitPage ? 1 : 0} / 1</span>
               <span className="text-xs text-gray-400">{portraits.filter(p => !p.locked).length} из {portraits.length} доступно</span>
+              <button
+                className="ml-auto text-xs text-blue-500 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-50 transition-colors"
+                onClick={() => setLightbox({ photos: portraits, index: 0, onSelect: togglePortrait })}
+              >
+                👆 Листать фото
+              </button>
             </div>
             <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitPage ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
               {portraitPage ? '✅ Портрет выбран — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать портрет. Для просмотра крупнее используйте кнопку в правом нижнем углу фото'}
@@ -517,11 +523,17 @@ export default function ParentPage() {
 
         {step === 4 && (
           <StepCard wide title="Фото с друзьями" subtitle={`Эти фото разместятся рядом с вашим портретом на личной странице. Нужно выбрать ${groupMin === groupMax ? `${groupMin}` : `от ${groupMin} до ${groupMax}`} фото. Затемнённые фото с замком уже выбраны другими участниками.`}>
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-3 mb-4 flex-wrap">
               <span className={`badge-${groupPhotos.length >= groupMin && groupPhotos.length <= groupMax ? 'green' : 'blue'}`}>
                 Выбрано: {groupPhotos.length} / {groupMax}
               </span>
               <span className="text-xs text-gray-400">{groups.filter(g => !g.locked).length} из {groups.length} доступно</span>
+              <button
+                className="ml-auto text-xs text-blue-500 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-50 transition-colors"
+                onClick={() => setLightbox({ photos: groups, index: 0, onSelect: toggleGroup })}
+              >
+                👆 Листать фото
+              </button>
             </div>
             <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${
               groupPhotos.length >= groupMin && groupPhotos.length <= groupMax
@@ -702,6 +714,7 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
   const isSelected = selected.includes(photo.id)
   const isLocked = (photo.locked ?? false) && !isSelected
 
+  // Клавиатура
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight') onNavigate(Math.min(index + 1, photos.length - 1))
@@ -712,60 +725,126 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
     return () => window.removeEventListener('keydown', handler)
   }, [index, photos.length, onNavigate, onClose])
 
-  // Свайп на телефоне
-  const touchStart = useState<number | null>(null)
-  const handleTouchStart = (e: React.TouchEvent) => { (touchStart as any)[1](e.touches[0].clientX) }
+  // Свайп — через useRef, без стейта (нет лишних ре-рендеров)
+  const touchStartX = useRef<number | null>(null)
+  const touchStartY = useRef<number | null>(null)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+  }
   const handleTouchEnd = (e: React.TouchEvent) => {
-    const start = (touchStart as any)[0]
-    if (start === null) return
-    const diff = start - e.changedTouches[0].clientX
-    if (Math.abs(diff) > 50) {
-      if (diff > 0) onNavigate(Math.min(index + 1, photos.length - 1))
-      else onNavigate(Math.max(index - 1, 0))
-    }
-    ;(touchStart as any)[1](null)
+    if (touchStartX.current === null || touchStartY.current === null) return
+    const dx = touchStartX.current - e.changedTouches[0].clientX
+    const dy = touchStartY.current - e.changedTouches[0].clientY
+    touchStartX.current = null
+    touchStartY.current = null
+    // Игнорируем вертикальные жесты (скролл)
+    if (Math.abs(dy) > Math.abs(dx)) return
+    if (Math.abs(dx) < 50) return
+    if (dx > 0) onNavigate(Math.min(index + 1, photos.length - 1))
+    else onNavigate(Math.max(index - 1, 0))
   }
 
+  // Выбрать и перейти к следующему
+  const handleSelect = async () => {
+    if (!onSelect) return
+    await onSelect(photo.id)
+    // Если фото НЕ было выбрано — переходим к следующему после выбора
+    if (!isSelected && index < photos.length - 1) {
+      onNavigate(index + 1)
+    }
+  }
+
+  // Полоса прогресса выбора
+  const selectedCount = photos.filter(p => selected.includes(p.id)).length
+
   return (
-    <div className="fixed inset-0 bg-black/95 z-50 flex flex-col" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      <div className="flex items-center justify-between px-4 py-3">
-        <span className="text-white/60 text-sm">{index + 1} / {photos.length}</span>
+    <div
+      className="fixed inset-0 bg-black/95 z-50 flex flex-col select-none"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Шапка */}
+      <div className="flex items-center justify-between px-4 py-3 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <span className="text-white/60 text-sm">{index + 1} / {photos.length}</span>
+          {onSelect && selectedCount > 0 && (
+            <span className="bg-green-500/80 text-white text-xs px-2 py-0.5 rounded-full">
+              ✓ {selectedCount}
+            </span>
+          )}
+        </div>
         <button onClick={onClose} className="text-white/80 hover:text-white text-3xl leading-none w-10 h-10 flex items-center justify-center">×</button>
       </div>
 
-      <div className="flex-1 flex items-center justify-center relative px-4">
+      {/* Фото */}
+      <div className="flex-1 flex items-center justify-center relative min-h-0">
         {index > 0 && (
-          <button onClick={() => onNavigate(index - 1)} className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white text-2xl z-10">‹</button>
+          <button
+            onClick={() => onNavigate(index - 1)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/10 hover:bg-white/25 rounded-full flex items-center justify-center text-white text-3xl z-10"
+          >‹</button>
         )}
-        <img src={photo.url} alt="" className={`max-w-full object-contain rounded-lg ${isLocked ? 'opacity-40' : ''}`} style={{maxHeight: 'calc(100vh - 220px)'}} />
+        <img
+          src={photo.url}
+          alt=""
+          className={`max-w-full max-h-full object-contain rounded-lg transition-opacity ${isLocked ? 'opacity-40' : ''}`}
+          style={{ maxHeight: 'calc(100vh - 200px)', padding: '0 48px' }}
+          draggable={false}
+        />
         {index < photos.length - 1 && (
-          <button onClick={() => onNavigate(index + 1)} className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white text-2xl z-10">›</button>
+          <button
+            onClick={() => onNavigate(index + 1)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/10 hover:bg-white/25 rounded-full flex items-center justify-center text-white text-3xl z-10"
+          >›</button>
+        )}
+
+        {/* Подсказка свайпа — только на тач-устройствах, исчезает после первого свайпа */}
+        {photos.length > 1 && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-white/25 text-xs pointer-events-none hidden sm:hidden">
+            ← свайп →
+          </div>
         )}
       </div>
 
-      <div className="px-4 py-3 flex items-center justify-center">
+      {/* Кнопка выбора */}
+      <div className="px-4 py-3 flex items-center justify-center flex-shrink-0">
         {isLocked ? (
           <div className="text-white/40 text-sm px-6 py-3">🔒 Уже выбрано другим</div>
         ) : onSelect ? (
           <button
-            onClick={() => { onSelect(photo.id); onClose() }}
-            className={`px-10 py-3 rounded-xl text-sm font-medium transition-all
-              ${isSelected ? 'bg-green-500 text-white' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
+            onClick={handleSelect}
+            className={`px-10 py-3.5 rounded-xl text-sm font-semibold transition-all active:scale-95 ${
+              isSelected
+                ? 'bg-green-500 text-white shadow-lg shadow-green-500/30'
+                : 'bg-white text-gray-900 hover:bg-gray-100 shadow-lg'
+            }`}
           >
-            {isSelected ? '✓ Выбрано' : '✓ Выбрать это фото'}
+            {isSelected ? '✓ Выбрано — свайп дальше' : '✓ Выбрать это фото'}
           </button>
         ) : null}
       </div>
 
-      <div className="flex gap-2 px-4 pb-4 overflow-x-auto scroll-smooth justify-center" style={{scrollSnapType:'x mandatory', WebkitOverflowScrolling:'touch'}}>
+      {/* Плёнка миниатюр */}
+      <div
+        className="flex gap-2 px-4 pb-4 overflow-x-auto flex-shrink-0"
+        style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+      >
         {photos.map((p, i) => (
-          <button key={p.id} onClick={() => onNavigate(i)}
-            style={{scrollSnapAlign:'start'}}
-            className={`flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border-2 transition-all
-              ${i === index ? 'border-blue-400' : 'border-transparent opacity-50 hover:opacity-100'}
-              ${p.locked && !selected.includes(p.id) ? 'opacity-20' : ''}`}
+          <button
+            key={p.id}
+            onClick={() => onNavigate(i)}
+            style={{ scrollSnapAlign: 'start' }}
+            className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+              i === index ? 'border-blue-400 opacity-100' : 'border-transparent opacity-40 hover:opacity-70'
+            } ${p.locked && !selected.includes(p.id) ? 'opacity-20' : ''}`}
           >
-            <img src={p.url} alt="" className="w-full h-full object-cover" />
+            <img src={p.url} alt="" className="w-full h-full object-cover" draggable={false} />
+            {selected.includes(p.id) && (
+              <div className="absolute inset-0 flex items-center justify-center bg-green-500/40">
+                <span className="text-white text-lg">✓</span>
+              </div>
+            )}
           </button>
         ))}
       </div>
