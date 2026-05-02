@@ -835,14 +835,14 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
             key={p.id}
             onClick={() => onNavigate(i)}
             style={{ scrollSnapAlign: 'start' }}
-            className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+            className={`relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
               i === index ? 'border-blue-400 opacity-100' : 'border-transparent opacity-40 hover:opacity-70'
             } ${p.locked && !selected.includes(p.id) ? 'opacity-20' : ''}`}
           >
             <img src={p.url} alt="" className="w-full h-full object-cover" draggable={false} />
             {selected.includes(p.id) && (
-              <div className="absolute inset-0 flex items-center justify-center bg-green-500/40">
-                <span className="text-white text-lg">✓</span>
+              <div className="absolute inset-0 flex items-center justify-center bg-green-500/50 rounded-lg">
+                <span className="text-white text-lg font-bold">✓</span>
               </div>
             )}
           </button>
