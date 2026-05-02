@@ -746,7 +746,7 @@ function AlbumDetailModal({
   }, [album.id])
 
   useEffect(() => {
-    if (tab === 'spread' && (album as any).personal_spread_enabled) {
+    if ((tab === 'spread' || tab === 'surcharges') && (album as any).personal_spread_enabled) {
       api(`/api/tenant?action=personal_spread_stats&album_id=${album.id}`)
         .then(r => r.json())
         .then(d => setSpreadData(d.children ?? []))
@@ -1203,6 +1203,15 @@ function AlbumDetailModal({
                                               sub={g.filename}
                                             />
                                           ))}
+                                          {(det.spreadPhotos ?? []).length > 0 && (det.spreadPhotos as any[]).map((p: any, i: number) => (
+                                            <PhotoThumb
+                                              key={`sp-${i}`}
+                                              src={p.url}
+                                              fullSrc={p.url}
+                                              label={`Разворот ${i + 1}`}
+                                              sub={p.width && p.height ? `${p.width}×${p.height}` : p.filename}
+                                            />
+                                          ))}
                                           <div className="flex flex-col gap-1 text-xs text-gray-600 justify-center min-w-0">
                                             {det.text && (
                                               <div className="italic text-gray-500 max-w-xs">«{det.text}»</div>
@@ -1255,51 +1264,74 @@ function AlbumDetailModal({
               {/* Вкладка Доплаты */}
               {tab === 'surcharges' && (() => {
                 const surchargeChildren = children.filter(c => c.cover?.cover_option === 'other')
-                const total = surchargeChildren.reduce((sum, c) => sum + (c.cover?.surcharge ?? 0), 0)
+                const coverTotal = surchargeChildren.reduce((sum, c) => sum + (c.cover?.surcharge ?? 0), 0)
+                const spreadPrice = (album as any).personal_spread_price ?? 300
+                const spreadChildren = spreadData.filter(c => c.photos.length > 0)
+                const spreadTotal = spreadChildren.length * spreadPrice
+                const grandTotal = coverTotal + spreadTotal
                 return (
-                  <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold text-gray-800">
-                        Доплаты
-                        {surchargeChildren.length > 0 && (
-                          <span className="ml-2 text-sm font-normal text-gray-400">{surchargeChildren.length} чел.</span>
-                        )}
-                      </h3>
-                      {total > 0 && (
-                        <span className="text-amber-600 font-semibold text-lg">{total} ₽</span>
-                      )}
-                    </div>
-                    {surchargeChildren.length === 0 ? (
+                  <div className="space-y-6">
+                    {grandTotal === 0 ? (
                       <p className="text-sm text-gray-400 text-center py-8">Доплат нет</p>
                     ) : (
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-xs text-gray-400 uppercase tracking-wide border-b border-gray-100">
-                            <th className="pb-2 pr-4">Ученик</th>
-                            <th className="pb-2 pr-4">Класс</th>
-                            <th className="pb-2 pr-4">За что</th>
-                            <th className="pb-2 text-right">Сумма</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {surchargeChildren.map(c => (
-                            <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
-                              <td className="py-2.5 pr-4 font-medium">{c.full_name}</td>
-                              <td className="py-2.5 pr-4 text-gray-500">{c.class ?? '—'}</td>
-                              <td className="py-2.5 pr-4 text-gray-500">Другой портрет на обложку</td>
-                              <td className="py-2.5 text-right text-amber-600 font-medium">
-                                +{c.cover?.surcharge ?? 0} ₽
-                              </td>
-                            </tr>
-                          ))}
-                          {total > 0 && (
-                            <tr className="border-t-2 border-gray-200">
-                              <td colSpan={3} className="pt-2.5 pr-4 font-semibold text-gray-700">Итого</td>
-                              <td className="pt-2.5 text-right font-bold text-amber-600">{total} ₽</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                      <>
+                        {/* Доплаты за обложку */}
+                        {surchargeChildren.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-600 mb-3">Другой портрет на обложку</h4>
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-left text-xs text-gray-400 uppercase tracking-wide border-b border-gray-100">
+                                  <th className="pb-2 pr-4">Ученик</th>
+                                  <th className="pb-2 pr-4">Класс</th>
+                                  <th className="pb-2 text-right">Сумма</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {surchargeChildren.map(c => (
+                                  <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                                    <td className="py-2.5 pr-4 font-medium">{c.full_name}</td>
+                                    <td className="py-2.5 pr-4 text-gray-500">{c.class ?? '—'}</td>
+                                    <td className="py-2.5 text-right text-amber-600 font-medium">+{c.cover?.surcharge ?? 0} ₽</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        {/* Доплаты за личный разворот */}
+                        {spreadChildren.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-600 mb-3">Личный разворот</h4>
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-left text-xs text-gray-400 uppercase tracking-wide border-b border-gray-100">
+                                  <th className="pb-2 pr-4">Ученик</th>
+                                  <th className="pb-2 pr-4">Класс</th>
+                                  <th className="pb-2 pr-4">Фото</th>
+                                  <th className="pb-2 text-right">Сумма</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {spreadChildren.map(c => (
+                                  <tr key={c.child_id} className="border-b border-gray-50 hover:bg-gray-50">
+                                    <td className="py-2.5 pr-4 font-medium">{c.full_name}</td>
+                                    <td className="py-2.5 pr-4 text-gray-500">{c.class ?? '—'}</td>
+                                    <td className="py-2.5 pr-4 text-gray-400">{c.photos.length} шт.</td>
+                                    <td className="py-2.5 text-right text-amber-600 font-medium">+{spreadPrice} ₽</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        {/* Итого */}
+                        <div className="flex justify-end pt-2 border-t-2 border-gray-200">
+                          <span className="font-bold text-lg text-amber-600">{grandTotal} ₽</span>
+                        </div>
+                      </>
                     )}
                   </div>
                 )
@@ -5409,9 +5441,45 @@ function SpreadTab({ spreadData, album }: {
   const price = (album as any).personal_spread_price ?? 300
   const min = (album as any).personal_spread_min ?? 4
   const max = (album as any).personal_spread_max ?? 12
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
 
   const withPhotos = spreadData.filter(c => c.photos.length > 0)
   const totalPhotos = withPhotos.reduce((s, c) => s + c.photos.length, 0)
+
+  const ycBase = 'https://storage.yandexcloud.net/yearbook-photos/'
+  const photoUrl = (storagePath: string) => ycBase + storagePath.replace('yc:', '')
+
+  // Скачать ZIP через браузер — открываем ссылки по одной через <a download>
+  const downloadAll = async () => {
+    if (!withPhotos.length) return
+    setDownloading(true)
+    try {
+      // Собираем все фото и скачиваем через fetch+blob
+      const allPhotos = withPhotos.flatMap(c =>
+        c.photos.map(p => ({
+          url: photoUrl(p.storage_path),
+          filename: `${c.class ?? 'без_класса'}_${c.full_name}_${p.filename}`,
+        }))
+      )
+      const JSZip = (await import('jszip')).default
+      const zip = new JSZip()
+      await Promise.all(allPhotos.map(async (p) => {
+        const blob = await fetch(p.url).then(r => r.blob())
+        zip.file(p.filename, blob)
+      }))
+      const content = await zip.generateAsync({ type: 'blob' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(content)
+      a.download = `разворот_${album.title}.zip`
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } catch {
+      alert('Ошибка при создании архива')
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   return (
     <div>
@@ -5424,8 +5492,17 @@ function SpreadTab({ spreadData, album }: {
             </span>
           )}
         </h3>
-        <div className="text-xs text-gray-400">
-          {min}–{max} фото · +{price} ₽
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-400">{min}–{max} фото · +{price} ₽</span>
+          {withPhotos.length > 0 && (
+            <button
+              onClick={downloadAll}
+              disabled={downloading}
+              className="btn-secondary text-xs px-3 py-1.5"
+            >
+              {downloading ? 'Создаём архив...' : '⬇ Скачать всё'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -5434,47 +5511,68 @@ function SpreadTab({ spreadData, album }: {
           Пока никто не загружал фото для личного разворота
         </p>
       ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs text-gray-400 uppercase tracking-wide border-b border-gray-100">
-              <th className="pb-2 pr-4">Ученик</th>
-              <th className="pb-2 pr-4">Класс</th>
-              <th className="pb-2 pr-4">Фото</th>
-              <th className="pb-2 text-right">Доплата</th>
-            </tr>
-          </thead>
-          <tbody>
-            {withPhotos.map(c => (
-              <tr key={c.child_id} className="border-b border-gray-50 hover:bg-gray-50">
-                <td className="py-2.5 pr-4 font-medium">{c.full_name}</td>
-                <td className="py-2.5 pr-4 text-gray-500">{c.class ?? '—'}</td>
-                <td className="py-2.5 pr-4">
-                  <div className="flex items-center gap-2">
-                    <span className={`font-medium ${c.photos.length < min ? 'text-amber-500' : 'text-green-600'}`}>
-                      {c.photos.length}
-                    </span>
-                    <span className="text-gray-300">/</span>
-                    <span className="text-gray-400">{max}</span>
-                    {c.photos.length < min && (
-                      <span className="text-xs text-amber-500">мало</span>
-                    )}
+        <div className="space-y-3">
+          {withPhotos.map(c => (
+            <div key={c.child_id} className="border border-gray-100 rounded-xl overflow-hidden">
+              {/* Строка ученика */}
+              <button
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 text-left"
+                onClick={() => setExpanded(expanded === c.child_id ? null : c.child_id)}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="font-medium text-sm">{c.full_name}</span>
+                  <span className="text-xs text-gray-400">{c.class}</span>
+                  <span className={`text-xs font-medium ${c.photos.length < min ? 'text-amber-500' : 'text-green-600'}`}>
+                    {c.photos.length} фото{c.photos.length < min ? ` (мало, нужно ${min})` : ''}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-amber-600 text-sm font-medium">+{price} ₽</span>
+                  <span className="text-gray-400 text-xs">{expanded === c.child_id ? '▲' : '▼'}</span>
+                </div>
+              </button>
+
+              {/* Превью фото */}
+              {expanded === c.child_id && (
+                <div className="px-4 pb-4 border-t border-gray-50">
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mt-3">
+                    {c.photos.map((p, i) => (
+                      <a
+                        key={p.id}
+                        href={photoUrl(p.storage_path)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download={p.filename}
+                        title={p.filename}
+                        className="relative aspect-square block rounded-lg overflow-hidden border border-gray-100 hover:border-blue-300 transition-colors group"
+                      >
+                        <img
+                          src={photoUrl(p.storage_path)}
+                          alt={p.filename}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                          <span className="text-white text-lg opacity-0 group-hover:opacity-100">⬇</span>
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs text-center py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {i + 1}
+                        </div>
+                      </a>
+                    ))}
                   </div>
-                </td>
-                <td className="py-2.5 text-right text-amber-600 font-medium">
-                  +{price} ₽
-                </td>
-              </tr>
-            ))}
-            {withPhotos.length > 0 && (
-              <tr className="border-t-2 border-gray-200">
-                <td colSpan={3} className="pt-2.5 pr-4 font-semibold text-gray-700">Итого</td>
-                <td className="pt-2.5 text-right font-bold text-amber-600">
-                  {withPhotos.length * price} ₽
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Итого */}
+          <div className="flex justify-end pt-2 border-t border-gray-100">
+            <span className="text-sm font-semibold text-gray-700">
+              Итого доплата за разворот:&nbsp;
+              <span className="text-amber-600">{withPhotos.length * price} ₽</span>
+            </span>
+          </div>
+        </div>
       )}
     </div>
   )

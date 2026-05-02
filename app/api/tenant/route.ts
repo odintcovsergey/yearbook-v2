@@ -281,12 +281,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Ученик не найден' }, { status: 404 })
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const [selectionsRes, textRes, contactRes, coverRes] = await Promise.all([
+    const [selectionsRes, textRes, contactRes, coverRes, spreadRes] = await Promise.all([
       supabaseAdmin.from('selections').select('photo_id, selection_type, photos(filename, storage_path, thumb_path)').eq('child_id', childId),
       supabaseAdmin.from('student_texts').select('text').eq('child_id', childId).maybeSingle(),
       supabaseAdmin.from('parent_contacts').select('parent_name, phone').eq('child_id', childId).maybeSingle(),
       supabaseAdmin.from('cover_selections').select('cover_option, surcharge').eq('child_id', childId).maybeSingle(),
+      supabaseAdmin.from('personal_spread_photos').select('id, filename, storage_path, width, height, file_size, sort_order').eq('child_id', childId).order('sort_order'),
     ])
 
     const selections = (selectionsRes.data ?? []).map((s: any) => ({
@@ -296,11 +296,21 @@ export async function GET(req: NextRequest) {
       thumb: getThumbUrl(s.photos?.storage_path ?? '', s.photos?.thumb_path ?? null),
     }))
 
+    const spreadPhotos = (spreadRes.data ?? []).map((p: any) => ({
+      id: p.id,
+      filename: p.filename,
+      url: getPhotoUrl(p.storage_path),
+      width: p.width,
+      height: p.height,
+      file_size: p.file_size,
+    }))
+
     return NextResponse.json({
       selections,
       text: textRes.data?.text ?? '',
       contact: contactRes.data ?? null,
       cover: coverRes.data ?? null,
+      spreadPhotos,
     })
   }
 

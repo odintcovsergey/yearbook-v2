@@ -43,6 +43,7 @@ export default function ParentPage() {
   const [personalSpreadMax, setPersonalSpreadMax] = useState(12)
   const [spreadPhotos, setSpreadPhotos] = useState<{id:string;filename:string;storage_path:string;width:number;height:number;file_size:number}[]>([])
   const [spreadUploading, setSpreadUploading] = useState(false)
+  const [spreadProgress, setSpreadProgress] = useState<{done: number; total: number}>({ done: 0, total: 0 })
   const [spreadWarnings, setSpreadWarnings] = useState<string[]>([])
   const [quotes, setQuotes] = useState<any[]>([])
   const [takenQuoteIds, setTakenQuoteIds] = useState<string[]>([])
@@ -644,10 +645,12 @@ export default function ParentPage() {
                   onChange={async (e) => {
                     const files = Array.from(e.target.files ?? [])
                     if (!files.length) return
+                    const toUpload = files.slice(0, personalSpreadMax - spreadPhotos.length)
                     setSpreadUploading(true)
+                    setSpreadProgress({ done: 0, total: toUpload.length })
                     const newWarnings: string[] = []
-                    for (const file of files) {
-                      if (spreadPhotos.length >= personalSpreadMax) break
+                    let done = 0
+                    for (const file of toUpload) {
                       const fd = new FormData()
                       fd.append('token', token as string)
                       fd.append('file', file)
@@ -663,14 +666,27 @@ export default function ParentPage() {
                       } catch {
                         newWarnings.push(`Ошибка загрузки ${file.name}`)
                       }
+                      done++
+                      setSpreadProgress({ done, total: toUpload.length })
                     }
                     setSpreadWarnings(newWarnings)
                     setSpreadUploading(false)
+                    setSpreadProgress({ done: 0, total: 0 })
                     e.target.value = ''
                   }}
                 />
                 {spreadUploading ? (
-                  <span className="text-sm text-gray-400">Загружаем...</span>
+                  <div className="w-full px-4">
+                    <p className="text-sm text-gray-500 mb-2 text-center">
+                      Загружаем {spreadProgress.done} из {spreadProgress.total}...
+                    </p>
+                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                        style={{ width: `${spreadProgress.total ? (spreadProgress.done / spreadProgress.total) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
                 ) : (
                   <>
                     <span className="text-2xl">📷</span>
