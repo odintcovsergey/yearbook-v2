@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -367,7 +367,7 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
   const [showMove, setShowMove] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const [showAlbumForm, setShowAlbumForm] = useState(false)
-  const moveButtonRef = React.useRef<HTMLButtonElement>(null)
+  const moveButtonRef = useRef<HTMLButtonElement>(null)
   const isOverdueFlag = deal.deadline && new Date(deal.deadline) < new Date() && !deal.closed_at
   const clientForDeal = clients.find(c => c.id === deal.client_id)
 
