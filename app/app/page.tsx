@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import CRMModal from './CRMModal'
 
 // ============================================================
 // ТИПЫ
@@ -126,6 +127,7 @@ export default function AppPage() {
   const [showQuotes, setShowQuotes] = useState(false)
   const [showTeam, setShowTeam] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showCRM, setShowCRM] = useState(false)
 
   const notify = (text: string, type: 'ok' | 'err' = 'ok') => {
     setMsg({ text, type })
@@ -283,6 +285,15 @@ export default function AppPage() {
                 {summary && <span className="text-gray-400 ml-1.5">{summary.albums_archived}</span>}
               </button>
             </div>
+
+            <button
+              onClick={() => setShowCRM(true)}
+              className="btn-ghost text-sm"
+              type="button"
+              title="CRM — клиенты и сделки"
+            >
+              CRM
+            </button>
 
             <button
               onClick={() => setShowQuotes(true)}
@@ -443,6 +454,13 @@ export default function AppPage() {
           onClose={() => setShowSettings(false)}
           onNotify={(text) => notify(text, 'ok')}
           onError={(text) => notify(text, 'err')}
+        />
+      )}
+
+      {showCRM && currentUserId && (
+        <CRMModal
+          onClose={() => setShowCRM(false)}
+          currentUserId={currentUserId}
         />
       )}
     </div>
