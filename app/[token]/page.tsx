@@ -339,15 +339,10 @@ export default function ParentPage() {
 
         {step === 1 && (
           <StepCard wide title="Портрет для личной страницы" subtitle="Это фото появится на вашей личной странице в альбоме.">
-            <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <div className="flex items-center gap-3 mb-4">
               <span className={`badge-${portraitPage ? 'green' : 'blue'}`}>Выбрано: {portraitPage ? 1 : 0} / 1</span>
               <span className="text-xs text-gray-400">{portraits.filter(p => !p.locked).length} из {portraits.length} доступно</span>
-              <button
-                className="ml-auto text-xs text-blue-500 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-50 transition-colors"
-                onClick={() => setLightbox({ photos: portraits, index: 0, onSelect: togglePortrait })}
-              >
-                👆 Листать фото
-              </button>
+
             </div>
             <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitPage ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
               {portraitPage ? '✅ Портрет выбран — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать портрет. Для просмотра крупнее используйте кнопку в правом нижнем углу фото'}
@@ -523,17 +518,12 @@ export default function ParentPage() {
 
         {step === 4 && (
           <StepCard wide title="Фото с друзьями" subtitle={`Эти фото разместятся рядом с вашим портретом на личной странице. Нужно выбрать ${groupMin === groupMax ? `${groupMin}` : `от ${groupMin} до ${groupMax}`} фото. Затемнённые фото с замком уже выбраны другими участниками.`}>
-            <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <div className="flex items-center gap-3 mb-4">
               <span className={`badge-${groupPhotos.length >= groupMin && groupPhotos.length <= groupMax ? 'green' : 'blue'}`}>
                 Выбрано: {groupPhotos.length} / {groupMax}
               </span>
               <span className="text-xs text-gray-400">{groups.filter(g => !g.locked).length} из {groups.length} доступно</span>
-              <button
-                className="ml-auto text-xs text-blue-500 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-50 transition-colors"
-                onClick={() => setLightbox({ photos: groups, index: 0, onSelect: toggleGroup })}
-              >
-                👆 Листать фото
-              </button>
+
             </div>
             <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${
               groupPhotos.length >= groupMin && groupPhotos.length <= groupMax
@@ -745,14 +735,9 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
     else onNavigate(Math.max(index - 1, 0))
   }
 
-  // Выбрать и перейти к следующему
   const handleSelect = async () => {
     if (!onSelect) return
     await onSelect(photo.id)
-    // Если фото НЕ было выбрано — переходим к следующему после выбора
-    if (!isSelected && index < photos.length - 1) {
-      onNavigate(index + 1)
-    }
   }
 
   // Полоса прогресса выбора
@@ -820,7 +805,7 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
                 : 'bg-white text-gray-900 hover:bg-gray-100 shadow-lg'
             }`}
           >
-            {isSelected ? '✓ Выбрано — свайп дальше' : '✓ Выбрать это фото'}
+            {isSelected ? '✓ Выбрано' : '✓ Выбрать это фото'}
           </button>
         ) : null}
       </div>
