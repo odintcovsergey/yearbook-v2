@@ -1089,8 +1089,9 @@ export async function POST(req: NextRequest) {
     ])
 
     const timestamp = Date.now()
-    const fullPath  = `${albumId}/${type}/${timestamp}_${originalName}.webp`
-    const thumbPath = `${albumId}/${type}/thumbs/${timestamp}_${originalName}.webp`
+    const baseName  = originalName.replace(/\.[^.]+$/, '')  // убираем расширение
+    const fullPath  = `${albumId}/${type}/${timestamp}_${baseName}.webp`
+    const thumbPath = `${albumId}/${type}/thumbs/${timestamp}_${baseName}.webp`
 
     const [fullUpload, thumbUpload] = await Promise.all([
       supabaseAdmin.storage.from('photos').upload(fullPath, fullBuffer, { contentType: 'image/webp', upsert: false }),

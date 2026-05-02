@@ -802,6 +802,24 @@ export default function ParentPage() {
               )}
               {/* Текст */}
               {textEnabled && <SummaryRow label="Текст" value={studentText || '(не заполнен)'} multiline />}
+              {/* Личный разворот */}
+              {personalSpreadEnabled && spreadPhotos.length > 0 && (
+                <div className="py-3 border-b border-gray-100">
+                  <span className="text-xs text-gray-400 block mb-2">
+                    Личный разворот ({spreadPhotos.length} фото · +{personalSpreadPrice} ₽)
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {spreadPhotos.map((p, i) => (
+                      <img
+                        key={p.id}
+                        src={`https://storage.yandexcloud.net/yearbook-photos/${p.storage_path.replace('yc:', '')}`}
+                        alt={`фото ${i + 1}`}
+                        className="w-16 h-16 object-cover rounded-lg border-2 border-gray-100"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
               <SummaryRow label="Телефон" value={phone} />
             </div>
             {submitError && <div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-sm mb-4">{submitError}</div>}
