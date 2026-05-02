@@ -837,12 +837,12 @@ function AlbumDetailModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 z-40 flex items-start justify-center py-8 px-4 overflow-y-auto"
+      className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-4"
       onMouseDown={handleBackdropMouseDown}
       onMouseUp={handleBackdropMouseUp}
     >
-      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-xl my-auto">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl">
+      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-xl flex flex-col" style={{ height: '90vh' }}>
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0 rounded-t-2xl">
           <div>
             <h3 className="text-lg font-semibold">{album.title}</h3>
             <div className="text-xs text-gray-500 mt-0.5">
@@ -897,7 +897,7 @@ function AlbumDetailModal({
         </div>
 
         {/* Вкладки */}
-        <div className="px-6 pt-4 border-b border-gray-100 flex gap-1 overflow-x-auto">
+        <div className="px-6 pt-4 border-b border-gray-100 flex gap-1 overflow-x-auto flex-shrink-0">
           {([
             { id: 'overview', label: 'Обзор' },
             { id: 'children', label: 'Ученики' },
@@ -922,7 +922,7 @@ function AlbumDetailModal({
           ))}
         </div>
 
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto flex-1">
           {loading ? (
             <div className="text-center text-gray-400 text-sm py-8">Загружаем данные...</div>
           ) : (
