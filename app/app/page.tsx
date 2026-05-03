@@ -1430,6 +1430,7 @@ type FormData = {
   group_exclusive: boolean
   personal_spread_enabled: boolean
   personal_spread_price: string
+  personal_spread_price_mode: string
   personal_spread_min: string
   personal_spread_max: string
   text_enabled: boolean
@@ -1460,6 +1461,7 @@ function emptyForm(): FormData {
     group_exclusive: true,
     personal_spread_enabled: false,
     personal_spread_price: '300',
+    personal_spread_price_mode: 'paid',
     personal_spread_min: '4',
     personal_spread_max: '12',
     text_enabled: true,
@@ -1502,6 +1504,7 @@ function AlbumFormModal({
         group_exclusive: (album as any).group_exclusive ?? true,
         personal_spread_enabled: (album as any).personal_spread_enabled ?? false,
         personal_spread_price: String((album as any).personal_spread_price ?? 300),
+        personal_spread_price_mode: ((album as any).personal_spread_price ?? 300) === 0 ? 'free' : 'paid',
         personal_spread_min: String((album as any).personal_spread_min ?? 4),
         personal_spread_max: String((album as any).personal_spread_max ?? 12),
         text_enabled: (album as any).text_enabled ?? true,
@@ -1552,6 +1555,7 @@ function AlbumFormModal({
       group_exclusive: t.group_exclusive,
       personal_spread_enabled: t.personal_spread_enabled ?? false,
       personal_spread_price: String(t.personal_spread_price ?? 300),
+      personal_spread_price_mode: (t.personal_spread_price ?? 300) === 0 ? 'free' : 'paid',
       personal_spread_min: String(t.personal_spread_min ?? 4),
       personal_spread_max: String(t.personal_spread_max ?? 12),
       text_enabled: t.text_enabled,
@@ -1804,7 +1808,7 @@ function AlbumFormModal({
           </div>
 
           {/* Обложка */}
-          <div className="border-t border-gray-100 pt-5">
+          <div className="border-t-2 border-gray-200 pt-5 mt-1">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Обложка (второе портретное фото)
             </label>
@@ -1847,7 +1851,7 @@ function AlbumFormModal({
           </div>
 
           {/* Групповые фото */}
-          <div className="border-t border-gray-100 pt-5">
+          <div className="border-t-2 border-gray-200 pt-5 mt-1">
             <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
               <input
                 type="checkbox"
@@ -1903,7 +1907,7 @@ function AlbumFormModal({
           </div>
 
           {/* Личный разворот */}
-          <div className="border-t border-gray-100 pt-5">
+          <div className="border-t-2 border-gray-200 pt-5 mt-1">
             <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
               <input
                 type="checkbox"
@@ -1916,6 +1920,31 @@ function AlbumFormModal({
             </label>
             {form.personal_spread_enabled && (
               <div className="space-y-3 pl-6">
+                {/* Режим цены */}
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { v: 'paid', l: 'С доплатой' },
+                    { v: 'free', l: 'Без цены' },
+                  ].map(({ v, l }) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => {
+                        set('personal_spread_price_mode', v)
+                        if (v === 'free') set('personal_spread_price', '0')
+                        else if (form.personal_spread_price === '0') set('personal_spread_price', '300')
+                      }}
+                      className={`px-4 py-1.5 rounded-full text-sm border transition-colors ${
+                        (form.personal_spread_price_mode ?? 'paid') === v
+                          ? 'bg-gray-900 text-white border-gray-900'
+                          : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                      }`}
+                      disabled={loading}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Мин. фото</label>
@@ -1929,23 +1958,27 @@ function AlbumFormModal({
                       onChange={(e) => set('personal_spread_max', e.target.value)}
                       className="input" min={1} max={12} disabled={loading} />
                   </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Цена (₽)</label>
-                    <input type="number" value={form.personal_spread_price}
-                      onChange={(e) => set('personal_spread_price', e.target.value)}
-                      className="input" min={0} disabled={loading} />
-                  </div>
+                  {(form.personal_spread_price_mode ?? 'paid') === 'paid' && (
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Цена (₽)</label>
+                      <input type="number" value={form.personal_spread_price}
+                        onChange={(e) => set('personal_spread_price', e.target.value)}
+                        className="input" min={0} disabled={loading} />
+                    </div>
+                  )}
                 </div>
                 <p className="text-xs text-gray-400">
                   Родитель загружает до {form.personal_spread_max} своих фото (10×15 см, до 10 МБ каждое).
-                  Доплата +{form.personal_spread_price} ₽ к заказу.
+                  {(form.personal_spread_price_mode ?? 'paid') === 'paid'
+                    ? ` Доплата +${form.personal_spread_price} ₽ к заказу.`
+                    : ' Доплата не отображается родителям.'}
                 </p>
               </div>
             )}
           </div>
 
           {/* Текст от ученика */}
-          <div className="border-t border-gray-100 pt-5">
+          <div className="border-t-2 border-gray-200 pt-5 mt-1">
             <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
               <input
                 type="checkbox"

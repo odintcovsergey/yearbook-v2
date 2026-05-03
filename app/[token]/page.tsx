@@ -603,7 +603,9 @@ export default function ParentPage() {
                 поездок или любых других памятных моментов. Они займут отдельный разворот в вашем альбоме рядом
                 с классными фото. Через 10 лет вы откроете альбом — и это будут именно ваши воспоминания.
               </p>
-              <p className="mt-2 font-medium text-blue-800">Доплата всего +{personalSpreadPrice} ₽ к стоимости альбома</p>
+              {personalSpreadPrice > 0 && (
+                <p className="mt-2 font-medium text-blue-800">Доплата всего +{personalSpreadPrice} ₽ к стоимости альбома</p>
+              )}
             </div>
 
             {/* Предупреждения о низком разрешении */}
@@ -823,7 +825,7 @@ export default function ParentPage() {
                 return (
                   <div className="py-2 border-b border-gray-100">
                     <span className="text-xs text-gray-400 block mb-2">
-                      Личный разворот ({spreadPhotos.length} фото · +{personalSpreadPrice} ₽)
+                      Личный разворот ({spreadPhotos.length} фото{personalSpreadPrice > 0 ? ` · +${personalSpreadPrice} ₽` : ''})
                     </span>
                     <div className="flex gap-2 flex-wrap">
                       {spreadAsPhotos.map((p, i) => (
