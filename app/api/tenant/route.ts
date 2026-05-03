@@ -9,7 +9,7 @@ export const revalidate = 0
 // ============================================================
 // Хелпер: проверка, что альбом принадлежит tenant'у
 // ============================================================
-async function assertAlbumAccess(auth: AuthContext, albumId: string): Promise<boolean> {
+async function assertAlbumAccess(auth: AuthContext, albumId: string, tenantIdOverride?: string): Promise<boolean> {
   if (auth.role === 'superadmin') return true
 
   const { data } = await supabaseAdmin
@@ -18,7 +18,7 @@ async function assertAlbumAccess(auth: AuthContext, albumId: string): Promise<bo
     .eq('id', albumId)
     .single()
 
-  return data?.tenant_id === auth.tenantId
+  return data?.tenant_id === (tenantIdOverride ?? auth.tenantId)
 }
 
 // ============================================================
@@ -213,7 +213,7 @@ export async function GET(req: NextRequest) {
   // album — данные конкретного альбома (с проверкой доступа)
   // ----------------------------------------------------------
   if (action === 'album' && albumId) {
-    if (!(await assertAlbumAccess(auth, albumId))) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
 
@@ -230,7 +230,7 @@ export async function GET(req: NextRequest) {
   // album_stats — детальная статистика по альбому
   // ----------------------------------------------------------
   if (action === 'album_stats' && albumId) {
-    if (!(await assertAlbumAccess(auth, albumId))) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
 
@@ -264,7 +264,7 @@ export async function GET(req: NextRequest) {
   // children — список учеников альбома
   // ----------------------------------------------------------
   if (action === 'children' && albumId) {
-    if (!(await assertAlbumAccess(auth, albumId))) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
 
@@ -371,7 +371,7 @@ export async function GET(req: NextRequest) {
   // teachers — список учителей альбома
   // ----------------------------------------------------------
   if (action === 'teachers' && albumId) {
-    if (!(await assertAlbumAccess(auth, albumId))) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
 
@@ -388,7 +388,7 @@ export async function GET(req: NextRequest) {
   // responsible — ответственный родитель альбома
   // ----------------------------------------------------------
   if (action === 'responsible' && albumId) {
-    if (!(await assertAlbumAccess(auth, albumId))) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
 
@@ -405,7 +405,7 @@ export async function GET(req: NextRequest) {
   // photos — список фото альбома (с опциональным фильтром по типу и тегами)
   // ----------------------------------------------------------
   if (action === 'photos' && albumId) {
-    if (!(await assertAlbumAccess(auth, albumId))) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
 
@@ -658,7 +658,7 @@ export async function GET(req: NextRequest) {
   // для вкладки "Разворот" в AlbumDetailModal
   // ----------------------------------------------------------
   if (action === 'personal_spread_stats' && albumId) {
-    if (!(await assertAlbumAccess(auth, albumId))) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
     const { data, error } = await supabaseAdmin
@@ -745,7 +745,7 @@ export async function GET(req: NextRequest) {
     // Динамика по дням — если запрошен конкретный альбом
     let daily: { date: string; submitted: number; started: number }[] = []
     if (albumId) {
-      if (!(await assertAlbumAccess(auth, albumId))) {
+      if (!(await assertAlbumAccess(auth, albumId, tid))) {
         return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
       }
       const albumChildren = children.filter(c => c.album_id === albumId)
@@ -787,7 +787,7 @@ export async function GET(req: NextRequest) {
   // Учителя идут в конце после пустой строки-разделителя с Класс=УЧИТЕЛЬ
   // ----------------------------------------------------------
   if (action === 'export_csv' && albumId) {
-    if (!(await assertAlbumAccess(auth, albumId))) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
 
