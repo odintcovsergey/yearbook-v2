@@ -153,7 +153,10 @@ export async function GET(req: NextRequest) {
     const leads = leadsRes.data ?? []
     const newLeads = leads.filter(l => l.status === 'new').length
 
-    const isMainTenant = tid === process.env.DEFAULT_TENANT_ID
+    // Проверяем по slug — надёжнее чем сравнение с env переменной
+    const { data: tenantData } = await supabaseAdmin
+      .from('tenants').select('slug').eq('id', tid).single()
+    const isMainTenant = tenantData?.slug === 'main'
     return NextResponse.json({
       albums: albums.map(a => ({
         ...a,
