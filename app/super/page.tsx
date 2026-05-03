@@ -13,6 +13,7 @@ type Tenant = {
   id: string
   name: string
   slug: string
+  assigned_manager_id?: string
   plan: string
   city: string | null
   phone: string | null
@@ -159,7 +160,6 @@ export default function SuperPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <a href="/admin" className="btn-ghost">Старая админка</a>
             <button onClick={handleLogout} className="btn-secondary">Выйти</button>
           </div>
         </div>
@@ -210,6 +210,8 @@ export default function SuperPage() {
             tenants={tenants}
             onSelectTenant={setSelectedPartnerTenant}
             selectedTenant={selectedPartnerTenant}
+            currentUserId={auth?.user?.id ?? ''}
+            isSuperAdmin={auth?.user?.role === 'superadmin'}
           />
         )}
 
@@ -678,6 +680,27 @@ function TenantDetailModal({
 }) {
   const [mode, setMode] = useState<'view' | 'edit' | 'delete' | 'create_user'>('view')
   const [backdropStart, setBackdropStart] = useState(false)
+  const [okeybookManagers, setOkeybookManagers] = useState<{id:string;full_name:string;email:string;role:string}[]>([])
+  const [assignedManagerId, setAssignedManagerId] = useState<string>(tenant.assigned_manager_id ?? '')
+  const [assigningManager, setAssigningManager] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/super?action=okeybook_managers')
+      .then(r => r.json())
+      .then(d => setOkeybookManagers(d.managers ?? []))
+  }, [])
+
+  const handleAssignManager = async (managerId: string) => {
+    setAssigningManager(true)
+    setAssignedManagerId(managerId)
+    await fetch('/api/super', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'assign_manager', tenant_id: tenant.id, manager_id: managerId || null }),
+    })
+    setAssigningManager(false)
+    onNotify('Менеджер назначен')
+  }
 
   const handleBackdropMouseDown = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) setBackdropStart(true)
@@ -892,6 +915,36 @@ function TenantDetailModal({
                 />
                 <InfoRow label="Создан" value={new Date(tenant.created_at).toLocaleDateString('ru-RU')} />
               </div>
+
+              {/* Назначение менеджера */}
+              {tenant.slug !== 'main' && (
+                <div className="pt-3 border-t border-gray-100">
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                    Ответственный менеджер OkeyBook
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      className="input flex-1 text-sm"
+                      value={assignedManagerId}
+                      onChange={e => handleAssignManager(e.target.value)}
+                      disabled={assigningManager}
+                    >
+                      <option value="">— Не назначен</option>
+                      {okeybookManagers.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.full_name || m.email} ({m.role === 'owner' ? 'Владелец' : 'Менеджер'})
+                        </option>
+                      ))}
+                    </select>
+                    {assigningManager && <span className="text-xs text-gray-400">Сохраняем...</span>}
+                  </div>
+                  {assignedManagerId && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Менеджер видит этого партнёра в разделе «Партнёры»
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Действия */}
               <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
@@ -1528,10 +1581,12 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
 // ПАРТНЁРЫ — просмотр альбомов и статистики каждого тенанта
 // ============================================================
 
-function PartnersView({ tenants, selectedTenant, onSelectTenant }: {
+function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, isSuperAdmin }: {
   tenants: Tenant[]
   selectedTenant: Tenant | null
   onSelectTenant: (t: Tenant | null) => void
+  currentUserId: string
+  isSuperAdmin: boolean
 }) {
   const [albums, setAlbums] = useState<any[]>([])
   const [albumsLoading, setAlbumsLoading] = useState(false)
@@ -1541,7 +1596,11 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant }: {
   const [search, setSearch] = useState('')
 
   // Не показываем главный тенант (OkeyBook)
-  const partners = tenants.filter(t => t.slug !== 'main' && t.is_active)
+  // Менеджер видит только назначенных ему партнёров
+  const partners = tenants.filter(t =>
+    t.slug !== 'main' && t.is_active &&
+    (isSuperAdmin || (t as any).assigned_manager_id === currentUserId)
+  )
 
   const loadAlbums = async (tenant: Tenant) => {
     setAlbumsLoading(true)

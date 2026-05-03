@@ -56,6 +56,20 @@ export async function GET(req: NextRequest) {
   }
 
   // --- Детали конкретного tenant'а ---
+  // ── okeybook_managers — сотрудники OkeyBook для назначения ─────────────────
+  if (action === 'okeybook_managers') {
+    const mainTenantId = process.env.DEFAULT_TENANT_ID
+    const { data, error } = await supabaseAdmin
+      .from('users')
+      .select('id, full_name, email, role')
+      .eq('tenant_id', mainTenantId)
+      .eq('is_active', true)
+      .neq('role', 'superadmin')
+      .order('full_name')
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ managers: data ?? [] })
+  }
+
   // ── tenant_albums — список альбомов тенанта для менеджера ───────────────────
   if (action === 'tenant_albums' && tenantId) {
     const { data, error } = await supabaseAdmin
@@ -363,6 +377,18 @@ export async function POST(req: NextRequest) {
   }
 
   // --- Обновить tenant ---
+  // ── assign_manager — назначить менеджера фотографу ─────────────────────────
+  if (body.action === 'assign_manager') {
+    const { tenant_id, manager_id } = body
+    if (!tenant_id) return NextResponse.json({ error: 'tenant_id required' }, { status: 400 })
+    const { error } = await supabaseAdmin
+      .from('tenants')
+      .update({ assigned_manager_id: manager_id || null })
+      .eq('id', tenant_id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  }
+
   if (body.action === 'update_tenant') {
     const { tenant_id, updates } = body
     if (!tenant_id || !updates) {

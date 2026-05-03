@@ -65,3 +65,9 @@ values
   (null, 'Индивидуальный', 0),
   (null, 'Фотопапка / Мини / Лайт', 0)
 on conflict (tenant_id, template_title) do nothing;
+
+-- Менеджер фотографов: assigned_manager_id в tenants
+alter table tenants
+  add column if not exists assigned_manager_id uuid references users(id) on delete set null;
+
+create index if not exists tenants_assigned_manager_idx on tenants(assigned_manager_id);
