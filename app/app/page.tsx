@@ -1809,9 +1809,7 @@ function AlbumFormModal({
 
           {/* Обложка */}
           <div className="border-t-2 border-gray-200 pt-5 mt-1">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Обложка (второе портретное фото)
-            </label>
+            <p className="text-sm font-semibold text-blue-700 mb-2">Обложка <span className="font-normal text-gray-400 text-xs">(второе портретное фото)</span></p>
             <div className="flex flex-wrap gap-2 mb-3">
               {[
                 { v: 'required', l: 'Обязательна (все платят)' },
@@ -1860,7 +1858,7 @@ function AlbumFormModal({
                 className="rounded"
                 disabled={loading}
               />
-              Групповые фото (с друзьями)
+              <span className="font-semibold text-blue-700">Групповые фото</span> <span className="text-gray-400 font-normal text-xs">(с друзьями)</span>
             </label>
             {form.group_enabled && (
               <div className="space-y-3 pl-6">
@@ -1916,7 +1914,7 @@ function AlbumFormModal({
                 className="rounded"
                 disabled={loading}
               />
-              Личный разворот (родитель загружает свои фото)
+              <span className="font-semibold text-blue-700">Личный разворот</span> <span className="text-gray-400 font-normal text-xs">(родитель загружает свои фото)</span>
             </label>
             {form.personal_spread_enabled && (
               <div className="space-y-3 pl-6">
@@ -1929,11 +1927,7 @@ function AlbumFormModal({
                     <button
                       key={v}
                       type="button"
-                      onClick={() => {
-                        set('personal_spread_price_mode', v)
-                        if (v === 'free') set('personal_spread_price', '0')
-                        else if (form.personal_spread_price === '0') set('personal_spread_price', '300')
-                      }}
+                      onClick={() => set('personal_spread_price_mode', v)}
                       className={`px-4 py-1.5 rounded-full text-sm border transition-colors ${
                         (form.personal_spread_price_mode ?? 'paid') === v
                           ? 'bg-gray-900 text-white border-gray-900'
@@ -1958,20 +1952,19 @@ function AlbumFormModal({
                       onChange={(e) => set('personal_spread_max', e.target.value)}
                       className="input" min={1} max={12} disabled={loading} />
                   </div>
-                  {(form.personal_spread_price_mode ?? 'paid') === 'paid' && (
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Цена (₽)</label>
-                      <input type="number" value={form.personal_spread_price}
-                        onChange={(e) => set('personal_spread_price', e.target.value)}
-                        className="input" min={0} disabled={loading} />
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Цена (₽)</label>
+                    <input type="number" value={form.personal_spread_price}
+                      onChange={(e) => set('personal_spread_price', e.target.value)}
+                      className="input" min={0} disabled={loading} />
+                  </div>
                 </div>
                 <p className="text-xs text-gray-400">
                   Родитель загружает до {form.personal_spread_max} своих фото (10×15 см, до 10 МБ каждое).
+                  Доплата +{form.personal_spread_price} ₽ —
                   {(form.personal_spread_price_mode ?? 'paid') === 'paid'
-                    ? ` Доплата +${form.personal_spread_price} ₽ к заказу.`
-                    : ' Доплата не отображается родителям.'}
+                    ? ' родитель видит сумму.'
+                    : ' родитель суммы не видит (скрытая доплата).'}
                 </p>
               </div>
             )}
@@ -1987,7 +1980,7 @@ function AlbumFormModal({
                 className="rounded"
                 disabled={loading}
               />
-              Текст от ученика
+              <span className="font-semibold text-blue-700">Текст от ученика</span>
             </label>
             {form.text_enabled && (
               <div className="space-y-3 pl-6">
