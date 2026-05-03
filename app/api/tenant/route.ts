@@ -92,9 +92,14 @@ export async function GET(req: NextRequest) {
 
   const action = req.nextUrl.searchParams.get('action')
   const albumId = req.nextUrl.searchParams.get('album_id')
-  // view_as позволяет суперадмину смотреть кабинет любого партнёра
+  // view_as позволяет суперадмину и сотрудникам OkeyBook смотреть кабинет партнёра
   const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
-  const tid = (auth.role === 'superadmin' && viewAsTenantId) ? viewAsTenantId : auth.tenantId
+  // Проверяем что текущий пользователь в main тенанте
+  const { data: currentTenantData } = viewAsTenantId
+    ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+    : { data: null }
+  const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
+  const tid = (canViewAs && viewAsTenantId) ? viewAsTenantId : auth.tenantId
 
   // ----------------------------------------------------------
   // partners_list — список партнёров для сотрудников OkeyBook

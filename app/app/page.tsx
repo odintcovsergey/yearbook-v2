@@ -5893,42 +5893,14 @@ function PartnersDashboardModal({ onClose, onNotify, onError }: {
   const [search, setSearch] = useState('')
 
   const [showCreatePartner, setShowCreatePartner] = useState(false)
-  const [createForm, setCreateForm] = useState({ name: '', city: '', email: '' })
-  const [creating, setCreating] = useState(false)
 
-  useEffect(() => {
+  const reloadTenants = () => {
     fetch('/api/tenant?action=partners_list')
       .then(r => r.json())
       .then(d => setTenants(d.tenants ?? []))
-  }, [])
-
-  const handleCreatePartner = async () => {
-    if (!createForm.name.trim()) return
-    setCreating(true)
-    const res = await fetch('/api/super', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'create_tenant',
-        name: createForm.name,
-        city: createForm.city,
-        email: createForm.email,
-        slug: createForm.name.toLowerCase().replace(/[^a-zа-яёa-z0-9]/gi, '_').slice(0, 30) + '_' + Date.now().toString(36),
-        plan: 'basic',
-        max_albums: 30,
-      }),
-    })
-    const data = await res.json()
-    setCreating(false)
-    if (data.tenant) {
-      setTenants(prev => [...prev, data.tenant])
-      setShowCreatePartner(false)
-      setCreateForm({ name: '', city: '', email: '' })
-      onNotify('Партнёр создан')
-    } else {
-      onError(data.error ?? 'Ошибка создания')
-    }
   }
+
+  useEffect(() => { reloadTenants() }, [])
 
   const loadPartnerDashboard = async (tenant: any) => {
     setSelectedTenant(tenant)
@@ -5994,28 +5966,7 @@ function PartnersDashboardModal({ onClose, onNotify, onError }: {
                 value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <div className="flex-1 overflow-y-auto">
-              {showCreatePartner && (
-              <div className="border border-gray-200 rounded-xl p-3 mb-2 bg-gray-50">
-                <p className="text-xs font-semibold text-gray-600 mb-2">Новый партнёр</p>
-                <div className="space-y-2">
-                  <input className="input w-full text-sm" placeholder="Название *"
-                    value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))}
-                    autoFocus />
-                  <input className="input w-full text-sm" placeholder="Город"
-                    value={createForm.city} onChange={e => setCreateForm(f => ({ ...f, city: e.target.value }))} />
-                  <input className="input w-full text-sm" placeholder="Email"
-                    value={createForm.email} onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))} />
-                  <div className="flex gap-2">
-                    <button className="btn-secondary flex-1 text-xs" onClick={() => setShowCreatePartner(false)}>Отмена</button>
-                    <button className="btn-primary flex-1 text-xs" onClick={handleCreatePartner} disabled={creating || !createForm.name.trim()}>
-                      {creating ? 'Создаём...' : 'Создать'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {filtered.map(t => (
+              {filtered.map(t => (
                 <button
                   key={t.id}
                   onClick={() => loadPartnerDashboard(t)}
@@ -6066,6 +6017,18 @@ function PartnersDashboardModal({ onClose, onNotify, onError }: {
           onClose={() => setSelectedAlbum(null)}
           onNotify={onNotify}
           onError={onError}
+        />
+      )}
+
+      {/* Создание нового партнёра */}
+      {showCreatePartner && (
+        <CreatePartnerModal
+          onClose={() => setShowCreatePartner(false)}
+          onSuccess={(tenant) => {
+            reloadTenants()
+            setShowCreatePartner(false)
+            onNotify(`Партнёр «${tenant.name}» создан`)
+          }}
         />
       )}
     </div>
@@ -6191,6 +6154,192 @@ function PartnerDashboardContent({ tenant, dashboard, onOpenAlbum, onNotify, onE
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+// ============================================================
+// СОЗДАНИЕ ПАРТНЁРА (полная форма = Новый арендатор из /super)
+// ============================================================
+
+function CreatePartnerModal({ onClose, onSuccess }: {
+  onClose: () => void
+  onSuccess: (tenant: { name: string }) => void
+}) {
+  const PLANS = [
+    { value: 'basic', label: 'Basic — 30 альбомов, 20GB' },
+    { value: 'pro', label: 'Pro — 100 альбомов, 100GB' },
+    { value: 'unlimited', label: 'Unlimited — без ограничений' },
+  ]
+
+  const [form, setForm] = useState({
+    name: '', slug: '', city: '', email: '', phone: '',
+    plan: 'basic', max_albums: '30',
+    owner_name: '', owner_email: '', owner_password: '',
+  })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [backdropStart, setBackdropStart] = useState(false)
+
+  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
+
+  // Автогенерация slug из названия
+  const handleNameChange = (v: string) => {
+    set('name', v)
+    const auto = v.toLowerCase()
+      .replace(/[аa]/g, 'a').replace(/[бb]/g, 'b').replace(/[вv]/g, 'v')
+      .replace(/[гg]/g, 'g').replace(/[дd]/g, 'd').replace(/[еe]/g, 'e')
+      .replace(/[её]/g, 'e').replace(/[жzh]/g, 'zh').replace(/[зz]/g, 'z')
+      .replace(/[иi]/g, 'i').replace(/[йy]/g, 'y').replace(/[кk]/g, 'k')
+      .replace(/[лl]/g, 'l').replace(/[мm]/g, 'm').replace(/[нn]/g, 'n')
+      .replace(/[оo]/g, 'o').replace(/[пp]/g, 'p').replace(/[рr]/g, 'r')
+      .replace(/[сs]/g, 's').replace(/[тt]/g, 't').replace(/[уu]/g, 'u')
+      .replace(/[фf]/g, 'f').replace(/[хkh]/g, 'kh').replace(/[цts]/g, 'ts')
+      .replace(/[чch]/g, 'ch').replace(/[шsh]/g, 'sh').replace(/[щsh]/g, 'sh')
+      .replace(/[ъь]/g, '').replace(/[ыy]/g, 'y').replace(/[эe]/g, 'e')
+      .replace(/[юyu]/g, 'yu').replace(/[яya]/g, 'ya')
+      .replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')
+      .slice(0, 30)
+    set('slug', auto)
+  }
+
+  const generatePassword = () => {
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#'
+    set('owner_password', Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join(''))
+  }
+
+  const handleSubmit = async () => {
+    if (!form.name || !form.slug || !form.owner_name || !form.owner_email || !form.owner_password) {
+      setError('Заполните все обязательные поля')
+      return
+    }
+    if (form.owner_password.length < 8) {
+      setError('Пароль минимум 8 символов')
+      return
+    }
+    setLoading(true)
+    setError('')
+    const res = await fetch('/api/super', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_owner',
+        name: form.name,
+        slug: form.slug,
+        city: form.city,
+        email: form.email,
+        phone: form.phone,
+        plan: form.plan,
+        max_albums: parseInt(form.max_albums) || 30,
+        owner_name: form.owner_name,
+        owner_email: form.owner_email,
+        owner_password: form.owner_password,
+      }),
+    })
+    const data = await res.json()
+    setLoading(false)
+    if (data.tenant) {
+      onSuccess(data.tenant)
+    } else {
+      setError(data.error ?? 'Ошибка создания')
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 overflow-y-auto"
+      onMouseDown={e => { if (e.target === e.currentTarget) setBackdropStart(true) }}
+      onMouseUp={e => { if (backdropStart && e.target === e.currentTarget) onClose(); setBackdropStart(false) }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 my-4">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-lg font-bold">Новый партнёр</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+        </div>
+
+        {error && <div className="bg-red-50 text-red-600 text-sm rounded-xl p-3 mb-4">{error}</div>}
+
+        <div className="space-y-4">
+          {/* Данные тенанта */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Арендатор</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Название <span className="text-red-500">*</span></label>
+                <input className="input w-full" placeholder="Фотостудия Солнышко"
+                  value={form.name} onChange={e => handleNameChange(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Slug (для URL) <span className="text-red-500">*</span></label>
+                <input className="input w-full" placeholder="solnyshko"
+                  value={form.slug} onChange={e => set('slug', e.target.value)} />
+                <p className="text-xs text-gray-400 mt-1">Латинские буквы, цифры, дефис. Генерируется автоматически.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Тариф</label>
+                  <select className="input w-full" value={form.plan} onChange={e => set('plan', e.target.value)}>
+                    {PLANS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Город</label>
+                  <input className="input w-full" placeholder="Москва"
+                    value={form.city} onChange={e => set('city', e.target.value)} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Email арендатора</label>
+                  <input className="input w-full" type="email" placeholder="contact@studio.ru"
+                    value={form.email} onChange={e => set('email', e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Телефон</label>
+                  <input className="input w-full" placeholder="+7 999 999-99-99"
+                    value={form.phone} onChange={e => set('phone', e.target.value)} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Владелец аккаунта */}
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Владелец аккаунта</p>
+            <p className="text-xs text-gray-400 mb-3">Получит роль owner и сможет управлять арендатором.</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">ФИО <span className="text-red-500">*</span></label>
+                <input className="input w-full" placeholder="Иванов Иван Иванович"
+                  value={form.owner_name} onChange={e => set('owner_name', e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Email для входа <span className="text-red-500">*</span></label>
+                <input className="input w-full" type="email" placeholder="ivan@studio.ru"
+                  value={form.owner_email} onChange={e => set('owner_email', e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Пароль <span className="text-red-500">*</span></label>
+                <div className="flex gap-2">
+                  <input className="input flex-1" placeholder="Минимум 8 символов"
+                    value={form.owner_password} onChange={e => set('owner_password', e.target.value)} />
+                  <button type="button" onClick={generatePassword} className="btn-secondary text-sm whitespace-nowrap">
+                    Сгенерировать
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Передайте пароль владельцу.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <button onClick={handleSubmit} disabled={loading} className="btn-primary flex-1">
+            {loading ? 'Создаём...' : 'Создать партнёра'}
+          </button>
+          <button onClick={onClose} className="btn-secondary">Отмена</button>
+        </div>
+      </div>
     </div>
   )
 }
