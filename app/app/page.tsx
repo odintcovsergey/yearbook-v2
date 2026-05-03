@@ -136,6 +136,7 @@ export default function AppPage() {
 
   const canEdit = auth?.user?.role === 'owner' || auth?.user?.role === 'manager'
   const canManageTeam = auth?.user?.role === 'owner'
+  const [isMainTenant, setIsMainTenant] = useState(false)
   const currentUserId = auth?.user?.id ?? null
 
   // --- Проверка авторизации ---
@@ -5881,9 +5882,12 @@ function PartnersDashboardModal({ onClose, onNotify, onError }: {
     setSelectedTenant(tenant)
     setLoading(true)
     setDashboard(null)
+    setSelectedAlbum(null)
     try {
+      // Используем тот же dashboard endpoint с view_as — получаем полные данные партнёра
       const res = await fetch(`/api/tenant?action=dashboard&view_as=${tenant.id}`)
       const data = await res.json()
+      // childrenStats уже включены в albums[].stats
       setDashboard(data)
     } finally {
       setLoading(false)
@@ -5997,17 +6001,17 @@ function PartnerDashboardContent({ tenant, dashboard, onOpenAlbum, onNotify, onE
   const albums: Album[] = dashboard.albums ?? []
   const active = albums.filter(a => !a.archived)
 
-  // Считаем статистику как в основном дашборде
-  const children = dashboard.childrenStats ?? []
-  const totalChildren = children.length
-  const submittedCount = children.filter((c: any) => c.submitted_at).length
-  const inProgressCount = children.filter((c: any) => !c.submitted_at && c.started_at).length
+  // Статистика уже в albums[].stats (из dashboard endpoint)
+  const summary = dashboard.summary ?? {}
+  const totalChildren = summary.children_total ?? 0
+  const submittedCount = summary.children_submitted ?? 0
+  const inProgressCount = active.reduce((s: number, a: any) => s + (a.stats?.in_progress ?? 0), 0)
 
-  const getAlbumStats = (albumId: string) => {
-    const albumChildren = children.filter((c: any) => c.album_id === albumId)
-    const total = albumChildren.length
-    const submitted = albumChildren.filter((c: any) => c.submitted_at).length
-    const inProgress = albumChildren.filter((c: any) => !c.submitted_at && c.started_at).length
+  const getAlbumStats = (album: any) => {
+    const s = album.stats ?? {}
+    const total = s.total ?? 0
+    const submitted = s.submitted ?? 0
+    const inProgress = s.in_progress ?? 0
     return { total, submitted, inProgress, pct: total ? Math.round(submitted / total * 100) : 0 }
   }
 

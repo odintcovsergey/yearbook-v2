@@ -153,6 +153,7 @@ export async function GET(req: NextRequest) {
     const leads = leadsRes.data ?? []
     const newLeads = leads.filter(l => l.status === 'new').length
 
+    const isMainTenant = tid === process.env.DEFAULT_TENANT_ID
     return NextResponse.json({
       albums: albums.map(a => ({
         ...a,
@@ -169,6 +170,7 @@ export async function GET(req: NextRequest) {
         leads_total: leads.length,
         leads_new: newLeads,
       },
+      isMainTenant,
     })
   }
 
