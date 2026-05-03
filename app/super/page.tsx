@@ -65,6 +65,10 @@ export default function SuperPage() {
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null)
   const [search, setSearch] = useState('')
   const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null)
+  const [superTab, setSuperTab] = useState<'tenants' | 'queue'>('tenants')
+  const [queue, setQueue] = useState<any[]>([])
+  const [queueLoading, setQueueLoading] = useState(false)
+  const [selectedQueueAlbum, setSelectedQueueAlbum] = useState<any | null>(null)
 
   const notify = (text: string, type: 'ok' | 'err' = 'ok') => {
     setMsg({ text, type })
@@ -105,6 +109,18 @@ export default function SuperPage() {
       loadStats()
     }
   }, [auth])
+
+  const loadQueue = async () => {
+    setQueueLoading(true)
+    const r = await api('/api/workflow?action=queue&status=submitted,in_production,delivered')
+    if (r.ok) setQueue(await r.json().then((d: any) => d.albums ?? []))
+    setQueueLoading(false)
+  }
+
+  useEffect(() => {
+    if (auth && superTab === 'queue') loadQueue()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth, superTab])
 
   const handleLogout = async () => {
     await api('/api/auth', { method: 'POST', body: JSON.stringify({ action: 'logout' }) })
@@ -174,6 +190,31 @@ export default function SuperPage() {
           </div>
         )}
 
+        {/* Таб-бар */}
+        <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
+          {([
+            { key: 'tenants' as const, label: '🏢 Арендаторы' },
+            { key: 'queue' as const, label: `🚀 Очередь работ${queue.filter(a => a.workflow_status === 'submitted').length > 0 ? ` · ${queue.filter(a => a.workflow_status === 'submitted').length} новых` : ''}` },
+          ]).map(t => (
+            <button key={t.key} onClick={() => setSuperTab(t.key)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${superTab === t.key ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {superTab === 'queue' && (
+          <QueueView
+            queue={queue}
+            loading={queueLoading}
+            selected={selectedQueueAlbum}
+            onSelect={setSelectedQueueAlbum}
+            onRefresh={loadQueue}
+            onNotify={notify}
+          />
+        )}
+
+        {superTab === 'tenants' && (<>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Арендаторы</h2>
           <button onClick={() => setShowCreate(true)} className="btn-primary">
@@ -246,6 +287,7 @@ export default function SuperPage() {
             </div>
           )}
         </div>
+        </>)}
       </main>
 
       {showCreate && (
@@ -1172,6 +1214,251 @@ function InfoRow({ label, value }: { label: string; value: string | null }) {
     <div className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
       <span className="text-gray-500">{label}</span>
       <span className="text-gray-900 font-medium">{value || <span className="text-gray-300">—</span>}</span>
+    </div>
+  )
+}
+
+// ============================================================
+// ОЧЕРЕДЬ РАБОТ (OkeyBook Production Queue)
+// ============================================================
+
+const WORKFLOW_LABELS: Record<string, { label: string; color: string }> = {
+  submitted:     { label: 'Новый',     color: 'badge-blue' },
+  in_production: { label: 'В работе',  color: 'badge-amber' },
+  delivered:     { label: 'Готов',     color: 'badge-green' },
+}
+
+function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: {
+  queue: any[]
+  loading: boolean
+  selected: any | null
+  onSelect: (a: any | null) => void
+  onRefresh: () => void
+  onNotify: (text: string, type?: 'ok' | 'err') => void
+}) {
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [taking, setTaking] = useState(false)
+  const [notes, setNotes] = useState('')
+  const [uploadingDelivery, setUploadingDelivery] = useState(false)
+  const [deliveryLabel, setDeliveryLabel] = useState('Готовый файл вёрстки')
+  const [deliveryFiles, setDeliveryFiles] = useState<any[]>([])
+
+  const filtered = statusFilter === 'all'
+    ? queue
+    : queue.filter(a => a.workflow_status === statusFilter)
+
+  const counts = {
+    all: queue.length,
+    submitted: queue.filter(a => a.workflow_status === 'submitted').length,
+    in_production: queue.filter(a => a.workflow_status === 'in_production').length,
+    delivered: queue.filter(a => a.workflow_status === 'delivered').length,
+  }
+
+  const post = async (body: Record<string, unknown>) => {
+    const res = await fetch('/api/workflow', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return res.json()
+  }
+
+  const handleTake = async () => {
+    if (!selected) return
+    setTaking(true)
+    const res = await post({ action: 'take', album_id: selected.id, notes: notes || null })
+    if (res.album) {
+      onNotify('Альбом взят в работу')
+      onRefresh()
+      onSelect({ ...selected, workflow_status: 'in_production' })
+    } else {
+      onNotify(res.error ?? 'Ошибка', 'err')
+    }
+    setTaking(false)
+  }
+
+  const handleUploadDelivery = async (file: File) => {
+    setUploadingDelivery(true)
+    const fd = new FormData()
+    fd.append('album_id', selected.id)
+    fd.append('upload_type', 'delivery')
+    fd.append('file', file)
+    fd.append('label', deliveryLabel)
+    const res = await fetch('/api/workflow', { method: 'POST', body: fd })
+    const data = await res.json()
+    if (data.record) {
+      setDeliveryFiles(prev => [...prev, data.record])
+      onNotify('Файл загружен, статус → Готов')
+      onRefresh()
+    } else {
+      onNotify(data.error ?? 'Ошибка загрузки', 'err')
+    }
+    setUploadingDelivery(false)
+  }
+
+  // Загружаем delivery файлы при выборе альбома
+  useEffect(() => {
+    if (!selected) return
+    fetch(`/api/workflow?action=album_workflow&album_id=${selected.id}`)
+      .then(r => r.json())
+      .then(d => setDeliveryFiles(d.delivery ?? []))
+  }, [selected?.id])
+
+  const formatDate = (iso?: string) => iso
+    ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+    : '—'
+
+  if (loading) return <div className="text-center py-12 text-gray-400">Загрузка...</div>
+
+  return (
+    <div className="flex gap-4" style={{ minHeight: '60vh' }}>
+      {/* Список альбомов */}
+      <div className="w-80 flex-shrink-0">
+        {/* Фильтры */}
+        <div className="flex gap-1 mb-3 flex-wrap">
+          {([
+            { k: 'all', l: `Все (${counts.all})` },
+            { k: 'submitted', l: `Новые (${counts.submitted})` },
+            { k: 'in_production', l: `В работе (${counts.in_production})` },
+            { k: 'delivered', l: `Готовы (${counts.delivered})` },
+          ]).map(({ k, l }) => (
+            <button key={k} onClick={() => setStatusFilter(k)}
+              className={`text-xs px-2 py-1 rounded-lg border transition-colors ${
+                statusFilter === k ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 text-gray-500 hover:border-gray-400'
+              }`}>
+              {l}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex justify-end mb-2">
+          <button onClick={onRefresh} className="text-xs text-gray-400 hover:text-gray-600">↻ Обновить</button>
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="text-center py-12 text-gray-300 text-sm">Нет альбомов</div>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map(album => {
+              const si = WORKFLOW_LABELS[album.workflow_status]
+              return (
+                <button
+                  key={album.id}
+                  onClick={() => { onSelect(album); setNotes('') }}
+                  className={`w-full text-left p-3 rounded-xl border-2 transition-all ${
+                    selected?.id === album.id ? 'border-gray-900 bg-gray-50' : 'border-gray-100 hover:border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{album.title}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {album.tenants?.name} · {album.student_count} уч.
+                      </p>
+                    </div>
+                    <span className={`badge-${si?.color?.replace('badge-', '') ?? 'gray'} text-xs flex-shrink-0`}>
+                      {si?.label}
+                    </span>
+                  </div>
+                  {album.workflow_submitted_at && (
+                    <p className="text-xs text-gray-300 mt-1">
+                      Передан {formatDate(album.workflow_submitted_at)}
+                    </p>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Детали выбранного альбома */}
+      <div className="flex-1 border-l border-gray-100 pl-6">
+        {!selected ? (
+          <div className="flex items-center justify-center h-full text-gray-300 text-sm">
+            Выберите альбом из списка
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {/* Заголовок */}
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">{selected.title}</h3>
+              <p className="text-sm text-gray-400 mt-0.5">
+                {selected.tenants?.name} · {selected.city && `${selected.city} · `}{selected.year} · {selected.student_count} учеников
+              </p>
+            </div>
+
+            {/* Статус и действия */}
+            {selected.workflow_status === 'submitted' && (
+              <div className="bg-blue-50 rounded-xl p-4 space-y-3">
+                <p className="text-sm font-medium text-blue-800">Новый альбом — возьмите в работу</p>
+                <textarea
+                  className="input w-full resize-none text-sm"
+                  rows={2}
+                  placeholder="Комментарий партнёру (необязательно)"
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                />
+                <button
+                  className="btn-primary w-full"
+                  onClick={handleTake}
+                  disabled={taking}
+                >
+                  {taking ? 'Берём...' : '✓ Взять в работу'}
+                </button>
+              </div>
+            )}
+
+            {selected.workflow_status === 'in_production' && (
+              <div className="bg-amber-50 rounded-xl p-4 space-y-3">
+                <p className="text-sm font-medium text-amber-800">В работе — загрузите готовый файл</p>
+                <input
+                  className="input w-full text-sm"
+                  placeholder="Название файла (напр. «Вёрстка PDF»)"
+                  value={deliveryLabel}
+                  onChange={e => setDeliveryLabel(e.target.value)}
+                />
+                <label className={`btn-primary w-full flex items-center justify-center gap-2 cursor-pointer ${uploadingDelivery ? 'opacity-60 pointer-events-none' : ''}`}>
+                  <input type="file" className="hidden"
+                    accept=".pdf,.zip,.rar,.7z"
+                    onChange={e => e.target.files?.[0] && handleUploadDelivery(e.target.files[0])} />
+                  {uploadingDelivery ? 'Загружаем...' : '⬆ Загрузить готовый файл'}
+                </label>
+              </div>
+            )}
+
+            {selected.workflow_status === 'delivered' && (
+              <div className="bg-green-50 rounded-xl p-4">
+                <p className="text-sm font-medium text-green-800">✓ Готово — файлы переданы партнёру</p>
+              </div>
+            )}
+
+            {/* Загруженные delivery файлы */}
+            {deliveryFiles.length > 0 && (
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2">Переданные файлы</p>
+                {deliveryFiles.map(f => (
+                  <div key={f.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="text-sm">{f.label || f.filename}</p>
+                      <p className="text-xs text-gray-400">{f.downloaded_at ? '✓ скачан партнёром' : 'ещё не скачан'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Ссылка на CSV */}
+            <a
+              href={`/api/tenant?action=export_csv&album_id=${selected.id}`}
+              className="btn-secondary text-sm inline-flex items-center gap-2"
+              target="_blank"
+            >
+              ⬇ Скачать CSV
+            </a>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
