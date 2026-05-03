@@ -667,13 +667,21 @@ function AlbumDetailModal({
   onClose,
   onNotify,
   onError,
+  viewAsTenantId,
 }: {
   album: Album
   canEdit: boolean
   onClose: () => void
   onNotify: (msg: string) => void
   onError: (msg: string) => void
+  viewAsTenantId?: string
 }) {
+  // Хелпер для запросов с поддержкой view_as (просмотр альбомов партнёра)
+  const apiVA = (url: string, opts?: RequestInit) => {
+    const sep = url.includes('?') ? '&' : '?'
+    const fullUrl = viewAsTenantId ? `${url}${sep}view_as=${viewAsTenantId}` : url
+    return api(fullUrl, opts)
+  }
   const [stats, setStats] = useState<AlbumStats | null>(null)
   const [spreadData, setSpreadData] = useState<{child_id:string;full_name:string;class:string;photos:{id:string;filename:string;storage_path:string;sort_order:number}[]}[]>([])
   const [workflow, setWorkflow] = useState<{workflow_status:string;workflow_submitted_at?:string;workflow_taken_at?:string;workflow_delivered_at?:string;workflow_notes?:string} | null>(null)
@@ -699,7 +707,7 @@ function AlbumDetailModal({
     if (childDetails[childId]) return
     setLoadingDetail(childId)
     try {
-      const r = await api(`/api/tenant?action=child_details&child_id=${childId}`)
+      const r = await apiVA(`/api/tenant?action=child_details&child_id=${childId}`)
       if (r.ok) {
         const d = await r.json()
         setChildDetails(prev => ({ ...prev, [childId]: d }))
@@ -722,7 +730,7 @@ function AlbumDetailModal({
   const handleExport = async () => {
     setExporting(true)
     try {
-      const res = await api(`/api/tenant?action=export_csv&album_id=${album.id}`)
+      const res = await apiVA(`/api/tenant?action=export_csv&album_id=${album.id}`)
       if (!res.ok) {
         const d = await res.json().catch(() => ({}))
         onError(d.error ?? 'Не удалось экспортировать')
@@ -754,9 +762,9 @@ function AlbumDetailModal({
 
   const load = async () => {
     const [s, c, an] = await Promise.all([
-      api(`/api/tenant?action=album_stats&album_id=${album.id}`).then(r => r.json()),
-      api(`/api/tenant?action=children&album_id=${album.id}`).then(r => r.json()),
-      api(`/api/tenant?action=analytics&album_id=${album.id}`).then(r => r.json()),
+      apiVA(`/api/tenant?action=album_stats&album_id=${album.id}`).then(r => r.json()),
+      apiVA(`/api/tenant?action=children&album_id=${album.id}`).then(r => r.json()),
+      apiVA(`/api/tenant?action=analytics&album_id=${album.id}`).then(r => r.json()),
     ])
     setStats(s)
     setChildren(Array.isArray(c) ? c : [])
@@ -771,12 +779,12 @@ function AlbumDetailModal({
 
   useEffect(() => {
     if ((tab === 'spread' || tab === 'surcharges') && (album as any).personal_spread_enabled) {
-      api(`/api/tenant?action=personal_spread_stats&album_id=${album.id}`)
+      apiVA(`/api/tenant?action=personal_spread_stats&album_id=${album.id}`)
         .then(r => r.json())
         .then(d => setSpreadData(d.children ?? []))
     }
     if (tab === 'production') {
-      api(`/api/workflow?action=album_workflow&album_id=${album.id}`)
+      apiVA(`/api/workflow?action=album_workflow&album_id=${album.id}`)
         .then(r => r.json())
         .then(d => {
           setWorkflow(d.workflow)
@@ -6009,14 +6017,15 @@ function PartnersDashboardModal({ onClose, onNotify, onError }: {
         </div>
       </div>
 
-      {/* Модалка альбома партнёра */}
-      {selectedAlbum && (
+      {/* Модалка альбома партнёра — передаём view_as для загрузки данных партнёра */}
+      {selectedAlbum && selectedTenant && (
         <AlbumDetailModal
           album={selectedAlbum}
           canEdit={false}
           onClose={() => setSelectedAlbum(null)}
           onNotify={onNotify}
           onError={onError}
+          viewAsTenantId={selectedTenant.id}
         />
       )}
 
