@@ -161,5 +161,27 @@ export async function POST(req: NextRequest) {
     .update({ submitted_at: new Date().toISOString() })
     .eq('id', childId)
 
+  // 8. Проверить — все ли ученики завершили?
+  //    Если да — перевести альбом в workflow_status = 'ready'
+  try {
+    const { data: allChildren } = await supabaseAdmin
+      .from('children')
+      .select('id, submitted_at')
+      .eq('album_id', child.album_id)
+
+    const total = allChildren?.length ?? 0
+    const done = allChildren?.filter(c => c.submitted_at).length ?? 0
+
+    if (total > 0 && done === total) {
+      await supabaseAdmin
+        .from('albums')
+        .update({ workflow_status: 'ready' })
+        .eq('id', child.album_id)
+        .in('workflow_status', ['active']) // только если ещё не передан дальше
+    }
+  } catch {
+    // Некритичная ошибка — не блокируем ответ родителю
+  }
+
   return NextResponse.json({ ok: true })
 }
