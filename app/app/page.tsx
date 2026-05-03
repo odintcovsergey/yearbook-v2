@@ -128,6 +128,7 @@ export default function AppPage() {
   const [showTeam, setShowTeam] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showCRM, setShowCRM] = useState(false)
+  const [showPartners, setShowPartners] = useState(false)
 
   const notify = (text: string, type: 'ok' | 'err' = 'ok') => {
     setMsg({ text, type })
@@ -288,7 +289,17 @@ export default function AppPage() {
               </button>
             </div>
 
-<button
+{isMainTenant && (
+              <button
+                onClick={() => setShowPartners(true)}
+                className="btn-ghost text-sm"
+                type="button"
+              >
+                📸 Партнёры
+              </button>
+            )}
+
+            <button
               onClick={() => setShowCRM(true)}
               className="btn-ghost text-sm"
               type="button"
@@ -463,6 +474,14 @@ export default function AppPage() {
         <CRMModal
           onClose={() => setShowCRM(false)}
           currentUserId={currentUserId}
+        />
+      )}
+
+      {showPartners && (
+        <PartnersDashboardModal
+          onClose={() => setShowPartners(false)}
+          onNotify={(t) => notify(t)}
+          onError={(t) => notify(t, 'err')}
         />
       )}
     </div>
