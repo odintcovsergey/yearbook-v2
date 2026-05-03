@@ -655,11 +655,14 @@ function AlbumDetailModal({
 }) {
   const [stats, setStats] = useState<AlbumStats | null>(null)
   const [spreadData, setSpreadData] = useState<{child_id:string;full_name:string;class:string;photos:{id:string;filename:string;storage_path:string;sort_order:number}[]}[]>([])
+  const [workflow, setWorkflow] = useState<{workflow_status:string;workflow_submitted_at?:string;workflow_taken_at?:string;workflow_delivered_at?:string;workflow_notes?:string} | null>(null)
+  const [originals, setOriginals] = useState<{id:string;filename:string;storage_path:string;file_size:number}[]>([])
+  const [delivery, setDelivery] = useState<{id:string;filename:string;storage_path:string;file_size:number;label:string;expires_at:string;downloaded_at?:string}[]>([])
   const [daily, setDaily] = useState<{date:string;submitted:number;started:number}[]>([])
   const [children, setChildren] = useState<Child[]>([])
   const [loading, setLoading] = useState(true)
   const [backdropStart, setBackdropStart] = useState(false)
-  const [tab, setTab] = useState<'overview' | 'children' | 'teachers' | 'responsible' | 'photos' | 'surcharges' | 'spread'>('overview')
+  const [tab, setTab] = useState<'overview' | 'children' | 'teachers' | 'responsible' | 'photos' | 'surcharges' | 'spread' | 'production'>('overview')
 
   // UI состояние для добавления/импорта
   const [showAddForm, setShowAddForm] = useState(false)
@@ -750,6 +753,15 @@ function AlbumDetailModal({
       api(`/api/tenant?action=personal_spread_stats&album_id=${album.id}`)
         .then(r => r.json())
         .then(d => setSpreadData(d.children ?? []))
+    }
+    if (tab === 'production') {
+      api(`/api/workflow?action=album_workflow&album_id=${album.id}`)
+        .then(r => r.json())
+        .then(d => {
+          setWorkflow(d.workflow)
+          setOriginals(d.originals ?? [])
+          setDelivery(d.delivery ?? [])
+        })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, album.id])
@@ -906,6 +918,7 @@ function AlbumDetailModal({
             { id: 'responsible', label: 'Ответственный' },
             { id: 'surcharges', label: 'Доплаты' },
             ...((album as any).personal_spread_enabled ? [{ id: 'spread' as const, label: 'Разворот' }] : []),
+            { id: 'production' as const, label: '🚀 Производство' },
           ] as const).map(t => (
             <button
               key={t.id}
@@ -1352,6 +1365,23 @@ function AlbumDetailModal({
                 <SpreadTab
                   spreadData={spreadData}
                   album={album}
+                />
+              )}
+
+              {/* Вкладка Производство */}
+              {tab === 'production' && (
+                <ProductionTab
+                  album={album}
+                  workflow={workflow}
+                  originals={originals}
+                  delivery={delivery}
+                  canEdit={canEdit}
+                  isSuperAdmin={false}
+                  onWorkflowUpdate={(w) => setWorkflow(w)}
+                  onOriginalsUpdate={(o) => setOriginals(o)}
+                  onDeliveryUpdate={(d) => setDelivery(d)}
+                  onNotify={onNotify}
+                  onError={onError}
                 />
               )}
             </>
@@ -5580,6 +5610,244 @@ function SpreadTab({ spreadData, album }: {
               <span className="text-amber-600">{withPhotos.length * price} ₽</span>
             </span>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
+// ВКЛАДКА ПРОИЗВОДСТВО
+// ============================================================
+
+const WORKFLOW_LABELS: Record<string, { label: string; color: string }> = {
+  active:        { label: 'Отбор идёт',       color: 'bg-blue-100 text-blue-700' },
+  ready:         { label: 'Готов к передаче',  color: 'bg-amber-100 text-amber-700' },
+  submitted:     { label: 'Передан в OkeyBook', color: 'bg-purple-100 text-purple-700' },
+  in_production: { label: 'В работе',          color: 'bg-orange-100 text-orange-700' },
+  delivered:     { label: 'Готов',             color: 'bg-green-100 text-green-700' },
+}
+
+function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperAdmin, onWorkflowUpdate, onOriginalsUpdate, onDeliveryUpdate, onNotify, onError }: {
+  album: Album
+  workflow: any
+  originals: any[]
+  delivery: any[]
+  canEdit: boolean
+  isSuperAdmin: boolean
+  onWorkflowUpdate: (w: any) => void
+  onOriginalsUpdate: (o: any[]) => void
+  onDeliveryUpdate: (d: any[]) => void
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [submitting, setSubmitting] = useState(false)
+  const [uploadingOriginals, setUploadingOriginals] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 })
+
+  const status = workflow?.workflow_status ?? (album as any).workflow_status ?? 'active'
+  const statusInfo = WORKFLOW_LABELS[status] ?? { label: status, color: 'bg-gray-100 text-gray-700' }
+
+  const post = async (body: Record<string, unknown>) => {
+    const res = await fetch('/api/workflow', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return res.json()
+  }
+
+  const handleSubmit = async () => {
+    if (!confirm('Передать альбом в OkeyBook на вёрстку? После этого отбор будет завершён.')) return
+    setSubmitting(true)
+    const res = await post({ action: 'submit', album_id: (album as any).id })
+    if (res.album) {
+      onWorkflowUpdate(res.album)
+      onNotify('Альбом передан в OkeyBook')
+    } else {
+      onError(res.error ?? 'Ошибка')
+    }
+    setSubmitting(false)
+  }
+
+  const handleMarkReady = async () => {
+    const res = await post({ action: 'mark_ready', album_id: (album as any).id })
+    if (res.album) {
+      onWorkflowUpdate(res.album)
+      onNotify('Статус обновлён')
+    }
+  }
+
+  const handleUploadOriginals = async (files: FileList) => {
+    const arr = Array.from(files)
+    setUploadingOriginals(true)
+    setUploadProgress({ done: 0, total: arr.length })
+    const newOriginals: any[] = []
+    let done = 0
+    for (const file of arr) {
+      const fd = new FormData()
+      fd.append('album_id', (album as any).id)
+      fd.append('upload_type', 'original')
+      fd.append('file', file)
+      try {
+        const res = await fetch('/api/workflow', { method: 'POST', body: fd })
+        const data = await res.json()
+        if (data.record) newOriginals.push(data.record)
+      } catch { /* skip */ }
+      done++
+      setUploadProgress({ done, total: arr.length })
+    }
+    onOriginalsUpdate([...originals, ...newOriginals])
+    setUploadingOriginals(false)
+    setUploadProgress({ done: 0, total: 0 })
+    if (newOriginals.length) onNotify(`Загружено ${newOriginals.length} файлов`)
+  }
+
+  const handleDeleteOriginal = async (fileId: string) => {
+    if (!confirm('Удалить файл?')) return
+    await post({ action: 'delete_original', album_id: (album as any).id, file_id: fileId })
+    onOriginalsUpdate(originals.filter(o => o.id !== fileId))
+  }
+
+  const handleDownload = async (file: any) => {
+    const url = `https://storage.yandexcloud.net/yearbook-photos/${file.storage_path.replace('yc:', '')}`
+    await post({ action: 'mark_downloaded', album_id: (album as any).id, file_id: file.id })
+    window.open(url, '_blank')
+  }
+
+  const formatSize = (bytes: number) => {
+    if (!bytes) return ''
+    if (bytes > 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} МБ`
+    return `${Math.round(bytes / 1024)} КБ`
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Статус */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusInfo.color}`}>
+            {statusInfo.label}
+          </span>
+          {workflow?.workflow_submitted_at && (
+            <span className="text-xs text-gray-400">
+              Передан {new Date(workflow.workflow_submitted_at).toLocaleDateString('ru-RU')}
+            </span>
+          )}
+        </div>
+
+        {/* Кнопки действий */}
+        <div className="flex gap-2">
+          {status === 'active' && canEdit && (
+            <button className="btn-secondary text-sm" onClick={handleMarkReady}>
+              ✓ Завершить отбор досрочно
+            </button>
+          )}
+          {(status === 'active' || status === 'ready') && canEdit && (
+            <button className="btn-primary text-sm" onClick={handleSubmit} disabled={submitting}>
+              {submitting ? 'Передаём...' : '🚀 Передать в OkeyBook'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Заметки от OkeyBook */}
+      {workflow?.workflow_notes && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          <p className="font-medium mb-1">Комментарий от OkeyBook:</p>
+          <p>{workflow.workflow_notes}</p>
+        </div>
+      )}
+
+      {/* Оригинальные фото */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-semibold text-gray-800">
+            Оригинальные фото
+            {originals.length > 0 && <span className="text-gray-400 font-normal text-sm ml-2">{originals.length} файлов</span>}
+          </h4>
+          {canEdit && (
+            <label className={`btn-secondary text-sm cursor-pointer ${uploadingOriginals ? 'opacity-50' : ''}`}>
+              <input
+                type="file"
+                className="hidden"
+                multiple
+                accept="image/jpeg,image/jpg,image/png,image/tiff"
+                onChange={e => e.target.files && handleUploadOriginals(e.target.files)}
+                disabled={uploadingOriginals}
+              />
+              {uploadingOriginals
+                ? `Загружаем ${uploadProgress.done}/${uploadProgress.total}...`
+                : '+ Загрузить оригиналы'}
+            </label>
+          )}
+        </div>
+
+        {uploadingOriginals && (
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
+            <div
+              className="h-full bg-blue-500 rounded-full transition-all"
+              style={{ width: `${uploadProgress.total ? (uploadProgress.done / uploadProgress.total) * 100 : 0}%` }}
+            />
+          </div>
+        )}
+
+        {originals.length === 0 ? (
+          <p className="text-sm text-gray-400">Оригиналы не загружены</p>
+        ) : (
+          <div className="space-y-1">
+            {originals.map(o => (
+              <div key={o.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg group">
+                <div>
+                  <span className="text-sm text-gray-800">{o.filename}</span>
+                  {o.file_size && <span className="text-xs text-gray-400 ml-2">{formatSize(o.file_size)}</span>}
+                </div>
+                {canEdit && (
+                  <button
+                    className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-lg"
+                    onClick={() => handleDeleteOriginal(o.id)}
+                  >×</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Готовые файлы от OkeyBook */}
+      {delivery.length > 0 && (
+        <div>
+          <h4 className="font-semibold text-gray-800 mb-3">
+            Готовые файлы
+            <span className="text-xs font-normal text-gray-400 ml-2">доступны для скачивания</span>
+          </h4>
+          <div className="space-y-2">
+            {delivery.map(f => (
+              <div key={f.id} className="flex items-center justify-between py-3 px-4 bg-green-50 border border-green-200 rounded-xl">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{f.label || f.filename}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {f.filename}
+                    {f.file_size ? ` · ${formatSize(f.file_size)}` : ''}
+                    {f.expires_at ? ` · до ${new Date(f.expires_at).toLocaleDateString('ru-RU')}` : ''}
+                    {f.downloaded_at ? ' · скачан' : ''}
+                  </p>
+                </div>
+                <button
+                  className="btn-primary text-sm"
+                  onClick={() => handleDownload(f)}
+                >
+                  ⬇ Скачать
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {status === 'submitted' && delivery.length === 0 && (
+        <div className="bg-gray-50 rounded-xl p-6 text-center text-gray-400 text-sm">
+          Альбом в очереди у OkeyBook. Файлы появятся здесь когда вёрстка будет готова.
         </div>
       )}
     </div>

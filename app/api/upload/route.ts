@@ -21,7 +21,11 @@ export async function POST(req: NextRequest) {
   const file = formData.get('file') as File | null
   const albumId = formData.get('album_id') as string | null
   const type = formData.get('type') as string | null
-  const originalName = (formData.get('original_name') as string) || file?.name || 'photo'
+  // original_name — оригинальное имя файла до конвертации (DSC08521.jpg)
+  // file?.name может прийти как DSC08521.webp если клиент переименовал при компрессии
+  const rawOriginalName = (formData.get('original_name') as string) || file?.name || 'photo'
+  // На случай если original_name тоже пришёл с .webp — убираем и возвращаем оригинал
+  const originalName = rawOriginalName
 
   if (!file || !albumId || !type) {
     return NextResponse.json({ error: 'Нет file, album_id или type' }, { status: 400 })
