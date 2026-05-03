@@ -165,6 +165,7 @@ export default function AppPage() {
       const d = await r.json()
       setAlbums(d.albums)
       setSummary(d.summary)
+      if (d.isMainTenant !== undefined) setIsMainTenant(d.isMainTenant)
     }
   }
 
