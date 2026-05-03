@@ -97,6 +97,33 @@ export async function GET(req: NextRequest) {
   const tid = (auth.role === 'superadmin' && viewAsTenantId) ? viewAsTenantId : auth.tenantId
 
   // ----------------------------------------------------------
+  // partners_list — список партнёров для сотрудников OkeyBook
+  // ----------------------------------------------------------
+  if (action === 'partners_list') {
+    // Только для сотрудников главного тенанта
+    const { data: tenantData } = await supabaseAdmin
+      .from('tenants').select('slug').eq('id', tid).single()
+    const isMain = tenantData?.slug === 'main' || auth.role === 'superadmin'
+    if (!isMain) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+
+    const query = supabaseAdmin
+      .from('tenants')
+      .select('id, name, slug, city, is_active, assigned_manager_id')
+      .neq('slug', 'main')
+      .eq('is_active', true)
+      .order('name')
+
+    // Менеджер видит только назначенных ему
+    if (auth.role !== 'superadmin' && auth.role !== 'owner') {
+      query.eq('assigned_manager_id', auth.userId)
+    }
+
+    const { data, error } = await query
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ tenants: data ?? [] })
+  }
+
+  // ----------------------------------------------------------
   // dashboard — общая информация для главного экрана
   // ----------------------------------------------------------
   if (action === 'dashboard') {

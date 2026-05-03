@@ -5892,11 +5892,43 @@ function PartnersDashboardModal({ onClose, onNotify, onError }: {
   const [backdropStart, setBackdropStart] = useState(false)
   const [search, setSearch] = useState('')
 
+  const [showCreatePartner, setShowCreatePartner] = useState(false)
+  const [createForm, setCreateForm] = useState({ name: '', city: '', email: '' })
+  const [creating, setCreating] = useState(false)
+
   useEffect(() => {
-    fetch('/api/super?action=tenants')
+    fetch('/api/tenant?action=partners_list')
       .then(r => r.json())
-      .then(d => setTenants((d.tenants ?? []).filter((t: any) => t.slug !== 'main')))
+      .then(d => setTenants(d.tenants ?? []))
   }, [])
+
+  const handleCreatePartner = async () => {
+    if (!createForm.name.trim()) return
+    setCreating(true)
+    const res = await fetch('/api/super', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create_tenant',
+        name: createForm.name,
+        city: createForm.city,
+        email: createForm.email,
+        slug: createForm.name.toLowerCase().replace(/[^a-zа-яёa-z0-9]/gi, '_').slice(0, 30) + '_' + Date.now().toString(36),
+        plan: 'basic',
+        max_albums: 30,
+      }),
+    })
+    const data = await res.json()
+    setCreating(false)
+    if (data.tenant) {
+      setTenants(prev => [...prev, data.tenant])
+      setShowCreatePartner(false)
+      setCreateForm({ name: '', city: '', email: '' })
+      onNotify('Партнёр создан')
+    } else {
+      onError(data.error ?? 'Ошибка создания')
+    }
+  }
 
   const loadPartnerDashboard = async (tenant: any) => {
     setSelectedTenant(tenant)
@@ -5929,9 +5961,17 @@ function PartnersDashboardModal({ onClose, onNotify, onError }: {
         {/* Шапка */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
             <h2 className="text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
               📸 Партнёры
             </h2>
+            <button
+              onClick={() => setShowCreatePartner(true)}
+              className="btn-primary text-sm px-3 py-1.5"
+            >
+              + Партнёр
+            </button>
+          </div>
             {selectedTenant && (
               <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1">
                 <span className="text-xs text-amber-700">Просматриваете как:</span>
@@ -5954,7 +5994,28 @@ function PartnersDashboardModal({ onClose, onNotify, onError }: {
                 value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <div className="flex-1 overflow-y-auto">
-              {filtered.map(t => (
+              {showCreatePartner && (
+              <div className="border border-gray-200 rounded-xl p-3 mb-2 bg-gray-50">
+                <p className="text-xs font-semibold text-gray-600 mb-2">Новый партнёр</p>
+                <div className="space-y-2">
+                  <input className="input w-full text-sm" placeholder="Название *"
+                    value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))}
+                    autoFocus />
+                  <input className="input w-full text-sm" placeholder="Город"
+                    value={createForm.city} onChange={e => setCreateForm(f => ({ ...f, city: e.target.value }))} />
+                  <input className="input w-full text-sm" placeholder="Email"
+                    value={createForm.email} onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))} />
+                  <div className="flex gap-2">
+                    <button className="btn-secondary flex-1 text-xs" onClick={() => setShowCreatePartner(false)}>Отмена</button>
+                    <button className="btn-primary flex-1 text-xs" onClick={handleCreatePartner} disabled={creating || !createForm.name.trim()}>
+                      {creating ? 'Создаём...' : 'Создать'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {filtered.map(t => (
                 <button
                   key={t.id}
                   onClick={() => loadPartnerDashboard(t)}
