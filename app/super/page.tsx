@@ -65,7 +65,8 @@ export default function SuperPage() {
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null)
   const [search, setSearch] = useState('')
   const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null)
-  const [superTab, setSuperTab] = useState<'tenants' | 'queue'>('tenants')
+  const [superTab, setSuperTab] = useState<'tenants' | 'partners' | 'queue'>('tenants')
+  const [selectedPartnerTenant, setSelectedPartnerTenant] = useState<Tenant | null>(null)
   const [queue, setQueue] = useState<any[]>([])
   const [queueLoading, setQueueLoading] = useState(false)
   const [selectedQueueAlbum, setSelectedQueueAlbum] = useState<any | null>(null)
@@ -194,6 +195,7 @@ export default function SuperPage() {
         <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
           {([
             { key: 'tenants' as const, label: '🏢 Арендаторы' },
+            { key: 'partners' as const, label: '📸 Партнёры' },
             { key: 'queue' as const, label: `🚀 Очередь работ${queue.filter(a => a.workflow_status === 'submitted').length > 0 ? ` · ${queue.filter(a => a.workflow_status === 'submitted').length} новых` : ''}` },
           ]).map(t => (
             <button key={t.key} onClick={() => setSuperTab(t.key)}
@@ -202,6 +204,14 @@ export default function SuperPage() {
             </button>
           ))}
         </div>
+
+        {superTab === 'partners' && (
+          <PartnersView
+            tenants={tenants}
+            onSelectTenant={setSelectedPartnerTenant}
+            selectedTenant={selectedPartnerTenant}
+          />
+        )}
 
         {superTab === 'queue' && (
           <QueueView
@@ -1420,7 +1430,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
                 />
                 <label className={`btn-primary w-full flex items-center justify-center gap-2 cursor-pointer ${uploadingDelivery ? 'opacity-60 pointer-events-none' : ''}`}>
                   <input type="file" className="hidden"
-                    accept=".pdf,.zip,.rar,.7z"
+                    accept=".pdf,.zip,.rar,.7z,.jpg,.jpeg,.png,.tif,.tiff"
                     onChange={e => e.target.files?.[0] && handleUploadDelivery(e.target.files[0])} />
                   {uploadingDelivery ? 'Загружаем...' : '⬆ Загрузить готовый файл'}
                 </label>
@@ -1448,14 +1458,266 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
               </div>
             )}
 
-            {/* Ссылка на CSV */}
-            <a
-              href={`/api/tenant?action=export_csv&album_id=${selected.id}`}
-              className="btn-secondary text-sm inline-flex items-center gap-2"
-              target="_blank"
+            {/* Действия */}
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
+              <a
+                href={`/api/tenant?action=export_csv&album_id=${selected.id}`}
+                className="btn-secondary text-sm inline-flex items-center gap-2"
+                target="_blank"
+              >
+                ⬇ CSV
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// ПАРТНЁРЫ — просмотр альбомов и статистики каждого тенанта
+// ============================================================
+
+function PartnersView({ tenants, selectedTenant, onSelectTenant }: {
+  tenants: Tenant[]
+  selectedTenant: Tenant | null
+  onSelectTenant: (t: Tenant | null) => void
+}) {
+  const [albums, setAlbums] = useState<any[]>([])
+  const [albumsLoading, setAlbumsLoading] = useState(false)
+  const [selectedAlbum, setSelectedAlbum] = useState<any | null>(null)
+  const [albumDetail, setAlbumDetail] = useState<any | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [search, setSearch] = useState('')
+
+  // Не показываем главный тенант (OkeyBook)
+  const partners = tenants.filter(t => t.slug !== 'main' && t.is_active)
+
+  const loadAlbums = async (tenant: Tenant) => {
+    setAlbumsLoading(true)
+    setSelectedAlbum(null)
+    setAlbumDetail(null)
+    try {
+      // Запрашиваем альбомы через super API
+      const r = await fetch(`/api/super?action=tenant_albums&tenant_id=${tenant.id}`)
+      const d = await r.json()
+      setAlbums(d.albums ?? [])
+    } finally {
+      setAlbumsLoading(false)
+    }
+  }
+
+  const loadAlbumDetail = async (album: any) => {
+    setSelectedAlbum(album)
+    setDetailLoading(true)
+    setAlbumDetail(null)
+    try {
+      const [statsRes, workflowRes] = await Promise.all([
+        fetch(`/api/super?action=album_detail&album_id=${album.id}`),
+        fetch(`/api/workflow?action=album_workflow&album_id=${album.id}`),
+      ])
+      const stats = await statsRes.json()
+      const workflow = await workflowRes.json()
+      setAlbumDetail({ ...stats, workflow: workflow.workflow, originals: workflow.originals ?? [] })
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  const selectTenant = (t: Tenant) => {
+    onSelectTenant(t)
+    loadAlbums(t)
+    setSearch('')
+  }
+
+  const filteredAlbums = albums.filter(a =>
+    !search || a.title?.toLowerCase().includes(search.toLowerCase()) ||
+    a.city?.toLowerCase().includes(search.toLowerCase())
+  )
+
+  const wfLabel = (s?: string) => ({
+    active: '🔵 Отбор', ready: '🟡 Готов', submitted: '🟣 Передан',
+    in_production: '🟠 В работе', delivered: '🟢 Готов к получению',
+  }[s ?? 'active'] ?? s)
+
+  return (
+    <div className="flex gap-4" style={{ minHeight: '70vh' }}>
+      {/* Список партнёров */}
+      <div className="w-56 flex-shrink-0 border-r border-gray-100 pr-4">
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+          Фотографы ({partners.length})
+        </h3>
+        {partners.length === 0 && (
+          <p className="text-sm text-gray-300">Нет активных партнёров</p>
+        )}
+        <div className="space-y-1">
+          {partners.map(t => (
+            <button
+              key={t.id}
+              onClick={() => selectTenant(t)}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                selectedTenant?.id === t.id
+                  ? 'bg-gray-900 text-white'
+                  : 'hover:bg-gray-50 text-gray-700'
+              }`}
             >
-              ⬇ Скачать CSV
-            </a>
+              <p className="font-medium truncate">{t.name}</p>
+              {t.city && <p className={`text-xs truncate ${selectedTenant?.id === t.id ? 'text-gray-300' : 'text-gray-400'}`}>{t.city}</p>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Список альбомов партнёра */}
+      {selectedTenant && (
+        <div className="w-64 flex-shrink-0 border-r border-gray-100 pr-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+              Альбомы
+            </h3>
+            <span className="text-xs text-gray-400">{albums.length}</span>
+          </div>
+
+          <input
+            className="input w-full text-sm mb-3"
+            placeholder="Поиск..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+
+          {albumsLoading ? (
+            <p className="text-sm text-gray-300 text-center py-6">Загрузка...</p>
+          ) : filteredAlbums.length === 0 ? (
+            <p className="text-sm text-gray-300 text-center py-6">Нет альбомов</p>
+          ) : (
+            <div className="space-y-1 overflow-y-auto" style={{ maxHeight: '60vh' }}>
+              {filteredAlbums.map(a => (
+                <button
+                  key={a.id}
+                  onClick={() => loadAlbumDetail(a)}
+                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                    selectedAlbum?.id === a.id
+                      ? 'bg-gray-900 text-white'
+                      : 'hover:bg-gray-50 text-gray-700'
+                  }`}
+                >
+                  <p className="font-medium truncate">{a.title}</p>
+                  <p className={`text-xs ${selectedAlbum?.id === a.id ? 'text-gray-300' : 'text-gray-400'}`}>
+                    {a.city && `${a.city} · `}{a.year}
+                    {a.workflow_status && ` · ${wfLabel(a.workflow_status)}`}
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Детали альбома */}
+      <div className="flex-1 overflow-y-auto">
+        {!selectedTenant && (
+          <div className="flex items-center justify-center h-full text-gray-300 text-sm">
+            Выберите фотографа слева
+          </div>
+        )}
+        {selectedTenant && !selectedAlbum && (
+          <div className="flex items-center justify-center h-full text-gray-300 text-sm">
+            Выберите альбом
+          </div>
+        )}
+        {selectedAlbum && (
+          <div className="space-y-4">
+            {/* Заголовок */}
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">{selectedAlbum.title}</h3>
+                <p className="text-sm text-gray-400">
+                  {selectedTenant?.name} · {selectedAlbum.city} · {selectedAlbum.year}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <a
+                  href={`/api/workflow?action=album_workflow&album_id=${selectedAlbum.id}`}
+                  className="btn-secondary text-xs"
+                  onClick={e => { e.preventDefault(); loadAlbumDetail(selectedAlbum) }}
+                >
+                  ↻
+                </a>
+                <a
+                  href={`/api/tenant?action=export_csv&album_id=${selectedAlbum.id}`}
+                  className="btn-secondary text-xs"
+                  target="_blank"
+                >
+                  ⬇ CSV
+                </a>
+              </div>
+            </div>
+
+            {detailLoading ? (
+              <p className="text-sm text-gray-400">Загрузка...</p>
+            ) : albumDetail ? (
+              <>
+                {/* Статистика */}
+                <div className="grid grid-cols-4 gap-3">
+                  {[
+                    { l: 'Учеников', v: albumDetail.total ?? 0, c: 'bg-gray-50' },
+                    { l: 'Завершили', v: albumDetail.submitted ?? 0, c: 'bg-green-50 text-green-700' },
+                    { l: 'В процессе', v: albumDetail.in_progress ?? 0, c: 'bg-blue-50 text-blue-700' },
+                    { l: 'Не начали', v: albumDetail.not_started ?? 0, c: 'bg-amber-50 text-amber-700' },
+                  ].map(s => (
+                    <div key={s.l} className={`rounded-xl p-3 ${s.c}`}>
+                      <p className="text-xl font-bold">{s.v}</p>
+                      <p className="text-xs opacity-70 mt-0.5">{s.l}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Прогресс */}
+                {(albumDetail.total ?? 0) > 0 && (
+                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden flex">
+                    <div className="bg-green-500 h-full" style={{ width: `${Math.round((albumDetail.submitted ?? 0) / albumDetail.total * 100)}%` }} />
+                    <div className="bg-blue-400 h-full" style={{ width: `${Math.round((albumDetail.in_progress ?? 0) / albumDetail.total * 100)}%` }} />
+                  </div>
+                )}
+
+                {/* Workflow статус */}
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-gray-700 mb-1">Статус производства</p>
+                  <p className="text-sm text-gray-600">{wfLabel(albumDetail.workflow?.workflow_status)}</p>
+                  {albumDetail.workflow?.workflow_notes && (
+                    <p className="text-xs text-amber-700 mt-2 bg-amber-50 rounded p-2">{albumDetail.workflow.workflow_notes}</p>
+                  )}
+                  {albumDetail.originals?.length > 0 && (
+                    <p className="text-xs text-gray-400 mt-2">📁 Оригиналов загружено: {albumDetail.originals.length}</p>
+                  )}
+                </div>
+
+                {/* Список учеников */}
+                {albumDetail.children && albumDetail.children.length > 0 && (
+                  <div>
+                    <p className="text-sm font-semibold text-gray-700 mb-2">Ученики</p>
+                    <div className="space-y-1 max-h-64 overflow-y-auto">
+                      {albumDetail.children.map((c: any) => (
+                        <div key={c.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-50 rounded-lg text-sm">
+                          <span className="text-gray-800">{c.full_name}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-gray-400">{c.class}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              c.submitted_at ? 'bg-green-100 text-green-700' :
+                              c.started_at ? 'bg-blue-100 text-blue-700' :
+                              'bg-gray-100 text-gray-500'
+                            }`}>
+                              {c.submitted_at ? 'Завершил' : c.started_at ? 'В процессе' : 'Не начал'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : null}
           </div>
         )}
       </div>

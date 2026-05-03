@@ -56,6 +56,37 @@ export async function GET(req: NextRequest) {
   }
 
   // --- Детали конкретного tenant'а ---
+  // ── tenant_albums — список альбомов тенанта для менеджера ───────────────────
+  if (action === 'tenant_albums' && tenantId) {
+    const { data, error } = await supabaseAdmin
+      .from('albums')
+      .select('id, title, city, year, archived, workflow_status, deadline')
+      .eq('tenant_id', tenantId)
+      .eq('archived', false)
+      .order('created_at', { ascending: false })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ albums: data ?? [] })
+  }
+
+  // ── album_detail — статистика по альбому для менеджера ────────────────────
+  if (action === 'album_detail') {
+    const albumId = req.nextUrl.searchParams.get('album_id')
+    if (!albumId) return NextResponse.json({ error: 'album_id required' }, { status: 400 })
+
+    const { data: children } = await supabaseAdmin
+      .from('children')
+      .select('id, full_name, class, submitted_at, started_at')
+      .eq('album_id', albumId)
+      .order('class').order('full_name')
+
+    const total = children?.length ?? 0
+    const submitted = children?.filter(c => c.submitted_at).length ?? 0
+    const in_progress = children?.filter(c => !c.submitted_at && c.started_at).length ?? 0
+    const not_started = total - submitted - in_progress
+
+    return NextResponse.json({ total, submitted, in_progress, not_started, children: children ?? [] })
+  }
+
   if (action === 'tenant_detail' && tenantId) {
     const [tenantRes, usersRes, albumsRes] = await Promise.all([
       supabaseAdmin.from('tenants').select('*').eq('id', tenantId).single(),
