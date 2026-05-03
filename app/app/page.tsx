@@ -5853,3 +5853,259 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
     </div>
   )
 }
+
+// ============================================================
+// ПАРТНЁРСКИЙ ДАШБОРД — полноценный просмотр кабинета партнёра
+// ============================================================
+
+function PartnersDashboardModal({ onClose, onNotify, onError }: {
+  onClose: () => void
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [tenants, setTenants] = useState<any[]>([])
+  const [selectedTenant, setSelectedTenant] = useState<any | null>(null)
+  const [dashboard, setDashboard] = useState<any | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null)
+  const [backdropStart, setBackdropStart] = useState(false)
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    fetch('/api/super?action=tenants')
+      .then(r => r.json())
+      .then(d => setTenants((d.tenants ?? []).filter((t: any) => t.slug !== 'main')))
+  }, [])
+
+  const loadPartnerDashboard = async (tenant: any) => {
+    setSelectedTenant(tenant)
+    setLoading(true)
+    setDashboard(null)
+    try {
+      const res = await fetch(`/api/tenant?action=dashboard&view_as=${tenant.id}`)
+      const data = await res.json()
+      setDashboard(data)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const filtered = tenants.filter(t =>
+    !search || t.name.toLowerCase().includes(search.toLowerCase()) ||
+    t.city?.toLowerCase().includes(search.toLowerCase())
+  )
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-6 pb-6 px-4 overflow-y-auto"
+      onMouseDown={e => { if (e.target === e.currentTarget) setBackdropStart(true) }}
+      onMouseUp={e => { if (backdropStart && e.target === e.currentTarget) onClose(); setBackdropStart(false) }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl min-h-[80vh] flex flex-col">
+        {/* Шапка */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center gap-4">
+            <h2 className="text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
+              📸 Партнёры
+            </h2>
+            {selectedTenant && (
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1">
+                <span className="text-xs text-amber-700">Просматриваете как:</span>
+                <span className="text-sm font-semibold text-amber-900">{selectedTenant.name}</span>
+                <button
+                  onClick={() => { setSelectedTenant(null); setDashboard(null) }}
+                  className="text-amber-400 hover:text-amber-700 ml-1 text-xs"
+                >×</button>
+              </div>
+            )}
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+        </div>
+
+        <div className="flex flex-1 overflow-hidden">
+          {/* Список партнёров */}
+          <div className="w-56 border-r border-gray-100 flex flex-col flex-shrink-0">
+            <div className="p-3 border-b border-gray-50">
+              <input className="input w-full text-sm" placeholder="Поиск..."
+                value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {filtered.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => loadPartnerDashboard(t)}
+                  className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${
+                    selectedTenant?.id === t.id ? 'bg-gray-50 border-l-2 border-l-gray-900' : ''
+                  }`}
+                >
+                  <p className="text-sm font-medium text-gray-900 truncate">{t.name}</p>
+                  {t.city && <p className="text-xs text-gray-400">{t.city}</p>}
+                </button>
+              ))}
+              {filtered.length === 0 && (
+                <p className="text-xs text-gray-400 text-center py-8">Нет партнёров</p>
+              )}
+            </div>
+          </div>
+
+          {/* Дашборд партнёра */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {!selectedTenant && (
+              <div className="flex items-center justify-center h-full text-gray-300">
+                Выберите партнёра слева
+              </div>
+            )}
+            {selectedTenant && loading && (
+              <div className="flex items-center justify-center h-full text-gray-400">
+                Загрузка...
+              </div>
+            )}
+            {selectedTenant && dashboard && !loading && (
+              <PartnerDashboardContent
+                tenant={selectedTenant}
+                dashboard={dashboard}
+                onOpenAlbum={setSelectedAlbum}
+                onNotify={onNotify}
+                onError={onError}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Модалка альбома партнёра */}
+      {selectedAlbum && (
+        <AlbumDetailModal
+          album={selectedAlbum}
+          canEdit={false}
+          onClose={() => setSelectedAlbum(null)}
+          onNotify={onNotify}
+          onError={onError}
+        />
+      )}
+    </div>
+  )
+}
+
+function PartnerDashboardContent({ tenant, dashboard, onOpenAlbum, onNotify, onError }: {
+  tenant: any
+  dashboard: any
+  onOpenAlbum: (album: Album) => void
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const albums: Album[] = dashboard.albums ?? []
+  const active = albums.filter(a => !a.archived)
+
+  // Считаем статистику как в основном дашборде
+  const children = dashboard.childrenStats ?? []
+  const totalChildren = children.length
+  const submittedCount = children.filter((c: any) => c.submitted_at).length
+  const inProgressCount = children.filter((c: any) => !c.submitted_at && c.started_at).length
+
+  const getAlbumStats = (albumId: string) => {
+    const albumChildren = children.filter((c: any) => c.album_id === albumId)
+    const total = albumChildren.length
+    const submitted = albumChildren.filter((c: any) => c.submitted_at).length
+    const inProgress = albumChildren.filter((c: any) => !c.submitted_at && c.started_at).length
+    return { total, submitted, inProgress, pct: total ? Math.round(submitted / total * 100) : 0 }
+  }
+
+  return (
+    <div>
+      {/* Шапка партнёра */}
+      <div className="mb-6">
+        <h3 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>{tenant.name}</h3>
+        {tenant.city && <p className="text-gray-500 text-sm">{tenant.city}</p>}
+      </div>
+
+      {/* Сводные карточки */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <div className="card p-4">
+          <p className="text-xs text-gray-500 mb-1">Активных альбомов</p>
+          <p className="text-2xl font-bold">{active.length}</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs text-gray-500 mb-1">Учеников</p>
+          <p className="text-2xl font-bold">{totalChildren}</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs text-gray-500 mb-1">Завершили выбор</p>
+          <p className="text-2xl font-bold text-green-600">
+            {submittedCount}
+            {totalChildren > 0 && <span className="text-sm font-normal text-gray-400 ml-1">{Math.round(submittedCount / totalChildren * 100)}%</span>}
+          </p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs text-gray-500 mb-1">В процессе</p>
+          <p className="text-2xl font-bold text-blue-500">{inProgressCount}</p>
+        </div>
+      </div>
+
+      {/* Карточки альбомов */}
+      {active.length === 0 ? (
+        <p className="text-gray-400 text-sm text-center py-12">Нет активных альбомов</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {active.map(album => {
+            const stats = getAlbumStats(album.id)
+            return (
+              <button
+                key={album.id}
+                onClick={() => onOpenAlbum(album)}
+                className="card p-4 text-left hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <p className="font-semibold text-gray-900">{album.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {album.city && `${album.city} · `}{album.year}
+                      {(album as any).classes && ` · ${(album as any).classes}`}
+                    </p>
+                    {(album as any).template_title && (
+                      <p className="text-xs text-gray-400">{(album as any).template_title}</p>
+                    )}
+                  </div>
+                  <span className={`text-sm font-bold ${
+                    stats.pct === 100 ? 'text-green-600' : 'text-gray-700'
+                  }`}>{stats.pct}%</span>
+                </div>
+
+                {/* Прогресс-бар */}
+                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-2">
+                  <div
+                    className="h-full bg-green-500 rounded-full"
+                    style={{ width: `${stats.pct}%` }}
+                  />
+                </div>
+
+                <p className="text-xs text-gray-400">
+                  {stats.submitted} из {stats.total} учеников
+                  {stats.inProgress > 0 && (
+                    <span className="ml-2 text-blue-400">{stats.inProgress} в процессе</span>
+                  )}
+                </p>
+
+                {/* Статус производства */}
+                {(album as any).workflow_status && (album as any).workflow_status !== 'active' && (
+                  <div className="mt-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      (album as any).workflow_status === 'delivered' ? 'bg-green-100 text-green-700' :
+                      (album as any).workflow_status === 'in_production' ? 'bg-amber-100 text-amber-700' :
+                      'bg-purple-100 text-purple-700'
+                    }`}>
+                      {(album as any).workflow_status === 'ready' ? '🟡 Готов к передаче' :
+                       (album as any).workflow_status === 'submitted' ? '🟣 Передан в OkeyBook' :
+                       (album as any).workflow_status === 'in_production' ? '🟠 В работе' :
+                       '🟢 Готов'}
+                    </span>
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}

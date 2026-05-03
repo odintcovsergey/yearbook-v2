@@ -537,14 +537,29 @@ export async function POST(req: NextRequest) {
     // 4. Audit log этого tenant'а (оставляем запись об удалении через superadmin ниже)
     await supabaseAdmin.from('audit_log').delete().eq('tenant_id', tenant_id)
 
-    // 5. Альбомы (каскадно удалят children, photos, selections и т.д. — эти связи между собой работают через album_id)
+    // 5. Обнуляем referrer_child_id в лидах (до удаления альбомов/детей)
+    const { data: albumIds } = await supabaseAdmin
+      .from('albums').select('id').eq('tenant_id', tenant_id)
+    if (albumIds && albumIds.length > 0) {
+      const ids = albumIds.map((a: any) => a.id)
+      const { data: childIds } = await supabaseAdmin
+        .from('children').select('id').in('album_id', ids)
+      if (childIds && childIds.length > 0) {
+        await supabaseAdmin
+          .from('referral_leads')
+          .update({ referrer_child_id: null })
+          .in('referrer_child_id', childIds.map((c: any) => c.id))
+      }
+    }
+
+    // 6. Альбомы (каскадно удалят children, photos, selections и т.д.)
     await supabaseAdmin.from('albums').delete().eq('tenant_id', tenant_id)
 
-    // 6. Шаблоны и цитаты этого tenant'а
+    // 7. Шаблоны и цитаты этого tenant'а
     await supabaseAdmin.from('album_templates').delete().eq('tenant_id', tenant_id)
     await supabaseAdmin.from('quotes').delete().eq('tenant_id', tenant_id)
 
-    // 7. Лиды
+    // 8. Лиды
     await supabaseAdmin.from('referral_leads').delete().eq('tenant_id', tenant_id)
 
     // 8. Наконец — сам tenant

@@ -92,6 +92,9 @@ export async function GET(req: NextRequest) {
 
   const action = req.nextUrl.searchParams.get('action')
   const albumId = req.nextUrl.searchParams.get('album_id')
+  // view_as позволяет суперадмину смотреть кабинет любого партнёра
+  const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+  const tid = (auth.role === 'superadmin' && viewAsTenantId) ? viewAsTenantId : auth.tenantId
 
   // ----------------------------------------------------------
   // dashboard — общая информация для главного экрана
@@ -102,24 +105,24 @@ export async function GET(req: NextRequest) {
       supabaseAdmin
         .from('albums')
         .select('*')
-        .eq('tenant_id', auth.tenantId)
+        .eq('tenant_id', tid)
         .order('created_at', { ascending: false }),
       supabaseAdmin
         .from('children')
         .select('album_id, submitted_at, started_at, albums!inner(tenant_id)')
-        .eq('albums.tenant_id', auth.tenantId),
+        .eq('albums.tenant_id', tid),
       supabaseAdmin
         .from('responsible_parents')
         .select('album_id, access_token, albums!inner(tenant_id)')
-        .eq('albums.tenant_id', auth.tenantId),
+        .eq('albums.tenant_id', tid),
       supabaseAdmin
         .from('teachers')
         .select('album_id, submitted_at, albums!inner(tenant_id)')
-        .eq('albums.tenant_id', auth.tenantId),
+        .eq('albums.tenant_id', tid),
       supabaseAdmin
         .from('referral_leads')
         .select('id, status')
-        .eq('tenant_id', auth.tenantId),
+        .eq('tenant_id', tid),
     ])
 
     const albums = albumsRes.data ?? []
@@ -277,7 +280,7 @@ export async function GET(req: NextRequest) {
       .select('id, albums!inner(tenant_id)')
       .eq('id', childId)
       .single()
-    if (!childCheck || (auth.role !== 'superadmin' && (childCheck as any).albums?.tenant_id !== auth.tenantId)) {
+    if (!childCheck || (auth.role !== 'superadmin' && (childCheck as any).albums?.tenant_id !== tid)) {
       return NextResponse.json({ error: 'Ученик не найден' }, { status: 404 })
     }
 
@@ -321,7 +324,7 @@ export async function GET(req: NextRequest) {
     const { data } = await supabaseAdmin
       .from('album_templates')
       .select('*')
-      .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+      .or(`tenant_id.is.null,tenant_id.eq.${tid}`)
       .order('created_at')
 
     return NextResponse.json(data ?? [])
@@ -425,7 +428,7 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false })
 
     if (auth.role !== 'superadmin') {
-      query = query.eq('tenant_id', auth.tenantId)
+      query = query.eq('tenant_id', tid)
     }
 
     const { data, error } = await query
@@ -481,7 +484,7 @@ export async function GET(req: NextRequest) {
     const { data: quotes, error } = await supabaseAdmin
       .from('quotes')
       .select('id, text, category, tenant_id, created_at')
-      .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+      .or(`tenant_id.is.null,tenant_id.eq.${tid}`)
       .order('category')
       .order('created_at')
 
@@ -499,7 +502,7 @@ export async function GET(req: NextRequest) {
         .in('quote_id', quoteIds)
 
       if (auth.role !== 'superadmin') {
-        selQuery = selQuery.eq('albums.tenant_id', auth.tenantId)
+        selQuery = selQuery.eq('albums.tenant_id', tid)
       }
 
       const { data: sels } = await selQuery
@@ -536,7 +539,7 @@ export async function GET(req: NextRequest) {
       .order('created_at')
 
     if (auth.role !== 'superadmin') {
-      query = query.eq('tenant_id', auth.tenantId)
+      query = query.eq('tenant_id', tid)
     }
 
     const { data, error } = await query
@@ -561,7 +564,7 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false })
 
     if (auth.role !== 'superadmin') {
-      query = query.eq('tenant_id', auth.tenantId)
+      query = query.eq('tenant_id', tid)
     }
 
     const { data, error } = await query
@@ -599,7 +602,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabaseAdmin
       .from('tenants')
       .select('id, name, slug, logo_url, city, phone, email, plan, plan_expires, max_albums, max_storage_mb, settings, is_active, created_at')
-      .eq('id', auth.tenantId)
+      .eq('id', tid)
       .single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -658,7 +661,7 @@ export async function GET(req: NextRequest) {
     const { data: allChildren } = await supabaseAdmin
       .from('children')
       .select('album_id, submitted_at, started_at, albums!inner(id, title, city, year, archived, tenant_id, deadline)')
-      .eq('albums.tenant_id', auth.tenantId)
+      .eq('albums.tenant_id', tid)
       .eq('albums.archived', false)
 
     const children = allChildren ?? []
