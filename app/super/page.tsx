@@ -1287,23 +1287,66 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
     setTaking(false)
   }
 
+  const [uploadProgress, setUploadProgress] = useState(0)
+
   const handleUploadDelivery = async (file: File) => {
     setUploadingDelivery(true)
-    const fd = new FormData()
-    fd.append('album_id', selected.id)
-    fd.append('upload_type', 'delivery')
-    fd.append('file', file)
-    fd.append('label', deliveryLabel)
-    const res = await fetch('/api/workflow', { method: 'POST', body: fd })
-    const data = await res.json()
-    if (data.record) {
-      setDeliveryFiles(prev => [...prev, data.record])
-      onNotify('Файл загружен, статус → Готов')
-      onRefresh()
-    } else {
-      onNotify(data.error ?? 'Ошибка загрузки', 'err')
+    setUploadProgress(0)
+    try {
+      // 1. Получаем presigned URL — загрузка напрямую в YC, минуя Vercel
+      const urlRes = await fetch('/api/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          album_id: selected.id,
+          filename: file.name,
+          content_type: file.type || 'application/octet-stream',
+          upload_type: 'delivery',
+        }),
+      })
+      const { upload_url, storage_path, error: urlErr } = await urlRes.json()
+      if (urlErr || !upload_url) throw new Error(urlErr ?? 'Не удалось получить URL загрузки')
+
+      // 2. Загружаем напрямую в YC с отслеживанием прогресса через XHR
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('PUT', upload_url)
+        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadProgress(Math.round(e.loaded / e.total * 100))
+        }
+        xhr.onload = () => xhr.status < 300 ? resolve() : reject(new Error(`YC upload error: ${xhr.status}`))
+        xhr.onerror = () => reject(new Error('Ошибка сети'))
+        xhr.send(file)
+      })
+
+      // 3. Регистрируем в БД через workflow API
+      const regRes = await fetch('/api/workflow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'register_delivery',
+          album_id: selected.id,
+          storage_path,
+          filename: file.name,
+          file_size: file.size,
+          label: deliveryLabel,
+        }),
+      })
+      const data = await regRes.json()
+      if (data.record) {
+        setDeliveryFiles(prev => [...prev, data.record])
+        onNotify('Файл загружен — статус изменён на «Готов»')
+        onRefresh()
+      } else {
+        throw new Error(data.error ?? 'Ошибка регистрации файла')
+      }
+    } catch (err: any) {
+      onNotify(err.message ?? 'Ошибка загрузки', 'err')
+    } finally {
+      setUploadingDelivery(false)
+      setUploadProgress(0)
     }
-    setUploadingDelivery(false)
   }
 
   // Загружаем delivery файлы при выборе альбома
@@ -1432,8 +1475,14 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
                   <input type="file" className="hidden"
                     accept=".pdf,.zip,.rar,.7z,.jpg,.jpeg,.png,.tif,.tiff"
                     onChange={e => e.target.files?.[0] && handleUploadDelivery(e.target.files[0])} />
-                  {uploadingDelivery ? 'Загружаем...' : '⬆ Загрузить готовый файл'}
+                  {uploadingDelivery ? `Загружаем... ${uploadProgress}%` : '⬆ Загрузить готовый файл'}
                 </label>
+                {uploadingDelivery && uploadProgress > 0 && (
+                  <div className="h-2 bg-orange-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-orange-400 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }} />
+                  </div>
+                )}
               </div>
             )}
 

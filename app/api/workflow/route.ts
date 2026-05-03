@@ -272,6 +272,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  // ── register_delivery — регистрация уже загруженного delivery файла ─────────
+  if (action === 'register_delivery') {
+    const { storage_path, filename, file_size, label } = body
+    if (!storage_path || !filename) {
+      return NextResponse.json({ error: 'storage_path and filename required' }, { status: 400 })
+    }
+    const expiresAt = new Date()
+    expiresAt.setMonth(expiresAt.getMonth() + 6)
+
+    const { data: record, error: dbErr } = await supabaseAdmin
+      .from('delivery_files')
+      .insert({
+        album_id: album_id,
+        tenant_id: album.tenant_id,
+        storage_path,
+        filename,
+        file_size: file_size ?? null,
+        label: label || 'Готовый файл',
+        expires_at: expiresAt.toISOString(),
+        uploaded_by: auth.userId,
+      })
+      .select().single()
+
+    if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 })
+
+    // Переводим в delivered если был in_production
+    if (album.workflow_status === 'in_production') {
+      await supabaseAdmin.from('albums').update({
+        workflow_status: 'delivered',
+        workflow_delivered_at: new Date().toISOString(),
+      }).eq('id', album_id)
+    }
+
+    await logAction(auth, 'workflow.register_delivery', 'album', album_id, { filename })
+    return NextResponse.json({ record })
+  }
+
   // ── mark_downloaded — партнёр скачал delivery файл ───────────────────────
   if (action === 'mark_downloaded') {
     await supabaseAdmin.from('delivery_files')

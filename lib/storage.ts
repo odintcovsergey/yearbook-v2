@@ -4,6 +4,7 @@
  */
 
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 const YC_ENDPOINT = 'https://storage.yandexcloud.net'
 const YC_REGION = 'ru-central1'
@@ -65,4 +66,15 @@ export function stripYcPrefix(storagePath: string): string {
 export function getPhotoUrlUniversal(storagePath: string): string {
   if (!storagePath) return ''
   return ycPhotoUrl(stripYcPrefix(storagePath))
+}
+
+// Presigned URL для прямой загрузки в YC с клиента (обход лимита Vercel 4.5 МБ)
+export async function getYcUploadUrl(key: string, contentType: string, expiresIn = 3600): Promise<string> {
+  const cmd = new PutObjectCommand({
+    Bucket: process.env.YC_BUCKET_NAME ?? 'yearbook-photos',
+    Key: key,
+    ContentType: contentType,
+    ACL: 'public-read',
+  })
+  return getSignedUrl(ycStorage, cmd, { expiresIn })
 }
