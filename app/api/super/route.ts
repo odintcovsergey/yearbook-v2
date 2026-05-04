@@ -148,8 +148,18 @@ export async function GET(req: NextRequest) {
 // ============================================================
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req, ['superadmin'])
+  // superadmin — полный доступ
+  // owner/manager main тенанта — только create_owner и create_tenant (создание партнёров)
+  const auth = await requireAuth(req, ['superadmin', 'owner', 'manager'])
   if (isAuthError(auth)) return auth
+
+  // Проверяем что non-superadmin — из main тенанта
+  if (auth.role !== 'superadmin') {
+    const { data: t } = await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+    if (t?.slug !== 'main') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+  }
 
   const body = await req.json()
 

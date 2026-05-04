@@ -118,8 +118,9 @@ export async function GET(req: NextRequest) {
       .eq('is_active', true)
       .order('name')
 
-    // Менеджер видит только назначенных ему
-    if (auth.role !== 'superadmin' && auth.role !== 'owner') {
+    // owner и manager OkeyBook видят только назначенных им партнёров
+    // (если assigned_manager_id не пустой — фильтруем по нему)
+    if (auth.role !== 'superadmin') {
       query.eq('assigned_manager_id', auth.userId)
     }
 
