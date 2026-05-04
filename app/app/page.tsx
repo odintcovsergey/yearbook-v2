@@ -6243,6 +6243,7 @@ function CreatePartnerModal({ onClose, onSuccess }: {
         owner_full_name: form.owner_name,
         owner_email: form.owner_email,
         owner_password: form.owner_password,
+        assign_manager_after_create: true,
       }),
     })
     const data = await res.json()

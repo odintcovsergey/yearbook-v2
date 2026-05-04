@@ -299,6 +299,14 @@ export async function POST(req: NextRequest) {
       owner_email: owner.email,
     })
 
+    // Если создаётся из ЛК менеджера — автоматически назначаем его ответственным
+    if (body.assign_manager_after_create && auth.role !== 'superadmin') {
+      await supabaseAdmin
+        .from('tenants')
+        .update({ assigned_manager_id: auth.userId })
+        .eq('id', tenant.id)
+    }
+
     return NextResponse.json({ tenant, owner })
   }
 
