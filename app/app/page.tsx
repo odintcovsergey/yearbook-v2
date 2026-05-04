@@ -6021,7 +6021,7 @@ function PartnersDashboardModal({ onClose, onNotify, onError }: {
       {selectedAlbum && selectedTenant && (
         <AlbumDetailModal
           album={selectedAlbum}
-          canEdit={false}
+          canEdit={true}
           onClose={() => setSelectedAlbum(null)}
           onNotify={onNotify}
           onError={onError}
@@ -6207,7 +6207,7 @@ function CreatePartnerModal({ onClose, onSuccess }: {
       .replace(/[чch]/g, 'ch').replace(/[шsh]/g, 'sh').replace(/[щsh]/g, 'sh')
       .replace(/[ъь]/g, '').replace(/[ыy]/g, 'y').replace(/[эe]/g, 'e')
       .replace(/[юyu]/g, 'yu').replace(/[яya]/g, 'ya')
-      .replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '')
+      .replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
       .slice(0, 30)
     set('slug', auto)
   }
@@ -6232,7 +6232,7 @@ function CreatePartnerModal({ onClose, onSuccess }: {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        action: 'create_owner',
+        action: 'create_tenant',
         name: form.name,
         slug: form.slug,
         city: form.city,
@@ -6240,7 +6240,7 @@ function CreatePartnerModal({ onClose, onSuccess }: {
         phone: form.phone,
         plan: form.plan,
         max_albums: parseInt(form.max_albums) || 30,
-        owner_name: form.owner_name,
+        owner_full_name: form.owner_name,
         owner_email: form.owner_email,
         owner_password: form.owner_password,
       }),
