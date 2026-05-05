@@ -131,3 +131,22 @@ export type BBox = {
   width: number;
   height: number;
 };
+
+/**
+ * Геометрия разворота — результат `computeSpreadGeometry` из `extract-geometry.ts`.
+ * Используется и `parse.ts` (для размеров мастера), и `extractPlaceholders`
+ * (для нормализации координат и определения pageIndex по centroid bbox).
+ */
+export type SpreadGeometry = {
+  width_mm: number;
+  height_mm: number;
+  /** spread origin = leftmost Page.ItemTransform.{tx, ty} в pt. */
+  origin: Point;
+  is_spread: boolean;
+  /**
+   * x-диапазоны страниц в spread coords (в pt). Длина массива = number of pages.
+   * Используется для определения pageIndex фрейма по centroid его bbox
+   * (для добавления `_left`/`_right` суффиксов в `dedupeLabels`).
+   */
+  pages_x_ranges: Array<{ x_min: number; x_max: number }>;
+};

@@ -4,25 +4,26 @@
  * Архитектурные решения и формат IDML —
  * см. docs/templates/idml-recon-notes.md, §6.
  *
- * В коммите 0.2.1 реализованы:
+ * Реализовано к коммиту 0.2.2:
  *   - распаковка IDML (zip) через jszip
  *   - чтение Resources/Preferences.xml (размеры страницы, FacingPages, PageBinding, bleed)
- *   - скелет цикла по MasterSpreads/*.xml (placeholders = [] для каждого мастера)
+ *   - геометрия плейсхолдеров через `extract-geometry.ts`
+ *     (leftmost-Page.ItemTransform, lowercase-нормализация label'ов,
+ *     `_left`/`_right` суффиксы при коллизиях, rotation)
  *
- * В 0.2.2 добавится извлечение геометрии плейсхолдеров (extract-geometry.ts).
  * В 0.3 — извлечение стилей текста (extract-styles.ts).
  */
 
 import JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
+import { computeSpreadGeometry, extractPlaceholders } from './extract-geometry';
 import type {
   ParsedSpreadTemplate,
   ParsedTemplateSet,
   ParserWarning,
   SpreadTemplateType,
 } from './types';
-
-const POINTS_PER_MM = 2.83464566929;
+import { findFirst, getAttr, num, ptToMm } from './xml-utils';
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -122,7 +123,7 @@ async function readPreferences(zip: JSZip): Promise<
   };
 }
 
-// ─── MasterSpread (скелет, наполнение в 0.2.2) ────────────────────────────
+// ─── MasterSpread ─────────────────────────────────────────────────────────
 
 function parseMasterSpread(
   xml: string,
@@ -142,19 +143,29 @@ function parseMasterSpread(
     return null;
   }
 
-  const pages = collectAll(masterSpread, 'Page');
-  const is_spread = pages.length === 2;
+  const geometry = computeSpreadGeometry(masterSpread);
+  if (!geometry) {
+    warnings.push({
+      message: 'Could not compute spread geometry (no valid pages)',
+      master: name,
+    });
+    return null;
+  }
 
-  const { width_mm, height_mm } = pageBoundsToMm(pages);
+  const placeholders = extractPlaceholders(
+    masterSpread,
+    geometry,
+    name,
+    warnings,
+  );
 
   return {
     name,
     type: typeFromName(name),
-    is_spread,
-    width_mm,
-    height_mm,
-    // Геометрия плейсхолдеров — в 0.2.2 (extract-geometry.ts).
-    placeholders: [],
+    is_spread: geometry.is_spread,
+    width_mm: geometry.width_mm,
+    height_mm: geometry.height_mm,
+    placeholders,
     rules: null,
   };
 }
@@ -178,115 +189,4 @@ function typeFromName(name: string): SpreadTemplateType {
     default:
       return 'common';
   }
-}
-
-/**
- * Размер мастер-страницы (или разворота) в mm — на базе GeometricBounds первой страницы.
- * GeometricBounds = "y1 x1 y2 x2" в pt.
- *
- * В 0.2.2 эта функция станет частью общей логики leftmost-Page.ItemTransform.
- * Здесь — упрощённая версия: для двухстраничных берём 2× ширину одной страницы.
- */
-function pageBoundsToMm(pages: Record<string, unknown>[]): {
-  width_mm: number;
-  height_mm: number;
-} {
-  if (pages.length === 0) return { width_mm: 0, height_mm: 0 };
-
-  const bounds = parseGeometricBounds(getAttr(pages[0], 'GeometricBounds'));
-  if (!bounds) return { width_mm: 0, height_mm: 0 };
-
-  const singleWidthMm = ptToMm(bounds.x2 - bounds.x1);
-  const heightMm = ptToMm(bounds.y2 - bounds.y1);
-
-  return {
-    width_mm: pages.length === 2 ? singleWidthMm * 2 : singleWidthMm,
-    height_mm: heightMm,
-  };
-}
-
-function parseGeometricBounds(
-  raw: string | undefined,
-): { y1: number; x1: number; y2: number; x2: number } | null {
-  if (!raw) return null;
-  const parts = raw.trim().split(/\s+/).map(Number);
-  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return null;
-  return { y1: parts[0], x1: parts[1], y2: parts[2], x2: parts[3] };
-}
-
-// ─── Утилиты обхода XML ───────────────────────────────────────────────────
-
-/**
- * Рекурсивно ищет первый элемент с указанным тегом в распарсенном дереве.
- */
-function findFirst(
-  node: unknown,
-  tag: string,
-): Record<string, unknown> | null {
-  if (!node || typeof node !== 'object') return null;
-  const obj = node as Record<string, unknown>;
-  if (tag in obj) {
-    const value = obj[tag];
-    if (Array.isArray(value)) {
-      return (value[0] as Record<string, unknown>) ?? null;
-    }
-    if (value && typeof value === 'object') {
-      return value as Record<string, unknown>;
-    }
-  }
-  for (const key of Object.keys(obj)) {
-    if (key.startsWith('@_') || key === '#text') continue;
-    const found = findFirst(obj[key], tag);
-    if (found) return found;
-  }
-  return null;
-}
-
-/**
- * Собирает все элементы с указанным тегом на любой глубине.
- */
-function collectAll(
-  node: unknown,
-  tag: string,
-  out: Record<string, unknown>[] = [],
-): Record<string, unknown>[] {
-  if (!node || typeof node !== 'object') return out;
-  const obj = node as Record<string, unknown>;
-  if (tag in obj) {
-    const value = obj[tag];
-    if (Array.isArray(value)) {
-      for (const v of value) {
-        if (v && typeof v === 'object') {
-          out.push(v as Record<string, unknown>);
-        }
-      }
-    } else if (value && typeof value === 'object') {
-      out.push(value as Record<string, unknown>);
-    }
-  }
-  for (const key of Object.keys(obj)) {
-    if (key.startsWith('@_') || key === '#text') continue;
-    const v = obj[key];
-    if (v && typeof v === 'object') collectAll(v, tag, out);
-  }
-  return out;
-}
-
-function getAttr(
-  obj: Record<string, unknown> | undefined,
-  attr: string,
-): string | undefined {
-  if (!obj) return undefined;
-  const v = obj['@_' + attr];
-  return typeof v === 'string' ? v : undefined;
-}
-
-function num(v: string | undefined, fallback: number): number {
-  if (v === undefined) return fallback;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function ptToMm(pt: number): number {
-  return pt / POINTS_PER_MM;
 }
