@@ -17,6 +17,8 @@
 import JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
 import { computeSpreadGeometry, extractPlaceholders } from './extract-geometry';
+import { loadStyleResolver } from './extract-styles';
+import type { StyleResolver } from './extract-styles';
 import type {
   ParsedSpreadTemplate,
   ParsedTemplateSet,
@@ -42,6 +44,7 @@ export async function parseIdml(
   const zip = await JSZip.loadAsync(input);
 
   const preferences = await readPreferences(zip);
+  const styleResolver = await loadStyleResolver(zip);
 
   const spread_templates: ParsedSpreadTemplate[] = [];
   const masterSpreadFiles = Object.keys(zip.files)
@@ -55,7 +58,7 @@ export async function parseIdml(
 
   for (const path of masterSpreadFiles) {
     const xml = await zip.files[path].async('string');
-    const parsed = parseMasterSpread(xml, path, warnings);
+    const parsed = parseMasterSpread(xml, path, warnings, styleResolver);
     if (parsed) spread_templates.push(parsed);
   }
 
@@ -129,6 +132,7 @@ function parseMasterSpread(
   xml: string,
   path: string,
   warnings: ParserWarning[],
+  resolver: StyleResolver,
 ): ParsedSpreadTemplate | null {
   const root = xmlParser.parse(xml) as Record<string, unknown>;
   const masterSpread = findFirst(root, 'MasterSpread');
@@ -157,6 +161,7 @@ function parseMasterSpread(
     geometry,
     name,
     warnings,
+    resolver,
   );
 
   return {

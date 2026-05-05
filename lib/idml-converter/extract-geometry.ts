@@ -5,7 +5,7 @@
  * Формула преобразования и эмпирическая проверка — recon-notes §3.
  */
 
-import { TEXT_STYLE_DEFAULTS } from './extract-styles';
+import type { StyleResolver } from './extract-styles';
 import type {
   BBox,
   ItemTransform,
@@ -87,6 +87,7 @@ export function extractPlaceholders(
   geometry: SpreadGeometry,
   masterName: string,
   warnings: ParserWarning[],
+  resolver: StyleResolver,
 ): Placeholder[] {
   const frames = collectFrames(masterSpread);
   const result: Array<Placeholder & { _pageIndex: number }> = [];
@@ -108,6 +109,7 @@ export function extractPlaceholders(
       geometry,
       masterName,
       warnings,
+      resolver,
     );
     if (placeholder) result.push(placeholder);
   }
@@ -147,6 +149,7 @@ function frameToPlaceholder(
   geometry: SpreadGeometry,
   masterName: string,
   warnings: ParserWarning[],
+  resolver: StyleResolver,
 ): (Placeholder & { _pageIndex: number }) | null {
   const transform = parseItemTransform(getAttr(frame.node, 'ItemTransform'));
   if (!transform) {
@@ -212,15 +215,20 @@ function frameToPlaceholder(
     };
   }
 
-  // textframe — стили из 0.3 (заполняются TEXT_STYLE_DEFAULTS).
-  // TODO 0.3: для label содержащего "name" (studentName, headTeacherName,
-  // teacherName_*) → auto_fit: true, min_size_pt: 12.
-  // Для label с "quote"/"role" → auto_fit: false. См. memory
-  // project_phase0_parser_followups.md.
+  // textframe — стили резолвятся через StyleResolver
+  // (Resources/Styles.xml + Stories/*.xml + Resources/Graphic.xml).
+  // auto_fit правила по label применяются внутри resolveTextStyle.
+  const parentStoryId = getAttr(frame.node, 'ParentStory') ?? null;
+  const textStyle = resolver.resolveTextStyle(
+    parentStoryId,
+    label,
+    masterName,
+    warnings,
+  );
   return {
     ...common,
     type: 'text',
-    ...TEXT_STYLE_DEFAULTS,
+    ...textStyle,
     _pageIndex: pageIndex,
   };
 }

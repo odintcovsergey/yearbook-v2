@@ -13,6 +13,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { parseIdml } from '../../lib/idml-converter/parse';
+import type { TextPlaceholder } from '../../lib/idml-converter/types';
 
 const IDML_PATH = path.join(
   process.cwd(),
@@ -43,6 +44,14 @@ function check(label: string, ok: boolean, detail?: string): void {
 
 function near(actual: number, expected: number, tol = TOLERANCE_MM): boolean {
   return Math.abs(actual - expected) <= tol;
+}
+
+const HEX_RE = /^#[0-9a-f]{6}$/;
+
+function info(label: string, detail?: string): void {
+  const sign = '\x1b[36m[INFO]\x1b[0m';
+  const suffix = detail ? ` — ${detail}` : '';
+  console.log(`  ${sign} ${label}${suffix}`);
 }
 
 async function main(): Promise<void> {
@@ -198,6 +207,111 @@ async function main(): Promise<void> {
         ? `${rotated.label} = ${rotated.rotation_deg?.toFixed(2)}°`
         : `${fHead.placeholders.length} placeholders, none rotated -90°`,
     );
+  }
+
+  // ─── Text styles ──────────────────────────────────────────────────────
+  console.log('\nText styles:');
+  const eslPlaceholders =
+    result.spread_templates.find((s) => s.name === 'E-Student-Left')
+      ?.placeholders ?? [];
+  const studentNameRaw = eslPlaceholders.find(
+    (p) => p.label === 'studentname',
+  );
+  if (!studentNameRaw || studentNameRaw.type !== 'text') {
+    check(
+      'E-Student-Left has studentname text placeholder',
+      false,
+      'not found or not text',
+    );
+  } else {
+    const sn = studentNameRaw;
+    info('studentname.font_family', sn.font_family);
+    info('studentname.font_size_pt', String(sn.font_size_pt));
+    check(
+      'studentname.auto_fit === true',
+      sn.auto_fit === true,
+      `auto_fit=${sn.auto_fit}`,
+    );
+    check(
+      'studentname.min_size_pt === 12',
+      sn.min_size_pt === 12,
+      `min_size_pt=${sn.min_size_pt}`,
+    );
+    check(
+      'studentname.color is valid hex',
+      HEX_RE.test(sn.color),
+      `color=${sn.color}`,
+    );
+  }
+
+  let foundQuote: { master: string; ph: TextPlaceholder } | null = null;
+  for (const m of result.spread_templates) {
+    for (const p of m.placeholders) {
+      if (p.type === 'text' && p.label.includes('quote')) {
+        foundQuote = { master: m.name, ph: p };
+        break;
+      }
+    }
+    if (foundQuote) break;
+  }
+  if (!foundQuote) {
+    check('found a *quote* text placeholder', false, 'no quote in any master');
+  } else {
+    check(
+      `${foundQuote.master}/${foundQuote.ph.label}.auto_fit === false`,
+      foundQuote.ph.auto_fit === false,
+      `auto_fit=${foundQuote.ph.auto_fit}`,
+    );
+  }
+
+  // ─── Color validity ───────────────────────────────────────────────────
+  console.log('\nColor validity:');
+  const allTexts: Array<{ master: string; ph: TextPlaceholder }> = [];
+  for (const m of result.spread_templates) {
+    for (const p of m.placeholders) {
+      if (p.type === 'text') allTexts.push({ master: m.name, ph: p });
+    }
+  }
+  const emptyColor = allTexts.filter((t) => !t.ph.color);
+  const invalidColor = allTexts.filter(
+    (t) => t.ph.color && !HEX_RE.test(t.ph.color),
+  );
+  check(
+    'no text placeholders with empty/undefined color',
+    emptyColor.length === 0,
+    `${emptyColor.length} empty (of ${allTexts.length} total)`,
+  );
+  check(
+    'no text placeholders with invalid hex color',
+    invalidColor.length === 0,
+    invalidColor.length > 0
+      ? `e.g. ${invalidColor[0].master}/${invalidColor[0].ph.label}=${invalidColor[0].ph.color}`
+      : `${allTexts.length} text placeholders, all valid`,
+  );
+
+  // ─── Stories actually parsed (защита от молчаливого fallback) ────────
+  console.log('\nStories actually parsed:');
+  const nonDefault = allTexts.find(
+    (t) => t.ph.font_family !== 'Geologica' || t.ph.font_size_pt !== 14,
+  );
+  check(
+    'at least one text placeholder has non-default style (Stories parsed)',
+    !!nonDefault,
+    nonDefault
+      ? `${nonDefault.master}/${nonDefault.ph.label}: ${nonDefault.ph.font_family} ${nonDefault.ph.font_size_pt}pt`
+      : 'all text placeholders use Geologica/14pt — Stories may not be parsed correctly',
+  );
+
+  // ─── Multiple paragraph styles (info) ─────────────────────────────────
+  const multiParaWarnings = result.warnings.filter((w) =>
+    w.message.includes('multiple paragraph styles'),
+  );
+  if (multiParaWarnings.length > 0) {
+    console.log('\nMultiple paragraph styles (info):');
+    for (const w of multiParaWarnings) {
+      const ctx = [w.master, w.label].filter(Boolean).join('/');
+      info(ctx || '(no context)', w.message);
+    }
   }
 
   // ─── Warnings (информационно) ─────────────────────────────────────────
