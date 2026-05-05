@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
 
     let query = supabaseAdmin
       .from('template_sets')
-      .select(TEMPLATE_SET_FIELDS)
+      .select(TEMPLATE_SET_FIELDS + ', spread_templates(count)')
       .order('is_global', { ascending: false })
       .order('name', { ascending: true })
       .limit(500)
