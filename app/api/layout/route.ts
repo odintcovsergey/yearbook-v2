@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { requireAuth, isAuthError } from '@/lib/auth'
+import { requireAuth, isAuthError, logAction } from '@/lib/auth'
+import { parseIdml } from '@/lib/idml-converter/parse'
+import { uploadTemplateSetToSupabase, type UploadResult } from '@/lib/idml-converter/upload'
+import type { ParsedTemplateSet } from '@/lib/idml-converter/types'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -108,4 +111,153 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json({ error: 'unknown action' }, { status: 400 })
+}
+
+// ============================================================
+// POST /api/layout?action=import_idml — multipart upload
+// ============================================================
+// Только superadmin: импорт template_set влияет на всех пользователей
+// (global = все tenant'ы; tenant-shared = весь tenant).
+//
+// Form fields:
+//   file         — IDML (обязательный)
+//   name         — отображаемое имя
+//   slug         — обязательный, regex проверит uploadTemplateSetToSupabase
+//   print_type   — 'layflat' | 'soft'
+//   tenant_id    — '' | 'global' → null; UUID → конкретный tenant
+//   description  — optional, пустая строка → null
+//   force        — литерал 'true'; any value other than literal 'true'
+//                  is treated as false
+//
+// Размер тела не валидируем: Vercel platform limit ~4.5 MB сработает
+// сам. Реальные IDML 1-2 MB. Если упрёмся — отдельным коммитом перейти
+// на Storage upload + reference.
+// ============================================================
+
+export async function POST(req: NextRequest) {
+  const auth = await requireAuth(req, ['superadmin'])
+  if (isAuthError(auth)) return auth
+
+  const action = req.nextUrl.searchParams.get('action')
+  if (action !== 'import_idml') {
+    return NextResponse.json({ error: 'unknown action' }, { status: 400 })
+  }
+
+  // ─── Parse multipart ────────────────────────────────────────────
+  let formData: FormData
+  try {
+    formData = await req.formData()
+  } catch {
+    return NextResponse.json({ error: 'invalid multipart body' }, { status: 400 })
+  }
+
+  const file = formData.get('file')
+  const name = formData.get('name')
+  const slug = formData.get('slug')
+  const printType = formData.get('print_type')
+  const tenantIdRaw = formData.get('tenant_id')
+  const descriptionRaw = formData.get('description')
+  const forceRaw = formData.get('force')
+
+  // ─── Минимальная валидация (regex slug, UUID tenantId, name non-empty,
+  //     duplicate master spread names, printType — это всё ловит upload.ts) ──
+  if (!(file instanceof File)) {
+    return NextResponse.json({ error: 'file is required' }, { status: 400 })
+  }
+  if (typeof name !== 'string' || name.trim() === '') {
+    return NextResponse.json({ error: 'name is required' }, { status: 400 })
+  }
+  if (typeof slug !== 'string' || slug === '') {
+    return NextResponse.json({ error: 'slug is required' }, { status: 400 })
+  }
+  if (printType !== 'layflat' && printType !== 'soft') {
+    return NextResponse.json(
+      { error: 'print_type must be layflat or soft' },
+      { status: 400 },
+    )
+  }
+
+  let tenantId: string | null
+  if (tenantIdRaw === null || tenantIdRaw === '' || tenantIdRaw === 'global') {
+    tenantId = null
+  } else if (typeof tenantIdRaw === 'string' && UUID_REGEX.test(tenantIdRaw)) {
+    tenantId = tenantIdRaw
+  } else {
+    return NextResponse.json({ error: 'invalid tenant_id' }, { status: 400 })
+  }
+
+  const force = forceRaw === 'true'
+  const description =
+    typeof descriptionRaw === 'string' && descriptionRaw.length > 0
+      ? descriptionRaw
+      : null
+
+  // ─── Парсинг IDML (битый IDML = клиентская проблема → 400) ──────
+  const buffer = Buffer.from(await file.arrayBuffer())
+  let parsed: ParsedTemplateSet
+  try {
+    parsed = await parseIdml(buffer)
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'parse failed'
+    return NextResponse.json(
+      { error: 'idml_parse_failed', message },
+      { status: 400 },
+    )
+  }
+
+  // ─── Upload + маппинг ошибок на статусы ─────────────────────────
+  // NOTE: string-matching хрупкий. Если в lib/idml-converter/upload.ts
+  //  меняется текст брошенных Error — НЕ ЗАБЫТЬ обновить паттерны здесь.
+  //  Альтернатива: typed UploadError в lib/idml-converter/upload.ts
+  //  (рассмотрим в 0.13 когда будет второй call-site).
+  let result: UploadResult
+  try {
+    result = await uploadTemplateSetToSupabase(
+      parsed,
+      { name, slug, tenantId, printType, description, force },
+      supabaseAdmin,
+    )
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'upload failed'
+
+    if (message.includes('already exists')) {
+      return NextResponse.json(
+        { error: 'slug_exists', message, requires_force: true },
+        { status: 409 },
+      )
+    }
+
+    const isValidation =
+      message.startsWith('invalid ') ||
+      message.includes('must be') ||
+      message.includes('IDML contains duplicate') ||
+      message.includes('non-empty')
+
+    return NextResponse.json(
+      { error: isValidation ? 'validation_failed' : 'upload_failed', message },
+      { status: isValidation ? 400 : 500 },
+    )
+  }
+
+  // ─── Audit log (logAction сам ловит ошибки — handler не упадёт) ──
+  await logAction(
+    auth,
+    'template_set.import_idml',
+    'template_set',
+    result.template_set_id,
+    {
+      name,
+      slug,
+      tenant_id: tenantId,
+      print_type: printType,
+      force,
+      warnings_count: parsed.warnings?.length ?? 0,
+    },
+  )
+
+  return NextResponse.json({
+    template_set_id: result.template_set_id,
+    spread_count: result.spread_count,
+    warnings: parsed.warnings ?? [],
+  })
 }
