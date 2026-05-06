@@ -7,9 +7,14 @@ import { PLACEHOLDER_COLORS } from './colors'
 type Props = {
   spread: SpreadTemplate
   containerWidth: number
+  // Для миниатюр (0.8.4): listening=false убирает hit-graph и второй canvas
+  // (~50% памяти), pixelRatio=1 убирает retina-апскейл (миниатюра 250px не
+  // нуждается в ретина-резкости). Для full-size — оставлять default.
+  listening?: boolean
+  pixelRatio?: number
 }
 
-export default function SpreadCanvas({ spread, containerWidth }: Props) {
+export default function SpreadCanvas({ spread, containerWidth, listening, pixelRatio }: Props) {
   const scale = containerWidth / spread.width_mm
   const stageWidth = spread.width_mm * scale
   const stageHeight = spread.height_mm * scale
@@ -25,6 +30,8 @@ export default function SpreadCanvas({ spread, containerWidth }: Props) {
       height={stageHeight}
       scaleX={scale}
       scaleY={scale}
+      listening={listening ?? true}
+      pixelRatio={pixelRatio}
     >
       <Layer>
         {/* Фон spread'а — тонкая граница для отделения от страницы */}
