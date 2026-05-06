@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter, useParams } from 'next/navigation'
 import type { TemplateSetDetailResponse } from '../_components/types'
+import { PLACEHOLDER_COLORS } from '../_components/colors'
 
 type AuthData = {
   authenticated: boolean
@@ -122,6 +123,22 @@ export default function TemplateDetailPage() {
                 {' · '}
                 {data.spread_templates.length} разворотов
               </p>
+              <div className="flex items-center gap-4 mt-2 text-xs text-gray-600">
+                <span className="flex items-center gap-1">
+                  <span
+                    className="inline-block w-3 h-3 rounded"
+                    style={{ background: PLACEHOLDER_COLORS.photo.stroke }}
+                  />
+                  photo
+                </span>
+                <span className="flex items-center gap-1">
+                  <span
+                    className="inline-block w-3 h-3 rounded"
+                    style={{ background: PLACEHOLDER_COLORS.text.stroke }}
+                  />
+                  text
+                </span>
+              </div>
             </>
           )}
         </div>
