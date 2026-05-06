@@ -27,7 +27,7 @@ const SpreadCanvas = dynamic(
 )
 const SpreadDetailModal = dynamic(
   () => import('../_components/SpreadDetailModal'),
-  { ssr: false },
+  { ssr: false, loading: () => null },
 )
 
 export default function TemplateDetailPage() {
@@ -167,6 +167,7 @@ export default function TemplateDetailPage() {
                   containerWidth={250}
                   listening={false}
                   pixelRatio={1}
+                  showLabels={false}
                 />
                 <div className="mt-2 text-xs">
                   <div className="text-gray-400 tabular-nums">{s.sort_order}.</div>

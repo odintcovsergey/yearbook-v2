@@ -12,9 +12,14 @@ type Props = {
   // нуждается в ретина-резкости). Для full-size — оставлять default.
   listening?: boolean
   pixelRatio?: number
+  // showLabels=false скрывает подписи плейсхолдеров (для миниатюр, где
+  // fontSize=11/scale становится крупным на маленьком canvas и подписи
+  // накладываются — F-Head-LargeGrid и т.п.). Default true сохраняет
+  // поведение full-size модалки (с подписями).
+  showLabels?: boolean
 }
 
-export default function SpreadCanvas({ spread, containerWidth, listening, pixelRatio }: Props) {
+export default function SpreadCanvas({ spread, containerWidth, listening, pixelRatio, showLabels = true }: Props) {
   const scale = containerWidth / spread.width_mm
   const stageWidth = spread.width_mm * scale
   const stageHeight = spread.height_mm * scale
@@ -44,12 +49,11 @@ export default function SpreadCanvas({ spread, containerWidth, listening, pixelR
           stroke="#e5e7eb"
           strokeWidth={0.3}
         />
-        {/* Bbox + label-плашка на каждый плейсхолдер. Axis-aligned
-            (rotation_deg игнорируется в 0.8.x — см.
-            project_phase0_parser_followups.md). */}
-        {spread.placeholders.flatMap((p, i) => {
+        {/* Bbox каждого плейсхолдера. Axis-aligned (rotation_deg игнорируется
+            в 0.8.x — см. project_phase0_parser_followups.md). */}
+        {spread.placeholders.map((p, i) => {
           const c = PLACEHOLDER_COLORS[p.type]
-          return [
+          return (
             <Rect
               key={`${p.label}-${i}-r`}
               x={p.x_mm}
@@ -59,7 +63,15 @@ export default function SpreadCanvas({ spread, containerWidth, listening, pixelR
               stroke={c.stroke}
               strokeWidth={0.5}
               fill={c.fill}
-            />,
+            />
+          )
+        })}
+        {/* Подписи — отдельный проход вторым слоем. Гарантирует z-order:
+            labels всегда поверх всех rect'ов (а не только своего). На
+            миниатюрах showLabels=false — подписи не рендерятся вовсе. */}
+        {showLabels && spread.placeholders.map((p, i) => {
+          const c = PLACEHOLDER_COLORS[p.type]
+          return (
             <Label key={`${p.label}-${i}-l`} x={p.x_mm} y={p.y_mm}>
               <Tag fill={c.stroke} cornerRadius={cornerRadiusMm} />
               <Text
@@ -68,8 +80,8 @@ export default function SpreadCanvas({ spread, containerWidth, listening, pixelR
                 fontSize={labelFontMm}
                 padding={labelPaddingMm}
               />
-            </Label>,
-          ]
+            </Label>
+          )
         })}
       </Layer>
     </Stage>
