@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { useRouter, useParams } from 'next/navigation'
 import type { TemplateSetDetailResponse } from '../_components/types'
 
@@ -19,6 +20,11 @@ const api = (path: string, opts?: RequestInit) =>
 
 type LoadError = { kind: 'notfound' | 'badrequest' | 'network'; message: string }
 
+const SpreadCanvas = dynamic(
+  () => import('../_components/SpreadCanvas'),
+  { ssr: false, loading: () => <div className="text-gray-400 text-sm">Загрузка canvas…</div> },
+)
+
 export default function TemplateDetailPage() {
   const router = useRouter()
   const params = useParams<{ id: string }>()
@@ -28,6 +34,19 @@ export default function TemplateDetailPage() {
   const [data, setData] = useState<TemplateSetDetailResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<LoadError | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState<number>(800)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width ?? 800
+      setContainerWidth(Math.min(Math.floor(w), 800))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [data])
 
   useEffect(() => {
     api('/api/auth')
@@ -127,29 +146,46 @@ export default function TemplateDetailPage() {
         )}
 
         {!loading && !error && data && data.spread_templates.length > 0 && (
-          <div className="card p-4">
-            <ul className="divide-y divide-gray-100">
-              {data.spread_templates.map(s => (
-                <li
-                  key={s.id}
-                  className="py-2 flex items-center gap-3 text-sm"
-                >
-                  <span className="text-gray-400 w-8 text-right tabular-nums">
-                    {s.sort_order}.
-                  </span>
-                  <span className="font-medium">{s.name}</span>
-                  <span className="text-gray-500">({s.type})</span>
-                  {s.is_spread && (
-                    <span className="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-600">
-                      spread
+          <div className="space-y-6">
+            {/* Canvas первого spread (sort_order=0) — sanity-preview.
+                Полная сетка из 39 миниатюр придёт в 0.8.4. */}
+            <div className="card p-4">
+              <div ref={containerRef}>
+                <SpreadCanvas
+                  spread={data.spread_templates[0]}
+                  containerWidth={containerWidth}
+                />
+              </div>
+              <div className="mt-2 text-sm text-gray-600">
+                {data.spread_templates[0].name} ({data.spread_templates[0].type})
+              </div>
+            </div>
+
+            {/* Список — sanity-якорь, заменится сеткой в 0.8.4 */}
+            <div className="card p-4">
+              <ul className="divide-y divide-gray-100">
+                {data.spread_templates.map(s => (
+                  <li
+                    key={s.id}
+                    className="py-2 flex items-center gap-3 text-sm"
+                  >
+                    <span className="text-gray-400 w-8 text-right tabular-nums">
+                      {s.sort_order}.
                     </span>
-                  )}
-                  <span className="ml-auto text-xs text-gray-400 tabular-nums">
-                    {s.width_mm.toFixed(0)} × {s.height_mm.toFixed(0)} mm
-                  </span>
-                </li>
-              ))}
-            </ul>
+                    <span className="font-medium">{s.name}</span>
+                    <span className="text-gray-500">({s.type})</span>
+                    {s.is_spread && (
+                      <span className="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-600">
+                        spread
+                      </span>
+                    )}
+                    <span className="ml-auto text-xs text-gray-400 tabular-nums">
+                      {s.width_mm.toFixed(0)} × {s.height_mm.toFixed(0)} mm
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         )}
       </div>
