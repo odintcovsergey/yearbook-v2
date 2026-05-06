@@ -20,10 +20,12 @@
     "fast-xml-parser": "^5.7.3",
     "jose": "^6.2.2",
     "jszip": "^3.10.1",
+    "konva": "^10.3.0",
     "next": "14.2.3",
     "papaparse": "^5.4.1",
     "react": "^18",
     "react-dom": "^18",
+    "react-konva": "^18.2.14",
     "sharp": "^0.34.5"
   },
   "devDependencies": {
