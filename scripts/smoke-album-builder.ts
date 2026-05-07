@@ -19,6 +19,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { buildAlbum } from '../lib/album-builder';
+import { loadTemplateSet } from '../lib/album-builder/load-template-set';
 import type {
   AlbumInput,
   Config,
@@ -35,24 +36,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
-
-async function loadTemplateSet(): Promise<TemplateSet> {
-  const { data: ts, error: e1 } = await supabase
-    .from('template_sets')
-    .select('*')
-    .eq('slug', 'okeybook-default')
-    .single();
-  if (e1 || !ts) throw new Error('template_set not found: ' + (e1?.message ?? 'no row'));
-
-  const { data: spreads, error: e2 } = await supabase
-    .from('spread_templates')
-    .select('*')
-    .eq('template_set_id', ts.id)
-    .order('sort_order');
-  if (e2 || !spreads) throw new Error('spread_templates not loaded: ' + (e2?.message ?? 'empty'));
-
-  return { ...ts, spreads } as TemplateSet;
-}
 
 // ─── Тестовые данные ────────────────────────────────────────────────────────
 
@@ -934,7 +917,7 @@ async function main() {
   const filterArg = process.argv[2];
   const filter = filterArg ? filterArg.split(',').map((s) => s.trim()) : null;
 
-  const ts = await loadTemplateSet();
+  const ts = await loadTemplateSet(supabase);
   console.log(`Loaded template_set okeybook-default with ${ts.spreads.length} spreads`);
   console.log('');
 

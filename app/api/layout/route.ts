@@ -1,9 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { requireAuth, isAuthError, logAction } from '@/lib/auth'
+import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
 import { parseIdml } from '@/lib/idml-converter/parse'
 import { uploadTemplateSetToSupabase, type UploadResult } from '@/lib/idml-converter/upload'
 import type { ParsedTemplateSet } from '@/lib/idml-converter/types'
+import { buildAlbum } from '@/lib/album-builder/build'
+import { loadTemplateSet } from '@/lib/album-builder/load-template-set'
+import type {
+  Student,
+  Subject,
+  HeadTeacher,
+  AlbumInput,
+  Config,
+  ConfigType,
+  PrintType,
+  TemplateSet,
+} from '@/lib/album-builder/types'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -139,10 +151,22 @@ export async function POST(req: NextRequest) {
   if (isAuthError(auth)) return auth
 
   const action = req.nextUrl.searchParams.get('action')
-  if (action !== 'import_idml') {
-    return NextResponse.json({ error: 'unknown action' }, { status: 400 })
+
+  if (action === 'build_album_test') {
+    return handleBuildAlbumTest(req)
   }
 
+  if (action === 'import_idml') {
+    return handleImportIdml(req, auth)
+  }
+
+  return NextResponse.json({ error: 'unknown action' }, { status: 400 })
+}
+
+async function handleImportIdml(
+  req: NextRequest,
+  auth: AuthContext,
+): Promise<NextResponse> {
   // ─── Parse multipart ────────────────────────────────────────────
   let formData: FormData
   try {
@@ -259,5 +283,147 @@ export async function POST(req: NextRequest) {
     template_set_id: result.template_set_id,
     spread_count: result.spread_count,
     warnings: parsed.warnings ?? [],
+  })
+}
+
+// ============================================================
+// POST /api/layout?action=build_album_test
+// ============================================================
+// Только superadmin. Принимает JSON. Собирает синтетический альбом через
+// buildAlbum() поверх template_set 'okeybook-default' и возвращает spreads
+// + warnings + summary. Реальные альбомы из БД здесь не используются —
+// это инструмент проверки сценариев автовёрстки на UI.
+// ============================================================
+
+const VALID_CONFIG_TYPES: ConfigType[] = [
+  'standard', 'universal', 'maximum', 'medium',
+  'light', 'mini', 'individual',
+]
+
+const VALID_PRINT_TYPES: PrintType[] = ['layflat', 'soft']
+
+async function handleBuildAlbumTest(req: NextRequest): Promise<NextResponse> {
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
+  }
+
+  if (typeof body !== 'object' || body === null) {
+    return NextResponse.json({ error: 'body must be object' }, { status: 400 })
+  }
+  const b = body as Record<string, unknown>
+
+  const configType = b.config_type
+  if (typeof configType !== 'string' || !VALID_CONFIG_TYPES.includes(configType as ConfigType)) {
+    return NextResponse.json(
+      { error: `config_type must be one of ${VALID_CONFIG_TYPES.join(', ')}` },
+      { status: 400 },
+    )
+  }
+
+  const printType = b.print_type
+  if (typeof printType !== 'string' || !VALID_PRINT_TYPES.includes(printType as PrintType)) {
+    return NextResponse.json(
+      { error: 'print_type must be layflat or soft' },
+      { status: 400 },
+    )
+  }
+
+  const studentsCount = b.students_count
+  if (typeof studentsCount !== 'number' || studentsCount < 0 || studentsCount > 100) {
+    return NextResponse.json({ error: 'students_count must be number 0-100' }, { status: 400 })
+  }
+
+  const subjectsCount = b.subjects_count
+  if (typeof subjectsCount !== 'number' || subjectsCount < 0 || subjectsCount > 30) {
+    return NextResponse.json({ error: 'subjects_count must be number 0-30' }, { status: 400 })
+  }
+
+  const withHeadTeacher = b.with_head_teacher === true
+  const commonPhotosInput = (b.common_photos ?? {}) as Record<string, unknown>
+  const friendPhotosPerStudent = (b.friend_photos_per_student ?? []) as unknown[]
+
+  // Сборка синтетических данных
+  const students: Student[] = []
+  for (let i = 0; i < studentsCount; i++) {
+    const friendCount =
+      typeof friendPhotosPerStudent[i] === 'number'
+        ? Math.min(4, Math.max(0, friendPhotosPerStudent[i] as number))
+        : 0
+    students.push({
+      full_name: `Ученик ${i + 1}`,
+      quote: `Цитата ${i + 1}`,
+      portrait: `https://fake/student-${i + 1}.jpg`,
+      friend_photos: Array.from(
+        { length: friendCount },
+        (_, j) => `https://fake/student-${i + 1}-friend-${j + 1}.jpg`,
+      ),
+    })
+  }
+
+  const subjects: Subject[] = Array.from({ length: subjectsCount }, (_, i) => ({
+    name: `Предметник ${i + 1}`,
+    role: 'учитель',
+    photo: `https://fake/subject-${i + 1}.jpg`,
+  }))
+
+  const headTeacher: HeadTeacher | null = withHeadTeacher
+    ? {
+        name: 'Иванова Мария Петровна',
+        role: 'классный руководитель',
+        photo: 'https://fake/head.jpg',
+        text: 'Дорогие выпускники, желаю вам успехов.',
+      }
+    : null
+
+  const makeUrls = (n: number, prefix: string): string[] =>
+    Array.from({ length: n }, (_, i) => `https://fake/${prefix}-${i + 1}.jpg`)
+
+  const commonPhotos = {
+    full_class: makeUrls(Number(commonPhotosInput.full_class ?? 0), 'class'),
+    half: makeUrls(Number(commonPhotosInput.half ?? 0), 'half'),
+    quarter: makeUrls(Number(commonPhotosInput.quarter ?? 0), 'quarter'),
+    sixth: makeUrls(Number(commonPhotosInput.sixth ?? 0), 'sixth'),
+    collage: makeUrls(Number(commonPhotosInput.collage ?? 0), 'collage'),
+  }
+
+  let templateSet: TemplateSet
+  try {
+    templateSet = await loadTemplateSet(supabaseAdmin)
+  } catch (e) {
+    return NextResponse.json(
+      { error: `failed to load template_set: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  const input: AlbumInput = {
+    template_set_id: templateSet.id,
+    head_teacher: headTeacher,
+    subjects,
+    students,
+    common_photos: commonPhotos,
+  }
+  const config: Config = {
+    config_type: configType as ConfigType,
+    print_type: printType as PrintType,
+    template_set: templateSet,
+  }
+
+  const result = buildAlbum(input, config)
+
+  return NextResponse.json({
+    spreads: result.spreads,
+    warnings: result.warnings,
+    summary: {
+      total_spreads: result.spreads.length,
+      total_warnings: result.warnings.length,
+      config_type: config.config_type,
+      print_type: config.print_type,
+      students_count: studentsCount,
+      subjects_count: subjectsCount,
+    },
   })
 }
