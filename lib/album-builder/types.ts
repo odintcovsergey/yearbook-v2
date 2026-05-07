@@ -352,6 +352,10 @@ export type SpreadInstance = {
  *                                       нет специального мастера; используется
  *                                       обычный мастер с пустыми слотами
  *                                       (см. master-cleanup-tz §A5 для D-Medium)
+ * - `adaptive_grid_fallback`     — для grid-комплектации не нашёлся мастер
+ *                                  с минимальной нужной ёмкостью; используется
+ *                                  максимальный доступный (например L-6 при
+ *                                  отсутствии L-2/3/4 в БД)
  */
 export type BuildWarningCode =
   | 'master_not_found'
@@ -366,7 +370,8 @@ export type BuildWarningCode =
   | 'class_photo_missing'
   | 'half_class_missing'
   | 'no_right_teacher_master'
-  | 'students_grid_no_special_master';
+  | 'students_grid_no_special_master'
+  | 'adaptive_grid_fallback';
 
 export type BuildWarning = {
   code: BuildWarningCode;

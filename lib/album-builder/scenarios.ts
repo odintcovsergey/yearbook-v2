@@ -110,10 +110,13 @@ export type StudentSection = {
    *   (Left=портрет+имя, Right=4 фото+цитата; каждый ученик = 2 SpreadInstance подряд).
    * - `'grid_alternate'` — Медиум: chunk по N учеников, чередование Left/Right
    *   по чётности индекса страницы (НЕ ученика).
+   * - `'adaptive_grid'` — Лайт/Мини: фиксированное `base_pages`, адаптивная сетка.
+   *   Один и тот же мастер на всех страницах (его выбирает `pickAdaptiveGrid` по
+   *   числу учеников и `base_pages`). Чередование Left/Right по чётности страницы.
    * - `undefined` — second filter не используется (Стандарт: один
    *   двухстраничный мастер на пару учеников).
    */
-  right_filter_mode?: 'alternate' | 'paired' | 'grid_alternate';
+  right_filter_mode?: 'alternate' | 'paired' | 'grid_alternate' | 'adaptive_grid';
   /**
    * Содержат ли мастера grid-комплектации слот для цитаты (`studentquote_N`).
    * По умолчанию `false`. `true` для Медиум.
@@ -124,6 +127,15 @@ export type StudentSection = {
    * `right_filter_mode === 'grid_alternate'`. По умолчанию `undefined`.
    */
   last_spread?: LastSpread;
+  /**
+   * Базовое количество страниц для adaptive grid (4 для Лайт, 2 для Мини).
+   * Используется только при `right_filter_mode === 'adaptive_grid'`.
+   */
+  base_pages?: number;
+  /** Базовый фильтр для adaptive grid LEFT мастера. `applies_to_config` — заглушка. */
+  grid_filter_left?: MasterFilter;
+  /** Базовый фильтр для adaptive grid RIGHT мастера. `applies_to_config` — заглушка. */
+  grid_filter_right?: MasterFilter;
 };
 
 /**
@@ -480,6 +492,68 @@ export const SCENARIOS: Partial<Record<ConfigType, ScenarioDef>> = {
         left_has_quote: true,
         right_dynamic: true,
       },
+    },
+    teacher_section: TEACHER_SECTION_LAYFLAT,
+    soft_overrides: {
+      intro_section: INTRO_SECTION_S_INTRO,
+    },
+  },
+
+  light: {
+    config_type: 'light',
+    description:
+      'Лайт — фиксированно 4 базовые страницы, slotsPerPage адаптивный (2/3/4/6) под класс ≤24. При 25+ — overflow (0.11.2).',
+    student_section: {
+      students_per_unit: 0,
+      unit_is_spread: false,
+      base_pages: 4,
+      has_quote: false,
+      // student_master_filter — заглушка для backward compatibility типа;
+      // adaptive_grid использует grid_filter_left/right.
+      student_master_filter: {
+        page_role: 'student_grid_left',
+        applies_to_config: 'light',
+        slot_capacity_min: { students: 1 },
+      },
+      grid_filter_left: {
+        page_role: 'student_grid_left',
+        applies_to_config: 'light',
+      },
+      grid_filter_right: {
+        page_role: 'student_grid_right',
+        applies_to_config: 'light',
+      },
+      right_filter_mode: 'adaptive_grid',
+    },
+    teacher_section: TEACHER_SECTION_LAYFLAT,
+    soft_overrides: {
+      intro_section: INTRO_SECTION_S_INTRO,
+    },
+  },
+
+  mini: {
+    config_type: 'mini',
+    description:
+      'Мини — фиксированно 2 базовые страницы, slotsPerPage адаптивный (4/6/9/12) под класс ≤24. При 25+ — overflow (0.11.2).',
+    student_section: {
+      students_per_unit: 0,
+      unit_is_spread: false,
+      base_pages: 2,
+      has_quote: false,
+      student_master_filter: {
+        page_role: 'student_grid_left',
+        applies_to_config: 'mini',
+        slot_capacity_min: { students: 1 },
+      },
+      grid_filter_left: {
+        page_role: 'student_grid_left',
+        applies_to_config: 'mini',
+      },
+      grid_filter_right: {
+        page_role: 'student_grid_right',
+        applies_to_config: 'mini',
+      },
+      right_filter_mode: 'adaptive_grid',
     },
     teacher_section: TEACHER_SECTION_LAYFLAT,
     soft_overrides: {

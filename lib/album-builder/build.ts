@@ -31,6 +31,7 @@ import {
   type TeacherSection,
   type IntroSection,
   type LastSpread,
+  type MasterFilter,
 } from './scenarios';
 import { findMaster } from './find-master';
 import { chunk, pushWarning } from './utils';
@@ -108,6 +109,8 @@ function buildStudentsSection(ctx: BuildContext, section: StudentSection): void 
     buildMaximumStudents(ctx, section);
   } else if (mode === 'grid_alternate') {
     buildMediumStudents(ctx, section);
+  } else if (mode === 'adaptive_grid') {
+    buildAdaptiveGridStudents(ctx, section);
   } else {
     pushWarning(ctx, {
       code: 'master_not_found',
@@ -461,6 +464,147 @@ function buildLastSpread(
     template_name: rightMaster.name,
     data: buildTeacherRightData(ctx, rightMaster, []),
   });
+}
+
+/**
+ * Выбирает grid-мастера так, чтобы `base_pages` вмещали `total` учеников.
+ *
+ * Считает `required_capacity = ceil(total / base_pages)`. Среди кандидатов
+ * (мастера с заданным `page_role` и `applies_to_config`) выбирает с минимальной
+ * `slot_capacity.students >= required_capacity`.
+ *
+ * Если ни один не подходит (например, total=24, base_pages=4 → required=6,
+ * но в БД только мастер students=4) — возвращает максимальный + warning
+ * `adaptive_grid_fallback`.
+ *
+ * Если кандидатов вообще нет — возвращает `null` (вызывающая сторона пишет
+ * `master_not_found`).
+ */
+function pickAdaptiveGrid(
+  ctx: BuildContext,
+  baseFilter: MasterFilter,
+  totalStudents: number,
+  basePages: number,
+): SpreadTemplate | null {
+  const filter = { ...baseFilter, applies_to_config: ctx.config.config_type };
+  const requiredCapacity = Math.ceil(totalStudents / basePages);
+
+  const candidates = ctx.config.template_set.spreads.filter((s) => {
+    if (s.page_role !== filter.page_role) return false;
+    if (s.applies_to_configs.indexOf(filter.applies_to_config) < 0) return false;
+    return s.slot_capacity !== null && typeof s.slot_capacity.students === 'number';
+  });
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    const aCap = a.slot_capacity?.students ?? 0;
+    const bCap = b.slot_capacity?.students ?? 0;
+    return aCap - bCap;
+  });
+
+  for (let i = 0; i < candidates.length; i++) {
+    const cap = candidates[i].slot_capacity?.students ?? 0;
+    if (cap >= requiredCapacity) {
+      return candidates[i];
+    }
+  }
+
+  const fallback = candidates[candidates.length - 1];
+  pushWarning(ctx, {
+    code: 'adaptive_grid_fallback',
+    detail: `${ctx.config.config_type}: required capacity=${requiredCapacity} (для ${totalStudents} учеников на ${basePages} страниц), max available=${fallback.slot_capacity?.students ?? 0}, выбран ${fallback.name}`,
+  });
+  return fallback;
+}
+
+/**
+ * Лайт/Мини — фиксированное `base_pages`, adaptive grid выбор мастеров.
+ *
+ * 1. Находим LEFT и RIGHT мастеров через `pickAdaptiveGrid` (по обоим базовый
+ *    фильтр из scenarios + applies_to_config + page_role).
+ * 2. Делим учеников на `base_pages` кусков по `slotsPerPage` (берётся из LEFT).
+ * 3. Чередуем Left/Right по чётности индекса страницы.
+ *
+ * Overflow (>24 учеников) — НЕ обрабатывается полноценно: пишется warning
+ * `students_overflow` и обрезка до `base_pages * slotsPerPage`. Полноценный
+ * overflow в 0.11.2.
+ */
+function buildAdaptiveGridStudents(
+  ctx: BuildContext,
+  section: StudentSection,
+): void {
+  if (!section.base_pages || section.base_pages < 1) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: 'adaptive_grid scenario requires base_pages >= 1',
+    });
+    return;
+  }
+  if (!section.grid_filter_left || !section.grid_filter_right) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: 'adaptive_grid scenario requires grid_filter_left and grid_filter_right',
+    });
+    return;
+  }
+
+  const total = ctx.input.students.length;
+  const basePages = section.base_pages;
+
+  const leftMaster = pickAdaptiveGrid(ctx, section.grid_filter_left, total, basePages);
+  const rightMaster = pickAdaptiveGrid(ctx, section.grid_filter_right, total, basePages);
+
+  if (!leftMaster) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `adaptive_grid LEFT: no candidates for page_role=${section.grid_filter_left.page_role} applies_to=${ctx.config.config_type}`,
+    });
+    return;
+  }
+  if (!rightMaster) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `adaptive_grid RIGHT: no candidates for page_role=${section.grid_filter_right.page_role} applies_to=${ctx.config.config_type}`,
+    });
+    return;
+  }
+
+  const slotsPerPage = leftMaster.slot_capacity?.students ?? 0;
+  if (slotsPerPage < 1) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `adaptive_grid LEFT: ${leftMaster.name} has slot_capacity.students < 1`,
+    });
+    return;
+  }
+
+  const maxOnBase = basePages * slotsPerPage;
+  if (total > maxOnBase) {
+    pushWarning(ctx, {
+      code: 'students_overflow',
+      detail: `${ctx.config.config_type}: total=${total} > base_pages*slotsPerPage=${maxOnBase}, overflow обрезан (полная overflow-логика в 0.11.2)`,
+    });
+  }
+
+  const studentsToPlace = total > maxOnBase
+    ? ctx.input.students.slice(0, maxOnBase)
+    : ctx.input.students;
+
+  const hasQuote = section.has_quote === true;
+  for (let i = 0; i < basePages; i++) {
+    const slice = studentsToPlace.slice(i * slotsPerPage, (i + 1) * slotsPerPage);
+    if (slice.length === 0) break;
+    const isLeft = i % 2 === 0;
+    const master = isLeft ? leftMaster : rightMaster;
+
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: master.id,
+      template_name: master.name,
+      data: buildGridStudentData(slice, slotsPerPage, hasQuote),
+    });
+  }
 }
 
 /**

@@ -84,6 +84,7 @@ const STUDENTS_5 = ['Алексеев', 'Бочкарёв', 'Васильев', 
 //   - стандартные размеры (24-30)
 //   - для будущих 0.10b.3 (Медиум) и 0.11 (Лайт/Мини) — большие
 const STUDENT_SETS: Record<string, Student[]> = {
+  '1': [makeStudent('Андреев', 0)],
   '2': [makeStudent('Алексеев', 4), makeStudent('Бочкарёв', 4)],
   '4': Array.from({ length: 4 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
   '5': STUDENTS_5,
@@ -92,7 +93,10 @@ const STUDENT_SETS: Record<string, Student[]> = {
   '7': Array.from({ length: 7 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
   '8': Array.from({ length: 8 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
   '11': Array.from({ length: 11 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '12': Array.from({ length: 12 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
   '13': Array.from({ length: 13 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '16': Array.from({ length: 16 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '18': Array.from({ length: 18 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
   '24': Array.from({ length: 24 }, (_, i) => makeStudent(`Ученик${i + 1}`, 2)),
   '27': Array.from({ length: 27 }, (_, i) => makeStudent(`Ученик${i + 1}`, 2)),
 };
@@ -442,6 +446,117 @@ const SCENES: Scene[] = [
       warningCodes: ['class_photo_missing'],
       masterNameSequence: ['S-Intro', 'E-Student-Standard', 'E-Student-Standard', 'E-Student-Standard'],
     },
+  },
+  // ─── Лайт ≤24 (0.11.1) ───
+  // adaptive_grid берёт минимально достаточный мастер. L-6 (students=6) хватает
+  // для всех light-классов 1-24 (max requiredCapacity = ceil(24/4) = 6).
+  // adaptive_grid_fallback срабатывал бы только если бы максимально доступный
+  // мастер был недостаточен — здесь это не так.
+  {
+    label: 'light / 1 student (L-6 без warnings)',
+    configType: 'light', studentsKey: '1',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 1,
+      noWarningCodes: ['adaptive_grid_fallback', 'master_not_found'],
+      masterNameSequence: ['L-6-Left'],
+    },
+  },
+  {
+    label: 'light / 8 students (L-6 без warnings)',
+    configType: 'light', studentsKey: '8',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 2,
+      noWarningCodes: ['adaptive_grid_fallback', 'master_not_found'],
+      masterNameSequence: ['L-6-Left', 'L-6-Right'],
+    },
+  },
+  {
+    label: 'light / 24 students (полный класс — L-6 без warnings)',
+    configType: 'light', studentsKey: '24',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 4,
+      noWarningCodes: ['adaptive_grid_fallback', 'master_not_found', 'students_overflow'],
+      masterNameSequence: ['L-6-Left', 'L-6-Right', 'L-6-Left', 'L-6-Right'],
+    },
+  },
+  // ─── Мини ≤24 (0.11.1) ───
+  // L-6 и N-12 оба матчат mini (applies_to_configs общеупотребимы). adaptive_grid
+  // берёт МИНИМАЛЬНО достаточный: при requiredCapacity ≤ 6 — это L-6, иначе N-12.
+  {
+    label: 'mini / 8 students (L-6 минимально достаточен для required=4)',
+    configType: 'mini', studentsKey: '8',
+    subjectsCount: 0, withHeadTeacher: false,
+    // adaptive_grid выбирает L-6 (минимально достаточный для required=4):
+    // 2 базовых страницы × slotsPerPage=6 = 12 слотов, 8 учеников помещаются
+    expect: {
+      spreadsCount: 2,
+      noWarningCodes: ['adaptive_grid_fallback', 'master_not_found'],
+      masterNameSequence: ['L-6-Left', 'L-6-Right'],
+    },
+  },
+  {
+    label: 'mini / 18 students (N-12, L-6 недостаточен для required=9)',
+    configType: 'mini', studentsKey: '18',
+    subjectsCount: 0, withHeadTeacher: false,
+    // required=ceil(18/2)=9. L-6 (6) недостаточен, N-12 (12) выбран.
+    expect: {
+      spreadsCount: 2,
+      noWarningCodes: ['adaptive_grid_fallback', 'master_not_found'],
+      masterNameSequence: ['N-12-Left', 'N-12-Right'],
+    },
+  },
+  {
+    label: 'mini / 24 students (полный — N-12 без warnings)',
+    configType: 'mini', studentsKey: '24',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 2,
+      noWarningCodes: ['adaptive_grid_fallback', 'master_not_found', 'students_overflow'],
+      masterNameSequence: ['N-12-Left', 'N-12-Right'],
+    },
+  },
+  // ─── Soft варианты Лайт/Мини (S-Intro в начале) ───
+  {
+    label: 'soft / light / 24 students + full_class (S-Intro + 4 страницы)',
+    configType: 'light', studentsKey: '24',
+    subjectsCount: 0, withHeadTeacher: false,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 5,
+      noWarningCodes: ['adaptive_grid_fallback', 'class_photo_missing'],
+      masterNameSequence: ['S-Intro', 'L-6-Left', 'L-6-Right', 'L-6-Left', 'L-6-Right'],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  {
+    label: 'soft / mini / 24 students + full_class (S-Intro + 2 страницы)',
+    configType: 'mini', studentsKey: '24',
+    subjectsCount: 0, withHeadTeacher: false,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['adaptive_grid_fallback', 'class_photo_missing'],
+      masterNameSequence: ['S-Intro', 'N-12-Left', 'N-12-Right'],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  // ─── Лайт с учителями ───
+  {
+    label: 'light / 24 students + 5 subjects + half (учителя + 4 grid)',
+    configType: 'light', studentsKey: '24',
+    subjectsCount: 5, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 6,
+      noWarningCodes: ['adaptive_grid_fallback', 'master_not_found'],
+      masterNameSequence: [
+        'F-Head-LargeGrid', 'G-HalfClass',
+        'L-6-Left', 'L-6-Right', 'L-6-Left', 'L-6-Right',
+      ],
+    },
+    commonPhotos: { half: ['url-h1', 'url-h2'] },
   },
 ];
 
