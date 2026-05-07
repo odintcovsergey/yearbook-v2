@@ -221,15 +221,49 @@ export type TeacherSection = {
 };
 
 /**
+ * Один вариант одностраничной учительской секции для Mini-soft.
+ *
+ * В отличие от TeacherSpreadVariant — нет right_filter (правой страницы
+ * вообще не существует), нет subjects_on_right.
+ */
+export type MiniSoftTeacherVariant = {
+  subjects_min: number;
+  subjects_max: number;
+  /**
+   * Сколько subjects уходит на единственную страницу (F-*-R мастер).
+   * Для F-Head-WithPhoto-R = 0 (только головной), F-SmallGrid-R = 4, F-LargeGrid-R = 8.
+   */
+  subjects_on_page: number;
+  /** Фильтр для F-*-R мастера. */
+  filter: MasterFilter;
+};
+
+/**
+ * Учительский раздел для Mini-soft. Одностраничный (без G-* справа).
+ * Применяется через soft_overrides.teacher_section в mini.
+ *
+ * Поддерживает только subjects 0-8 (F-Head-*-R мастера). При subjects ≥ 9
+ * — warning subjects_overflow + обрезка до 8 (использует LargeGrid-R).
+ */
+export type MiniSoftTeacherSection = {
+  variants: MiniSoftTeacherVariant[];
+};
+
+/**
  * Конфигурация вступительной страницы (S-Intro).
  *
  * Используется только в soft-печати (через `soft_overrides`). В layflat
  * S-Intro не применяется — там альбом начинается сразу с учительского
  * разворота.
  *
- * Mini-soft — особый случай: `intro_section` в его `soft_overrides` не задан
- * (S-Intro не создаётся), потому что первая страница используется под
- * учительский F-*-R мастер.
+ * Mini-soft — особый случай: `intro_section` в его `soft_overrides` явно
+ * выставлен в `null` (S-Intro не создаётся), потому что первая страница
+ * используется под учительский F-*-R мастер.
+ *
+ * Интерпретация поля `intro_section`:
+ *   - `undefined` — не задано (используется базовое значение из ScenarioDef)
+ *   - `null` — явно отключено (например, Mini-soft через soft_overrides)
+ *   - `IntroSection` объект — описание секции
  */
 export type IntroSection = {
   /** Фильтр для S-Intro мастера. */
@@ -251,8 +285,13 @@ export type SoftOverrides = {
   student_section?: StudentSection;
   individual_student_section?: IndividualStudentSection;
   student_thumbnails_section?: StudentSection;
-  teacher_section?: TeacherSection;
-  intro_section?: IntroSection;
+  /**
+   * Учительская секция при soft. В обычных случаях — TeacherSection
+   * (двухстраничная). Для Mini-soft — MiniSoftTeacherSection (одностраничная).
+   */
+  teacher_section?: TeacherSection | MiniSoftTeacherSection;
+  /** `null` — явно отключить S-Intro (Mini-soft); `undefined` — оставить базовое. */
+  intro_section?: IntroSection | null;
 };
 
 /**
@@ -281,10 +320,19 @@ export type ScenarioDef = {
    * Если задана — после личных разворотов запускается вторая buildStudentsSection.
    */
   student_thumbnails_section?: StudentSection;
-  /** Опционально — учительский раздел. Если undefined, секция не генерируется. */
-  teacher_section?: TeacherSection;
-  /** Опционально — вступительная страница (обычно задаётся в soft_overrides). */
-  intro_section?: IntroSection;
+  /**
+   * Опционально — учительский раздел. Если undefined, секция не генерируется.
+   * В layflat это всегда `TeacherSection` (двухстраничная); тип расширен
+   * до `MiniSoftTeacherSection` ради shallow merge с soft_overrides
+   * (Mini-soft подставляет одностраничную). Различение в runtime — через
+   * type guard `isMiniSoftTeacherSection` в build.ts.
+   */
+  teacher_section?: TeacherSection | MiniSoftTeacherSection;
+  /**
+   * Опционально — вступительная страница (обычно задаётся в soft_overrides).
+   * `null` — явно отключено (Mini-soft); `undefined` — не задано.
+   */
+  intro_section?: IntroSection | null;
   /** Override-поля при `print_type === 'soft'`. */
   soft_overrides?: SoftOverrides;
 };
@@ -401,6 +449,49 @@ export const TEACHER_SECTION_LAYFLAT: TeacherSection = {
         applies_to_config: 'standard',
         slot_capacity_min: { teachers: 16 },
         expected_name_hint: 'G-Teachers-4x4',
+      },
+    },
+  ],
+};
+
+/**
+ * Учительский раздел для Mini-soft — одностраничный (F-*-R мастера).
+ *
+ * `applies_to_config` во всех filter'ах — заглушка ('mini'), фактически
+ * подменяется в runtime из `ctx.config.config_type` в build.ts.
+ *
+ * При subjects ≥ 9 buildAlbum обрезает до 8 (LargeGrid-R) с warning subjects_overflow.
+ */
+export const TEACHER_SECTION_MINI_SOFT: MiniSoftTeacherSection = {
+  variants: [
+    {
+      subjects_min: 0, subjects_max: 0,
+      subjects_on_page: 0,
+      filter: {
+        page_role: 'teacher_left',
+        applies_to_config: 'mini',
+        slot_capacity_min: { photos_full: 1 },
+        expected_name_hint: 'F-Head-WithPhoto-R',
+      },
+    },
+    {
+      subjects_min: 1, subjects_max: 4,
+      subjects_on_page: 4,
+      filter: {
+        page_role: 'teacher_left',
+        applies_to_config: 'mini',
+        slot_capacity_min: { head_teacher: 1, teachers: 4 },
+        expected_name_hint: 'F-Head-SmallGrid-R',
+      },
+    },
+    {
+      subjects_min: 5, subjects_max: 8,
+      subjects_on_page: 8,
+      filter: {
+        page_role: 'teacher_left',
+        applies_to_config: 'mini',
+        slot_capacity_min: { head_teacher: 1, teachers: 8 },
+        expected_name_hint: 'F-Head-LargeGrid-R',
       },
     },
   ],
@@ -638,7 +729,9 @@ export const SCENARIOS: Partial<Record<ConfigType, ScenarioDef>> = {
     },
     teacher_section: TEACHER_SECTION_LAYFLAT,
     soft_overrides: {
-      intro_section: INTRO_SECTION_S_INTRO,
+      // Mini-soft: первая страница — учительская F-*-R, S-Intro отключён.
+      intro_section: null,
+      teacher_section: TEACHER_SECTION_MINI_SOFT,
     },
   },
 

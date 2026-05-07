@@ -33,6 +33,7 @@ import {
   type LastSpread,
   type MasterFilter,
   type IndividualStudentSection,
+  type MiniSoftTeacherSection,
 } from './scenarios';
 import { findMaster } from './find-master';
 import { chunk, pushWarning } from './utils';
@@ -83,7 +84,11 @@ export function buildAlbum(input: AlbumInput, config: Config): BuildResult {
   // Раздел 2 — учителя
   if (scenario.teacher_section) {
     if (input.head_teacher) {
-      buildTeacherSection(ctx, scenario.teacher_section);
+      if (isMiniSoftTeacherSection(scenario.teacher_section)) {
+        buildMiniSoftTeacherSection(ctx, scenario.teacher_section);
+      } else {
+        buildTeacherSection(ctx, scenario.teacher_section);
+      }
     } else {
       pushWarning(ctx, {
         code: 'no_head_teacher',
@@ -1049,6 +1054,79 @@ function buildTeacherSection(ctx: BuildContext, section: TeacherSection): void {
     template_id: rightMaster.id,
     template_name: rightMaster.name,
     data: buildTeacherRightData(ctx, rightMaster, rightSubjects),
+  });
+}
+
+/**
+ * Type guard: отличает Mini-soft (одностраничную) учительскую секцию от обычной
+ * двухстраничной. Используется в buildAlbum для развилки между
+ * `buildTeacherSection` и `buildMiniSoftTeacherSection`.
+ *
+ * Различение по полю variant: `MiniSoftTeacherVariant` имеет `subjects_on_page`,
+ * `TeacherSpreadVariant` — `subjects_on_left`.
+ */
+function isMiniSoftTeacherSection(
+  s: TeacherSection | MiniSoftTeacherSection,
+): s is MiniSoftTeacherSection {
+  return s.variants.length > 0 && 'subjects_on_page' in s.variants[0];
+}
+
+/**
+ * Сборка учительского раздела для Mini-soft.
+ *
+ * Отличия от buildTeacherSection:
+ *  - Только одна страница (F-*-R мастер)
+ *  - Без G-* мастера справа
+ *  - Без pickRightCommonPhotoMaster (правой страницы вообще нет)
+ *
+ * При subjects.length > 8 — обрезка до 8 + warning subjects_overflow
+ * (используется F-Head-LargeGrid-R).
+ */
+function buildMiniSoftTeacherSection(
+  ctx: BuildContext,
+  section: MiniSoftTeacherSection,
+): void {
+  const head = ctx.input.head_teacher!;
+  let subjects = ctx.input.subjects;
+
+  if (subjects.length > 8) {
+    pushWarning(ctx, {
+      code: 'subjects_overflow',
+      detail: `Mini-soft: subjects.length=${subjects.length} > 8, обрезано до 8 (F-Head-LargeGrid-R)`,
+    });
+    subjects = subjects.slice(0, 8);
+  }
+
+  const variant = section.variants.find(
+    (v) => subjects.length >= v.subjects_min && subjects.length <= v.subjects_max,
+  );
+  if (!variant) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `Mini-soft: no teacher variant for subjects.length=${subjects.length}`,
+    });
+    return;
+  }
+
+  const filter = { ...variant.filter, applies_to_config: ctx.config.config_type };
+  const r = findMaster(ctx.config.template_set.spreads, filter);
+  if (!r.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `Mini-soft teacher: ${variant.filter.expected_name_hint ?? '?'}`,
+    });
+    return;
+  }
+  if (r.warning) pushWarning(ctx, r.warning);
+
+  const sideTeachers = subjects.slice(0, variant.subjects_on_page);
+  const data = buildTeacherLeftData(ctx, r.master, head, sideTeachers);
+
+  ctx.spreads.push({
+    spread_index: ctx.spreadCounter.value++,
+    template_id: r.master.id,
+    template_name: r.master.name,
+    data,
   });
 }
 

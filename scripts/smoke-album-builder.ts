@@ -549,14 +549,15 @@ const SCENES: Scene[] = [
     commonPhotos: { full_class: ['url-fc-1'] },
   },
   {
-    label: 'soft / mini / 24 students + full_class (S-Intro + 2 страницы)',
+    label: 'soft / mini / 24 students NO head_teacher (Mini-soft без S-Intro)',
     configType: 'mini', studentsKey: '24',
     subjectsCount: 0, withHeadTeacher: false,
     printType: 'soft',
     expect: {
-      spreadsCount: 3,
-      noWarningCodes: ['adaptive_grid_fallback', 'class_photo_missing'],
-      masterNameSequence: ['S-Intro', 'N-12-Left', 'N-12-Right'],
+      spreadsCount: 2,
+      warningCodes: ['no_head_teacher'],
+      noWarningCodes: ['master_not_found'],
+      masterNameSequence: ['N-12-Left', 'N-12-Right'],
     },
     commonPhotos: { full_class: ['url-fc-1'] },
   },
@@ -769,6 +770,88 @@ const SCENES: Scene[] = [
       ],
     },
     commonPhotos: { half: ['url-h1', 'url-h2'] },
+  },
+  // ─── Mini-soft (0.11.4) ───
+  {
+    label: 'soft / mini / 8 students + 0 subjects + full_class (Mini-soft без S-Intro, F-WithPhoto-R)',
+    configType: 'mini', studentsKey: '8',
+    subjectsCount: 0, withHeadTeacher: true,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 2,
+      noWarningCodes: ['master_not_found', 'class_photo_missing'],
+      masterNameSequence: ['F-Head-WithPhoto-R', 'N-12-Left'],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  {
+    label: 'soft / mini / 18 students + 4 subjects (F-SmallGrid-R)',
+    configType: 'mini', studentsKey: '18',
+    subjectsCount: 4, withHeadTeacher: true,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found'],
+      masterNameSequence: ['F-Head-SmallGrid-R', 'N-12-Left', 'N-12-Right'],
+    },
+  },
+  {
+    label: 'soft / mini / 24 students + 8 subjects (F-LargeGrid-R)',
+    configType: 'mini', studentsKey: '24',
+    subjectsCount: 8, withHeadTeacher: true,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found'],
+      masterNameSequence: ['F-Head-LargeGrid-R', 'N-12-Left', 'N-12-Right'],
+    },
+  },
+  {
+    label: 'soft / mini / 12 students + 12 subjects (degraded — обрезка до 8)',
+    configType: 'mini', studentsKey: '12',
+    subjectsCount: 12, withHeadTeacher: true,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 2,
+      warningCodes: ['subjects_overflow'],
+      masterNameSequence: ['F-Head-LargeGrid-R', 'N-12-Left'],
+    },
+  },
+  {
+    label: 'soft / mini / 8 students NO head_teacher',
+    configType: 'mini', studentsKey: '8',
+    subjectsCount: 0, withHeadTeacher: false,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 1,
+      warningCodes: ['no_head_teacher'],
+      noWarningCodes: ['master_not_found'],
+      masterNameSequence: ['N-12-Left'],
+    },
+  },
+  {
+    label: 'soft / mini / 26 students + 0 subjects + full_class (overflow + Mini-soft)',
+    configType: 'mini', studentsKey: '26',
+    subjectsCount: 0, withHeadTeacher: true,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 4,
+      noWarningCodes: ['master_not_found', 'class_photo_missing'],
+      masterNameSequence: ['F-Head-WithPhoto-R', 'N-12-Left', 'N-12-Right', 'N-Overflow-Row'],
+    },
+    commonPhotos: { full_class: ['url-fc-1', 'url-fc-2'] },
+  },
+  // Контрольная: Mini-layflat — должна остаться двухстраничной (F + G)
+  {
+    label: 'mini / 8 students + 4 subjects + full_class (LAYFLAT — обычная учительская)',
+    configType: 'mini', studentsKey: '8',
+    subjectsCount: 4, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found'],
+      masterNameSequence: ['F-Head-SmallGrid', 'G-FullClass', 'N-12-Left'],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
   },
 ];
 
