@@ -133,9 +133,14 @@ export type MasterType =
 
 /**
  * Семантическая роль страницы. Соответствует CHECK constraint на
- * `spread_templates.page_role` (миграция 0.8.6.1).
+ * `spread_templates.page_role` (миграция 0.8.6.1 + 0.10a.1).
  *
- * - `student`           — обычная страница/разворот ученика
+ * - `student`           — двухстраничный ученический мастер или legacy без
+ *                         парного Left/Right (E-Student-Standard, E-Student-Default)
+ * - `student_left`      — одностраничный мастер для левой страницы
+ *                         (E-Student-Left, E-Max-Left)
+ * - `student_right`     — одностраничный мастер для правой страницы
+ *                         (E-Student-Right, E-Max-Right, E-Ind-Right-3)
  * - `student_grid`      — сетка нескольких учеников (D-Medium-*, L-6-*, N-12-*)
  * - `student_overflow`  — доп.ряд учеников (*-Overflow-Row*)
  * - `student_last`      — последняя страница раздела учеников (*-Last*)
@@ -147,6 +152,8 @@ export type MasterType =
  */
 export type PageRole =
   | 'student'
+  | 'student_left'
+  | 'student_right'
   | 'student_grid'
   | 'student_overflow'
   | 'student_last'
@@ -321,12 +328,16 @@ export type SpreadInstance = {
  * Коды предупреждений buildAlbum. Все warning'и неблокирующие — алгоритм
  * пытается продолжить с fallback-мастером или с обрезанными данными.
  *
- * - `master_not_found`   — нет мастера под фильтр и нет fallback'а
- * - `fallback_used`      — применили `is_fallback=true` мастер
- * - `name_mismatch`      — найденный мастер не совпал с `expected_name_hint`
- * - `no_head_teacher`    — `head_teacher=null`, учительский разворот пропущен
- * - `students_overflow`  — учеников больше, чем вмещает выбранный layout
- * - `students_too_few`   — учеников меньше минимума (для мини/лайт)
+ * - `master_not_found`        — нет мастера под фильтр и нет fallback'а
+ * - `fallback_used`           — применили `is_fallback=true` мастер
+ * - `name_mismatch`           — найденный мастер не совпал с `expected_name_hint`
+ * - `no_head_teacher`         — `head_teacher=null`, учительский разворот пропущен
+ * - `students_overflow`       — учеников больше, чем вмещает выбранный layout
+ * - `students_too_few`        — учеников меньше минимума (для мини/лайт)
+ * - `students_empty`          — `input.students` пуст, секция учеников пропущена
+ * - `students_odd_in_standard` — нечётный последний ученик в Стандарте, правая
+ *                                страница оставлена пустой (degraded mode,
+ *                                см. master-cleanup-tz §A4)
  */
 export type BuildWarningCode =
   | 'master_not_found'
@@ -334,7 +345,9 @@ export type BuildWarningCode =
   | 'name_mismatch'
   | 'no_head_teacher'
   | 'students_overflow'
-  | 'students_too_few';
+  | 'students_too_few'
+  | 'students_empty'
+  | 'students_odd_in_standard';
 
 export type BuildWarning = {
   code: BuildWarningCode;

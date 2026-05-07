@@ -36,3 +36,8 @@ export { chunk, assertExhaustive, pushWarning } from './utils';
 
 export { SCENARIOS_LAYFLAT } from './scenarios';
 export type { MasterFilter, StudentSection, ScenarioDef } from './scenarios';
+
+export { findMaster } from './find-master';
+export type { FindMasterResult } from './find-master';
+
+export { buildAlbum } from './build';

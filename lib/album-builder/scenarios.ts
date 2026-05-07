@@ -60,13 +60,30 @@ export type MasterFilter = {
  * `is_spread=true` или пара одностраничных мастеров логически связанных
  * как разворот, как в Maximum: E-Max-Left + E-Max-Right).
  *
- * Поля для overflow/last/mirror добавим в 0.10 — здесь они не нужны
+ * Поля для overflow/last/mirror добавим в 0.10b/0.11 — здесь они не нужны
  * (Стандарт/Универсал/Максимум не требуют overflow-логики).
  */
 export type StudentSection = {
   students_per_unit: number;
   unit_is_spread: boolean;
   student_master_filter: MasterFilter;
+  /**
+   * Второй фильтр для пары/чередования. Если задан — должен быть и
+   * `right_filter_mode`, иначе buildAlbum пишет warning и пропускает секцию.
+   */
+  student_master_filter_right?: MasterFilter;
+  /**
+   * Как использовать `student_master_filter_right`:
+   *
+   * - `'alternate'` — Left и Right распределяют РАЗНЫХ учеников по чётности
+   *   (Универсал: 0,2,4… → Left; 1,3,5… → Right).
+   * - `'paired'` — Left и Right показывают ОДНОГО ученика на двух
+   *   логически связанных страницах (Максимум: каждый ученик = 2 SpreadInstance
+   *   подряд, Left=портрет+имя, Right=4 фото+цитата).
+   * - `undefined` — second filter не используется (Стандарт: один
+   *   двухстраничный мастер на пару учеников).
+   */
+  right_filter_mode?: 'alternate' | 'paired';
 };
 
 /**
@@ -113,14 +130,20 @@ export const SCENARIOS_LAYFLAT: Partial<Record<ConfigType, ScenarioDef>> = {
       students_per_unit: 1,
       unit_is_spread: false,
       student_master_filter: {
-        page_role: 'student',
+        page_role: 'student_left',
         applies_to_config: 'universal',
         is_spread: false,
         slot_capacity_min: { students: 1, photos_friend: 2 },
-        // Подсказка — Left; в 0.10 решим как переключаться на Right
-        // (или мирроринг по координате, или второй фильтр).
         expected_name_hint: 'E-Student-Left',
       },
+      student_master_filter_right: {
+        page_role: 'student_right',
+        applies_to_config: 'universal',
+        is_spread: false,
+        slot_capacity_min: { students: 1, photos_friend: 2 },
+        expected_name_hint: 'E-Student-Right',
+      },
+      right_filter_mode: 'alternate',
     },
   },
 
@@ -132,13 +155,24 @@ export const SCENARIOS_LAYFLAT: Partial<Record<ConfigType, ScenarioDef>> = {
     student_section: {
       students_per_unit: 1,
       unit_is_spread: true,
+      // E-Max-Left реально содержит только портрет+имя (idml-recon §5 #9),
+      // в БД slot_capacity = {students:1} без photos_friend — поэтому
+      // фильтр для левой не требует photos_friend.
       student_master_filter: {
-        page_role: 'student',
+        page_role: 'student_left',
+        applies_to_config: 'maximum',
+        is_spread: false,
+        slot_capacity_min: { students: 1 },
+        expected_name_hint: 'E-Max-Left',
+      },
+      student_master_filter_right: {
+        page_role: 'student_right',
         applies_to_config: 'maximum',
         is_spread: false,
         slot_capacity_min: { students: 1, photos_friend: 4 },
-        expected_name_hint: 'E-Max-Left',
+        expected_name_hint: 'E-Max-Right',
       },
+      right_filter_mode: 'paired',
     },
   },
 };
