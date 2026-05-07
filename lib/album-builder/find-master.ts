@@ -57,8 +57,6 @@ function matchesBaseFilters(
       const actual = cap[k];
       if (typeof required === 'number') {
         if (typeof actual !== 'number' || actual < required) return false;
-      } else if (typeof required === 'boolean') {
-        if (actual !== required) return false;
       }
     }
   }

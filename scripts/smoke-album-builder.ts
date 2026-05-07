@@ -27,6 +27,7 @@ import type {
   Student,
   Subject,
   HeadTeacher,
+  CommonPhotos,
 } from '../lib/album-builder';
 
 const supabase = createClient(
@@ -82,13 +83,13 @@ const STUDENTS_5 = ['Алексеев', 'Бочкарёв', 'Васильев', 
 //   - стандартные размеры (24-30)
 //   - для будущих 0.10b.3 (Медиум) и 0.11 (Лайт/Мини) — большие
 const STUDENT_SETS: Record<string, Student[]> = {
+  '2': [makeStudent('Алексеев', 4), makeStudent('Бочкарёв', 4)],
   '5': STUDENTS_5,
   '6': [...STUDENTS_5, makeStudent('Егоров', 4)],
   '24': Array.from({ length: 24 }, (_, i) => makeStudent(`Ученик${i + 1}`, 2)),
   '27': Array.from({ length: 27 }, (_, i) => makeStudent(`Ученик${i + 1}`, 2)),
 };
 
-// Учителя — для будущей 0.10b.2; пока не используется в сценариях
 function makeSubjects(count: number): Subject[] {
   return Array.from({ length: count }, (_, i) => makeSubject(`Петров${i + 1}`, `учитель ${i + 1}`));
 }
@@ -100,7 +101,7 @@ type Scene = {
   label: string;
   configType: ConfigType;
   studentsKey: keyof typeof STUDENT_SETS;
-  subjectsCount: number;       // пока 0 везде, для 0.10b.2 будет варьироваться
+  subjectsCount: number;
   withHeadTeacher: boolean;
   // Минимальные ожидания: что проверяем после buildAlbum
   expect: {
@@ -110,6 +111,8 @@ type Scene = {
     noWarningCodes?: string[];        // этих кодов НЕ должно быть среди warnings
     masterNameSequence?: string[];    // ожидаемая последовательность template_name
   };
+  /** Override common_photos. Не указанные ключи дефолтятся к []. */
+  commonPhotos?: Partial<CommonPhotos>;
 };
 
 const SCENES: Scene[] = [
@@ -180,17 +183,115 @@ const SCENES: Scene[] = [
       warningCodes: ['students_empty'],
     },
   },
-  // ─── Заготовки для 0.10b.2/0.10b.3 — пока ожидают что не падают ───
-  // (в 0.10b.0 эти сцены могут давать warnings master_not_found
-  //  потому что teacher_section ещё не реализован — это НОРМАЛЬНО)
-  // Закомментированы. Раскомментируем по мере реализации.
+  // ─── Учительский раздел (0.10b.2) ───
+  {
+    label: 'teachers / 0 subjects + half photos',
+    configType: 'standard', studentsKey: '2',
+    subjectsCount: 0, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found', 'no_right_teacher_master'],
+      masterNameSequence: ['F-Head-WithPhoto', 'G-HalfClass', 'E-Student-Standard'],
+    },
+    commonPhotos: { half: ['url-half-1', 'url-half-2'] },
+  },
+  {
+    label: 'teachers / 0 subjects + only full_class',
+    configType: 'standard', studentsKey: '2',
+    subjectsCount: 0, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found', 'no_right_teacher_master'],
+      masterNameSequence: ['F-Head-WithPhoto', 'G-FullClass', 'E-Student-Standard'],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  {
+    label: 'teachers / 0 subjects + no common photos',
+    configType: 'standard', studentsKey: '2',
+    subjectsCount: 0, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 2,
+      warningCodes: ['no_right_teacher_master', 'class_photo_missing'],
+      masterNameSequence: ['F-Head-WithPhoto', 'E-Student-Standard'],
+    },
+  },
+  {
+    label: 'teachers / 4 subjects + full_class',
+    configType: 'standard', studentsKey: '2',
+    subjectsCount: 4, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found'],
+      masterNameSequence: ['F-Head-SmallGrid', 'G-FullClass', 'E-Student-Standard'],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  {
+    label: 'teachers / 9 subjects',
+    configType: 'standard', studentsKey: '2',
+    subjectsCount: 9, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found'],
+      masterNameSequence: ['F-Head-WithPhoto', 'G-Teachers-3x3', 'E-Student-Standard'],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  {
+    label: 'teachers / 12 subjects',
+    configType: 'standard', studentsKey: '2',
+    subjectsCount: 12, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found'],
+      masterNameSequence: ['F-Head-WithPhoto', 'G-Teachers-4x3', 'E-Student-Standard'],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  {
+    label: 'teachers / 16 subjects',
+    configType: 'standard', studentsKey: '2',
+    subjectsCount: 16, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found'],
+      masterNameSequence: ['F-Head-WithPhoto', 'G-Teachers-4x4', 'E-Student-Standard'],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  {
+    label: 'teachers / 20 subjects (overflow scenario)',
+    configType: 'standard', studentsKey: '2',
+    subjectsCount: 20, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['subjects_overflow'],
+      masterNameSequence: ['F-Head-LargeGrid', 'G-Teachers-4x4', 'E-Student-Standard'],
+    },
+  },
+  {
+    label: 'teachers / 28 subjects (degraded — обрезка до 24)',
+    configType: 'standard', studentsKey: '2',
+    subjectsCount: 28, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 3,
+      warningCodes: ['subjects_overflow'],
+      masterNameSequence: ['F-Head-LargeGrid', 'G-Teachers-4x4', 'E-Student-Standard'],
+    },
+  },
+  {
+    label: 'teachers / no head_teacher',
+    configType: 'standard', studentsKey: '2',
+    subjectsCount: 5, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 1,
+      warningCodes: ['no_head_teacher'],
+      masterNameSequence: ['E-Student-Standard'],
+    },
+  },
+  // ─── Заготовка для 0.10b.3 — раскомментировать по мере реализации Медиума ───
   //
-  // {
-  //   label: 'standard / 5 students + 6 subjects (для 0.10b.2)',
-  //   configType: 'standard', studentsKey: '5',
-  //   subjectsCount: 6, withHeadTeacher: true,
-  //   expect: { spreadsCountAtLeast: 5 /* 2 учит. + 3 ученика */ },
-  // },
   // {
   //   label: 'medium / 24 students (для 0.10b.3)',
   //   configType: 'medium', studentsKey: '24',
@@ -208,7 +309,13 @@ function buildInput(scene: Scene, ts: TemplateSet): AlbumInput {
     head_teacher: scene.withHeadTeacher ? HEAD_TEACHER : null,
     subjects: makeSubjects(scene.subjectsCount),
     students,
-    common_photos: { full_class: [], half: [], quarter: [], sixth: [], collage: [] },
+    common_photos: {
+      full_class: scene.commonPhotos?.full_class ?? [],
+      half: scene.commonPhotos?.half ?? [],
+      quarter: scene.commonPhotos?.quarter ?? [],
+      sixth: scene.commonPhotos?.sixth ?? [],
+      collage: scene.commonPhotos?.collage ?? [],
+    },
   };
 }
 

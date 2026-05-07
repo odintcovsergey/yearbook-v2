@@ -20,10 +20,14 @@ import type {
   BuildContext,
   Config,
   Student,
+  Subject,
+  HeadTeacher,
+  SpreadTemplate,
 } from './types';
 import {
   SCENARIOS_LAYFLAT,
   type StudentSection,
+  type TeacherSection,
 } from './scenarios';
 import { findMaster } from './find-master';
 import { chunk, pushWarning } from './utils';
@@ -67,10 +71,19 @@ export function buildAlbum(input: AlbumInput, config: Config): BuildResult {
     return { spreads: ctx.spreads, warnings: ctx.warnings };
   }
 
-  // [SOFT-INTRO]  — будет в 0.11
-  // [TEACHERS]    — будет в 0.10b
+  // [SOFT-INTRO] — будет в 0.11
+  if (scenario.teacher_section) {
+    if (input.head_teacher) {
+      buildTeacherSection(ctx, scenario.teacher_section);
+    } else {
+      pushWarning(ctx, {
+        code: 'no_head_teacher',
+        detail: 'head_teacher is null, teacher section skipped',
+      });
+    }
+  }
   buildStudentsSection(ctx, scenario.student_section);
-  // [COMMON]      — НЕ генерируется (idml-recon §9)
+  // [COMMON] — НЕ генерируется (idml-recon §9)
 
   return { spreads: ctx.spreads, warnings: ctx.warnings };
 }
@@ -113,18 +126,18 @@ function buildStandardStudents(ctx: BuildContext, section: StudentSection): void
   for (let i = 0; i < pairs.length; i++) {
     const pair = pairs[i];
     const data: Record<string, string | null> = {
-      studentPortrait_left: pair[0].portrait,
-      studentName_left: pair[0].full_name,
-      studentQuote_left: pair[0].quote,
+      studentportrait_left: pair[0].portrait,
+      studentname_left: pair[0].full_name,
+      studentquote_left: pair[0].quote,
     };
     if (pair.length === 2) {
-      data.studentPortrait_right = pair[1].portrait;
-      data.studentName_right = pair[1].full_name;
-      data.studentQuote_right = pair[1].quote;
+      data.studentportrait_right = pair[1].portrait;
+      data.studentname_right = pair[1].full_name;
+      data.studentquote_right = pair[1].quote;
     } else {
-      data.studentPortrait_right = null;
-      data.studentName_right = null;
-      data.studentQuote_right = null;
+      data.studentportrait_right = null;
+      data.studentname_right = null;
+      data.studentquote_right = null;
       pushWarning(ctx, {
         code: 'students_odd_in_standard',
         detail: `student ${pair[0].full_name} is alone on right page; partner should add J-Half/J-ClassPhoto/J-Collage manually in editor (см. master-cleanup-tz §A4)`,
@@ -224,8 +237,8 @@ function buildMaximumStudents(ctx: BuildContext, section: StudentSection): void 
       template_id: left.master.id,
       template_name: left.master.name,
       data: {
-        studentPortrait: s.portrait,
-        studentName: s.full_name,
+        studentportrait: s.portrait,
+        studentname: s.full_name,
       },
     });
     ctx.spreads.push({
@@ -233,11 +246,11 @@ function buildMaximumStudents(ctx: BuildContext, section: StudentSection): void 
       template_id: right.master.id,
       template_name: right.master.name,
       data: {
-        studentPhoto1: s.friend_photos[0] ?? null,
-        studentPhoto2: s.friend_photos[1] ?? null,
-        studentPhoto3: s.friend_photos[2] ?? null,
-        studentPhoto4: s.friend_photos[3] ?? null,
-        studentQuote: s.quote,
+        studentphoto1: s.friend_photos[0] ?? null,
+        studentphoto2: s.friend_photos[1] ?? null,
+        studentphoto3: s.friend_photos[2] ?? null,
+        studentphoto4: s.friend_photos[3] ?? null,
+        studentquote: s.quote,
       },
     });
   }
@@ -245,12 +258,257 @@ function buildMaximumStudents(ctx: BuildContext, section: StudentSection): void 
 
 function studentSinglePageData(s: Student, friendSlots: number): Record<string, string | null> {
   const data: Record<string, string | null> = {
-    studentPortrait: s.portrait,
-    studentName: s.full_name,
-    studentQuote: s.quote,
+    studentportrait: s.portrait,
+    studentname: s.full_name,
+    studentquote: s.quote,
   };
   for (let i = 0; i < friendSlots; i++) {
-    data['studentPhoto' + (i + 1)] = s.friend_photos[i] ?? null;
+    data['studentphoto' + (i + 1)] = s.friend_photos[i] ?? null;
   }
   return data;
+}
+
+/**
+ * Подбор правого учительского мастера для variants 0-8 (без `right_filter`).
+ * Логика из `build_album.jsx` (`pickRightPhotoMaster`):
+ * 1) `common_photos.half >= 2`        → G-HalfClass
+ * 2) `common_photos.full_class >= 1`  → G-FullClass
+ * 3) иначе                            → null
+ *
+ * Внутренние warning'и о fallback/name_mismatch пушатся в ctx, но если мастер
+ * не нашёлся в БД — молча идём к следующей ветке. Финальный warning
+ * `no_right_teacher_master` пишется в `buildTeacherSection` после возврата `null`.
+ */
+function pickRightTeacherMaster(ctx: BuildContext): SpreadTemplate | null {
+  const cp = ctx.input.common_photos;
+  const spreads = ctx.config.template_set.spreads;
+
+  if (cp.half.length >= 2) {
+    const r = findMaster(spreads, {
+      page_role: 'teacher_right',
+      applies_to_config: ctx.config.config_type,
+      slot_capacity_min: { photos_half: 2 },
+      expected_name_hint: 'G-HalfClass',
+    });
+    if (r.ok) {
+      if (r.warning) pushWarning(ctx, r.warning);
+      return r.master;
+    }
+  }
+  if (cp.full_class.length >= 1) {
+    const r = findMaster(spreads, {
+      page_role: 'teacher_right',
+      applies_to_config: ctx.config.config_type,
+      slot_capacity_min: { photos_full: 1 },
+      expected_name_hint: 'G-FullClass',
+    });
+    if (r.ok) {
+      if (r.warning) pushWarning(ctx, r.warning);
+      return r.master;
+    }
+  }
+  return null;
+}
+
+/**
+ * Сборка учительского раздела (F+G).
+ *
+ * Шаги:
+ *  1. При `subjects.length > 24` — обрезаем до 24 + warning `subjects_overflow`.
+ *  2. Поиск variant'а по диапазону.
+ *  3. `findMaster` для `left_filter` (F-*). Если не найден — warning + return.
+ *  4. Заполняем data левой страницы и пушим SpreadInstance.
+ *  5. Для правой:
+ *     - `variant.right_filter` задан → `findMaster`
+ *     - `undefined` → `pickRightTeacherMaster` (dynamic)
+ *  6. Если правый мастер найден — пушим SpreadInstance с правой данными.
+ *     Иначе — правую страницу пропускаем (warning уже залогирован).
+ */
+function buildTeacherSection(ctx: BuildContext, section: TeacherSection): void {
+  const head = ctx.input.head_teacher!; // вызывающий buildAlbum проверил выше
+  let subjects = ctx.input.subjects;
+
+  if (subjects.length > 24) {
+    pushWarning(ctx, {
+      code: 'subjects_overflow',
+      detail: `subjects.length=${subjects.length} > 24, обрезано до 24 (см. master-cleanup-tz §C1)`,
+    });
+    subjects = subjects.slice(0, 24);
+  }
+
+  const variant = section.variants.find(
+    (v) => subjects.length >= v.subjects_min && subjects.length <= v.subjects_max,
+  );
+  if (!variant) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `no teacher_section variant for subjects.length=${subjects.length}`,
+    });
+    return;
+  }
+
+  const leftFilter = { ...variant.left_filter, applies_to_config: ctx.config.config_type };
+  const leftR = findMaster(ctx.config.template_set.spreads, leftFilter);
+  if (!leftR.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `teacher left: ${variant.left_filter.expected_name_hint ?? '?'}`,
+    });
+    return;
+  }
+  if (leftR.warning) pushWarning(ctx, leftR.warning);
+
+  const leftSubjects = subjects.slice(0, variant.subjects_on_left);
+  ctx.spreads.push({
+    spread_index: ctx.spreadCounter.value++,
+    template_id: leftR.master.id,
+    template_name: leftR.master.name,
+    data: buildTeacherLeftData(ctx, leftR.master, head, leftSubjects),
+  });
+
+  let rightMaster: SpreadTemplate | null = null;
+  if (variant.right_filter) {
+    const rightFilter = { ...variant.right_filter, applies_to_config: ctx.config.config_type };
+    const rightR = findMaster(ctx.config.template_set.spreads, rightFilter);
+    if (!rightR.ok) {
+      pushWarning(ctx, {
+        code: 'master_not_found',
+        detail: `teacher right: ${variant.right_filter.expected_name_hint ?? '?'}`,
+      });
+    } else {
+      if (rightR.warning) pushWarning(ctx, rightR.warning);
+      rightMaster = rightR.master;
+    }
+  } else {
+    rightMaster = pickRightTeacherMaster(ctx);
+    if (!rightMaster) {
+      pushWarning(ctx, {
+        code: 'no_right_teacher_master',
+        detail: `subjects.length=${subjects.length}: ни half (>=2) ни full_class (>=1) — правая учительская страница пропущена`,
+      });
+    }
+  }
+
+  if (!rightMaster) return;
+
+  const rightSubjects =
+    variant.subjects_on_right !== undefined
+      ? subjects.slice(variant.subjects_on_left, variant.subjects_on_left + variant.subjects_on_right)
+      : [];
+  ctx.spreads.push({
+    spread_index: ctx.spreadCounter.value++,
+    template_id: rightMaster.id,
+    template_name: rightMaster.name,
+    data: buildTeacherRightData(ctx, rightMaster, rightSubjects),
+  });
+}
+
+/**
+ * Заполнение левой страницы учительского разворота (F-*).
+ *
+ * Все ключи в lowercase — соответствует тому что хранится в БД после
+ * нормализации парсером (idml-recon §6.4). Для удобства поиска
+ * по InDesign-шаблону рядом приведены оригинальные имена.
+ *
+ * - `headteachername`/`role`/`photo`, `headtextframe` (orig: headTeacherName, headTextFrame)
+ * - `teachername_1..N`/`teacherrole_1..N`/`teacherphoto_1..N` для side-teachers
+ *   (только в F-Head-SmallGrid/LargeGrid; в F-Head-WithPhoto sideTeachers пуст)
+ * - `classphotoframe` (orig: classPhotoFrame; только для F-Head-WithPhoto)
+ */
+function buildTeacherLeftData(
+  ctx: BuildContext,
+  master: SpreadTemplate,
+  head: HeadTeacher,
+  sideTeachers: Subject[],
+): Record<string, string | null> {
+  const data: Record<string, string | null> = {
+    headteachername: head.name,
+    headteacherrole: head.role,
+    headteacherphoto: head.photo,
+    headtextframe: head.text,
+  };
+  for (let i = 0; i < sideTeachers.length; i++) {
+    const n = i + 1;
+    data[`teachername_${n}`] = sideTeachers[i].name;
+    data[`teacherrole_${n}`] = sideTeachers[i].role;
+    data[`teacherphoto_${n}`] = sideTeachers[i].photo;
+  }
+  if (hasPlaceholder(master, 'classphotoframe')) {
+    const fc = ctx.input.common_photos.full_class;
+    if (fc.length >= 1) {
+      data.classphotoframe = fc[0];
+    } else {
+      data.classphotoframe = null;
+      pushWarning(ctx, {
+        code: 'class_photo_missing',
+        detail: `master ${master.name} has classphotoframe placeholder but common_photos.full_class is empty`,
+      });
+    }
+  }
+  return data;
+}
+
+/**
+ * Заполнение правой страницы учительского разворота (G-*).
+ *
+ * Все ключи в lowercase — соответствует тому что хранится в БД после
+ * нормализации парсером (idml-recon §6.4).
+ *
+ * - G-Teachers-3x3/4x3/4x4: `teachername_1..N`/`teacherrole_1..N`/`teacherphoto_1..N`
+ * - G-HalfClass: `halfleftphoto`, `halfrightphoto` из `common_photos.half[0..1]`
+ *   (orig: halfLeftPhoto, halfRightPhoto)
+ * - G-FullClass: `classphotoframe` из `common_photos.full_class[0]`
+ *   (orig: classPhotoFrame)
+ */
+function buildTeacherRightData(
+  ctx: BuildContext,
+  master: SpreadTemplate,
+  rightSubjects: Subject[],
+): Record<string, string | null> {
+  const data: Record<string, string | null> = {};
+
+  for (let i = 0; i < rightSubjects.length; i++) {
+    const n = i + 1;
+    data[`teachername_${n}`] = rightSubjects[i].name;
+    data[`teacherrole_${n}`] = rightSubjects[i].role;
+    data[`teacherphoto_${n}`] = rightSubjects[i].photo;
+  }
+
+  if (hasPlaceholder(master, 'halfleftphoto') && hasPlaceholder(master, 'halfrightphoto')) {
+    const half = ctx.input.common_photos.half;
+    if (half.length >= 2) {
+      data.halfleftphoto = half[0];
+      data.halfrightphoto = half[1];
+    } else {
+      data.halfleftphoto = half[0] ?? null;
+      data.halfrightphoto = null;
+      pushWarning(ctx, {
+        code: 'half_class_missing',
+        detail: `master ${master.name} requires 2 half photos, got ${half.length}`,
+      });
+    }
+  }
+
+  if (hasPlaceholder(master, 'classphotoframe')) {
+    const fc = ctx.input.common_photos.full_class;
+    if (fc.length >= 1) {
+      data.classphotoframe = fc[0];
+    } else {
+      data.classphotoframe = null;
+      pushWarning(ctx, {
+        code: 'class_photo_missing',
+        detail: `master ${master.name} has classphotoframe but common_photos.full_class is empty`,
+      });
+    }
+  }
+
+  return data;
+}
+
+/** Проверка что в `placeholders` мастера есть placeholder с заданным `label`. */
+function hasPlaceholder(master: SpreadTemplate, label: string): boolean {
+  for (let i = 0; i < master.placeholders.length; i++) {
+    if (master.placeholders[i].label === label) return true;
+  }
+  return false;
 }

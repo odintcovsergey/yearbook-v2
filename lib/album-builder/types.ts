@@ -133,28 +133,32 @@ export type MasterType =
 
 /**
  * Семантическая роль страницы. Соответствует CHECK constraint на
- * `spread_templates.page_role` (миграция 0.8.6.1 + 0.10a.1).
+ * `spread_templates.page_role` (миграция 0.8.6.1 + 0.10a.1 + 0.10b.1).
  *
- * - `student`           — двухстраничный ученический мастер или legacy без
- *                         парного Left/Right (E-Student-Standard, E-Student-Default)
- * - `student_left`      — одностраничный мастер для левой страницы
- *                         (E-Student-Left, E-Max-Left)
- * - `student_right`     — одностраничный мастер для правой страницы
- *                         (E-Student-Right, E-Max-Right, E-Ind-Right-3)
- * - `student_grid`      — сетка нескольких учеников (D-Medium-*, L-6-*, N-12-*)
- * - `student_overflow`  — доп.ряд учеников (*-Overflow-Row*)
- * - `student_last`      — последняя страница раздела учеников (*-Last*)
- * - `teacher_left`      — левая страница учительского разворота (F-*)
- * - `teacher_right`     — правая страница учительского разворота (G-*)
- * - `common`            — общий раздел (J-*)
- * - `intro`             — вступление (S-Intro/S-Intro-Old)
- * - `cover`             — обложка (в текущем шаблоне отсутствует)
+ * - `student`            — двухстраничный ученический мастер или legacy без
+ *                          парного Left/Right (E-Student-Standard, E-Student-Default)
+ * - `student_left`       — одностраничный мастер для левой страницы
+ *                          (E-Student-Left, E-Max-Left)
+ * - `student_right`      — одностраничный мастер для правой страницы
+ *                          (E-Student-Right, E-Max-Right, E-Ind-Right-3)
+ * - `student_grid`       — сетка нескольких учеников без парного Left/Right
+ * - `student_grid_left`  — левая страница сетки (D-Medium-Left, L-6-Left, N-12-Left)
+ * - `student_grid_right` — правая страница сетки (D-Medium-Right, L-6-Right, N-12-Right)
+ * - `student_overflow`   — доп.ряд учеников (*-Overflow-Row*)
+ * - `student_last`       — последняя страница раздела учеников (*-Last*)
+ * - `teacher_left`       — левая страница учительского разворота (F-*)
+ * - `teacher_right`      — правая страница учительского разворота (G-*)
+ * - `common`             — общий раздел (J-*)
+ * - `intro`              — вступление (S-Intro/S-Intro-Old)
+ * - `cover`              — обложка (в текущем шаблоне отсутствует)
  */
 export type PageRole =
   | 'student'
   | 'student_left'
   | 'student_right'
   | 'student_grid'
+  | 'student_grid_left'
+  | 'student_grid_right'
   | 'student_overflow'
   | 'student_last'
   | 'teacher_left'
@@ -175,7 +179,7 @@ export type PageRole =
 export type SlotCapacity = {
   students?: number;
   teachers?: number;
-  head_teacher?: boolean;
+  head_teacher?: number;
   photos_full?: number;
   photos_half?: number;
   photos_quarter?: number;
@@ -338,6 +342,11 @@ export type SpreadInstance = {
  * - `students_odd_in_standard` — нечётный последний ученик в Стандарте, правая
  *                                страница оставлена пустой (degraded mode,
  *                                см. master-cleanup-tz §A4)
+ * - `subjects_overflow`        — subjects.length > 24, лишние обрезаны (degraded)
+ * - `class_photo_missing`      — мастер требует classPhotoFrame, в input нет full_class
+ * - `half_class_missing`       — мастер требует halfLeftPhoto/halfRightPhoto, в input нет half
+ * - `no_right_teacher_master`  — для subjects 0-8 нет ни half, ни full_class фото —
+ *                                правая учительская страница пропущена
  */
 export type BuildWarningCode =
   | 'master_not_found'
@@ -347,7 +356,11 @@ export type BuildWarningCode =
   | 'students_overflow'
   | 'students_too_few'
   | 'students_empty'
-  | 'students_odd_in_standard';
+  | 'students_odd_in_standard'
+  | 'subjects_overflow'
+  | 'class_photo_missing'
+  | 'half_class_missing'
+  | 'no_right_teacher_master';
 
 export type BuildWarning = {
   code: BuildWarningCode;

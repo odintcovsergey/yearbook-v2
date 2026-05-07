@@ -87,14 +87,168 @@ export type StudentSection = {
 };
 
 /**
- * Полное описание сценария одной комплектации. На 0.9 — только
- * `student_section`; `teacher_section`/`common_section` появятся в 0.10/0.11.
+ * Один вариант учительского разворота. Применяется когда `subjects.length`
+ * попадает в диапазон [`subjects_min`, `subjects_max`] (включительно).
+ */
+export type TeacherSpreadVariant = {
+  /** Минимум `subjects.length` для применения. */
+  subjects_min: number;
+  /** Максимум `subjects.length` для применения. */
+  subjects_max: number;
+  /** Сколько subjects уходит на левую страницу (F-*). */
+  subjects_on_left: number;
+  /** Сколько subjects уходит на правую страницу (G-*). undefined — динамический выбор. */
+  subjects_on_right?: number;
+  /**
+   * Фильтр для левого мастера (F-*). `applies_to_config` — заглушка,
+   * подменяется в runtime из `ctx.config.config_type` (см. `buildTeacherSection`).
+   */
+  left_filter: MasterFilter;
+  /**
+   * Фильтр для правого мастера (G-*). `undefined` означает что правый мастер
+   * выбирается динамически в `build.ts` → `pickRightTeacherMaster` по наличию
+   * фото в `common_photos`. Актуально для subjects 0-8.
+   */
+  right_filter?: MasterFilter;
+};
+
+/**
+ * Учительский раздел сценария — список вариантов в порядке проверки.
+ * Алгоритм берёт первый где `subjects.length ∈ [min, max]`.
+ */
+export type TeacherSection = {
+  variants: TeacherSpreadVariant[];
+};
+
+/**
+ * Полное описание сценария одной комплектации. В 0.10b.2 добавлен
+ * `teacher_section` (опциональный); `common_section` остаётся отсутствовать
+ * (общий раздел не генерируется в фазе 0, см. idml-recon §9).
  */
 export type ScenarioDef = {
   config_type: ConfigType;
   print_type: PrintType;
   description: string;
   student_section: StudentSection;
+  /** Опционально — учительский раздел. Если undefined, секция не генерируется. */
+  teacher_section?: TeacherSection;
+};
+
+/**
+ * Учительский раздел для layflat-печати. Применим к Стандарту/Универсалу/
+ * Максимуму/Медиуму. Mini-soft (одностраничная учительская секция с F-*-R)
+ * — отдельная константа в 0.11.
+ *
+ * Семь вариантов по `subjects.length`. Поведение для `subjects.length >= 25`
+ * — degraded: `buildTeacherSection` обрезает до 24 и пишет warning
+ * `subjects_overflow`.
+ *
+ * `applies_to_config` во всех filter'ах — заглушка (`'standard'`), фактическое
+ * значение подменяется в `buildTeacherSection` из `ctx.config.config_type`.
+ */
+export const TEACHER_SECTION_LAYFLAT: TeacherSection = {
+  variants: [
+    {
+      subjects_min: 0, subjects_max: 0,
+      subjects_on_left: 0,
+      // subjects_on_right: undefined → dynamic
+      left_filter: {
+        page_role: 'teacher_left',
+        applies_to_config: 'standard',
+        slot_capacity_min: { head_teacher: 1, photos_full: 1 },
+        expected_name_hint: 'F-Head-WithPhoto',
+      },
+      // right_filter: undefined → dynamic в коде
+    },
+    {
+      subjects_min: 1, subjects_max: 4,
+      subjects_on_left: 4,
+      left_filter: {
+        page_role: 'teacher_left',
+        applies_to_config: 'standard',
+        slot_capacity_min: { head_teacher: 1, teachers: 4 },
+        expected_name_hint: 'F-Head-SmallGrid',
+      },
+    },
+    {
+      subjects_min: 5, subjects_max: 8,
+      subjects_on_left: 8,
+      left_filter: {
+        page_role: 'teacher_left',
+        applies_to_config: 'standard',
+        slot_capacity_min: { head_teacher: 1, teachers: 8 },
+        expected_name_hint: 'F-Head-LargeGrid',
+      },
+    },
+    {
+      subjects_min: 9, subjects_max: 9,
+      subjects_on_left: 0,
+      subjects_on_right: 9,
+      left_filter: {
+        page_role: 'teacher_left',
+        applies_to_config: 'standard',
+        slot_capacity_min: { head_teacher: 1, photos_full: 1 },
+        expected_name_hint: 'F-Head-WithPhoto',
+      },
+      right_filter: {
+        page_role: 'teacher_right',
+        applies_to_config: 'standard',
+        slot_capacity_min: { teachers: 9 },
+        expected_name_hint: 'G-Teachers-3x3',
+      },
+    },
+    {
+      subjects_min: 10, subjects_max: 12,
+      subjects_on_left: 0,
+      subjects_on_right: 12,
+      left_filter: {
+        page_role: 'teacher_left',
+        applies_to_config: 'standard',
+        slot_capacity_min: { head_teacher: 1, photos_full: 1 },
+        expected_name_hint: 'F-Head-WithPhoto',
+      },
+      right_filter: {
+        page_role: 'teacher_right',
+        applies_to_config: 'standard',
+        slot_capacity_min: { teachers: 12 },
+        expected_name_hint: 'G-Teachers-4x3',
+      },
+    },
+    {
+      subjects_min: 13, subjects_max: 16,
+      subjects_on_left: 0,
+      subjects_on_right: 16,
+      left_filter: {
+        page_role: 'teacher_left',
+        applies_to_config: 'standard',
+        slot_capacity_min: { head_teacher: 1, photos_full: 1 },
+        expected_name_hint: 'F-Head-WithPhoto',
+      },
+      right_filter: {
+        page_role: 'teacher_right',
+        applies_to_config: 'standard',
+        slot_capacity_min: { teachers: 16 },
+        expected_name_hint: 'G-Teachers-4x4',
+      },
+    },
+    {
+      subjects_min: 17, subjects_max: 24,
+      subjects_on_left: 8,
+      subjects_on_right: 16,
+      left_filter: {
+        page_role: 'teacher_left',
+        applies_to_config: 'standard',
+        slot_capacity_min: { head_teacher: 1, teachers: 8 },
+        expected_name_hint: 'F-Head-LargeGrid',
+      },
+      right_filter: {
+        page_role: 'teacher_right',
+        applies_to_config: 'standard',
+        slot_capacity_min: { teachers: 16 },
+        expected_name_hint: 'G-Teachers-4x4',
+      },
+    },
+  ],
 };
 
 /**
@@ -119,6 +273,7 @@ export const SCENARIOS_LAYFLAT: Partial<Record<ConfigType, ScenarioDef>> = {
         expected_name_hint: 'E-Student-Standard',
       },
     },
+    teacher_section: TEACHER_SECTION_LAYFLAT,
   },
 
   universal: {
@@ -145,6 +300,7 @@ export const SCENARIOS_LAYFLAT: Partial<Record<ConfigType, ScenarioDef>> = {
       },
       right_filter_mode: 'alternate',
     },
+    teacher_section: TEACHER_SECTION_LAYFLAT,
   },
 
   maximum: {
@@ -174,5 +330,6 @@ export const SCENARIOS_LAYFLAT: Partial<Record<ConfigType, ScenarioDef>> = {
       },
       right_filter_mode: 'paired',
     },
+    teacher_section: TEACHER_SECTION_LAYFLAT,
   },
 };
