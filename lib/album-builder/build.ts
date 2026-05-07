@@ -32,6 +32,7 @@ import {
   type IntroSection,
   type LastSpread,
   type MasterFilter,
+  type IndividualStudentSection,
 } from './scenarios';
 import { findMaster } from './find-master';
 import { chunk, pushWarning } from './utils';
@@ -91,8 +92,17 @@ export function buildAlbum(input: AlbumInput, config: Config): BuildResult {
     }
   }
 
-  // Раздел 3 — ученики
-  buildStudentsSection(ctx, scenario.student_section);
+  // Раздел 3 — ученики (личные развороты ИЛИ обычная секция)
+  if (scenario.individual_student_section) {
+    buildIndividualStudents(ctx, scenario.individual_student_section);
+  } else {
+    buildStudentsSection(ctx, scenario.student_section);
+  }
+
+  // Раздел 4 — сетка-миниатюр (только для Индивидуального)
+  if (scenario.student_thumbnails_section) {
+    buildStudentsSection(ctx, scenario.student_thumbnails_section);
+  }
 
   // [COMMON] — НЕ генерируется (idml-recon §9)
 
@@ -267,6 +277,108 @@ function buildMaximumStudents(ctx: BuildContext, section: StudentSection): void 
         studentphoto4: s.friend_photos[3] ?? null,
         studentquote: s.quote,
       },
+    });
+  }
+}
+
+/**
+ * Индивидуальный — для каждого ученика пара (E-Max-Left + правый мастер).
+ *
+ * Правый мастер выбирается per-student по friend_photos.length:
+ *   ≤ 3 → E-Ind-Right-3 (3 слота фото-друзей)
+ *   = 4 → E-Max-Right (4 слота)
+ *
+ * Если для конкретного ученика нужный мастер не нашёлся — warning
+ * master_not_found + ученик пропускается (не падаем целиком).
+ */
+function buildIndividualStudents(
+  ctx: BuildContext,
+  section: IndividualStudentSection,
+): void {
+  const leftR = findMaster(ctx.config.template_set.spreads, {
+    ...section.left_filter,
+    applies_to_config: ctx.config.config_type,
+  });
+  const right3R = findMaster(ctx.config.template_set.spreads, {
+    ...section.right_filter_3,
+    applies_to_config: ctx.config.config_type,
+  });
+  const right4R = findMaster(ctx.config.template_set.spreads, {
+    ...section.right_filter_4,
+    applies_to_config: ctx.config.config_type,
+  });
+
+  if (!leftR.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `individual left: ${section.left_filter.expected_name_hint ?? '?'}`,
+    });
+    return;
+  }
+  if (leftR.warning) pushWarning(ctx, leftR.warning);
+  if (right3R.ok && right3R.warning) pushWarning(ctx, right3R.warning);
+  if (right4R.ok && right4R.warning) pushWarning(ctx, right4R.warning);
+
+  if (!right3R.ok && !right4R.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: 'individual: ни right_filter_3, ни right_filter_4 не дают мастера',
+    });
+    return;
+  }
+
+  for (let i = 0; i < ctx.input.students.length; i++) {
+    const s = ctx.input.students[i];
+
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: leftR.master.id,
+      template_name: leftR.master.name,
+      data: {
+        studentportrait: s.portrait,
+        studentname: s.full_name,
+      },
+    });
+
+    const friendCount = s.friend_photos.length;
+    let rightMaster: SpreadTemplate | null = null;
+    let friendSlots = 0;
+
+    if (friendCount <= 3 && right3R.ok) {
+      rightMaster = right3R.master;
+      friendSlots = 3;
+    } else if (friendCount === 4 && right4R.ok) {
+      rightMaster = right4R.master;
+      friendSlots = 4;
+    } else if (friendCount === 4 && !right4R.ok && right3R.ok) {
+      rightMaster = right3R.master;
+      friendSlots = 3;
+      pushWarning(ctx, {
+        code: 'master_not_found',
+        detail: `individual right: student ${s.full_name} has 4 friend_photos, но E-Max-Right не найден; используется E-Ind-Right-3 (4-е фото отброшено)`,
+      });
+    } else if (friendCount > 4) {
+      rightMaster = right4R.ok ? right4R.master : right3R.ok ? right3R.master : null;
+      friendSlots = right4R.ok ? 4 : 3;
+      pushWarning(ctx, {
+        code: 'students_overflow',
+        detail: `individual: student ${s.full_name} has ${friendCount} friend_photos, обрезано до ${friendSlots}`,
+      });
+    }
+
+    if (!rightMaster) {
+      pushWarning(ctx, {
+        code: 'master_not_found',
+        detail: `individual right: student ${s.full_name} (friend_photos=${friendCount}) — нет подходящего мастера`,
+      });
+      continue;
+    }
+
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: rightMaster.id,
+      template_name: rightMaster.name,
+      data: studentSinglePageData(s, friendSlots),
     });
   }
 }

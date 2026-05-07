@@ -105,6 +105,19 @@ const STUDENT_SETS: Record<string, Student[]> = {
   '30': Array.from({ length: 30 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
   '32': Array.from({ length: 32 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
   '36': Array.from({ length: 36 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '3': Array.from({ length: 3 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '5_with_friends': Array.from({ length: 5 }, (_, i) => {
+    const s = makeStudent(`Ученик${i + 1}`, 0);
+    s.friend_photos = ['url-friend-1', 'url-friend-2', 'url-friend-3', 'url-friend-4'];
+    return s;
+  }),
+  '5_mixed_friends': Array.from({ length: 5 }, (_, i) => {
+    const s = makeStudent(`Ученик${i + 1}`, 0);
+    if (i >= 3) {
+      s.friend_photos = ['url-friend-1', 'url-friend-2', 'url-friend-3', 'url-friend-4'];
+    }
+    return s;
+  }),
 };
 
 function makeSubjects(count: number): Subject[] {
@@ -650,6 +663,112 @@ const SCENES: Scene[] = [
       noWarningCodes: ['master_not_found', 'students_overflow', 'class_photo_missing'],
       masterNameSequence: ['N-12-Left', 'N-12-Right', 'N-12-Left'],
     },
+  },
+  // ─── Индивидуальный (0.11.3) ───
+  {
+    label: 'individual / 3 students no friend_photos',
+    configType: 'individual', studentsKey: '3',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 7,
+      noWarningCodes: ['master_not_found', 'students_overflow'],
+      masterNameSequence: [
+        'E-Max-Left', 'E-Ind-Right-3',
+        'E-Max-Left', 'E-Ind-Right-3',
+        'E-Max-Left', 'E-Ind-Right-3',
+        'N-12-Left',
+      ],
+    },
+  },
+  {
+    label: 'individual / 5 students all 4 friend_photos (E-Max-Right)',
+    configType: 'individual', studentsKey: '5_with_friends',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 11,
+      noWarningCodes: ['master_not_found', 'students_overflow'],
+      masterNameSequence: [
+        'E-Max-Left', 'E-Max-Right',
+        'E-Max-Left', 'E-Max-Right',
+        'E-Max-Left', 'E-Max-Right',
+        'E-Max-Left', 'E-Max-Right',
+        'E-Max-Left', 'E-Max-Right',
+        'N-12-Left',
+      ],
+    },
+  },
+  {
+    label: 'individual / 5 students mixed (3×E-Ind + 2×E-Max-Right)',
+    configType: 'individual', studentsKey: '5_mixed_friends',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 11,
+      noWarningCodes: ['master_not_found', 'students_overflow'],
+      masterNameSequence: [
+        'E-Max-Left', 'E-Ind-Right-3',
+        'E-Max-Left', 'E-Ind-Right-3',
+        'E-Max-Left', 'E-Ind-Right-3',
+        'E-Max-Left', 'E-Max-Right',
+        'E-Max-Left', 'E-Max-Right',
+        'N-12-Left',
+      ],
+    },
+  },
+  {
+    label: 'individual / 24 students (полная сетка миниатюр)',
+    configType: 'individual', studentsKey: '24',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 50,
+      noWarningCodes: ['master_not_found', 'students_overflow'],
+    },
+  },
+  {
+    label: 'individual / 26 students + full_class (overflow в миниатюрах)',
+    configType: 'individual', studentsKey: '26',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 55,
+      noWarningCodes: ['master_not_found', 'students_overflow', 'class_photo_missing'],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  {
+    label: 'soft / individual / 5 students no friends + full_class',
+    configType: 'individual', studentsKey: '5_med',
+    subjectsCount: 0, withHeadTeacher: false,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 12,
+      noWarningCodes: ['master_not_found', 'class_photo_missing'],
+      masterNameSequence: [
+        'S-Intro',
+        'E-Max-Left', 'E-Ind-Right-3',
+        'E-Max-Left', 'E-Ind-Right-3',
+        'E-Max-Left', 'E-Ind-Right-3',
+        'E-Max-Left', 'E-Ind-Right-3',
+        'E-Max-Left', 'E-Ind-Right-3',
+        'N-12-Left',
+      ],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  {
+    label: 'individual / 3 students + 4 subjects + half',
+    configType: 'individual', studentsKey: '3',
+    subjectsCount: 4, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 9,
+      noWarningCodes: ['master_not_found'],
+      masterNameSequence: [
+        'F-Head-SmallGrid', 'G-HalfClass',
+        'E-Max-Left', 'E-Ind-Right-3',
+        'E-Max-Left', 'E-Ind-Right-3',
+        'E-Max-Left', 'E-Ind-Right-3',
+        'N-12-Left',
+      ],
+    },
+    commonPhotos: { half: ['url-h1', 'url-h2'] },
   },
 ];
 

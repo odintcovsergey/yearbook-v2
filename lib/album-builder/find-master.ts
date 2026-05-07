@@ -71,6 +71,28 @@ function pickFirstBySortOrder(candidates: SpreadTemplate[]): SpreadTemplate {
   return best;
 }
 
+/**
+ * Приоритет точного совпадения с `expected_name_hint` — добавлено в 0.11.3
+ * для разрешения ambiguous match'ей (например E-Ind-Right-3 vs E-Max-Right
+ * когда оба удовлетворяют photos_friend≥3, но первый имеет больший sort_order).
+ *
+ * Если hint задан и среди кандидатов есть мастер с таким именем — берём его;
+ * иначе — обычный pickFirstBySortOrder. Семантика name_mismatch warning при
+ * этом сохраняется: если hint задан, но точного совпадения нет, после
+ * pickFirstBySortOrder вызывающая сторона запишет name_mismatch.
+ */
+function pickPreferringHint(
+  candidates: SpreadTemplate[],
+  hint: string | undefined,
+): SpreadTemplate {
+  if (hint) {
+    for (let i = 0; i < candidates.length; i++) {
+      if (candidates[i].name === hint) return candidates[i];
+    }
+  }
+  return pickFirstBySortOrder(candidates);
+}
+
 export function findMaster(
   spreads: SpreadTemplate[],
   filter: MasterFilter,
@@ -87,9 +109,9 @@ export function findMaster(
   let master: SpreadTemplate;
   let usedFallback = false;
   if (primary.length > 0) {
-    master = pickFirstBySortOrder(primary);
+    master = pickPreferringHint(primary, filter.expected_name_hint);
   } else if (filter.is_fallback_allowed && fallbacks.length > 0) {
-    master = pickFirstBySortOrder(fallbacks);
+    master = pickPreferringHint(fallbacks, filter.expected_name_hint);
     usedFallback = true;
   } else {
     return { ok: false, reason: 'not_found' };

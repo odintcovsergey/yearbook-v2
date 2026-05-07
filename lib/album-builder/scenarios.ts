@@ -105,6 +105,25 @@ export type AdaptiveGridOverflow = {
 };
 
 /**
+ * Конфигурация секции учеников для Индивидуального.
+ *
+ * Особенность: на правой странице используется ОДИН ИЗ ДВУХ мастеров
+ * в зависимости от friend_photos.length каждого ученика:
+ *   - friend_photos.length ≤ 3 → right_filter_3 (E-Ind-Right-3 с 3 слотами)
+ *   - friend_photos.length = 4 → right_filter_4 (E-Max-Right с 4 слотами)
+ *
+ * left_filter — общий для всех (E-Max-Left).
+ */
+export type IndividualStudentSection = {
+  /** Фильтр для левой страницы (E-Max-Left). */
+  left_filter: MasterFilter;
+  /** Фильтр для правой страницы при friend_photos.length ≤ 3 (E-Ind-Right-3, 3 слота). */
+  right_filter_3: MasterFilter;
+  /** Фильтр для правой страницы при friend_photos.length = 4 (E-Max-Right, 4 слота). */
+  right_filter_4: MasterFilter;
+};
+
+/**
  * Конфигурация ученического раздела одной комплектации.
  *
  * `students_per_unit` — сколько учеников вмещает одна единица шаблона.
@@ -230,6 +249,8 @@ export type IntroSection = {
 export type SoftOverrides = {
   description?: string;
   student_section?: StudentSection;
+  individual_student_section?: IndividualStudentSection;
+  student_thumbnails_section?: StudentSection;
   teacher_section?: TeacherSection;
   intro_section?: IntroSection;
 };
@@ -249,6 +270,17 @@ export type ScenarioDef = {
   config_type: ConfigType;
   description: string;
   student_section: StudentSection;
+  /**
+   * Опциональная альтернативная секция учеников для Индивидуального.
+   * Если задана — используется ВМЕСТО student_section в buildAlbum.
+   * student_section всё равно требуется как заглушка (типобезопасность).
+   */
+  individual_student_section?: IndividualStudentSection;
+  /**
+   * Опциональная вторая секция учеников (сетка-миниатюр в Индивидуальном).
+   * Если задана — после личных разворотов запускается вторая buildStudentsSection.
+   */
+  student_thumbnails_section?: StudentSection;
   /** Опционально — учительский раздел. Если undefined, секция не генерируется. */
   teacher_section?: TeacherSection;
   /** Опционально — вступительная страница (обычно задаётся в soft_overrides). */
@@ -602,6 +634,75 @@ export const SCENARIOS: Partial<Record<ConfigType, ScenarioDef>> = {
           expected_name_hint: 'N-Overflow-Row',
         },
         // row_right_filter не задаём — Мини max 36-24=12, не доходит до grid+row
+      },
+    },
+    teacher_section: TEACHER_SECTION_LAYFLAT,
+    soft_overrides: {
+      intro_section: INTRO_SECTION_S_INTRO,
+    },
+  },
+
+  individual: {
+    config_type: 'individual',
+    description:
+      'Индивидуальный — личный разворот на каждого ученика (E-Max-Left + E-Ind-Right-3 для ≤3 фото / E-Max-Right для 4 фото) + сетка миниатюр в конце как в Мини.',
+    student_section: {
+      // Заглушка для типобезопасности — реально используется individual_student_section
+      students_per_unit: 1,
+      unit_is_spread: true,
+      student_master_filter: {
+        page_role: 'student_left',
+        applies_to_config: 'individual',
+        slot_capacity_min: { students: 1 },
+        expected_name_hint: 'E-Max-Left',
+      },
+    },
+    individual_student_section: {
+      left_filter: {
+        page_role: 'student_left',
+        applies_to_config: 'individual',
+        slot_capacity_min: { students: 1 },
+        expected_name_hint: 'E-Max-Left',
+      },
+      right_filter_3: {
+        page_role: 'student_right',
+        applies_to_config: 'individual',
+        slot_capacity_min: { students: 1, photos_friend: 3 },
+        expected_name_hint: 'E-Ind-Right-3',
+      },
+      right_filter_4: {
+        page_role: 'student_right',
+        applies_to_config: 'individual',
+        slot_capacity_min: { students: 1, photos_friend: 4 },
+        expected_name_hint: 'E-Max-Right',
+      },
+    },
+    student_thumbnails_section: {
+      students_per_unit: 0,
+      unit_is_spread: false,
+      base_pages: 2,
+      has_quote: false,
+      student_master_filter: {
+        page_role: 'student_grid_left',
+        applies_to_config: 'individual',
+        slot_capacity_min: { students: 1 },
+      },
+      grid_filter_left: {
+        page_role: 'student_grid_left',
+        applies_to_config: 'individual',
+      },
+      grid_filter_right: {
+        page_role: 'student_grid_right',
+        applies_to_config: 'individual',
+      },
+      right_filter_mode: 'adaptive_grid',
+      overflow: {
+        row_filter: {
+          page_role: 'student_overflow',
+          applies_to_config: 'individual',
+          expected_name_hint: 'N-Overflow-Row',
+        },
+        // row_right_filter не задаём — для Индивидуального тоже не доходит
       },
     },
     teacher_section: TEACHER_SECTION_LAYFLAT,
