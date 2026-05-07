@@ -40,7 +40,7 @@ function matchesBaseFilters(
   filter: MasterFilter,
 ): boolean {
   if (candidate.page_role !== filter.page_role) return false;
-  if (candidate.applies_to_configs.indexOf(filter.applies_to_config) < 0) {
+  if (candidate.default_for_configs.indexOf(filter.applies_to_config) < 0) {
     return false;
   }
   if (filter.is_spread !== undefined && candidate.is_spread !== filter.is_spread) {

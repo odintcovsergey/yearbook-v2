@@ -486,15 +486,13 @@ const SCENES: Scene[] = [
   // L-6 и N-12 оба матчат mini (applies_to_configs общеупотребимы). adaptive_grid
   // берёт МИНИМАЛЬНО достаточный: при requiredCapacity ≤ 6 — это L-6, иначе N-12.
   {
-    label: 'mini / 8 students (L-6 минимально достаточен для required=4)',
+    label: 'mini / 8 students (N-12 default для mini, 1 страница)',
     configType: 'mini', studentsKey: '8',
     subjectsCount: 0, withHeadTeacher: false,
-    // adaptive_grid выбирает L-6 (минимально достаточный для required=4):
-    // 2 базовых страницы × slotsPerPage=6 = 12 слотов, 8 учеников помещаются
     expect: {
-      spreadsCount: 2,
+      spreadsCount: 1,
       noWarningCodes: ['adaptive_grid_fallback', 'master_not_found'],
-      masterNameSequence: ['L-6-Left', 'L-6-Right'],
+      masterNameSequence: ['N-12-Left'],
     },
   },
   {

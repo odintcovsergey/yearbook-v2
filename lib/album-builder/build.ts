@@ -491,7 +491,7 @@ function pickAdaptiveGrid(
 
   const candidates = ctx.config.template_set.spreads.filter((s) => {
     if (s.page_role !== filter.page_role) return false;
-    if (s.applies_to_configs.indexOf(filter.applies_to_config) < 0) return false;
+    if (s.default_for_configs.indexOf(filter.applies_to_config) < 0) return false;
     return s.slot_capacity !== null && typeof s.slot_capacity.students === 'number';
   });
 

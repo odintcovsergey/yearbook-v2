@@ -252,7 +252,7 @@ export type Placeholder = PhotoPlaceholder | TextPlaceholder;
 // ─── SpreadTemplate / TemplateSet (проекции таблиц) ───────────────────────
 
 /**
- * Запись из `spread_templates` (миграция 0.1 + 0.8.6.1).
+ * Запись из `spread_templates` (миграции 0.1 + 0.8.6.1 + 0.11.1.5).
  *
  * `sort_order` — позиционный индекс из IDML (см. memory
  * `feedback_sort_order_semantics`); порядок применения определяется
@@ -261,6 +261,12 @@ export type Placeholder = PhotoPlaceholder | TextPlaceholder;
  * Семантические теги (`applies_to_configs`/`page_role`/`slot_capacity`/
  * `is_fallback`/`mirror_for_soft`/`audit_notes`) добавлены в 0.8.6.1
  * и заполнены для 39 мастеров в 0.8.6.2.
+ *
+ * `applies_to_configs` — список комплектаций где мастер технически совместим
+ *                       (используется в UI редактора фаз 2-4 для ручного выбора).
+ * `default_for_configs` — список комплектаций где мастер выбирается автоматически
+ *                       в buildAlbum (используется в семантических фильтрах).
+ *                       Добавлено в 0.11.1.5 для разделения compat vs default.
  */
 export type SpreadTemplate = {
   id: string;
@@ -273,6 +279,7 @@ export type SpreadTemplate = {
   rules: unknown | null;
   sort_order: number;
   applies_to_configs: ConfigType[];
+  default_for_configs: ConfigType[];
   page_role: PageRole | null;
   slot_capacity: SlotCapacity | null;
   is_fallback: boolean;
