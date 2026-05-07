@@ -203,6 +203,10 @@ export default function SuperPage() {
               {t.label}
             </button>
           ))}
+          <button onClick={() => router.push('/super/templates')}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            📐 Шаблоны →
+          </button>
         </div>
 
         {superTab === 'partners' && (
