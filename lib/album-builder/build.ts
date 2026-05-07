@@ -28,6 +28,7 @@ import {
   SCENARIOS_LAYFLAT,
   type StudentSection,
   type TeacherSection,
+  type LastSpread,
 } from './scenarios';
 import { findMaster } from './find-master';
 import { chunk, pushWarning } from './utils';
@@ -96,6 +97,8 @@ function buildStudentsSection(ctx: BuildContext, section: StudentSection): void 
     buildUniversalStudents(ctx, section);
   } else if (mode === 'paired') {
     buildMaximumStudents(ctx, section);
+  } else if (mode === 'grid_alternate') {
+    buildMediumStudents(ctx, section);
   } else {
     pushWarning(ctx, {
       code: 'master_not_found',
@@ -269,17 +272,209 @@ function studentSinglePageData(s: Student, friendSlots: number): Record<string, 
 }
 
 /**
- * Подбор правого учительского мастера для variants 0-8 (без `right_filter`).
+ * Медиум — сетка по N учеников на странице с чередованием Left/Right по чётности
+ * индекса страницы (не ученика, как в Универсале).
+ *
+ * Полные страницы заполняются обычными мастерами (D-Medium-Left/D-Medium-Right).
+ * Остаток обрабатывается по правилу:
+ *   - remainder в [`last_spread.remainder_min`, `last_spread.remainder_max`]
+ *     → специальный last_spread (например D-Medium-Last-WithPhoto + dynamic G)
+ *   - иначе → обычный grid-мастер с null'ами + warning `students_grid_no_special_master`
+ *   - remainder = 0 → специальная обработка не требуется
+ */
+function buildMediumStudents(ctx: BuildContext, section: StudentSection): void {
+  const filterRight = section.student_master_filter_right;
+  if (!filterRight) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: 'grid_alternate scenario requires student_master_filter_right',
+    });
+    return;
+  }
+
+  const leftFilter = { ...section.student_master_filter, applies_to_config: ctx.config.config_type };
+  const rightFilter = { ...filterRight, applies_to_config: ctx.config.config_type };
+
+  const left = findMaster(ctx.config.template_set.spreads, leftFilter);
+  const right = findMaster(ctx.config.template_set.spreads, rightFilter);
+
+  if (!left.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `medium student master (left): expected_name_hint=${section.student_master_filter.expected_name_hint ?? '?'}`,
+    });
+    return;
+  }
+  if (!right.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `medium student master (right): expected_name_hint=${filterRight.expected_name_hint ?? '?'}`,
+    });
+    return;
+  }
+  if (left.warning) pushWarning(ctx, left.warning);
+  if (right.warning) pushWarning(ctx, right.warning);
+
+  const N = section.students_per_unit;
+  const hasQuote = section.has_quote === true;
+  const total = ctx.input.students.length;
+  const remainder = total % N;
+
+  const ls = section.last_spread;
+  const useLastSpecial =
+    ls !== undefined &&
+    remainder >= ls.remainder_min &&
+    remainder <= ls.remainder_max;
+
+  const regularPages = useLastSpecial ? Math.floor(total / N) : Math.ceil(total / N);
+
+  for (let i = 0; i < regularPages; i++) {
+    const slice = ctx.input.students.slice(i * N, (i + 1) * N);
+    const isLeft = i % 2 === 0;
+    const master = isLeft ? left.master : right.master;
+
+    if (slice.length < N) {
+      pushWarning(ctx, {
+        code: 'students_grid_no_special_master',
+        detail: `${ctx.config.config_type}: remainder=${remainder} учеников на последней странице (${master.name}) — нет специального мастера, пустые слоты заполнены null (см. master-cleanup-tz §A5)`,
+      });
+    }
+
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: master.id,
+      template_name: master.name,
+      data: buildGridStudentData(slice, N, hasQuote),
+    });
+  }
+
+  if (useLastSpecial && ls) {
+    const consumed = regularPages * N;
+    const lastSlice = ctx.input.students.slice(consumed);
+    buildLastSpread(ctx, ls, lastSlice);
+  }
+}
+
+/**
+ * Заполнить data объект для grid-страницы. Студенты идут с _1, _2, …, _N.
+ * Пустые слоты заполняются null (для скрытия placeholder'ов в фазе 2-4 рендера).
+ *
+ * Все ключи в lowercase (idml-recon §6.4): `studentportrait_N`,
+ * `studentname_N`, и опционально `studentquote_N` если `hasQuote`.
+ */
+function buildGridStudentData(
+  students: Student[],
+  slotsPerPage: number,
+  hasQuote: boolean,
+): Record<string, string | null> {
+  const data: Record<string, string | null> = {};
+  for (let i = 0; i < students.length; i++) {
+    const n = i + 1;
+    data[`studentportrait_${n}`] = students[i].portrait;
+    data[`studentname_${n}`] = students[i].full_name;
+    if (hasQuote) {
+      data[`studentquote_${n}`] = students[i].quote;
+    }
+  }
+  for (let n = students.length + 1; n <= slotsPerPage; n++) {
+    data[`studentportrait_${n}`] = null;
+    data[`studentname_${n}`] = null;
+    if (hasQuote) {
+      data[`studentquote_${n}`] = null;
+    }
+  }
+  return data;
+}
+
+/**
+ * Специальный последний разворот (Медиум: D-Medium-Last-WithPhoto + dynamic G-*).
+ *
+ * Левая страница — заполняется студентами + `classphotoframe` (если есть placeholder).
+ * Правая страница — динамический выбор G-HalfClass/G-FullClass/null
+ * (если `ls.right_dynamic === true`).
+ */
+function buildLastSpread(
+  ctx: BuildContext,
+  ls: LastSpread,
+  lastStudents: Student[],
+): void {
+  const leftFilter = { ...ls.left_filter, applies_to_config: ctx.config.config_type };
+  const leftR = findMaster(ctx.config.template_set.spreads, leftFilter);
+
+  if (!leftR.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `last_spread left: ${ls.left_filter.expected_name_hint ?? '?'}`,
+    });
+    return;
+  }
+  if (leftR.warning) pushWarning(ctx, leftR.warning);
+
+  const leftData = buildGridStudentData(lastStudents, ls.left_slots_per_page, ls.left_has_quote);
+
+  if (hasPlaceholder(leftR.master, 'classphotoframe')) {
+    const fc = ctx.input.common_photos.full_class;
+    if (fc.length >= 1) {
+      leftData.classphotoframe = fc[0];
+    } else {
+      leftData.classphotoframe = null;
+      pushWarning(ctx, {
+        code: 'class_photo_missing',
+        detail: `master ${leftR.master.name} has classphotoframe placeholder but common_photos.full_class is empty`,
+      });
+    }
+  }
+
+  ctx.spreads.push({
+    spread_index: ctx.spreadCounter.value++,
+    template_id: leftR.master.id,
+    template_name: leftR.master.name,
+    data: leftData,
+  });
+
+  if (!ls.right_dynamic) return;
+
+  const rightMaster = pickRightCommonPhotoMaster(ctx);
+  if (!rightMaster) {
+    pushWarning(ctx, {
+      code: 'no_right_teacher_master',
+      detail: `last_spread right: ни half (>=2) ни full_class (>=1) — правая страница пропущена`,
+    });
+    return;
+  }
+
+  // Переиспользуем buildTeacherRightData — она универсально обрабатывает
+  // halfclass/fullclass через hasPlaceholder. Передаём пустой rightSubjects:
+  // на G-HalfClass/G-FullClass нет учительских слотов.
+  ctx.spreads.push({
+    spread_index: ctx.spreadCounter.value++,
+    template_id: rightMaster.id,
+    template_name: rightMaster.name,
+    data: buildTeacherRightData(ctx, rightMaster, []),
+  });
+}
+
+/**
+ * Подбор правого мастера с общим фото класса.
+ *
+ * Используется в двух местах:
+ *  1. Учительский раздел (variants 0-8 без явного `right_filter`)
+ *  2. Медиум `last_spread.right_dynamic` (после D-Medium-Last-WithPhoto)
+ *
  * Логика из `build_album.jsx` (`pickRightPhotoMaster`):
  * 1) `common_photos.half >= 2`        → G-HalfClass
  * 2) `common_photos.full_class >= 1`  → G-FullClass
  * 3) иначе                            → null
  *
- * Внутренние warning'и о fallback/name_mismatch пушатся в ctx, но если мастер
- * не нашёлся в БД — молча идём к следующей ветке. Финальный warning
- * `no_right_teacher_master` пишется в `buildTeacherSection` после возврата `null`.
+ * Фильтры включают `slot_capacity_min` для дискриминации:
+ *   G-HalfClass:  `{ photos_half: 2 }`
+ *   G-FullClass:  `{ photos_full: 1 }`
+ *
+ * Внутренние warning'и (fallback/name_mismatch) пушатся в ctx. Если мастер
+ * не нашёлся — молча идём к следующей ветке. Финальный warning о пропущенной
+ * правой странице пишется на уровне вызывающей стороны.
  */
-function pickRightTeacherMaster(ctx: BuildContext): SpreadTemplate | null {
+function pickRightCommonPhotoMaster(ctx: BuildContext): SpreadTemplate | null {
   const cp = ctx.input.common_photos;
   const spreads = ctx.config.template_set.spreads;
 
@@ -320,7 +515,7 @@ function pickRightTeacherMaster(ctx: BuildContext): SpreadTemplate | null {
  *  4. Заполняем data левой страницы и пушим SpreadInstance.
  *  5. Для правой:
  *     - `variant.right_filter` задан → `findMaster`
- *     - `undefined` → `pickRightTeacherMaster` (dynamic)
+ *     - `undefined` → `pickRightCommonPhotoMaster` (dynamic)
  *  6. Если правый мастер найден — пушим SpreadInstance с правой данными.
  *     Иначе — правую страницу пропускаем (warning уже залогирован).
  */
@@ -380,7 +575,7 @@ function buildTeacherSection(ctx: BuildContext, section: TeacherSection): void {
       rightMaster = rightR.master;
     }
   } else {
-    rightMaster = pickRightTeacherMaster(ctx);
+    rightMaster = pickRightCommonPhotoMaster(ctx);
     if (!rightMaster) {
       pushWarning(ctx, {
         code: 'no_right_teacher_master',

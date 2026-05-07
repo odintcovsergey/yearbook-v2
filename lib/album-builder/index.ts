@@ -41,6 +41,7 @@ export type {
   ScenarioDef,
   TeacherSpreadVariant,
   TeacherSection,
+  LastSpread,
 } from './scenarios';
 
 export { findMaster } from './find-master';

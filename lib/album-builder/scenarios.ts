@@ -53,6 +53,36 @@ export type MasterFilter = {
 };
 
 /**
+ * Конфигурация специального последнего разворота для grid-комплектаций (Медиум).
+ *
+ * Применяется когда в обычном grid-потоке остался остаток учеников в диапазоне
+ * [`remainder_min`, `remainder_max`]. Например, для Медиум: при остатке 1-2 ученика
+ * используется D-Medium-Last-WithPhoto на левой странице + динамический G-*
+ * мастер (HalfClass/FullClass/null) на правой.
+ *
+ * Если remainder вне диапазона — last_spread не активируется, остаток ложится
+ * на обычный grid-мастер с пустыми слотами + warning `students_grid_no_special_master`.
+ */
+export type LastSpread = {
+  /** Минимум remainder для активации (включительно). */
+  remainder_min: number;
+  /** Максимум remainder для активации (включительно). */
+  remainder_max: number;
+  /** Фильтр для левого мастера (например D-Medium-Last-WithPhoto). */
+  left_filter: MasterFilter;
+  /** Сколько учеников помещается в left мастере (например 2 для D-Medium-Last-WithPhoto). */
+  left_slots_per_page: number;
+  /** Содержит ли left мастер слоты для цитаты. */
+  left_has_quote: boolean;
+  /**
+   * Использовать ли `pickRightCommonPhotoMaster` для правой страницы.
+   * - `true` → динамический выбор G-HalfClass/G-FullClass/null по common_photos
+   * - `false` → правая страница не генерируется
+   */
+  right_dynamic: boolean;
+};
+
+/**
  * Конфигурация ученического раздела одной комплектации.
  *
  * `students_per_unit` — сколько учеников вмещает одна единица шаблона.
@@ -75,15 +105,26 @@ export type StudentSection = {
   /**
    * Как использовать `student_master_filter_right`:
    *
-   * - `'alternate'` — Left и Right распределяют РАЗНЫХ учеников по чётности
-   *   (Универсал: 0,2,4… → Left; 1,3,5… → Right).
-   * - `'paired'` — Left и Right показывают ОДНОГО ученика на двух
-   *   логически связанных страницах (Максимум: каждый ученик = 2 SpreadInstance
-   *   подряд, Left=портрет+имя, Right=4 фото+цитата).
+   * - `'alternate'` — Универсал: разные ученики Left/Right по чётности
+   *   (0,2,4… → Left; 1,3,5… → Right).
+   * - `'paired'` — Максимум: один ученик на двух логически связанных страницах
+   *   (Left=портрет+имя, Right=4 фото+цитата; каждый ученик = 2 SpreadInstance подряд).
+   * - `'grid_alternate'` — Медиум: chunk по N учеников, чередование Left/Right
+   *   по чётности индекса страницы (НЕ ученика).
    * - `undefined` — second filter не используется (Стандарт: один
    *   двухстраничный мастер на пару учеников).
    */
-  right_filter_mode?: 'alternate' | 'paired';
+  right_filter_mode?: 'alternate' | 'paired' | 'grid_alternate';
+  /**
+   * Содержат ли мастера grid-комплектации слот для цитаты (`studentquote_N`).
+   * По умолчанию `false`. `true` для Медиум.
+   */
+  has_quote?: boolean;
+  /**
+   * Конфигурация специального последнего разворота. Применяется только при
+   * `right_filter_mode === 'grid_alternate'`. По умолчанию `undefined`.
+   */
+  last_spread?: LastSpread;
 };
 
 /**
@@ -329,6 +370,45 @@ export const SCENARIOS_LAYFLAT: Partial<Record<ConfigType, ScenarioDef>> = {
         expected_name_hint: 'E-Max-Right',
       },
       right_filter_mode: 'paired',
+    },
+    teacher_section: TEACHER_SECTION_LAYFLAT,
+  },
+
+  medium: {
+    config_type: 'medium',
+    print_type: 'layflat',
+    description:
+      'Медиум — сетка 4 ученика на странице (D-Medium-Left/Right с чередованием), последняя при остатке 1-2 — D-Medium-Last-WithPhoto + dynamic G-*',
+    student_section: {
+      students_per_unit: 4,
+      unit_is_spread: false,
+      has_quote: true,
+      student_master_filter: {
+        page_role: 'student_grid_left',
+        applies_to_config: 'medium',
+        slot_capacity_min: { students: 4 },
+        expected_name_hint: 'D-Medium-Left',
+      },
+      student_master_filter_right: {
+        page_role: 'student_grid_right',
+        applies_to_config: 'medium',
+        slot_capacity_min: { students: 4 },
+        expected_name_hint: 'D-Medium-Right',
+      },
+      right_filter_mode: 'grid_alternate',
+      last_spread: {
+        remainder_min: 1,
+        remainder_max: 2,
+        left_filter: {
+          page_role: 'student_last',
+          applies_to_config: 'medium',
+          slot_capacity_min: { students: 2, photos_full: 1 },
+          expected_name_hint: 'D-Medium-Last-WithPhoto',
+        },
+        left_slots_per_page: 2,
+        left_has_quote: true,
+        right_dynamic: true,
+      },
     },
     teacher_section: TEACHER_SECTION_LAYFLAT,
   },

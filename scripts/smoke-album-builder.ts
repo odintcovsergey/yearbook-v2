@@ -84,8 +84,14 @@ const STUDENTS_5 = ['Алексеев', 'Бочкарёв', 'Васильев', 
 //   - для будущих 0.10b.3 (Медиум) и 0.11 (Лайт/Мини) — большие
 const STUDENT_SETS: Record<string, Student[]> = {
   '2': [makeStudent('Алексеев', 4), makeStudent('Бочкарёв', 4)],
+  '4': Array.from({ length: 4 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
   '5': STUDENTS_5,
+  '5_med': Array.from({ length: 5 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
   '6': [...STUDENTS_5, makeStudent('Егоров', 4)],
+  '7': Array.from({ length: 7 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '8': Array.from({ length: 8 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '11': Array.from({ length: 11 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '13': Array.from({ length: 13 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
   '24': Array.from({ length: 24 }, (_, i) => makeStudent(`Ученик${i + 1}`, 2)),
   '27': Array.from({ length: 27 }, (_, i) => makeStudent(`Ученик${i + 1}`, 2)),
 };
@@ -290,14 +296,83 @@ const SCENES: Scene[] = [
       masterNameSequence: ['E-Student-Standard'],
     },
   },
-  // ─── Заготовка для 0.10b.3 — раскомментировать по мере реализации Медиума ───
-  //
-  // {
-  //   label: 'medium / 24 students (для 0.10b.3)',
-  //   configType: 'medium', studentsKey: '24',
-  //   subjectsCount: 0, withHeadTeacher: false,
-  //   expect: { spreadsCount: 6 /* 24/4 = 6 страниц */ },
-  // },
+  // ─── Медиум (0.10b.3) ───
+  {
+    label: 'medium / 4 students (1 full page)',
+    configType: 'medium', studentsKey: '4',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 1,
+      noWarningCodes: ['master_not_found', 'students_grid_no_special_master'],
+      masterNameSequence: ['D-Medium-Left'],
+    },
+  },
+  {
+    label: 'medium / 5 students + full_class (last_spread активен)',
+    configType: 'medium', studentsKey: '5_med',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found', 'students_grid_no_special_master', 'class_photo_missing'],
+      masterNameSequence: ['D-Medium-Left', 'D-Medium-Last-WithPhoto', 'G-FullClass'],
+    },
+    commonPhotos: { full_class: ['url-fc-1', 'url-fc-2'] },
+  },
+  {
+    label: 'medium / 5 students no common photos',
+    configType: 'medium', studentsKey: '5_med',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 2,
+      warningCodes: ['class_photo_missing', 'no_right_teacher_master'],
+      masterNameSequence: ['D-Medium-Left', 'D-Medium-Last-WithPhoto'],
+    },
+  },
+  {
+    label: 'medium / 7 students (remainder=3, no special master)',
+    configType: 'medium', studentsKey: '7',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 2,
+      warningCodes: ['students_grid_no_special_master'],
+      masterNameSequence: ['D-Medium-Left', 'D-Medium-Right'],
+    },
+  },
+  {
+    label: 'medium / 8 students (2 full pages)',
+    configType: 'medium', studentsKey: '8',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 2,
+      noWarningCodes: ['master_not_found', 'students_grid_no_special_master'],
+      masterNameSequence: ['D-Medium-Left', 'D-Medium-Right'],
+    },
+  },
+  {
+    label: 'medium / 11 students (remainder=3 на 3-й странице)',
+    configType: 'medium', studentsKey: '11',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 3,
+      warningCodes: ['students_grid_no_special_master'],
+      masterNameSequence: ['D-Medium-Left', 'D-Medium-Right', 'D-Medium-Left'],
+    },
+  },
+  {
+    label: 'medium / 13 students + 5 subjects + half',
+    configType: 'medium', studentsKey: '13',
+    subjectsCount: 5, withHeadTeacher: true,
+    expect: {
+      spreadsCount: 7,
+      noWarningCodes: ['master_not_found', 'class_photo_missing', 'students_grid_no_special_master'],
+      masterNameSequence: [
+        'F-Head-LargeGrid', 'G-HalfClass',
+        'D-Medium-Left', 'D-Medium-Right', 'D-Medium-Left',
+        'D-Medium-Last-WithPhoto', 'G-HalfClass',
+      ],
+    },
+    commonPhotos: { half: ['url-h1', 'url-h2'], full_class: ['url-fc-1'] },
+  },
 ];
 
 // ─── Запуск ─────────────────────────────────────────────────────────────────

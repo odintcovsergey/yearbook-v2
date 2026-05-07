@@ -347,6 +347,11 @@ export type SpreadInstance = {
  * - `half_class_missing`       — мастер требует halfLeftPhoto/halfRightPhoto, в input нет half
  * - `no_right_teacher_master`  — для subjects 0-8 нет ни half, ни full_class фото —
  *                                правая учительская страница пропущена
+ * - `students_grid_no_special_master` — в grid-комплектации остался остаток
+ *                                       (например 3 в Медиум) для которого
+ *                                       нет специального мастера; используется
+ *                                       обычный мастер с пустыми слотами
+ *                                       (см. master-cleanup-tz §A5 для D-Medium)
  */
 export type BuildWarningCode =
   | 'master_not_found'
@@ -360,7 +365,8 @@ export type BuildWarningCode =
   | 'subjects_overflow'
   | 'class_photo_missing'
   | 'half_class_missing'
-  | 'no_right_teacher_master';
+  | 'no_right_teacher_master'
+  | 'students_grid_no_special_master';
 
 export type BuildWarning = {
   code: BuildWarningCode;
