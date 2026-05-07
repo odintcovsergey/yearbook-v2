@@ -82,6 +82,29 @@ export type LastSpread = {
 };
 
 /**
+ * Конфигурация overflow для adaptive_grid комплектаций (Лайт/Мини).
+ *
+ * Применяется когда total > base_pages * slotsPerPage в buildAdaptiveGridStudents.
+ *
+ * Алгоритм веток:
+ *  - overflow ≤ row_capacity (3 для L, 4 для N) → single overflow-row
+ *  - overflow ≤ slotsPerPage → extra обычная сетка (leftMaster, неполная)
+ *  - overflow > slotsPerPage → extra полная сетка + overflow-row-right
+ *    (только Лайт 31-32; для Мини не достижимо: 36-24=12, 12 ≤ slotsPerPage=12)
+ *
+ * row_capacity берётся из найденного master.slot_capacity.students.
+ */
+export type AdaptiveGridOverflow = {
+  /** Фильтр для overflow-row LEFT мастера (page_role='student_overflow'). */
+  row_filter: MasterFilter;
+  /**
+   * Фильтр для overflow-row RIGHT мастера (page_role='student_overflow_right').
+   * Опционально, нужно только для Лайт 31-32.
+   */
+  row_right_filter?: MasterFilter;
+};
+
+/**
  * Конфигурация ученического раздела одной комплектации.
  *
  * `students_per_unit` — сколько учеников вмещает одна единица шаблона.
@@ -136,6 +159,12 @@ export type StudentSection = {
   grid_filter_left?: MasterFilter;
   /** Базовый фильтр для adaptive grid RIGHT мастера. `applies_to_config` — заглушка. */
   grid_filter_right?: MasterFilter;
+  /**
+   * Overflow-стратегия для adaptive_grid комплектаций. Применяется только
+   * при right_filter_mode === 'adaptive_grid' и total > base_pages*slotsPerPage.
+   * Если не задана — overflow обрезается с warning students_overflow.
+   */
+  overflow?: AdaptiveGridOverflow;
 };
 
 /**
@@ -524,6 +553,18 @@ export const SCENARIOS: Partial<Record<ConfigType, ScenarioDef>> = {
         applies_to_config: 'light',
       },
       right_filter_mode: 'adaptive_grid',
+      overflow: {
+        row_filter: {
+          page_role: 'student_overflow',
+          applies_to_config: 'light',
+          expected_name_hint: 'L-Overflow-Row',
+        },
+        row_right_filter: {
+          page_role: 'student_overflow_right',
+          applies_to_config: 'light',
+          expected_name_hint: 'L-Overflow-Row-Right',
+        },
+      },
     },
     teacher_section: TEACHER_SECTION_LAYFLAT,
     soft_overrides: {
@@ -554,6 +595,14 @@ export const SCENARIOS: Partial<Record<ConfigType, ScenarioDef>> = {
         applies_to_config: 'mini',
       },
       right_filter_mode: 'adaptive_grid',
+      overflow: {
+        row_filter: {
+          page_role: 'student_overflow',
+          applies_to_config: 'mini',
+          expected_name_hint: 'N-Overflow-Row',
+        },
+        // row_right_filter не задаём — Мини max 36-24=12, не доходит до grid+row
+      },
     },
     teacher_section: TEACHER_SECTION_LAYFLAT,
     soft_overrides: {

@@ -467,6 +467,41 @@ function buildLastSpread(
 }
 
 /**
+ * Возвращает adaptive_grid мастер с МАКСИМАЛЬНОЙ slot_capacity.students
+ * среди доступных в БД для текущего page_role и applies_to_config.
+ *
+ * После 0.11.1.5 фильтрация по default_for_configs гарантирует что для
+ * Лайт мы видим только L-* мастера (max=L-6=6), для Мини только N-* (max=N-12=12).
+ *
+ * Используется в buildAdaptiveGridStudents для clamping: чтобы понять сколько
+ * учеников максимум помещается на basePages с самым «вместительным» мастером,
+ * нужно знать его capacity ДО выбора оптимального через pickAdaptiveGrid.
+ *
+ * Если кандидатов нет — возвращает null.
+ */
+function pickAdaptiveGridMaxCapacity(
+  ctx: BuildContext,
+  baseFilter: MasterFilter,
+): SpreadTemplate | null {
+  const filter = { ...baseFilter, applies_to_config: ctx.config.config_type };
+  const candidates = ctx.config.template_set.spreads.filter((s) => {
+    if (s.page_role !== filter.page_role) return false;
+    if (s.default_for_configs.indexOf(filter.applies_to_config) < 0) return false;
+    return s.slot_capacity !== null && typeof s.slot_capacity.students === 'number';
+  });
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    const aCap = a.slot_capacity?.students ?? 0;
+    const bCap = b.slot_capacity?.students ?? 0;
+    return bCap - aCap;
+  });
+
+  return candidates[0];
+}
+
+/**
  * Выбирает grid-мастера так, чтобы `base_pages` вмещали `total` учеников.
  *
  * Считает `required_capacity = ceil(total / base_pages)`. Среди кандидатов
@@ -521,14 +556,14 @@ function pickAdaptiveGrid(
 /**
  * Лайт/Мини — фиксированное `base_pages`, adaptive grid выбор мастеров.
  *
- * 1. Находим LEFT и RIGHT мастеров через `pickAdaptiveGrid` (по обоим базовый
- *    фильтр из scenarios + applies_to_config + page_role).
- * 2. Делим учеников на `base_pages` кусков по `slotsPerPage` (берётся из LEFT).
- * 3. Чередуем Left/Right по чётности индекса страницы.
- *
- * Overflow (>24 учеников) — НЕ обрабатывается полноценно: пишется warning
- * `students_overflow` и обрезка до `base_pages * slotsPerPage`. Полноценный
- * overflow в 0.11.2.
+ * 1. Узнаём maxCapacityPerPage через pickAdaptiveGridMaxCapacity. Клампим
+ *    totalForBase = min(total, basePages × maxCapacityPerPage), чтобы overflow
+ *    (total > 24) не отравлял выбор сетки.
+ * 2. Подбираем оптимальный (минимально достаточный) leftMaster/rightMaster
+ *    через `pickAdaptiveGrid` для clamped totalForBase. slotsPerPage = leftMaster.capacity.
+ * 3. Заполняем basePages базовых страниц, чередуя Left/Right.
+ * 4. Если overflow > 0 и `section.overflow` задан — три ветки:
+ *    single_row / extra_grid / grid_plus_row (см. AdaptiveGridOverflow).
  */
 function buildAdaptiveGridStudents(
   ctx: BuildContext,
@@ -552,20 +587,33 @@ function buildAdaptiveGridStudents(
   const total = ctx.input.students.length;
   const basePages = section.base_pages;
 
-  const leftMaster = pickAdaptiveGrid(ctx, section.grid_filter_left, total, basePages);
-  const rightMaster = pickAdaptiveGrid(ctx, section.grid_filter_right, total, basePages);
-
-  if (!leftMaster) {
+  // Clamping: для подбора мастера используем не total, а min(total, basePages*maxCapacity).
+  // Так overflow не «отравляет» выбор сетки.
+  const maxLeftMaster = pickAdaptiveGridMaxCapacity(ctx, section.grid_filter_left);
+  if (!maxLeftMaster) {
     pushWarning(ctx, {
       code: 'master_not_found',
-      detail: `adaptive_grid LEFT: no candidates for page_role=${section.grid_filter_left.page_role} applies_to=${ctx.config.config_type}`,
+      detail: `adaptive_grid LEFT: no candidates for page_role=${section.grid_filter_left.page_role} default_for=${ctx.config.config_type}`,
     });
     return;
   }
-  if (!rightMaster) {
+  const maxCapacityPerPage = maxLeftMaster.slot_capacity?.students ?? 0;
+  if (maxCapacityPerPage < 1) {
     pushWarning(ctx, {
       code: 'master_not_found',
-      detail: `adaptive_grid RIGHT: no candidates for page_role=${section.grid_filter_right.page_role} applies_to=${ctx.config.config_type}`,
+      detail: `adaptive_grid LEFT: max master ${maxLeftMaster.name} has slot_capacity.students < 1`,
+    });
+    return;
+  }
+  const totalForBase = Math.min(total, basePages * maxCapacityPerPage);
+
+  const leftMaster = pickAdaptiveGrid(ctx, section.grid_filter_left, totalForBase, basePages);
+  const rightMaster = pickAdaptiveGrid(ctx, section.grid_filter_right, totalForBase, basePages);
+
+  if (!leftMaster || !rightMaster) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `adaptive_grid: missing left or right master for ${ctx.config.config_type}`,
     });
     return;
   }
@@ -579,21 +627,13 @@ function buildAdaptiveGridStudents(
     return;
   }
 
-  const maxOnBase = basePages * slotsPerPage;
-  if (total > maxOnBase) {
-    pushWarning(ctx, {
-      code: 'students_overflow',
-      detail: `${ctx.config.config_type}: total=${total} > base_pages*slotsPerPage=${maxOnBase}, overflow обрезан (полная overflow-логика в 0.11.2)`,
-    });
-  }
-
-  const studentsToPlace = total > maxOnBase
-    ? ctx.input.students.slice(0, maxOnBase)
-    : ctx.input.students;
-
   const hasQuote = section.has_quote === true;
+  const maxOnBase = basePages * slotsPerPage;
+
+  // 1. Базовые страницы
+  const baseStudents = ctx.input.students.slice(0, Math.min(total, maxOnBase));
   for (let i = 0; i < basePages; i++) {
-    const slice = studentsToPlace.slice(i * slotsPerPage, (i + 1) * slotsPerPage);
+    const slice = baseStudents.slice(i * slotsPerPage, (i + 1) * slotsPerPage);
     if (slice.length === 0) break;
     const isLeft = i % 2 === 0;
     const master = isLeft ? leftMaster : rightMaster;
@@ -605,6 +645,112 @@ function buildAdaptiveGridStudents(
       data: buildGridStudentData(slice, slotsPerPage, hasQuote),
     });
   }
+
+  // 2. Overflow
+  const overflowCount = total - maxOnBase;
+  if (overflowCount <= 0) return;
+
+  const ovf = section.overflow;
+  if (!ovf) {
+    pushWarning(ctx, {
+      code: 'students_overflow',
+      detail: `${ctx.config.config_type}: total=${total} > maxOnBase=${maxOnBase}, overflow strategy не задана`,
+    });
+    return;
+  }
+
+  const rowFilter = { ...ovf.row_filter, applies_to_config: ctx.config.config_type };
+  const rowR = findMaster(ctx.config.template_set.spreads, rowFilter);
+  if (!rowR.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `overflow row: ${ovf.row_filter.expected_name_hint ?? '?'}`,
+    });
+    return;
+  }
+  if (rowR.warning) pushWarning(ctx, rowR.warning);
+  const rowCapacity = rowR.master.slot_capacity?.students ?? 0;
+
+  const overflowStudents = ctx.input.students.slice(maxOnBase);
+
+  if (overflowCount <= rowCapacity) {
+    buildOverflowRow(ctx, rowR.master, overflowStudents, rowCapacity);
+  } else if (overflowCount <= slotsPerPage) {
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: leftMaster.id,
+      template_name: leftMaster.name,
+      data: buildGridStudentData(overflowStudents, slotsPerPage, hasQuote),
+    });
+  } else {
+    if (!ovf.row_right_filter) {
+      pushWarning(ctx, {
+        code: 'master_not_found',
+        detail: `overflow grid_plus_row: row_right_filter не задан, overflowCount=${overflowCount}`,
+      });
+      return;
+    }
+    const rightF = { ...ovf.row_right_filter, applies_to_config: ctx.config.config_type };
+    const rightR = findMaster(ctx.config.template_set.spreads, rightF);
+    if (!rightR.ok) {
+      pushWarning(ctx, {
+        code: 'master_not_found',
+        detail: `overflow row_right: ${ovf.row_right_filter.expected_name_hint ?? '?'}`,
+      });
+      return;
+    }
+    if (rightR.warning) pushWarning(ctx, rightR.warning);
+
+    const fullSlice = overflowStudents.slice(0, slotsPerPage);
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: leftMaster.id,
+      template_name: leftMaster.name,
+      data: buildGridStudentData(fullSlice, slotsPerPage, hasQuote),
+    });
+
+    const remainSlice = overflowStudents.slice(slotsPerPage);
+    const rightRowCapacity = rightR.master.slot_capacity?.students ?? rowCapacity;
+    buildOverflowRow(ctx, rightR.master, remainSlice, rightRowCapacity);
+  }
+}
+
+/**
+ * Сборка overflow-row страницы для Лайт/Мини.
+ *
+ * Заполняет:
+ *  - `studentportrait_N` / `studentname_N` для всех students (без quote —
+ *    у Лайт/Мини overflow-row мастеров нет цитатных слотов)
+ *  - null'ы для пустых слотов
+ *  - `classphotoframe` из `common_photos.full_class[0]` (если есть placeholder)
+ */
+function buildOverflowRow(
+  ctx: BuildContext,
+  master: SpreadTemplate,
+  students: Student[],
+  rowCapacity: number,
+): void {
+  const data = buildGridStudentData(students, rowCapacity, false);
+
+  if (hasPlaceholder(master, 'classphotoframe')) {
+    const fc = ctx.input.common_photos.full_class;
+    if (fc.length >= 1) {
+      data.classphotoframe = fc[0];
+    } else {
+      data.classphotoframe = null;
+      pushWarning(ctx, {
+        code: 'class_photo_missing',
+        detail: `master ${master.name} has classphotoframe placeholder but common_photos.full_class is empty`,
+      });
+    }
+  }
+
+  ctx.spreads.push({
+    spread_index: ctx.spreadCounter.value++,
+    template_id: master.id,
+    template_name: master.name,
+    data,
+  });
 }
 
 /**

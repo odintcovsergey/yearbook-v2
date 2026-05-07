@@ -133,7 +133,7 @@ export type MasterType =
 
 /**
  * Семантическая роль страницы. Соответствует CHECK constraint на
- * `spread_templates.page_role` (миграция 0.8.6.1 + 0.10a.1 + 0.10b.1).
+ * `spread_templates.page_role` (миграции 0.8.6.1 + 0.10a.1 + 0.10b.1 + 0.11.1.5 + 0.11.2).
  *
  * - `student`            — двухстраничный ученический мастер или legacy без
  *                          парного Left/Right (E-Student-Standard, E-Student-Default)
@@ -145,6 +145,8 @@ export type MasterType =
  * - `student_grid_left`  — левая страница сетки (D-Medium-Left, L-6-Left, N-12-Left)
  * - `student_grid_right` — правая страница сетки (D-Medium-Right, L-6-Right, N-12-Right)
  * - `student_overflow`   — доп.ряд учеников (*-Overflow-Row*)
+ * - `student_overflow_right` — правая overflow-страница в Лайт 31-32
+ *                              (L-Overflow-Row-Right, добавлено в 0.11.2)
  * - `student_last`       — последняя страница раздела учеников (*-Last*)
  * - `teacher_left`       — левая страница учительского разворота (F-*)
  * - `teacher_right`      — правая страница учительского разворота (G-*)
@@ -160,6 +162,7 @@ export type PageRole =
   | 'student_grid_left'
   | 'student_grid_right'
   | 'student_overflow'
+  | 'student_overflow_right'
   | 'student_last'
   | 'teacher_left'
   | 'teacher_right'

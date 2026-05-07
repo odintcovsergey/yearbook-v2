@@ -98,7 +98,13 @@ const STUDENT_SETS: Record<string, Student[]> = {
   '16': Array.from({ length: 16 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
   '18': Array.from({ length: 18 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
   '24': Array.from({ length: 24 }, (_, i) => makeStudent(`Ученик${i + 1}`, 2)),
-  '27': Array.from({ length: 27 }, (_, i) => makeStudent(`Ученик${i + 1}`, 2)),
+  '26': Array.from({ length: 26 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '27': Array.from({ length: 27 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '28': Array.from({ length: 28 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '29': Array.from({ length: 29 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '30': Array.from({ length: 30 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '32': Array.from({ length: 32 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
+  '36': Array.from({ length: 36 }, (_, i) => makeStudent(`Ученик${i + 1}`, 0)),
 };
 
 function makeSubjects(count: number): Subject[] {
@@ -555,6 +561,95 @@ const SCENES: Scene[] = [
       ],
     },
     commonPhotos: { half: ['url-h1', 'url-h2'] },
+  },
+  // ─── Лайт overflow (0.11.2) ───
+  {
+    label: 'light / 27 students no full_class (warning class_photo_missing)',
+    configType: 'light', studentsKey: '27',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 5,
+      warningCodes: ['class_photo_missing'],
+      masterNameSequence: ['L-6-Left', 'L-6-Right', 'L-6-Left', 'L-6-Right', 'L-Overflow-Row'],
+    },
+  },
+  {
+    label: 'light / 27 students + full_class (overflow_row заполнен)',
+    configType: 'light', studentsKey: '27',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 5,
+      noWarningCodes: ['master_not_found', 'students_overflow', 'class_photo_missing'],
+      masterNameSequence: ['L-6-Left', 'L-6-Right', 'L-6-Left', 'L-6-Right', 'L-Overflow-Row'],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  {
+    label: 'light / 28 students (overflow 4 → extra L-6-Left неполная)',
+    configType: 'light', studentsKey: '28',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 5,
+      noWarningCodes: ['master_not_found', 'students_overflow', 'class_photo_missing'],
+      masterNameSequence: ['L-6-Left', 'L-6-Right', 'L-6-Left', 'L-6-Right', 'L-6-Left'],
+    },
+  },
+  {
+    label: 'light / 30 students (overflow 6 → полная extra L-6-Left)',
+    configType: 'light', studentsKey: '30',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 5,
+      noWarningCodes: ['master_not_found', 'students_overflow', 'class_photo_missing'],
+      masterNameSequence: ['L-6-Left', 'L-6-Right', 'L-6-Left', 'L-6-Right', 'L-6-Left'],
+    },
+  },
+  {
+    label: 'light / 32 students + full_class (extra grid + L-Overflow-Row-Right)',
+    configType: 'light', studentsKey: '32',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 6,
+      noWarningCodes: ['master_not_found', 'students_overflow', 'class_photo_missing'],
+      masterNameSequence: [
+        'L-6-Left', 'L-6-Right', 'L-6-Left', 'L-6-Right',
+        'L-6-Left',
+        'L-Overflow-Row-Right',
+      ],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  // ─── Мини overflow (0.11.2) ───
+  {
+    label: 'mini / 26 students + full_class (overflow 2 → N-Overflow-Row)',
+    configType: 'mini', studentsKey: '26',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found', 'students_overflow', 'class_photo_missing'],
+      masterNameSequence: ['N-12-Left', 'N-12-Right', 'N-Overflow-Row'],
+    },
+    commonPhotos: { full_class: ['url-fc-1'] },
+  },
+  {
+    label: 'mini / 29 students (overflow 5 → extra N-12-Left неполная)',
+    configType: 'mini', studentsKey: '29',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found', 'students_overflow', 'class_photo_missing'],
+      masterNameSequence: ['N-12-Left', 'N-12-Right', 'N-12-Left'],
+    },
+  },
+  {
+    label: 'mini / 36 students (overflow 12 → полная extra N-12-Left)',
+    configType: 'mini', studentsKey: '36',
+    subjectsCount: 0, withHeadTeacher: false,
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found', 'students_overflow', 'class_photo_missing'],
+      masterNameSequence: ['N-12-Left', 'N-12-Right', 'N-12-Left'],
+    },
   },
 ];
 
