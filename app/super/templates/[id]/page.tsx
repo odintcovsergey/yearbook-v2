@@ -88,8 +88,14 @@ export default function TemplateDetailPage() {
         bFriendsPerStudent > 0
           ? Array.from({ length: bStudentsCount }, () => bFriendsPerStudent)
           : []
-      const r = await api('/api/layout?action=build_album_test', {
+      // Прямой fetch с явным credentials: 'include' — JWT-cookie auth_token
+      // должна уйти на same-origin (Next.js API). cache: 'no-store' исключает
+      // кэширование POST на edge-узле.
+      const r = await fetch('/api/layout?action=build_album_test', {
         method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           config_type: bConfigType,
           print_type: bPrintType,
