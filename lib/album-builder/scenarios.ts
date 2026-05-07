@@ -28,7 +28,6 @@
 import type {
   ConfigType,
   PageRole,
-  PrintType,
   SlotCapacity,
 } from './types';
 
@@ -162,17 +161,59 @@ export type TeacherSection = {
 };
 
 /**
- * Полное описание сценария одной комплектации. В 0.10b.2 добавлен
- * `teacher_section` (опциональный); `common_section` остаётся отсутствовать
- * (общий раздел не генерируется в фазе 0, см. idml-recon §9).
+ * Конфигурация вступительной страницы (S-Intro).
+ *
+ * Используется только в soft-печати (через `soft_overrides`). В layflat
+ * S-Intro не применяется — там альбом начинается сразу с учительского
+ * разворота.
+ *
+ * Mini-soft — особый случай: `intro_section` в его `soft_overrides` не задан
+ * (S-Intro не создаётся), потому что первая страница используется под
+ * учительский F-*-R мастер.
+ */
+export type IntroSection = {
+  /** Фильтр для S-Intro мастера. */
+  filter: MasterFilter;
+};
+
+/**
+ * Override-поля для soft-печати. Применяются поверх базового `ScenarioDef`
+ * при `print_type === 'soft'` через простой shallow-merge.
+ *
+ * Если поле задано в `soft_overrides` — оно заменяет соответствующее поле
+ * базового сценария. Если не задано — остаётся базовое значение.
+ *
+ * Поля `config_type` и `description` не переопределяются (description можно,
+ * если очень нужно).
+ */
+export type SoftOverrides = {
+  description?: string;
+  student_section?: StudentSection;
+  teacher_section?: TeacherSection;
+  intro_section?: IntroSection;
+};
+
+/**
+ * Полное описание сценария одной комплектации.
+ *
+ * Один `ScenarioDef` обслуживает оба типа печати (`layflat` и `soft`).
+ * Layflat-поведение задаётся прямо в полях; soft-различия — через
+ * `soft_overrides` (shallow merge поверх базы при `print_type === 'soft'`).
+ *
+ * `intro_section` обычно живёт только в `soft_overrides` — в layflat
+ * вступительная страница не нужна. `common_section` отсутствует — общий
+ * раздел в фазе 0 не генерируется (см. idml-recon §9).
  */
 export type ScenarioDef = {
   config_type: ConfigType;
-  print_type: PrintType;
   description: string;
   student_section: StudentSection;
   /** Опционально — учительский раздел. Если undefined, секция не генерируется. */
   teacher_section?: TeacherSection;
+  /** Опционально — вступительная страница (обычно задаётся в soft_overrides). */
+  intro_section?: IntroSection;
+  /** Override-поля при `print_type === 'soft'`. */
+  soft_overrides?: SoftOverrides;
 };
 
 /**
@@ -293,14 +334,38 @@ export const TEACHER_SECTION_LAYFLAT: TeacherSection = {
 };
 
 /**
- * Сценарии для layflat-печати. `Partial` — потому что в 0.9 заполнены
- * только три ключа; остальные комплектации появятся в 0.10/0.11. Soft-варианты
- * (отдельная константа `SCENARIOS_SOFT`) добавим там же.
+ * Стандартная конфигурация intro-секции для всех soft-комплектаций
+ * кроме Mini-soft (там intro не используется).
+ *
+ * Ищет S-Intro мастер с `photos_full: 1`. S-Intro-Old (legacy, `is_fallback`)
+ * отсеивается фильтром `applies_to_config` (у него `applies_to_configs=[]`).
+ *
+ * `applies_to_config` во `filter` — заглушка, подменяется в `buildIntroSection`
+ * на `ctx.config.config_type`.
  */
-export const SCENARIOS_LAYFLAT: Partial<Record<ConfigType, ScenarioDef>> = {
+export const INTRO_SECTION_S_INTRO: IntroSection = {
+  filter: {
+    page_role: 'intro',
+    applies_to_config: 'standard',
+    slot_capacity_min: { photos_full: 1 },
+    expected_name_hint: 'S-Intro',
+  },
+};
+
+/**
+ * Сценарии всех комплектаций — описывают поведение для обоих типов печати
+ * (`layflat` и `soft`).
+ *
+ * Layflat-поведение задаётся прямо в полях `student_section`/`teacher_section`/
+ * `intro_section`. Soft-различия — через `soft_overrides` (shallow merge при
+ * `print_type === 'soft'`).
+ *
+ * `Partial` — заполнены только реализованные комплектации; остальные
+ * (Лайт/Мини/Индивидуальный) появятся в 0.11.1+.
+ */
+export const SCENARIOS: Partial<Record<ConfigType, ScenarioDef>> = {
   standard: {
     config_type: 'standard',
-    print_type: 'layflat',
     description:
       'Стандарт — 1 разворот на 2 учеников (E-Student-Standard, is_spread=true)',
     student_section: {
@@ -315,11 +380,13 @@ export const SCENARIOS_LAYFLAT: Partial<Record<ConfigType, ScenarioDef>> = {
       },
     },
     teacher_section: TEACHER_SECTION_LAYFLAT,
+    soft_overrides: {
+      intro_section: INTRO_SECTION_S_INTRO,
+    },
   },
 
   universal: {
     config_type: 'universal',
-    print_type: 'layflat',
     description:
       'Универсал — по 1 ученику на странице, чередуем E-Student-Left/Right',
     student_section: {
@@ -342,11 +409,13 @@ export const SCENARIOS_LAYFLAT: Partial<Record<ConfigType, ScenarioDef>> = {
       right_filter_mode: 'alternate',
     },
     teacher_section: TEACHER_SECTION_LAYFLAT,
+    soft_overrides: {
+      intro_section: INTRO_SECTION_S_INTRO,
+    },
   },
 
   maximum: {
     config_type: 'maximum',
-    print_type: 'layflat',
     description:
       'Максимум — 1 разворот на ученика (пара одностраничных E-Max-Left + E-Max-Right)',
     student_section: {
@@ -372,11 +441,13 @@ export const SCENARIOS_LAYFLAT: Partial<Record<ConfigType, ScenarioDef>> = {
       right_filter_mode: 'paired',
     },
     teacher_section: TEACHER_SECTION_LAYFLAT,
+    soft_overrides: {
+      intro_section: INTRO_SECTION_S_INTRO,
+    },
   },
 
   medium: {
     config_type: 'medium',
-    print_type: 'layflat',
     description:
       'Медиум — сетка 4 ученика на странице (D-Medium-Left/Right с чередованием), последняя при остатке 1-2 — D-Medium-Last-WithPhoto + dynamic G-*',
     student_section: {
@@ -411,5 +482,8 @@ export const SCENARIOS_LAYFLAT: Partial<Record<ConfigType, ScenarioDef>> = {
       },
     },
     teacher_section: TEACHER_SECTION_LAYFLAT,
+    soft_overrides: {
+      intro_section: INTRO_SECTION_S_INTRO,
+    },
   },
 };

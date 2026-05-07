@@ -24,6 +24,7 @@ import type {
   Config,
   TemplateSet,
   ConfigType,
+  PrintType,
   Student,
   Subject,
   HeadTeacher,
@@ -119,6 +120,8 @@ type Scene = {
   };
   /** Override common_photos. Не указанные ключи дефолтятся к []. */
   commonPhotos?: Partial<CommonPhotos>;
+  /** Override print_type. По умолчанию 'layflat'. */
+  printType?: PrintType;
 };
 
 const SCENES: Scene[] = [
@@ -373,6 +376,73 @@ const SCENES: Scene[] = [
     },
     commonPhotos: { half: ['url-h1', 'url-h2'], full_class: ['url-fc-1'] },
   },
+  // ─── Soft-печать с S-Intro (0.11.0) ───
+  {
+    label: 'soft / standard / 6 students + full_class (S-Intro заполнен)',
+    configType: 'standard', studentsKey: '6',
+    subjectsCount: 0, withHeadTeacher: false,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 4,
+      noWarningCodes: ['master_not_found', 'class_photo_missing'],
+      masterNameSequence: ['S-Intro', 'E-Student-Standard', 'E-Student-Standard', 'E-Student-Standard'],
+    },
+    commonPhotos: { full_class: ['url-fc-soft-intro'] },
+  },
+  {
+    label: 'soft / universal / 5 students + full_class (S-Intro заполнен)',
+    configType: 'universal', studentsKey: '5',
+    subjectsCount: 0, withHeadTeacher: false,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 6,
+      noWarningCodes: ['master_not_found', 'class_photo_missing'],
+      masterNameSequence: [
+        'S-Intro',
+        'E-Student-Left', 'E-Student-Right', 'E-Student-Left', 'E-Student-Right', 'E-Student-Left',
+      ],
+    },
+    commonPhotos: { full_class: ['url-fc-soft-intro'] },
+  },
+  {
+    label: 'soft / maximum / 5 students + full_class (S-Intro заполнен)',
+    configType: 'maximum', studentsKey: '5',
+    subjectsCount: 0, withHeadTeacher: false,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 11,
+      noWarningCodes: ['master_not_found', 'class_photo_missing'],
+      masterNameSequence: [
+        'S-Intro',
+        'E-Max-Left', 'E-Max-Right', 'E-Max-Left', 'E-Max-Right', 'E-Max-Left',
+        'E-Max-Right', 'E-Max-Left', 'E-Max-Right', 'E-Max-Left', 'E-Max-Right',
+      ],
+    },
+    commonPhotos: { full_class: ['url-fc-soft-intro'] },
+  },
+  {
+    label: 'soft / medium / 8 students + full_class (S-Intro заполнен)',
+    configType: 'medium', studentsKey: '8',
+    subjectsCount: 0, withHeadTeacher: false,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 3,
+      noWarningCodes: ['master_not_found', 'class_photo_missing'],
+      masterNameSequence: ['S-Intro', 'D-Medium-Left', 'D-Medium-Right'],
+    },
+    commonPhotos: { full_class: ['url-fc-soft-intro'] },
+  },
+  {
+    label: 'soft / standard / 6 students NO common photos (S-Intro classphotoframe=null)',
+    configType: 'standard', studentsKey: '6',
+    subjectsCount: 0, withHeadTeacher: false,
+    printType: 'soft',
+    expect: {
+      spreadsCount: 4,
+      warningCodes: ['class_photo_missing'],
+      masterNameSequence: ['S-Intro', 'E-Student-Standard', 'E-Student-Standard', 'E-Student-Standard'],
+    },
+  },
 ];
 
 // ─── Запуск ─────────────────────────────────────────────────────────────────
@@ -398,7 +468,7 @@ function runScene(scene: Scene, ts: TemplateSet): { passed: boolean; lines: stri
   const lines: string[] = [];
   const input = buildInput(scene, ts);
   const config: Config = {
-    print_type: 'layflat',
+    print_type: scene.printType ?? 'layflat',
     config_type: scene.configType,
     template_set: ts,
   };

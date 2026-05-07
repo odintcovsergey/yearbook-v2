@@ -34,13 +34,15 @@ export type {
 
 export { chunk, assertExhaustive, pushWarning } from './utils';
 
-export { SCENARIOS_LAYFLAT, TEACHER_SECTION_LAYFLAT } from './scenarios';
+export { SCENARIOS, TEACHER_SECTION_LAYFLAT, INTRO_SECTION_S_INTRO } from './scenarios';
 export type {
   MasterFilter,
   StudentSection,
   ScenarioDef,
   TeacherSpreadVariant,
   TeacherSection,
+  IntroSection,
+  SoftOverrides,
   LastSpread,
 } from './scenarios';
 

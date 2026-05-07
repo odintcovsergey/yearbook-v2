@@ -25,9 +25,11 @@ import type {
   SpreadTemplate,
 } from './types';
 import {
-  SCENARIOS_LAYFLAT,
+  SCENARIOS,
+  type ScenarioDef,
   type StudentSection,
   type TeacherSection,
+  type IntroSection,
   type LastSpread,
 } from './scenarios';
 import { findMaster } from './find-master';
@@ -48,21 +50,20 @@ export function buildAlbum(input: AlbumInput, config: Config): BuildResult {
     spreadCounter: { value: 0 },
   };
 
-  const scenario = SCENARIOS_LAYFLAT[config.config_type];
-  if (!scenario) {
+  const baseScenario = SCENARIOS[config.config_type];
+  if (!baseScenario) {
     pushWarning(ctx, {
       code: 'master_not_found',
-      detail: `scenario not defined for config_type=${config.config_type} in SCENARIOS_LAYFLAT`,
+      detail: `scenario not defined for config_type=${config.config_type} in SCENARIOS`,
     });
     return { spreads: ctx.spreads, warnings: ctx.warnings };
   }
-  if (scenario.print_type !== config.print_type) {
-    pushWarning(ctx, {
-      code: 'master_not_found',
-      detail: `print_type mismatch: scenario=${scenario.print_type}, config=${config.print_type}`,
-    });
-    return { spreads: ctx.spreads, warnings: ctx.warnings };
-  }
+
+  // Soft-печать: shallow merge soft_overrides поверх базы. Layflat — база как есть.
+  const scenario: ScenarioDef =
+    config.print_type === 'soft' && baseScenario.soft_overrides
+      ? { ...baseScenario, ...baseScenario.soft_overrides }
+      : baseScenario;
 
   if (input.students.length === 0) {
     pushWarning(ctx, {
@@ -72,7 +73,12 @@ export function buildAlbum(input: AlbumInput, config: Config): BuildResult {
     return { spreads: ctx.spreads, warnings: ctx.warnings };
   }
 
-  // [SOFT-INTRO] — будет в 0.11
+  // Раздел 1 — S-Intro (только soft и если задано в scenario)
+  if (config.print_type === 'soft' && scenario.intro_section) {
+    buildIntroSection(ctx, scenario.intro_section);
+  }
+
+  // Раздел 2 — учителя
   if (scenario.teacher_section) {
     if (input.head_teacher) {
       buildTeacherSection(ctx, scenario.teacher_section);
@@ -83,7 +89,10 @@ export function buildAlbum(input: AlbumInput, config: Config): BuildResult {
       });
     }
   }
+
+  // Раздел 3 — ученики
   buildStudentsSection(ctx, scenario.student_section);
+
   // [COMMON] — НЕ генерируется (idml-recon §9)
 
   return { spreads: ctx.spreads, warnings: ctx.warnings };
@@ -503,6 +512,49 @@ function pickRightCommonPhotoMaster(ctx: BuildContext): SpreadTemplate | null {
     }
   }
   return null;
+}
+
+/**
+ * Сборка вступительной страницы S-Intro (только для soft-печати).
+ *
+ * S-Intro — одностраничный мастер с `classphotoframe` placeholder'ом.
+ * Фото класса заполняется из `common_photos.full_class[0]`; если массив
+ * пуст — `null` + warning `class_photo_missing`.
+ *
+ * Если S-Intro мастер не найден — warning + return (продолжаем без intro).
+ */
+function buildIntroSection(ctx: BuildContext, section: IntroSection): void {
+  const filter = { ...section.filter, applies_to_config: ctx.config.config_type };
+  const r = findMaster(ctx.config.template_set.spreads, filter);
+  if (!r.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `intro: ${section.filter.expected_name_hint ?? '?'}`,
+    });
+    return;
+  }
+  if (r.warning) pushWarning(ctx, r.warning);
+
+  const data: Record<string, string | null> = {};
+  if (hasPlaceholder(r.master, 'classphotoframe')) {
+    const fc = ctx.input.common_photos.full_class;
+    if (fc.length >= 1) {
+      data.classphotoframe = fc[0];
+    } else {
+      data.classphotoframe = null;
+      pushWarning(ctx, {
+        code: 'class_photo_missing',
+        detail: `master ${r.master.name} has classphotoframe but common_photos.full_class is empty`,
+      });
+    }
+  }
+
+  ctx.spreads.push({
+    spread_index: ctx.spreadCounter.value++,
+    template_id: r.master.id,
+    template_name: r.master.name,
+    data,
+  });
 }
 
 /**
