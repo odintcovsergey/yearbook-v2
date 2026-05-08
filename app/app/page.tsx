@@ -34,7 +34,6 @@ type Album = {
   template_title: string
   class_name: string | null
   classes: string[]
-  config_type?: string | null
   print_type?: string | null
   stats: { total: number; submitted: number; in_progress: number }
   teacher_token: string | null
@@ -974,11 +973,9 @@ function AlbumDetailModal({
               {/* Вкладка Обзор */}
               {tab === 'overview' && stats && (
                 <>
-                  {album.config_type && album.print_type ? (
+                  {album.print_type ? (
                     <div className="text-sm text-gray-600 mb-4">
                       Конфигурация вёрстки:{' '}
-                      <span className="font-mono">{album.config_type}</span>
-                      {' / '}
                       <span className="font-mono">{album.print_type}</span>
                     </div>
                   ) : (

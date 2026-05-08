@@ -1275,7 +1275,7 @@ export async function POST(req: NextRequest) {
       'personal_spread_enabled', 'personal_spread_price', 'personal_spread_min', 'personal_spread_max',
       'text_enabled', 'text_max_chars', 'text_type',
       'classes', 'template_title',
-      'config_type', 'print_type',
+      'print_type',
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {
