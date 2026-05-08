@@ -1597,9 +1597,12 @@ function AlbumFormModal({
   const [form, setForm] = useState<FormData>(() => {
     if (mode === 'edit' && album) {
       const presetSlug = album.config_preset_slug ?? null
+      // Если у альбома пресет не задан (config_preset_id=NULL) — стартуем с
+      // пустыми значениями, чтобы пользователь явно выбрал. Sentinel-опция
+      // disabled в <select> покажет «— выберите —».
       const [cfgType, prtType] = presetSlug
         ? (presetSlug.split('-') as [string, string])
-        : ['standard', 'layflat']
+        : ['', '']
       return {
         title: album.title,
         city: album.city ?? '',
@@ -1715,7 +1718,12 @@ function AlbumFormModal({
       classes: form.class_name.trim()
         ? form.class_name.split(',').map(s => s.trim()).filter(Boolean)
         : [],
-      preset_slug: `${form.config_type}-${form.print_type}`,
+      // preset_slug отправляем только если оба поля выбраны. Иначе альбом
+      // сохраняется с config_preset_id=NULL (sentinel-вариант для альбомов
+      // без пресета — пользователь увидит ⚠ в карточке/обзоре до явного выбора).
+      ...(form.config_type && form.print_type
+        ? { preset_slug: `${form.config_type}-${form.print_type}` }
+        : {}),
     }
 
     if (mode === 'create') {
@@ -1936,15 +1944,15 @@ function AlbumFormModal({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Комплектация <span className="text-red-500">*</span>
+                  Комплектация
                 </label>
                 <select
                   value={form.config_type}
                   onChange={(e) => set('config_type', e.target.value)}
                   className="input"
                   disabled={loading}
-                  required
                 >
+                  <option value="" disabled>— выберите —</option>
                   <option value="standard">Стандарт</option>
                   <option value="universal">Универсал</option>
                   <option value="maximum">Максимум</option>
@@ -1956,21 +1964,30 @@ function AlbumFormModal({
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Тип печати <span className="text-red-500">*</span>
+                  Тип печати
                 </label>
                 <select
                   value={form.print_type}
                   onChange={(e) => set('print_type', e.target.value)}
                   className="input"
                   disabled={loading}
-                  required
                 >
+                  <option value="" disabled>— выберите —</option>
                   <option value="layflat">Твёрдые листы</option>
                   <option value="soft">Мягкие листы</option>
                 </select>
               </div>
             </div>
-            {presets.length > 0 && (() => {
+            {(() => {
+              if (!form.config_type || !form.print_type) {
+                return (
+                  <p className="text-xs text-amber-600 mt-2">
+                    Пресет не выбран — выберите комплектацию и тип печати.
+                    Альбом сохранится без пресета, но автосборка не сработает,
+                    пока он не задан.
+                  </p>
+                )
+              }
               const slug = `${form.config_type}-${form.print_type}`
               const matched = presets.find(p => p.slug === slug)
               return matched ? (
