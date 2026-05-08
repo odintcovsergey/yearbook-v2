@@ -1,329 +1,566 @@
-# Фаза 1 — Smart-fill (детальный план)
+# Фаза 1 — Smart-fill (финальная v1)
 
-> Документ создан 07.05.2026 после закрытия фазы 0.
-> Точка входа для следующих сессий по продукту B.
+> Документ создан 08.05.2026 после обсуждения 17 open questions
+> черновика `phase-1-spec-draft.md`.
+> Архитектурный принцип: **минимальный MVP, тонкий слой между БД и builder'ом**.
 
-## Контекст
+## Зачем
 
-**Кто я:** Сергей, фотограф/организатор выпускных альбомов (OkeyBook). 1000 заказов в год — это **в первую очередь моё производство и моя команда**. Партнёры — расширение, не основной use case.
+После фазы 0.5 builder работает только с Preset из БД и протестирован
+на 58 синтетических сценариях. Но **никогда не запускался на реальных
+данных альбомов** в продакшене.
 
-**Что строится:** SaaS для автоматической вёрстки выпускных альбомов. Цель — до запуска осенью 2026 (или раньше).
+**Цель фазы 1:** сделать первый запуск builder'а на живых данных.
+Партнёр-фотограф нажимает кнопку «Собрать автоматически» в кабинете,
+получает готовый layout (массив разворотов с заполненными местами)
++ список предупреждений. Результат сохраняется в БД для последующего
+просмотра и пересборки.
 
-**Где сейчас:** фаза 0 закрыта 07.05.2026. Builder работает в `yearbook-v2.vercel.app/super/templates/<id>` через UI Build Test — на синтетических данных. 7 комплектаций × 2 print_type = 14 рабочих режимов. 58 smoke-сцен зелёные.
+## Главное решение
 
-## Основной workflow (после запуска)
+**Smart-fill — тонкая обёртка между БД и builder'ом.** Никакой бизнес-логики
+в smart-fill: чтение данных → перевод в `AlbumInput` → вызов `buildAlbum` →
+сохранение в `album_layouts`.
 
-1. Фотограф создаёт альбом, добавляет детей и учителей
-2. Дети отбирают портреты через свои страницы (`/<token>`)
-3. Партнёр выбирает комплектацию (Стандарт/Универсал/...) и тип печати (layflat/soft)
-4. Партнёр нажимает «Собрать» → **система выдаёт готовый альбом**
-5. Партнёр визуально проверяет (canvas), при необходимости правит (drag-n-drop)
-6. Партнёр одобряет → PDF в печать
+Все ограничения, fallback'и, edge-cases остаются в builder'е (как было
+в фазе 0.5). Smart-fill не дублирует логику, не переисчисляет лимиты,
+не модифицирует данные.
 
-**Принцип:** доработка алгоритма — на стороне Сергея (платформы), не партнёра. Если builder выдаёт неоптимальную раскладку — Сергей дорабатывает алгоритм/мастера, для всех будущих альбомов работает автоматически.
+Из этого следует:
+- Если поведение builder'а изменится в будущем (новые мастера, новые
+  пресеты) — smart-fill не нужно править
+- Текущая фаза не усложняется ранними оптимизациями
+- Полная совместимость с уже работающим Build Test endpoint'ом
+  (тот же builder, разные источники данных)
 
-**Нюанс:** drag-n-drop редактор всё равно нужен — партнёры захотят локальные правки. Делаем после PDF-экспорта.
+## Решённые архитектурные моменты
 
-## Roadmap до запуска
+| Момент | Решение |
+|---|---|
+| Кто классный руководитель? | Флаг `teachers.is_head_teacher BOOLEAN` + checkbox в UI учителей |
+| Если 0 учителей в альбоме | Не блокировать, builder пишет warning `no_head_teacher` |
+| Если 0 портретов выбрано | Не блокировать, агрегированный warning `students_no_portrait` |
+| Все ученики или только submitted? | Все, без фильтра (стабильность структуры layout'а) |
+| Лимит friend_photos | Передаём всё (cap 10 от мусора), builder режет по preset.max |
+| Длинный quote | Передаём как есть, ограничение уже на уровне ввода `albums.text_max_chars` |
+| Schema album_layouts | P3 — миграция: убрать config_type/print_type, добавить config_preset_id + warnings |
+| Хранить ли warnings | Да, отдельной jsonb колонкой |
+| Перезапуск сборки | Upsert по unique album_id |
+| status поле | Всегда 'draft' при первой записи; при upsert — сохраняется |
+| Где кнопка | В Обзоре, рядом с блоком «Пресет вёрстки» |
+| Когда disabled | Только при `config_preset_id IS NULL` |
+| Per-child override (фаза 0.5.6.2) | Игнорируется на MVP с warning'ом, фрагментированная сборка — фаза 2+ |
+| Уровни warning'ов в UI | 3 категории (blocking/degraded/info), коллапсируемые секции |
+| Кто видит кнопку | canEdit=true (owner/manager партнёра + OkeyBook staff в view_as) |
+| print_type источник | Из preset (через config_preset_id), не из legacy albums.print_type |
+| template_set_id NULL | Бэкфил применён 08.05.2026 (10/10 альбомов имеют ID); auto-resolve в endpoint как защита |
 
-| Фаза | Что | Объём | Когда |
-|------|-----|-------|-------|
-| ✅ 0 | Builder + endpoint + Build Test | Сделано | 04.05-07.05.2026 |
-| 1 | Smart-fill: реальные данные → buildAlbum | ~12 ч | Сейчас |
-| 2 | Canvas-рендер с реальными фото | ~15-20 ч | После 1 |
-| 3 | PDF-экспорт для печати | ~15-20 ч | После 2 |
-| 4 | Drag-n-drop редактор макетов | ~30-40 ч | После 3 |
-| 5 | Админский тулинг (управление template_set'ами через UI) | ~10-15 ч | После 4 |
-| 6 | Биллинг + партнёрский онбординг | ~20 ч | После 5 |
+## Out of MVP scope (future considerations)
 
-**Итого до полного запуска:** ~100-130 часов чистой работы.
+### Типографии и порядок страниц
 
-**Темп:** плотный, почти каждый день. Реалистично 4-6 недель календарно при темпе 4-6 часов в день.
+В MVP неявно подразумевается одна типография (OkeyBook), у которой
+layflat начинает разворотом (слева), а soft справа (как обычная книга).
+У других типографий правила могут отличаться — некоторые всегда
+начинают слева, для мягких клеят первую страницу как форзац.
 
-**Параллельные задачи (вне roadmap):**
-- Июнь 2026 — переезд с Vercel (Timeweb или YC App Platform)
-- Дизайнер — закрытие master-cleanup-tz §A1-A4 (адаптивные мастера L-2/L-3/L-4, N-4/N-6/N-9)
+**Когда добавим партнёрский self-print или альтернативные типографии**
+— потребуется доп. настройка `tenants.printing_house_settings` или
+`albums.printing_house_id` с указанием правил начала первой страницы.
+Шаблон-сет можно расширить флагом `start_page_side: 'left' | 'right'`
+per print_type.
 
----
+### Multi-design в одном альбоме
 
-# ФАЗА 1 — детальный план
+В MVP один альбом = один template_set. Партнёр желающий 2+ дизайнов
+делает 2 альбома. Полная поддержка (per-child или per-group выбор
+дизайна) — после фазы 4 (расширение библиотеки template_sets) и
+потребует архитектурных изменений в builder и album_layouts.
 
-## Цель фазы
+### Полноценный UI выбора дизайна
 
-К концу фазы 1 — **Сергей может оценить качество автосборки на своих реальных альбомах**. Летом проходит по 50-100 своим альбомам прошлых лет, нажимает «Собрать», видит таблицу результатов: где работает, где нет.
+Простой dropdown «Дизайн альбома: [okeybook-default ▾]» в форме
+альбома **не делается** в MVP. Когда добавим выбор дизайнов —
+нужна **полноценная страница с превью** (как у фотобота): крупные
+миниатюры, описания, примеры. Без визуального превью dropdown
+бесполезен — партнёр не поймёт что выбирает.
 
-Это **измерительный инструмент**, не партнёрский функционал. Партнёрам это будет видно, но основная ценность — для Сергея в режиме «отладка алгоритма на массе данных».
+### Per-child override фрагментированная сборка
 
-## Архитектурные решения
+В фазе 0.5.6.2 у учеников появилось поле `children.config_preset_id`
+(override альбомного пресета). На MVP smart-fill **игнорирует** override,
+работает с альбомным пресетом для всех. Полная поддержка (группировка
+учеников по эффективному пресету, N вызовов buildAlbum со склейкой
+spreads) — фаза 2+.
 
-### config_type / print_type — в таблице albums
+### Canvas-рендер layout'а
 
-Простые поля прямо в `albums`. Если в будущем настроек будет больше — расширим в отдельную таблицу.
+В MVP результат показывается как **JSON + список warning'ов**. Реальный
+визуальный рендер с подложками, фреймами, фотографиями на холсте —
+**фаза 2** (Canvas-рендер).
+
+### Bulk smart-fill
+
+В MVP сборка только по одному альбому за клик. Массовая сборка по
+тенанту/выборке альбомов — позже.
+
+### Edit-режим layout'а
+
+В MVP никаких ручных правок результата. Только пересборка целиком.
+Drag-n-drop редактор, редактирование отдельных слотов — фаза 4.
+
+### PDF-экспорт
+
+Фаза 3.
+
+## Маппинг данных БД → AlbumInput
+
+`AlbumInput` — это контракт builder'а:
+
+```typescript
+type AlbumInput = {
+  template_set_id: string;
+  head_teacher: HeadTeacher | null;
+  subjects: Subject[];
+  students: Student[];
+  common_photos: CommonPhotos;
+};
+```
+
+Smart-fill собирает `AlbumInput` из 6 таблиц БД (паттерн уже отработан
+в `app/api/tenant/route.ts → action=export_csv`, переиспользуем).
+
+### template_set_id
+
+Источник: `albums.template_set_id`.
+Если NULL → `getDefaultTemplateSetId()` (auto-resolve через
+единственный okeybook-default), как делает `update_album` в 0.5.6.1.
+
+После бэкфила 08.05.2026 (`UPDATE albums SET template_set_id = ...`)
+это поле NOT NULL у всех 10 текущих альбомов. Auto-resolve остаётся
+как защита от будущих случаев.
+
+### head_teacher (Teacher | null)
+
+Источник: `teachers WHERE album_id = X AND is_head_teacher = true`
+(должен быть один; см. constraint в миграции 1.0).
+
+Mapping:
+- `name` ← `teachers.full_name`
+- `role` ← `teachers.position`
+- `text` ← `teachers.description ?? ''`
+- `photo` ← `getPhotoUrl(photo_teachers.photos.storage_path)` или null
+
+Если 0 head_teacher (никто не отмечен) → `head_teacher = null`,
+builder пишет warning `no_head_teacher`, учительский разворот пропускается.
+
+### subjects (Teacher[])
+
+Источник: `teachers WHERE album_id = X AND is_head_teacher = false`,
+сортировка по `created_at ASC`.
+
+Mapping тривиальный, как для head_teacher.
+
+### students (Student[])
+
+Источник: `children WHERE album_id = X`, сортировка `class ASC, full_name ASC`.
+
+**Все ученики**, без фильтра по `submitted_at`.
+
+Для каждого ученика дополнительно:
+
+**`portrait`**:
+```sql
+SELECT photos.storage_path
+FROM selections
+JOIN photos ON photos.id = selections.photo_id
+WHERE selections.child_id = X
+  AND selections.selection_type = 'portrait_page'
+LIMIT 1
+```
+Если найдено → `getPhotoUrl(storage_path)`. Если нет → `null`.
+
+**`quote`**: `student_texts.text WHERE child_id = X` или `''` если нет
+записи. Передаётся как есть (лимит уже обеспечен на уровне ввода
+через `maxLength={textMaxChars}` в `app/[token]/page.tsx`).
+
+**`friend_photos`**:
+```sql
+SELECT photos.storage_path
+FROM selections
+JOIN photos ON photos.id = selections.photo_id
+WHERE selections.child_id = X
+  AND selections.selection_type = 'group'
+ORDER BY selections.created_at ASC
+LIMIT 10
+```
+Защита: cap 10 от мусора. Builder режет дальше до `preset.config.
+student_section.first_spread_content.friend_photos.max`.
+
+### common_photos (CommonPhotos)
+
+В MVP всегда передаём пустой объект:
+
+```typescript
+const common_photos: CommonPhotos = {
+  full_class: [],
+  half: [],
+  quarter: [],
+  sixth: [],
+  collage: [],
+};
+```
+
+**Причина:** builder фазы 0.5 общий раздел (J-* мастера) не генерирует
+автоматически. Партнёр добавляет J-разворот вручную через UI редактора
+(фаза 4). Smart-fill эти данные передавать не должен — они никуда не пойдут.
+
+### Дополнительная агрегация в smart-fill (warnings)
+
+Помимо warning'ов от builder'а, smart-fill добавляет свои:
+
+| Код | Когда | Уровень |
+|---|---|---|
+| `students_no_portrait` | N из M учеников без `selections WHERE selection_type='portrait_page'` | info |
+| `per_child_override_ignored` | N учеников имеют свой `config_preset_id`, override игнорируется на MVP | info |
+
+## Schema migrations
+
+### 1.0.1 — `teachers.is_head_teacher`
+
+Файл: `migrations/2026-05-09-teachers-head-flag.sql`
 
 ```sql
-ALTER TABLE albums
-ADD COLUMN config_type text CHECK (config_type IN (
-  'standard', 'universal', 'maximum', 'medium', 'light', 'mini', 'individual'
-)),
-ADD COLUMN print_type text CHECK (print_type IN ('layflat', 'soft'));
+-- Колонка флага
+ALTER TABLE teachers
+  ADD COLUMN is_head_teacher BOOLEAN NOT NULL DEFAULT false;
+
+-- Один head на альбом (partial unique index)
+CREATE UNIQUE INDEX teachers_one_head_per_album
+  ON teachers (album_id)
+  WHERE is_head_teacher = true;
+
+-- Бэкфил: для каждого альбома где есть учителя — отметить первого
+-- по created_at как head. Не идеально (может оказаться не классным),
+-- но даёт рабочее значение по умолчанию. Партнёр поправит в UI.
+WITH first_per_album AS (
+  SELECT DISTINCT ON (album_id) id
+  FROM teachers
+  ORDER BY album_id, created_at ASC
+)
+UPDATE teachers
+SET is_head_teacher = true
+WHERE id IN (SELECT id FROM first_per_album);
 ```
 
-Поля **nullable**. Если не заданы — UI запросит выбор перед первой сборкой.
+### 1.1.1 — `album_layouts` schema P3
 
-### Незавершившие ученики — пропускать с warning
+Файл: `migrations/2026-05-09-album-layouts-preset-fk.sql`
 
-Дети у которых `submitted_at IS NULL` пропускаются из сборки. Builder получает только тех у кого есть портрет. Warning в результате: «3 учеников пропущены, не завершили отбор».
+```sql
+-- Удаляем старые колонки (фазы 0)
+ALTER TABLE album_layouts
+  DROP COLUMN IF EXISTS config_type,
+  DROP COLUMN IF EXISTS print_type;
 
-Это даёт промежуточные сборки полезными — Сергей может «прикинуть как выглядит сейчас, ждём остальных».
+-- Добавляем новые
+ALTER TABLE album_layouts
+  ADD COLUMN config_preset_id uuid REFERENCES config_presets(id),
+  ADD COLUMN warnings jsonb NOT NULL DEFAULT '[]'::jsonb;
 
-### Сохранение результата в album_layouts
-
-Один активный layout на альбом (UPSERT по `album_id`). Старые версии **не сохраняем** на этом этапе — это упрощение, можно расширить в фазе 4.
-
-### UI: новая вкладка «Вёрстка» в AlbumDetailModal
-
-Между «Обзор» и «Производство» (последняя пока остаётся, в будущем переименуется или удалится). Доступна:
-- owner/manager своего тенанта
-- superadmin
-- сотрудники OkeyBook через view_as
-
-### Bulk-тестирование — отдельный инструмент в /super
-
-В панели superadmin'а новая кнопка «Массовая сборка» → выбираешь набор альбомов (фильтры: тенант, дата, статус, кол-во учеников) → жмёшь «Собрать все» → получаешь таблицу результатов. Это твой главный инструмент для летнего тестирования.
-
-## Подэтапы
-
-### 1.0 — config_type/print_type в albums (~1 час)
-
-**Что:**
-- Миграция БД: 2 поля + CHECK
-- API расширение: PUT albums может принимать config_type/print_type
-- UI карточки альбома: показ текущей конфигурации (или «не задана»)
-
-**Что НЕ делаем:**
-- UI выбора пока не делаем — это в 1.3
-- Backfill существующих альбомов не делаем — оставляем NULL
-
-**Файлы:**
-- `migrations/2026-MM-DD-album-config.sql`
-- `app/api/tenant/route.ts` — расширение update_album
-- `app/app/page.tsx` — отображение в AlbumDetailModal
-
-**Коммит:** `feat(layout/1.0): config_type/print_type в albums`
-
-### 1.1 — loadAlbumInput (~2 часа)
-
-**Что:** функция `lib/album-builder/load-album-input.ts` которая читает реальный альбом из БД и возвращает `AlbumInput` для buildAlbum.
-
-**Логика:**
-1. Загрузить `children WHERE album_id = ? AND submitted_at IS NOT NULL`
-2. Для каждого ребёнка:
-   - Загрузить selected portrait через `selections` → URL через `getPhotoUrl`
-   - Загрузить selected quote через `quote_selections` → text
-   - Загрузить friend photos через `cover_selections` или `personal_spread_photos` → URLs
-3. Загрузить `teachers` для альбома → `subjects` + `head_teacher`
-4. Загрузить `common_photos` (фото класса) по типам:
-   - full_class → массив URL
-   - half → массив URL
-   - quarter → массив URL
-   - sixth → массив URL
-   - collage → массив URL
-
-**Граничные случаи:**
-- Альбом без детей → пустой массив, builder выдаст warning
-- Дети без `submitted_at` → пропускаем, warning в результате
-- Дети с `submitted_at` но без портрета (битые данные) → пропускаем, warning
-- Альбом без head_teacher → null, builder обработает
-
-**Сортировка детей:** по `full_name`. (В будущем можно через `sort_order` если он есть в БД.)
-
-**Файлы:**
-- `lib/album-builder/load-album-input.ts` — новый файл
-- `scripts/smoke-load-album-input.ts` — отдельный smoke-скрипт для проверки на реальном альбоме (опционально, но желательно)
-
-**Коммит:** `feat(layout/1.1): loadAlbumInput — реальный альбом из БД в формат buildAlbum`
-
-### 1.2 — endpoint build_album_real (~1.5 часа)
-
-**Что:** новый action `build_album_real` в POST `/api/layout`.
-
-**Структура:**
-```typescript
-// POST /api/layout?action=build_album_real
-// Body: { album_id: string }
-// Auth: superadmin OR (owner/manager своего тенанта) OR (OkeyBook через view_as)
+-- Старый CHECK на config_type/print_type удалится автоматически с колонками.
+-- Status оставляем как был.
 ```
 
-**Логика:**
-1. Проверить что у альбома заданы `config_type` и `print_type` — если нет, 400
-2. Вызвать `loadAlbumInput(supabase, album_id)`
-3. Загрузить template_set okeybook-default
-4. Вызвать `buildAlbum(input, config)`
-5. UPSERT в `album_layouts`:
-   - `album_id` → ключ
-   - `template_set_id` → ID okeybook-default
-   - `config_type`, `print_type` → копии из album
-   - `spreads` → JSON
-   - `status` → 'draft'
-6. Audit log
-7. Вернуть `{ spreads, warnings, summary, layout_id }`
+В проде на момент применения (09.05.2026) `album_layouts` имеет 0 записей —
+никаких потерь данных. UNIQUE на album_id остаётся.
 
-**Файлы:**
-- `app/api/layout/route.ts` — новый case в POST handler
+## API endpoint /api/layout?action=build_album
 
-**Коммит:** `feat(layout/1.2): POST /api/layout?action=build_album_real`
+### Контракт
 
-### 1.3 — UI вкладка «Вёрстка» в AlbumDetailModal (~2 часа)
+**POST** `/api/layout?action=build_album`
 
-**Что:** новая вкладка в карточке альбома.
-
-**Структура:**
-- Если `config_type/print_type` не заданы → форма выбора + кнопка «Собрать»
-- Если заданы → показ текущей конфигурации + кнопка «Собрать» + (если уже собрано) превью результата
-- При нажатии «Собрать»:
-  - Если не задано — сохраняет конфигурацию + сразу запускает build
-  - Если задано — просто build
-- Показ JSON-результата как в Build Test (spreads + warnings + summary)
-- Кнопка «Пересобрать» для повторного запуска
-
-**Файлы:**
-- `app/app/page.tsx` — расширение AlbumDetailModal новой вкладкой
-- Возможно вынос в отдельный компонент `app/app/_components/LayoutTab.tsx`
-
-**Коммит:** `feat(layout/1.3): UI вкладка "Вёрстка" в карточке альбома`
-
-### 1.4 — Bulk-тестирование в /super (~3 часа)
-
-**Что:** инструмент массовой сборки для летнего тестирования.
-
-**UI в /super:** новая вкладка «Массовая сборка». Форма:
-- Фильтры: тенант (или все), статус альбома, диапазон дат, мин/макс кол-во учеников
-- Дефолтная конфигурация для альбомов без `config_type/print_type` (например «применить standard/layflat ко всем»)
-- Кнопка «Собрать N альбомов»
-
-**Логика:** последовательно вызывает `buildAlbum` для каждого альбома (без сохранения в БД — это **тест**, не реальная сборка). Показывает таблицу:
-
-| Альбом | Учеников | Spreads | Warnings | Topwarning |
-|--------|----------|---------|----------|------------|
-| 6А №42 | 24 | 14 | 2 | class_photo_missing |
-| 7Б №8 | 28 | 16 | 0 | — |
-| 9В №12 | 31 | 8 | 5 | students_overflow |
-
-Сортировка по числу warnings — самые проблемные альбомы вверху. Это даёт картину «где алгоритм работает плохо» и помогает приоритизировать доработки.
-
-**Тонкости:**
-- Bulk не пишет в `album_layouts` — это режим тестирования
-- Если альбомов >50, делаем postoпапочно (батчами по 10) с прогресс-баром
-- Можно скачать результаты в CSV
-
-**Файлы:**
-- `app/super/page.tsx` — новая вкладка
-- `app/super/_components/BulkBuildTab.tsx` — новый компонент
-- `app/api/layout/route.ts` — новый action `bulk_build_test` (только superadmin)
-
-**Коммит:** `feat(layout/1.4): bulk-тестирование автосборки для массовой проверки качества`
-
-### 1.5 — Vitest unit-тесты (~2 часа)
-
-**Что:** добавить vitest и покрытие тестами.
-
-**Установка:**
-```
-npm install -D vitest @vitest/ui
-```
-
-`vitest.config.ts`:
-```typescript
-import { defineConfig } from 'vitest/config'
-import path from 'path'
-
-export default defineConfig({
-  test: {
-    environment: 'node',
-    globals: false,
-  },
-  resolve: {
-    alias: { '@': path.resolve(__dirname, './') },
-  },
-})
-```
-
-`package.json`:
+Request body:
 ```json
-"scripts": {
-  ...
-  "test": "vitest run",
-  "test:watch": "vitest"
+{
+  "album_id": "uuid"
 }
 ```
 
-**Тесты:**
-- `lib/album-builder/__tests__/find-master.test.ts` — pickPreferringHint, matchesBaseFilters, findMaster
-- `lib/album-builder/__tests__/build-utils.test.ts` — chunk, buildGridStudentData, hasPlaceholder
-- `lib/album-builder/__tests__/build-scenarios.test.ts` — buildAlbum с моком template_set, по 1 кейсу на каждую комплектацию (минимум)
-- `lib/album-builder/__tests__/fixtures.ts` — мок template_set с 39 мастерами
+Response 200:
+```json
+{
+  "spreads": [...],
+  "warnings": [...],
+  "layout_id": "uuid",
+  "summary": {
+    "total_spreads": 12,
+    "total_warnings": 5,
+    "warnings_by_level": {
+      "blocking": 0,
+      "degraded": 2,
+      "info": 3
+    },
+    "preset_slug": "standard-layflat",
+    "preset_name": "Стандарт (твёрдые листы)"
+  }
+}
+```
 
-**Цель покрытия:** 70-80% по `lib/album-builder/`. Не максимально, но достаточно чтобы регрессии ловились.
+Response 4xx:
+- `400 album_id required` — нет body.album_id
+- `400 album has no config_preset_id` — у альбома пресет NULL
+- `403 access denied` — assertAlbumAccess вернул false
+- `404 album not found` — нет такого альбома
 
-**Коммит:** `test(layout/1.5): vitest unit-тесты для album-builder`
+### Tenant scoping
 
-### 1.6 — контекст v40 (~30 мин)
+Использовать существующий `assertAlbumAccess(auth, album_id, tid)` с поддержкой
+view_as параметра `tid` для OkeyBook staff (как в /api/tenant).
 
-**Что:** обновить `yearbook-context-v39.md → v40` с:
-- Шапка v40, дата
-- Что нового: фаза 1 завершена
-- Раздел продукт B: добавить «Фаза 1 ЗАВЕРШЕНА» под фазой 0
-- Список коммитов 1.0-1.5
-- Раздел ЧТО ДАЛЬШЕ — фаза 2 (canvas-рендер)
+### Контракт уровней warning'ов
 
-**Коммит:** `docs(layout/1.6): контекст v40 — фаза 1 закрыта`
+```typescript
+const WARNING_LEVELS: Record<BuildWarningCode, 'blocking' | 'degraded' | 'info'> = {
+  // Blocking — нельзя печатать как есть
+  'master_not_found': 'blocking',
+  'students_empty': 'blocking',
+  
+  // Degraded — собралось, но компромиссно
+  'students_overflow': 'degraded',
+  'subjects_overflow': 'degraded',
+  'students_grid_no_special_master': 'degraded',
+  'name_mismatch': 'degraded',
+  'class_photo_missing': 'degraded',
+  'students_odd_in_standard': 'degraded',
+  'no_right_teacher_master': 'degraded',
+  
+  // Info — нормальная ситуация, к сведению
+  'no_head_teacher': 'info',
+  'students_no_portrait': 'info',           // smart-fill агрегированный
+  'per_child_override_ignored': 'info',     // smart-fill агрегированный
+};
+```
 
----
+### Логика endpoint'а
 
-## Порядок работы в каждой сессии
+```typescript
+async function handleBuildAlbum(req: NextRequest, auth: AuthContext) {
+  // 1. Validate body
+  const { album_id } = await req.json();
+  if (!album_id) return error400('album_id required');
+  
+  // 2. Tenant scope (учитывая view_as)
+  const tid = req.nextUrl.searchParams.get('view_as') ?? undefined;
+  if (!await assertAlbumAccess(auth, album_id, tid)) return error403();
+  
+  // 3. Загрузить альбом + проверить пресет
+  const album = await loadAlbum(album_id);
+  if (!album) return error404();
+  if (!album.config_preset_id) return error400('album has no config_preset_id');
+  
+  // 4. Auto-resolve template_set_id если NULL
+  let templateSetId = album.template_set_id;
+  if (!templateSetId) {
+    templateSetId = await getDefaultTemplateSetId();
+    if (!templateSetId) return error500('no default template_set');
+  }
+  
+  // 5. Собрать AlbumInput из БД
+  const input = await buildAlbumInput(album_id, templateSetId);
+  
+  // 6. Загрузить preset + template_set
+  const preset = await loadPresetById(album.config_preset_id);
+  const templateSet = await loadTemplateSet(supabaseAdmin);
+  
+  // 7. Вызвать buildAlbum
+  const result = buildAlbum(input, preset, templateSet);
+  
+  // 8. Дополнить warnings smart-fill агрегированными
+  const enrichedWarnings = enrichWarnings(result.warnings, input, album_id);
+  
+  // 9. Upsert в album_layouts
+  const layoutId = await upsertAlbumLayout(album_id, {
+    template_set_id: templateSetId,
+    config_preset_id: album.config_preset_id,
+    spreads: result.spreads,
+    warnings: enrichedWarnings,
+  });
+  
+  // 10. Вернуть response
+  return NextResponse.json({
+    spreads: result.spreads,
+    warnings: enrichedWarnings,
+    layout_id: layoutId,
+    summary: {...},
+  });
+}
+```
 
-Для каждого подэтапа Сергей и Claude (стратег) делают так:
+## UI компоненты
 
-1. **Старт сессии:** Claude читает `phase-1-spec.md` + `yearbook-context-v39.md` (или v40 после 1.6)
-2. **Согласование:** «делаем подэтап X.Y, есть ли нюансы которые я не учёл?»
-3. **Инструкция:** Claude (стратег в браузере) пишет файл `docs/internal/X.Y-instructions.md`, коммитит и пушит в репо
-4. **Работа:** Claude Code на Mac:
-   - `git pull`
-   - читает инструкцию
-   - выполняет
-   - проверяет (tsc, build, smoke где применимо)
-   - коммитит локально
-   - удаляет файл-инструкцию
-5. **Push:** Сергей читает отчёт, говорит OK, делает `! git push origin main`
-6. **Проверка на проде:** Vercel деплоит, Сергей проверяет в UI
+### Кнопка «Собрать автоматически»
 
-## Критерии готовности фазы 1
+Расположение: `AlbumDetailModal → Обзор`, в блоке «Пресет вёрстки»
+(под именем пресета).
 
-- ✅ В `/app` любой альбом можно собрать через кнопку «Собрать»
-- ✅ Результат сохраняется в `album_layouts`
-- ✅ В `/super` доступно bulk-тестирование на множестве альбомов
-- ✅ Vitest 70%+ coverage по lib/album-builder/
-- ✅ Контекст v40 описывает завершение
-- ✅ npm test зелёный
-- ✅ Smoke 58/58 (или больше — если добавили сцены) зелёный
-- ✅ Никаких регрессий в существующем функционале
+```jsx
+{canEdit && (
+  <button
+    disabled={album.config_preset_id === null || busy}
+    onClick={runSmartFill}
+    className="btn-primary"
+    title={album.config_preset_id === null
+      ? 'Сначала выберите пресет вёрстки в форме редактирования'
+      : ''}
+  >
+    {busy ? 'Сборка...' : 'Собрать автоматически'}
+  </button>
+)}
+```
 
-## Что НЕ делаем в фазе 1
+### Result-блок
 
-- Canvas-рендер с подставленными данными (фаза 2)
-- PDF-экспорт (фаза 3)
-- Drag-n-drop редактор (фаза 4)
-- Управление template_set'ами через UI (фаза 5)
-- Биллинг (фаза 6)
-- Чистка legacy x-admin-secret (отдельный подэтап после фазы 1)
-- Backfill config_type/print_type для существующих альбомов
+После успешной сборки в Обзоре появляется блок:
 
-## Открытые вопросы (могут возникнуть в процессе)
+```jsx
+<div className="bg-gray-50 rounded-lg p-4 mt-4">
+  <div className="flex items-center justify-between mb-3">
+    <div className="font-medium">
+      ✓ Layout собран · {summary.total_spreads} разворотов
+      {summary.total_warnings > 0 && ` · ${summary.total_warnings} предупреждений`}
+    </div>
+    <div className="flex gap-2 text-xs">
+      <button onClick={() => copyJson(layoutResult)}>Скопировать JSON</button>
+      <button onClick={runSmartFill}>Пересобрать</button>
+    </div>
+  </div>
+  
+  {/* Раскрывающиеся секции по уровням */}
+  <CollapseSection level="blocking" warnings={...} />
+  <CollapseSection level="degraded" warnings={...} />
+  <CollapseSection level="info" warnings={...} />
+</div>
+```
 
-- Как обрабатывать альбомы где не у всех детей выбран портрет, но статус альбома уже `submitted`? (Сейчас: пропускать + warning.)
-- Что показывать в результате если альбом меняется после первой сборки? (Сейчас: пользователь нажимает «Пересобрать», получает новый layout, старый перезаписывается.)
-- Нужно ли оптимизировать buildAlbum по памяти/CPU для bulk-теста на 100+ альбомах? (Скорее всего нет — каждый альбом ~10-50ms.)
+### Категоризированные warning'и
 
-## Следующая сессия
+```jsx
+function CollapseSection({ level, warnings }) {
+  const colors = {
+    blocking: 'red-600 bg-red-50',
+    degraded: 'amber-700 bg-amber-50',
+    info: 'gray-600 bg-gray-50',
+  };
+  const labels = {
+    blocking: 'Критично',
+    degraded: 'Требует внимания',
+    info: 'К сведению',
+  };
+  
+  if (warnings.length === 0) return null;
+  
+  return (
+    <details className={`rounded p-2 ${colors[level]}`}>
+      <summary>{labels[level]} ({warnings.length})</summary>
+      <ul>
+        {warnings.map(w => (
+          <li key={...}>{w.detail}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+```
 
-Открываешь новый чат, даёшь Claude этот файл (`phase-1-spec.md`) + `yearbook-context-v39.md`. Стартуем с подэтапа 1.0.
+### Persisted state
+
+При открытии `AlbumDetailModal → Обзор`:
+- Если есть запись в `album_layouts` для этого альбома → загрузить
+  spreads + warnings, показать result-блок
+- Если нет → показать только кнопку «Собрать автоматически» (пустой
+  state)
+
+## Этапы реализации
+
+| Подэтап | Что | Объём |
+|---|---|---|
+| 1.0 | Флаг `is_head_teacher`: миграция БД + UI checkbox в форме учителя + бейдж в списке + расширение API update_teacher (radio-pattern: при отметке нового — старый сбрасывается) | ~2 ч |
+| 1.1 | Миграция album_layouts (P3 — убрать config_type/print_type, добавить config_preset_id + warnings) | ~30 мин |
+| 1.2 | Helper `lib/smart-fill/build-album-input.ts` — собирает `AlbumInput` из БД (head_teacher через флаг, students с portrait/quote/friend_photos, subjects, common=empty). Без endpoint'а, тестируется через CLI или ad-hoc скрипт | ~3 ч |
+| 1.3 | POST `/api/layout?action=build_album` — endpoint собирает input → buildAlbum → upsert в album_layouts. Tenant scoping + view_as поддержка. Smart-fill enrichWarnings | ~2-3 ч |
+| 1.4 | UI кнопка «Собрать автоматически» в Обзоре + result-блок с категоризированными warning'ами + JSON dump + load existing layout при открытии вкладки | ~3 ч |
+| 1.5 | Smoke на 2-3 живых альбомах разных пресетов + обновление контекста v42 → v43 | ~2 ч |
+| **Итого** | | **~12-13 ч** |
+
+В коридоре оценки v42-roadmap (~12 ч).
+
+## Testing strategy
+
+### Unit (для подэтапа 1.2)
+
+`build-album-input.ts` тестируется через одноразовый CLI-скрипт
+`/tmp/test-build-album-input.ts` (как было в фазе 0.5):
+- Создать тестовый альбом с детьми, учителями, фото, selections
+- Вызвать `buildAlbumInput(albumId, templateSetId)`
+- Проверить что AlbumInput собран корректно
+
+Не коммитить скрипт — это разовая проверка.
+
+### Integration (для подэтапа 1.3)
+
+После реализации endpoint:
+- Запустить локальный dev-сервер
+- curl POST `/api/layout?action=build_album` с реальным album_id из dev-БД
+- Проверить ответ + содержимое `album_layouts` в Supabase
+
+### End-to-end (для подэтапа 1.5)
+
+После всех подэтапов:
+1. Открыть `/app` → реальный альбом с пресетом
+2. Нажать «Собрать автоматически» → увидеть result-блок
+3. Проверить разные сценарии:
+   - Альбом без портретов (новый, родители ещё не выбрали)
+   - Альбом с частично выбранными портретами
+   - Альбом без учителей
+   - Альбом с per-child override
+   - Разные пресеты (Стандарт, Лайт, Мини)
+
+### Smoke 58/58
+
+Контрольная проверка после каждого подэтапа:
+```bash
+set -a && . ./.env.local && set +a && npx tsx scripts/smoke-album-builder.ts
+```
+Должно: `Result: 58/58 scenes passed`. Builder не меняется в фазе 1,
+smoke не должен сломаться.
+
+## Workflow по подэтапам
+
+Стандартный workflow как в фазе 0.5:
+
+1. Стратег готовит инструкцию `docs/internal/1.X-instructions.md` в песочнице
+2. Сергей кладёт файл в `docs/internal/`
+3. Сергей даёт команду Claude Code: "Прочитай docs/internal/1.X-instructions.md и примени"
+4. Claude Code применяет, делает локальные коммиты (docs + feat), запускает проверки
+5. Сергей пересылает отчёт стратегу
+6. Стратег даёт OK на push (или просит правки)
+7. После push — следующий подэтап
+
+Между подэтапами: проверка `tsc --noEmit + next build + smoke 58/58`.
+
+## Связь с следующими фазами
+
+После закрытия фазы 1:
+- **Фаза 2** — Canvas-рендер: layout JSON → визуальный preview с подложками
+  и фотографиями на холсте. Использует тот же `album_layouts.spreads` JSON.
+- **Фаза 3** — PDF-экспорт: layout → PDF для типографии.
+- **Фаза 4** — Drag-n-drop редактор: ручные правки слотов в layout'е,
+  per-child override становится осмысленным.
+- **Фаза 5** — Биллинг: расчёт стоимости вёрстки, передача в OkeyBook.
+- **Фаза 6** — Партнёрский онбординг.
+
+Smart-fill MVP даёт **первое реальное доказательство** что builder
+работает на живых данных. После него можно строить продуктовую
+ценность дальше.
