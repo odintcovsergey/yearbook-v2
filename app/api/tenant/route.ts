@@ -84,6 +84,42 @@ async function assertResponsibleAccess(auth: AuthContext, responsibleId: string)
 }
 
 // ============================================================
+// Хелпер: резолв preset_slug → preset record (для create_album/update_album)
+// ============================================================
+async function resolvePresetBySlug(slug: string): Promise<{
+  id: string
+  slug: string
+  print_type: string
+} | null> {
+  const { data, error } = await supabaseAdmin
+    .from('config_presets')
+    .select('id, slug, print_type')
+    .eq('slug', slug)
+    .is('tenant_id', null)
+    .single()
+
+  if (error || !data) return null
+  return data
+}
+
+// ============================================================
+// Хелпер: ID единственного глобального template_set (okeybook-default)
+// Используется при создании/обновлении альбома если template_set_id ещё NULL.
+// В фазе 4 (расширение библиотеки) этот хардкод заменится на UI выбор.
+// ============================================================
+async function getDefaultTemplateSetId(): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('template_sets')
+    .select('id')
+    .eq('slug', 'okeybook-default')
+    .is('tenant_id', null)
+    .single()
+
+  if (error || !data) return null
+  return data.id
+}
+
+// ============================================================
 // GET /api/tenant — данные своего арендатора
 // ============================================================
 export async function GET(req: NextRequest) {
@@ -137,7 +173,7 @@ export async function GET(req: NextRequest) {
     const [albumsRes, childrenRes, teacherTokensRes, teachersRes, leadsRes] = await Promise.all([
       supabaseAdmin
         .from('albums')
-        .select('*')
+        .select('*, config_presets(slug, name)')
         .eq('tenant_id', tid)
         .order('created_at', { ascending: false }),
       supabaseAdmin
@@ -191,12 +227,17 @@ export async function GET(req: NextRequest) {
       .from('tenants').select('slug').eq('id', tid).single()
     const isMainTenant = tenantData?.slug === 'main'
     return NextResponse.json({
-      albums: albums.map(a => ({
-        ...a,
-        stats: statsMap[a.id] ?? { total: 0, submitted: 0, in_progress: 0 },
-        teacher_token: tokenMap[a.id] ?? null,
-        teachers: teacherMap[a.id] ?? null,
-      })),
+      albums: albums.map(a => {
+        const preset = (a as { config_presets?: { slug: string; name: string } | null }).config_presets ?? null
+        return {
+          ...a,
+          config_preset_slug: preset?.slug ?? null,
+          config_preset_name: preset?.name ?? null,
+          stats: statsMap[a.id] ?? { total: 0, submitted: 0, in_progress: 0 },
+          teacher_token: tokenMap[a.id] ?? null,
+          teachers: teacherMap[a.id] ?? null,
+        }
+      }),
       summary: {
         albums_total: albums.length,
         albums_active: albumsActive,
@@ -366,6 +407,23 @@ export async function GET(req: NextRequest) {
       .order('created_at')
 
     return NextResponse.json(data ?? [])
+  }
+
+  // ----------------------------------------------------------
+  // presets_list — глобальные config_presets для UI dropdown'ов
+  // ----------------------------------------------------------
+  if (action === 'presets_list') {
+    const { data, error } = await supabaseAdmin
+      .from('config_presets')
+      .select('id, slug, name, description, print_type, config')
+      .is('tenant_id', null)
+      .order('slug')
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ presets: data ?? [] })
   }
 
   // ----------------------------------------------------------
@@ -1214,6 +1272,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Название обязательно' }, { status: 400 })
     }
 
+    // Резолв preset_slug → config_preset_id + print_type (фаза 0.5.6.1)
+    let configPresetId: string | null = null
+    let presetPrintType: string | null = null
+    if (typeof body.preset_slug === 'string' && body.preset_slug.length > 0) {
+      const preset = await resolvePresetBySlug(body.preset_slug)
+      if (!preset) {
+        return NextResponse.json(
+          { error: `preset_slug ${body.preset_slug} not found` },
+          { status: 400 },
+        )
+      }
+      configPresetId = preset.id
+      presetPrintType = preset.print_type
+    }
+
+    // Auto-resolve template_set_id (единственный okeybook-default)
+    const templateSetId = await getDefaultTemplateSetId()
+
     const { data, error } = await supabaseAdmin
       .from('albums')
       .insert({
@@ -1237,6 +1313,9 @@ export async function POST(req: NextRequest) {
         template_title: body.template_title ?? null,
         city: body.city ?? null,
         year: body.year ?? new Date().getFullYear(),
+        config_preset_id: configPresetId,
+        template_set_id: templateSetId,
+        print_type: presetPrintType,
       })
       .select()
       .single()
@@ -1267,6 +1346,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
 
+    // Резолв preset_slug → config_preset_id + print_type (фаза 0.5.6.1)
+    if (typeof body.preset_slug === 'string' && body.preset_slug.length > 0) {
+      const preset = await resolvePresetBySlug(body.preset_slug)
+      if (!preset) {
+        return NextResponse.json(
+          { error: `preset_slug ${body.preset_slug} not found` },
+          { status: 400 },
+        )
+      }
+      body.config_preset_id = preset.id
+      body.print_type = preset.print_type
+    }
+
+    // Auto-resolve template_set_id если у альбома его ещё нет
+    if (body.template_set_id === undefined) {
+      const { data: existing } = await supabaseAdmin
+        .from('albums')
+        .select('template_set_id')
+        .eq('id', album_id)
+        .single()
+      if (!existing?.template_set_id) {
+        const tsId = await getDefaultTemplateSetId()
+        if (tsId) body.template_set_id = tsId
+      }
+    }
+
     // Список разрешённых полей
     const allowedFields = [
       'title', 'city', 'year', 'deadline',
@@ -1276,6 +1381,8 @@ export async function POST(req: NextRequest) {
       'text_enabled', 'text_max_chars', 'text_type',
       'classes', 'template_title',
       'print_type',
+      'config_preset_id',
+      'template_set_id',
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {

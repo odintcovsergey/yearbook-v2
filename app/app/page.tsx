@@ -35,6 +35,9 @@ type Album = {
   class_name: string | null
   classes: string[]
   print_type?: string | null
+  config_preset_id?: string | null
+  config_preset_slug?: string | null
+  config_preset_name?: string | null
   stats: { total: number; submitted: number; in_progress: number }
   teacher_token: string | null
   teachers: { total: number; done: number } | null
@@ -571,6 +574,23 @@ function AlbumCard({
               {album.template_title}
             </div>
           )}
+          <div className="mt-1">
+            {album.config_preset_name ? (
+              <span
+                className="text-xs text-gray-500"
+                title={album.config_preset_slug ?? ''}
+              >
+                {album.config_preset_name}
+              </span>
+            ) : (
+              <span
+                className="text-xs text-amber-600"
+                title="Пресет не выбран — отредактируйте альбом"
+              >
+                ⚠ пресет не выбран
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -973,16 +993,19 @@ function AlbumDetailModal({
               {/* Вкладка Обзор */}
               {tab === 'overview' && stats && (
                 <>
-                  {album.print_type ? (
-                    <div className="text-sm text-gray-600 mb-4">
-                      Конфигурация вёрстки:{' '}
-                      <span className="font-mono">{album.print_type}</span>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-gray-400 italic mb-4">
-                      Конфигурация вёрстки не задана
-                    </div>
-                  )}
+                  <div className="bg-gray-50 rounded-lg p-3 text-sm mb-4">
+                    <div className="text-xs text-gray-500 uppercase mb-1">Пресет вёрстки</div>
+                    {album.config_preset_name ? (
+                      <>
+                        <div className="font-medium text-gray-900">{album.config_preset_name}</div>
+                        <div className="text-xs text-gray-400 font-mono">{album.config_preset_slug}</div>
+                      </>
+                    ) : (
+                      <div className="text-amber-600">
+                        Не выбран. Откройте «Редактировать» → задайте комплектацию и тип печати.
+                      </div>
+                    )}
+                  </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                     <MiniStat label="Всего" value={stats.total} />
@@ -1488,6 +1511,13 @@ type Template = {
   text_type?: string
 }
 
+type PresetOption = {
+  id: string
+  slug: string
+  name: string
+  print_type: string
+}
+
 type FormData = {
   title: string
   city: string
@@ -1509,6 +1539,8 @@ type FormData = {
   text_type: string
   template_title: string
   class_name: string
+  config_type: string
+  print_type: string
 }
 
 const textTypeOptions = [
@@ -1540,6 +1572,8 @@ function emptyForm(): FormData {
     text_type: 'free',
     template_title: '',
     class_name: '',
+    config_type: 'standard',
+    print_type: 'layflat',
   }
 }
 
@@ -1562,6 +1596,10 @@ function AlbumFormModal({
 }) {
   const [form, setForm] = useState<FormData>(() => {
     if (mode === 'edit' && album) {
+      const presetSlug = album.config_preset_slug ?? null
+      const [cfgType, prtType] = presetSlug
+        ? (presetSlug.split('-') as [string, string])
+        : ['standard', 'layflat']
       return {
         title: album.title,
         city: album.city ?? '',
@@ -1583,12 +1621,15 @@ function AlbumFormModal({
         text_type: (album as any).text_type ?? 'free',
         template_title: (album as any).template_title ?? '',
         class_name: ((album as any).classes ?? []).join(', '),
+        config_type: cfgType,
+        print_type: prtType,
       }
     }
     return emptyForm()
   })
 
   const [templates, setTemplates] = useState<Template[]>([])
+  const [presets, setPresets] = useState<PresetOption[]>([])
   const [loading, setLoading] = useState(false)
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -1614,6 +1655,14 @@ function AlbumFormModal({
         .catch(() => setTemplates([]))
     }
   }, [mode])
+
+  // Загружаем глобальные пресеты для dropdown'ов «Комплектация» + «Тип печати»
+  useEffect(() => {
+    api('/api/tenant?action=presets_list')
+      .then(r => r.ok ? r.json() : { presets: [] })
+      .then(d => setPresets(d.presets ?? []))
+      .catch(() => setPresets([]))
+  }, [])
 
   const applyTemplate = (t: Template) => {
     setForm(f => ({
@@ -1666,6 +1715,7 @@ function AlbumFormModal({
       classes: form.class_name.trim()
         ? form.class_name.split(',').map(s => s.trim()).filter(Boolean)
         : [],
+      preset_slug: `${form.config_type}-${form.print_type}`,
     }
 
     if (mode === 'create') {
@@ -1876,6 +1926,63 @@ function AlbumFormModal({
             <p className="text-xs text-gray-500 mt-1">
               После этой даты родители не смогут открыть ссылки
             </p>
+          </div>
+
+          {/* Пресет вёрстки — комплектация + тип печати */}
+          <div className="border-t-2 border-gray-200 pt-5 mt-1">
+            <p className="text-sm font-semibold text-blue-700 mb-2">
+              Пресет вёрстки <span className="font-normal text-gray-400 text-xs">(определяет автосборку альбома)</span>
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Комплектация <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={form.config_type}
+                  onChange={(e) => set('config_type', e.target.value)}
+                  className="input"
+                  disabled={loading}
+                  required
+                >
+                  <option value="standard">Стандарт</option>
+                  <option value="universal">Универсал</option>
+                  <option value="maximum">Максимум</option>
+                  <option value="medium">Медиум</option>
+                  <option value="light">Лайт</option>
+                  <option value="mini">Мини</option>
+                  <option value="individual">Индивидуальный</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Тип печати <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={form.print_type}
+                  onChange={(e) => set('print_type', e.target.value)}
+                  className="input"
+                  disabled={loading}
+                  required
+                >
+                  <option value="layflat">Твёрдые листы</option>
+                  <option value="soft">Мягкие листы</option>
+                </select>
+              </div>
+            </div>
+            {presets.length > 0 && (() => {
+              const slug = `${form.config_type}-${form.print_type}`
+              const matched = presets.find(p => p.slug === slug)
+              return matched ? (
+                <p className="text-xs text-gray-500 mt-2">
+                  Выбран пресет: <span className="font-medium text-gray-700">{matched.name}</span>
+                </p>
+              ) : (
+                <p className="text-xs text-amber-600 mt-2">
+                  Пресет {slug} не найден в библиотеке
+                </p>
+              )
+            })()}
           </div>
 
           {/* Обложка */}
