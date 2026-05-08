@@ -312,7 +312,7 @@ export async function GET(req: NextRequest) {
 
     const { data: children } = await supabaseAdmin
       .from('children')
-      .select('id, full_name, class, access_token, submitted_at, started_at')
+      .select('id, full_name, class, access_token, submitted_at, started_at, config_preset_id, config_presets(slug, name)')
       .eq('album_id', albumId)
       .order('class')
       .order('full_name')
@@ -338,11 +338,18 @@ export async function GET(req: NextRequest) {
     const coverMap = Object.fromEntries((covers.data ?? []).map((c: any) => [c.child_id, c]))
 
     return NextResponse.json(
-      (children ?? []).map((c: any) => ({
-        ...c,
-        contact: contactMap[c.id] ?? null,
-        cover: coverMap[c.id] ?? null,
-      }))
+      (children ?? []).map((c: any) => {
+        const preset = c.config_presets ?? null
+        const { config_presets, ...rest } = c
+        return {
+          ...rest,
+          config_preset_id: c.config_preset_id ?? null,
+          config_preset_slug: preset?.slug ?? null,
+          config_preset_name: preset?.name ?? null,
+          contact: contactMap[c.id] ?? null,
+          cover: coverMap[c.id] ?? null,
+        }
+      })
     )
   }
 
@@ -1743,6 +1750,48 @@ export async function POST(req: NextRequest) {
     await logAction(auth, 'child.delete', 'child', child_id, {
       full_name: child?.full_name,
       class: child?.class,
+    })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // update_child_preset — назначить override config_preset для ученика
+  // (preset_slug='' / null / undefined → сброс override на NULL)
+  // ----------------------------------------------------------
+  if (body.action === 'update_child_preset') {
+    const { child_id, preset_slug } = body
+    if (!child_id) {
+      return NextResponse.json({ error: 'child_id обязателен' }, { status: 400 })
+    }
+
+    if (!(await assertChildAccess(auth, child_id))) {
+      return NextResponse.json({ error: 'Ученик не найден' }, { status: 404 })
+    }
+
+    let configPresetId: string | null = null
+    if (typeof preset_slug === 'string' && preset_slug.length > 0) {
+      const preset = await resolvePresetBySlug(preset_slug)
+      if (!preset) {
+        return NextResponse.json(
+          { error: `preset_slug ${preset_slug} not found` },
+          { status: 400 },
+        )
+      }
+      configPresetId = preset.id
+    }
+
+    const { error } = await supabaseAdmin
+      .from('children')
+      .update({ config_preset_id: configPresetId })
+      .eq('id', child_id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    await logAction(auth, 'child.update_preset', 'child', child_id, {
+      preset_slug: typeof preset_slug === 'string' ? preset_slug : null,
     })
 
     return NextResponse.json({ ok: true })

@@ -62,6 +62,9 @@ type Child = {
   started_at: string | null
   contact: { parent_name: string; phone: string } | null
   cover: { cover_option: string; surcharge: number } | null
+  config_preset_id?: string | null
+  config_preset_slug?: string | null
+  config_preset_name?: string | null
 }
 
 type AlbumStats = {
@@ -710,6 +713,7 @@ function AlbumDetailModal({
   const [delivery, setDelivery] = useState<{id:string;filename:string;storage_path:string;file_size:number;label:string;expires_at:string;downloaded_at?:string}[]>([])
   const [daily, setDaily] = useState<{date:string;submitted:number;started:number}[]>([])
   const [children, setChildren] = useState<Child[]>([])
+  const [presets, setPresets] = useState<PresetOption[]>([])
   const [loading, setLoading] = useState(true)
   const [backdropStart, setBackdropStart] = useState(false)
   const [tab, setTab] = useState<'overview' | 'children' | 'teachers' | 'responsible' | 'photos' | 'surcharges' | 'spread' | 'production'>('overview')
@@ -782,14 +786,16 @@ function AlbumDetailModal({
   }
 
   const load = async () => {
-    const [s, c, an] = await Promise.all([
+    const [s, c, an, p] = await Promise.all([
       apiVA(`/api/tenant?action=album_stats&album_id=${album.id}`).then(r => r.json()),
       apiVA(`/api/tenant?action=children&album_id=${album.id}`).then(r => r.json()),
       apiVA(`/api/tenant?action=analytics&album_id=${album.id}`).then(r => r.json()),
+      apiVA('/api/tenant?action=presets_list').then(r => r.ok ? r.json() : { presets: [] }).catch(() => ({ presets: [] })),
     ])
     setStats(s)
     setChildren(Array.isArray(c) ? c : [])
     setDaily(an.daily ?? [])
+    setPresets(p.presets ?? [])
     setLoading(false)
   }
 
@@ -1156,6 +1162,14 @@ function AlbumDetailModal({
                               >
                                 <td className="px-4 py-2.5 font-medium text-gray-900">
                                   {c.full_name}
+                                  {c.config_preset_name && (
+                                    <span
+                                      className="ml-2 text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 font-normal"
+                                      title={`Override: ${c.config_preset_slug}`}
+                                    >
+                                      {c.config_preset_name}
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="px-4 py-2.5 text-gray-500">{c.class}</td>
                                 <td className="px-4 py-2.5">
@@ -1227,6 +1241,52 @@ function AlbumDetailModal({
                                         >
                                           Удалить ученика
                                         </button>
+                                      </div>
+                                    )}
+                                    {/* Override пресета вёрстки для ученика */}
+                                    {canEdit && (
+                                      <div className="flex flex-wrap items-center gap-2 mb-3 pt-3 border-t border-gray-200">
+                                        <span className="text-xs text-gray-500 mr-1">
+                                          Пресет вёрстки:
+                                        </span>
+                                        <ChildPresetSelect
+                                          child={c}
+                                          presets={presets}
+                                          albumPresetName={album.config_preset_name ?? null}
+                                          onChange={async (newSlug) => {
+                                            try {
+                                              const r = await apiVA('/api/tenant', {
+                                                method: 'POST',
+                                                body: JSON.stringify({
+                                                  action: 'update_child_preset',
+                                                  child_id: c.id,
+                                                  preset_slug: newSlug,
+                                                }),
+                                              })
+                                              if (!r.ok) {
+                                                const err = await r.json().catch(() => ({ error: 'unknown' }))
+                                                onError(err.error ?? 'Ошибка обновления пресета')
+                                                return
+                                              }
+                                              setChildren(prev => prev.map(ch => {
+                                                if (ch.id !== c.id) return ch
+                                                if (newSlug === '') {
+                                                  return { ...ch, config_preset_id: null, config_preset_slug: null, config_preset_name: null }
+                                                }
+                                                const found = presets.find(p => p.slug === newSlug)
+                                                return {
+                                                  ...ch,
+                                                  config_preset_id: found?.id ?? null,
+                                                  config_preset_slug: found?.slug ?? null,
+                                                  config_preset_name: found?.name ?? null,
+                                                }
+                                              }))
+                                              onNotify(`Пресет обновлён для ${c.full_name}`)
+                                            } catch (e) {
+                                              onError(e instanceof Error ? e.message : 'network error')
+                                            }
+                                          }}
+                                        />
                                       </div>
                                     )}
                                     {/* Детали выбора — если завершил */}
@@ -1575,6 +1635,69 @@ function emptyForm(): FormData {
     config_type: 'standard',
     print_type: 'layflat',
   }
+}
+
+// ─── Override пресета per-child (используется в expanded row AlbumDetailModal)
+function ChildPresetSelect({
+  child,
+  presets,
+  albumPresetName,
+  onChange,
+}: {
+  child: Child
+  presets: PresetOption[]
+  albumPresetName: string | null
+  onChange: (newSlug: string) => Promise<void>
+}) {
+  const currentSlug = child.config_preset_slug ?? ''
+  const [draftSlug, setDraftSlug] = useState<string>(currentSlug)
+  const [busy, setBusy] = useState(false)
+
+  // Синхронизация если child обновлён извне (после save или другого edit'а)
+  useEffect(() => {
+    setDraftSlug(child.config_preset_slug ?? '')
+  }, [child.config_preset_slug])
+
+  const dirty = draftSlug !== currentSlug
+
+  return (
+    <>
+      <select
+        value={draftSlug}
+        onChange={(e) => setDraftSlug(e.target.value)}
+        disabled={busy}
+        className="text-xs px-2 py-1 border border-gray-300 rounded"
+      >
+        <option value="">
+          Использовать пресет альбома
+          {albumPresetName ? ` (${albumPresetName})` : ' (не задан)'}
+        </option>
+        {presets.map(p => (
+          <option key={p.slug} value={p.slug}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        disabled={!dirty || busy}
+        onClick={async () => {
+          setBusy(true)
+          try {
+            await onChange(draftSlug)
+          } finally {
+            setBusy(false)
+          }
+        }}
+        className="text-xs btn-secondary px-3 py-1.5 disabled:opacity-50"
+      >
+        {busy ? '...' : 'Применить'}
+      </button>
+      {dirty && (
+        <span className="text-xs text-amber-600">Не сохранено</span>
+      )}
+    </>
+  )
 }
 
 function AlbumFormModal({
