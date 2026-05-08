@@ -1,282 +1,81 @@
-# Фаза 0.5 — Refactor builder под пресеты (v3)
+# Фаза 0.5 — Refactor builder под пресеты (финальная v4)
 
-> Документ обновлён 08.05.2026 после обсуждения философии «проще, быстрее, понятнее».
-> 
-> **Главный архитектурный принцип:** богатая схема данных в БД + простая логика и UI в фазе 0.5. Это позволит расширяться в будущем без миграций.
+> Документ создан 08.05.2026.  
+> Архитектурный принцип: **богатая структура в БД, простая логика в коде**.
 
-## Зачем эта фаза
+## Зачем
 
-В фазе 0 builder построен под **7 жёстко-зашитых комплектаций** (`config_type` enum). Это работает но не масштабируется.
+В фазе 0 builder работает с 7 жёстко-зашитыми комплектациями (`config_type` enum в коде). Это не гибко — партнёр не может создать свой пресет без правки кода.
 
-**Цель фазы 0.5:** перенести описание комплектаций из кода в БД. Текущие 7 пресетов мигрируют в таблицу как «глобальные дефолты». Builder становится универсальным.
+**Цель:** перенести описание пресета из кода в БД. 7 текущих пресетов становятся записями в таблице `config_presets`. Builder читает пресет из БД и работает с ним универсально.
 
-## Философия Сергея
+## Главное решение
 
-> «Я как фотограф отснял материал, отобрал с клиентами, выбрал макет и комплектацию, нажал кнопку, получил через 15 минут макет. И мне нравится такой подход.»
+**Богатая БД, простая логика.**
 
-То есть **главный сценарий — простой и быстрый**:
-1. Партнёр выбирает один из готовых пресетов (4-5 кнопок)
-2. Нажимает «Собрать»
-3. Через минуту получает результат
+В таблице `config_presets` поле `config` (JSONB) может хранить десятки параметров — всё что обсуждалось (доплатные развороты, мульти-учителя, обложки разных типов, виньетки и т.д.). **Это резерв на будущее.**
 
-**Кастомизация пресета — редкая, продвинутая функция.** Не для массового пользователя.
+В фазе 0.5 builder читает только **минимум** полей которые соответствуют функционалу фазы 0. Всё остальное в БД сохраняется но игнорируется.
 
-**Доработка результата (drag-n-drop редактор) — есть, но редко используется.** Партнёр поправит мастера в 1-2 разворотах если builder не угадал.
+Это значит:
+- В будущем расширение функционала **не требует миграций БД** — поле уже есть в JSONB
+- Текущий код фазы 0.5 не усложняется лишними фичами
 
-## Архитектурный приём — «богатая БД, простая логика»
+## Решённые архитектурные моменты
 
-В этой спеке два уровня детализации:
+| Момент | Решение |
+|---|---|
+| Один альбом — один пресет? | Нет. У каждого ребёнка свой `config_preset_id` (FK). По умолчанию NULL → берётся альбомный. |
+| Стандарт vs Универсал — что отличает? | Параметр `friend_photos.max`: 0 для Стандарта, 2 для Универсала |
+| Виртуальные страницы (1 spread мастер вместо Left+Right отдельных)? | Отложено в master-cleanup-tz §F |
+| Несколько разворотов на ученика | Поле в БД зарезервировано, builder читает только max=1 в 0.5 |
+| Текст ученика — свободный или цитата? | Поле `text.enabled` (boolean). Расширение (анкеты, режимы) — позже. |
+| Мульти-учителя (2 воспитателя в саду)? | Поле в БД зарезервировано, builder использует только head_teacher (1) |
+| Шаблон по умолчанию для текста | Зарезервировано, не реализовано в 0.5 |
+| Общий раздел (J-* мастера) | Не генерируется builder'ом (idml-recon §9). UI редактор фазы 4. |
+| Обложка — financial_mode и cover_type | Поля зарезервированы в БД, builder не использует в 0.5 |
+| Personal spread addon | Отдельный модуль продукта (не builder) |
+| Партнёрский конструктор пресетов | Отдельная фаза, не 0.5. В 0.5 — 7 готовых глобальных. |
 
-### Уровень 1 — полная схема (богатая)
+## Этапы реализации
 
-Раздел **«Полная схема config (зарезервировано в БД)»** ниже. Все поля сохраняются в `config_presets.config` (JSONB). 
+| Подэтап | Что | Объём |
+|---|---|---|
+| 0.5.1 | Таблица `config_presets`, FK в albums и children, удалить config_type | ~1.5 ч |
+| 0.5.2 | TypeScript-типы Preset, 7 пресетов как seed-данные | ~3 ч |
+| 0.5.3 | Рефакторинг buildAlbum — принимает Preset, выбирает функцию по layout_mode | ~3 ч |
+| 0.5.4 | Адаптация 58 smoke-сцен под новую модель | ~2 ч |
+| 0.5.5 | Endpoint `build_album_test` обновлён под Preset | ~1 ч |
+| 0.5.6 | UI выбор пресета per-child в /app (опционально, простой dropdown) | ~1.5 ч |
+| 0.5.7 | Контекст v40 + обновление phase-1-spec | ~30 мин |
+| **Итого** | | **~12 часов** |
 
-Это **гибкая структура** под все возможные сценарии будущего: per_student флаги, additional_spreads, modes_allowed для текста, financial_mode для обложки, и т.д.
-
-Записи в БД могут содержать любые из этих полей. Никаких миграций при расширении.
-
-### Уровень 2 — что использует builder в фазе 0.5 (минимум)
-
-Раздел **«Что читает builder в 0.5»** ниже. Маленький подсписок полей — только то что **реально нужно** сейчас для типичных кейсов.
-
-Builder **игнорирует** все остальные поля. Они «зарезервированы» — будут читаться позже когда понадобится.
-
-### Уровень 3 — что показывает UI в 0.5
-
-UI = простая форма выбора пресета (как в существующей форме создания альбома: 4 кнопки + название). Никакого «конструктора».
-
----
-
-# ЧАСТЬ 1: Принципы
-
-### Принцип 1 — Дизайн ≠ Настройки
-
-Сергей сформулировал точно:
-
-> Дизайн — это набор мастеров на все случаи жизни и комплектации. А система должна правильно их распределять в зависимости от выбора настроек фотографа и количества загруженных фотографий.
-
-- **template_set** = коллекция мастеров (39 разворотов)
-- **preset** = правила сборки (что включено, какие лимиты)
-- **Они независимы.** Любой пресет работает с любым template_set'ом.
-
-### Принцип 2 — Пресет описывает требования, не имена мастеров
-
-Пресет говорит «тут нужен мастер для одного ученика с местом под цитату». Builder ищет в template_set мастер с подходящим `page_role` и `slot_capacity`.
-
-Это позволяет менять template_set без правок пресета. И добавлять новые мастера без правок пресета.
-
-### Принцип 3 — Богатая БД, простая логика
-
-Поля в `config_presets.config` могут описывать **любой** будущий сценарий. Builder в фазе 0.5 читает только подмножество. Расширение builder'а в будущем не требует миграций.
-
-### Принцип 4 — Готовые пресеты = главный сценарий
-
-7 готовых пресетов покрывают 95% случаев. Партнёр обычно выбирает из списка. Создание своего пресета — продвинутая функция, не делается в фазе 0.5.
+После 0.5 — фаза 1 (Smart-fill из реальных альбомов БД, ~10-12 часов).
 
 ---
 
-# ЧАСТЬ 2: Полная схема `config` (богатая, в JSONB)
+## Структура БД (что строим в 0.5.1)
 
-Всё что описано ниже — **зарезервировано** в БД. Builder в фазе 0.5 читает только пометку **«читает в 0.5»**. Остальное — на будущее.
-
-```jsonc
-{
-  // ==================================================
-  // ЛИЧНЫЙ РАЗДЕЛ УЧЕНИКОВ
-  // ==================================================
-  "student_section": {
-    
-    // ────────────────────────────────────────────────
-    // Кол-во разворотов на ученика
-    // ────────────────────────────────────────────────
-    "spreads_per_student": {
-      "min": 1,                  // ← читает в 0.5 (только если max==1)
-      "max": 1,                  // ← читает в 0.5 (только =1; если >1 → warning)
-      "default": 1,
-      "per_student": false,      // зарезервировано (фаза N)
-        // false = у всех одинаково
-        // true = у каждого ученика своё (за доплату)
-    },
-    
-    // ────────────────────────────────────────────────
-    // Базовый layout первого разворота
-    // ────────────────────────────────────────────────
-    "base_layout_mode": "single_page_per_student"   // ← читает в 0.5
-                     | "spread_per_student"
-                     | "grid_multiple_students",
-      // single_page_per_student = E-Student-* (1 ученик / страница)
-      // spread_per_student = E-Max-Left + E-Max-Right (1 ученик / разворот)
-      // grid_multiple_students = D-Medium / L-6 / N-12 (сетка)
-    
-    // ────────────────────────────────────────────────
-    // Содержание первого разворота
-    // ────────────────────────────────────────────────
-    "first_spread_content": {
-      "portrait": true,          // ← читает в 0.5 (всегда true в 0.5)
-      "full_name": true,         // ← читает в 0.5 (всегда true в 0.5)
-      
-      // Текст ученика
-      "text": null | {
-        "enabled": true,         // ← читает в 0.5 (boolean)
-        "text_template_id": "uuid", // зарезервировано (фаза N — выбор анкеты)
-        "max_chars": 200,        // зарезервировано (UI ограничение)
-        "modes_allowed": ["free", "quote_catalog"], // зарезервировано
-          // фаза N — для 9-11 классов «или свободный или цитата»
-      },
-      
-      // Фото с друзьями (groupphotos из selections.group)
-      "friend_photos": null | {
-        "enabled": true,         // ← читает в 0.5 (boolean)
-        "min": 0,
-        "max": 4,                // ← читает в 0.5 (для slot_capacity_min фильтра)
-        "exclusive_in_album": true,  // зарезервировано (логика отбора, не builder)
-          // одно фото попадает в личный раздел только одного ученика
-      },
-    },
-    
-    // ────────────────────────────────────────────────
-    // Дополнительные развороты (за доплату)
-    // ЗАРЕЗЕРВИРОВАНО — в 0.5 builder это игнорирует
-    // ────────────────────────────────────────────────
-    "additional_spreads": null | {
-      "enabled": true,
-      "max_count": 4,
-      "price_per_spread": 1500,
-      "content_options": [
-        {
-          "name": "Только фото",
-          "uses_friend_photos": true,
-          "min_photos": 4,
-          "max_photos": 12,
-        },
-      ],
-    },
-    
-    // ────────────────────────────────────────────────
-    // Сетка-миниатюры (для individual)
-    // ────────────────────────────────────────────────
-    "thumbnails_section": null | {
-      "enabled": true,           // ← читает в 0.5
-      "preferred_grid_size": 12, // ← читает в 0.5 (примерное N в сетке)
-    },
-  },
-  
-  // ==================================================
-  // УЧИТЕЛЬСКИЙ РАЗДЕЛ
-  // ==================================================
-  "teacher_section": null | {
-    "enabled": true,             // ← читает в 0.5
-    "layout": "two_page" | "one_page",  // ← читает в 0.5
-    "show_head_teacher": true,   // ← читает в 0.5
-    "max_subjects_per_page": 8,  // ← читает в 0.5
-    "right_page_content": "auto_common_photo" | null,  // ← читает в 0.5
-  },
-  
-  // ==================================================
-  // ОБЛОЖКА
-  // ==================================================
-  // В 0.5 builder читает только cover_type
-  // financial_mode — это уровень «бизнес-настроек», не вёрстки
-  // ==================================================
-  "cover_section": {
-    "financial_mode": "required"
-                   | "optional_paid_visible"
-                   | "optional_paid_hidden",  // зарезервировано
-    "price": 300,                              // зарезервировано
-    
-    "cover_type": "portrait_photo"  // ← читает в 0.5
-               | "common_photo"
-               | "design_only",
-    
-    "per_student": true,                       // зарезервировано
-  },
-  
-  // ==================================================
-  // INTRO (для soft)
-  // ==================================================
-  "intro_section": null | {
-    "type": "single_page",       // ← читает в 0.5
-    "with_photo": true,          // зарезервировано
-  },
-  
-  // ==================================================
-  // ОБЩИЙ РАЗДЕЛ
-  // ==================================================
-  // В 0.5 builder НЕ генерирует автоматически (idml-recon §9)
-  // Полностью зарезервировано
-  // ==================================================
-  "common_section": null | {
-    "enabled": true,
-    "auto_generate": false,
-    "vignette": { "enabled": true, "per_student": false },
-    "collages": { "enabled": true, "max_count": 4 },
-    "class_photo": { "enabled": true },
-    "half_class_photos": { "enabled": true, "max_count": 2 },
-  },
-  
-  // ==================================================
-  // ПЕРСОНАЛЬНЫЙ РАЗВОРОТ ЗА ДОПЛАТУ
-  // ==================================================
-  // ЗАРЕЗЕРВИРОВАНО — отдельный модуль, не builder
-  // ==================================================
-  "personal_spread_addon": null | {
-    "enabled": true,
-    "price": 1000,
-    "min_photos": 6,
-    "max_photos": 12,
-    "per_student": true,
-  },
-}
-```
-
----
-
-# ЧАСТЬ 3: Что builder читает в 0.5 (минимум)
-
-Это **только подмножество** полей выше. Всё остальное — ignore.
-
-| Поле | Что делает builder |
-|------|-------------------|
-| `print_type` (на уровне presets, не config) | Включает intro_section если `soft` и intro задан |
-| `student_section.spreads_per_student.max` | Если =1 — обычное поведение. Если >1 — warning (нет мастеров) |
-| `student_section.base_layout_mode` | Выбирает какую функцию запустить (single_page / spread / grid) |
-| `student_section.first_spread_content.text.enabled` | Включает место под цитату |
-| `student_section.first_spread_content.friend_photos.enabled` + `max` | Передаётся в slot_capacity_min при поиске мастеров |
-| `student_section.thumbnails_section.enabled` + `preferred_grid_size` | После личного раздела добавляет сетку-миниатюру |
-| `teacher_section.enabled` | Запускать ли teacher section |
-| `teacher_section.layout` | one_page / two_page (Mini-soft vs обычный) |
-| `teacher_section.show_head_teacher` | Включать карточку классрука |
-| `teacher_section.max_subjects_per_page` | Лимит при выборе мастера F-* |
-| `teacher_section.right_page_content` | auto_common_photo → выбор G-*; null → нет правой страницы |
-| `intro_section.type` | single_page → S-Intro мастер |
-| `cover_section.cover_type` | portrait_photo / common_photo / design_only — для будущей обложки |
-
-**Всё остальное в config — игнорируется.** Это нормально, в БД они сохраняются на будущее.
-
----
-
-# ЧАСТЬ 4: Структура таблиц БД
-
-### config_presets
+### Новая таблица `config_presets`
 
 ```sql
 CREATE TABLE config_presets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   
   tenant_id uuid REFERENCES tenants(id) ON DELETE CASCADE,
-    -- NULL = глобальный (доступен всем тенантам)
+    -- NULL = глобальный пресет (доступен всем тенантам)
   
-  slug text NOT NULL,
-  name text NOT NULL,
+  slug text NOT NULL,                        -- 'standard', 'universal', 'maximum'...
+  name text NOT NULL,                        -- 'Стандарт', 'Универсал'...
   description text,
   
   print_type text NOT NULL CHECK (print_type IN ('layflat', 'soft')),
   
   config jsonb NOT NULL,
-    -- Богатая структура, см. ЧАСТЬ 2
+    -- Богатая структура (см. ниже)
   
   is_template boolean DEFAULT false,
-    -- зарезервировано (для UI «копировать пресет»)
+    -- зарезервировано на будущее
   
   created_by uuid REFERENCES users(id),
   created_at timestamptz DEFAULT now(),
@@ -288,155 +87,266 @@ CREATE TABLE config_presets (
 CREATE INDEX idx_config_presets_tenant ON config_presets(tenant_id);
 ```
 
-### text_templates
-
-В фазе 0.5 эта таблица **создаётся, но не используется builder'ом**. Это «зарезервировано» под будущее.
-
-```sql
-CREATE TABLE text_templates (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id uuid REFERENCES tenants(id) ON DELETE CASCADE,
-  slug text NOT NULL,
-  name text NOT NULL,
-  type text NOT NULL CHECK (type IN ('free', 'questionnaire', 'quote_catalog')),
-  questions jsonb,
-  default_max_chars int,
-  quotes_filter text,
-  CONSTRAINT unique_tenant_slug_text UNIQUE NULLS NOT DISTINCT (tenant_id, slug)
-);
-```
-
-### albums — изменения
+### Изменения в `albums`
 
 ```sql
 ALTER TABLE albums
-DROP COLUMN config_type,                    -- удаляем enum (был добавлен в 1.0)
+DROP COLUMN config_type,                    -- удаляем enum (был в 1.0)
 ADD COLUMN config_preset_id uuid REFERENCES config_presets(id),
 ADD COLUMN template_set_id uuid REFERENCES template_sets(id);
--- print_type оставляем (был добавлен в 1.0, остаётся)
+-- print_type оставляем (был в 1.0)
 ```
 
-**Backfill:** все 9 существующих альбомов имеют `config_type=NULL`. Они получат `config_preset_id=NULL` и `template_set_id=NULL`. UI запросит выбор перед сборкой.
+### Изменения в `children`
+
+```sql
+ALTER TABLE children
+ADD COLUMN config_preset_id uuid REFERENCES config_presets(id);
+-- NULL по умолчанию = используется albums.config_preset_id (альбомный)
+-- если задан = override (например ученик купил Максимум вместо Стандарта)
+```
+
+### Backfill
+
+- Все 9 существующих альбомов: `config_preset_id = NULL`, `template_set_id = NULL`. UI запросит выбор перед сборкой.
+- Все 157 учеников: `config_preset_id = NULL`. Используется альбомный.
 
 ---
 
-# ЧАСТЬ 5: Семантика layout_mode → builder logic
+## Полная структура `config` (JSONB)
 
-| layout_mode | Что делает builder | Какие мастера ищет |
-|---|---|---|
-| `single_page_per_student` | По 1 ученику на странице, пары образуют разворот | `page_role IN ('student', 'student_left', 'student_right')` с `students:1` или `students:2` |
-| `spread_per_student` | Один ученик = разворот | `page_role IN ('student_left', 'student_right')` с `students:1` |
-| `grid_multiple_students` | N учеников на странице (сетка) | `page_role IN ('student_grid_left', 'student_grid_right')` с `students:N` |
+Помечено **🟢 = читает builder в 0.5** или **⚪ = зарезервировано в БД, builder игнорирует**.
 
-3 текущие функции (`buildStandardStudents`, `buildMaximumStudents`, `buildAdaptiveGridStudents` + `buildMediumStudents` для grid с фиксированным размером) обобщаются в **3 функции** по этим режимам.
-
----
-
-# ЧАСТЬ 6: Миграция текущих 7 пресетов
-
-Seed-файл — после создания таблицы `config_presets` вставляем 7 записей с конкретным config (на основе текущего `SCENARIOS` в коде).
-
-| slug | base_layout_mode | text | friend_photos | thumbnails | print_type | особенности |
-|------|------------------|------|---------------|------------|------------|-------------|
-| standard | single_page_per_student | enabled | disabled | null | layflat+soft | spreads=1 |
-| universal | single_page_per_student | enabled | disabled | null | layflat+soft | как standard, но Left+Right разные |
-| maximum | spread_per_student | enabled | enabled max=4 | null | layflat+soft | один = разворот |
-| medium | grid_multiple_students | enabled | disabled | null | layflat+soft | N=4 на странице |
-| light | grid_multiple_students | disabled | disabled | null | layflat+soft | N=6 |
-| mini | grid_multiple_students | disabled | disabled | null | layflat+soft | N=12, soft без intro |
-| individual | spread_per_student | enabled | enabled max=3 | enabled (12) | layflat+soft | разворот + сетка миниатюр |
-
-Все 7 — глобальные (`tenant_id=NULL`).
-
----
-
-# ЧАСТЬ 7: UI в фазе 0.5
-
-UI выбора пресета — **простая** форма в карточке альбома (вкладка «Вёрстка», добавится в фазе 1.3).
-
-Похоже на текущую форму создания альбома:
-- 4 кнопки готовых пресетов: «Универсал», «Индивидуальный», «Медиум», «Фотопапка/Мини/Лайт»
-- Текстовое поле «Стандарт, Расширенный...» — выбор по slug
-
-Никаких «конструкторов», галочек, расширенных настроек. Это всё **зарезервировано** для будущей фазы (партнёрский конструктор).
-
----
-
-# ЧАСТЬ 8: Этапы реализации
-
-| Подэтап | Что | Объём |
-|---|---|---|
-| 0.5.0 | Эта спека | Готова |
-| 0.5.1 | Миграция БД: `config_presets`, `text_templates`, FK в albums, удалить config_type | ~1 ч |
-| 0.5.2 | TypeScript-типы Preset, миграция SCENARIOS из кода в seed-данные БД | ~2.5 ч |
-| 0.5.3 | Рефакторинг buildAlbum: принимает Preset, выбирает функцию по base_layout_mode | ~3 ч |
-| 0.5.4 | Адаптация 58 smoke-сцен под новую модель (через JSON-config вместо config_type enum) | ~2 ч |
-| 0.5.5 | Endpoint build_album_test — обновить input под Preset | ~1 ч |
-| 0.5.6 | Контекст v40 + обновление phase-1-spec | ~30 мин |
-| **Итого** | | **~10 часов** |
-
-После 0.5 фаза 1 (loadAlbumInput, build_album_real, UI «Вёрстка», bulk-тестирование):
-- Фаза 1.3 (UI «Вёрстка») использует выбор пресета (dropdown)
-- Объём ~10-12 ч (как было)
-
----
-
-# ЧАСТЬ 9: Что НЕ входит в фазу 0.5
-
-- UI редактора пресетов (фаза «партнёрский конструктор» — позже)
-- UI редактора `text_templates` (позже)
-- Builder обработка `additional_spreads` (отдельная фаза)
-- Builder обработка `personal_spread_addon` (отдельный модуль продукта)
-- Builder обработка `common_section` (idml-recon §9 — отложено в фазу N)
-- per_student обработка обложки (отдельная фаза)
-- Множественные text режимы (free + quote_catalog) (отдельная фаза)
-- Версионирование пресетов (заморозка snapshot в `album_layouts.config_snapshot`) — добавим если будут проблемы
-
----
-
-# ЧАСТЬ 10: Открытые вопросы (на согласование)
-
-### 1. Backfill 9 существующих альбомов
-
-Все имеют `config_type=NULL`. После 0.5.1 они получат `config_preset_id=NULL`.
-
-**Что делать в UI:**
-- В вкладке «Обзор»: «Конфигурация не задана» (как сейчас в 1.0)
-- В вкладке «Вёрстка» (фаза 1.3): форма выбора пресета перед сборкой
-
-**Никакого автоматического backfill.** Партнёр сам выберет пресет когда захочет собирать.
-
-### 2. text_templates — создавать в 0.5 или отложить?
-
-**Вариант A:** создаём таблицу в 0.5 (но builder не использует). Готовим почву.
-
-**Вариант B:** не создаём, отложим до фазы когда понадобится.
-
-Я склоняюсь к **A** — лучше иметь схему готовой. Если в фазе 1 (smart-fill) поймём что нужно — уже есть таблица.
-
-### 3. Версионирование пресетов
-
-Если партнёр меняет пресет после привязки к альбому — что со старыми альбомами?
-
-**Простое решение для 0.5:** не делаем версионирование. Если пресет изменился — следующая пересборка использует новую версию. Старая в `album_layouts` (если уже сохранена) остаётся как есть.
-
-В будущем (если будет проблема) — добавим snapshot config в `album_layouts`.
-
-### 4. Что делать со spreads_per_student.max > 1
-
-В builder'е обнаруживается такое значение — что:
-- **Вариант X:** warning «нет мастеров» + используется max=1 (graceful degradation)
-- **Вариант Y:** error «дополнительные развороты не поддерживаются» (стоп)
-
-Я склоняюсь к **X** — это проявление принципа «богатая БД, простая логика». Поле есть, но builder в 0.5 берёт только max=1 и предупреждает.
+```jsonc
+{
+  // === ЛИЧНЫЙ РАЗДЕЛ УЧЕНИКОВ ===
+  "student_section": {
+    
+    // Кол-во разворотов на ученика
+    "spreads_per_student": {
+      "min": 1, "max": 1, "default": 1,    // 🟢 builder использует max=1
+      "per_student": false,                  // ⚪ зарезервировано
+    },
+    
+    // Базовый layout
+    "base_layout_mode":                      // 🟢
+        "single_page_per_student"            // E-Student-Standard, E-Student-Default, etc.
+      | "spread_per_student"                 // E-Max-Left + E-Max-Right
+      | "grid_multiple_students",             // D-Medium / L-6 / N-12
+    
+    // Содержание первого разворота
+    "first_spread_content": {
+      "portrait": true,                      // 🟢 (всегда true в 0.5)
+      "full_name": true,                     // 🟢 (всегда true в 0.5)
+      
+      "text": null | {
+        "enabled": true,                     // 🟢 (boolean)
+        "max_chars": 200,                    // ⚪
+        "modes_allowed": [...],              // ⚪ (свободный/цитата) — анкеты позже
+        "text_template_id": null,            // ⚪ (анкеты позже)
+      },
+      
+      "friend_photos": null | {
+        "enabled": true,                     // 🟢
+        "min": 0, "max": 4,                  // 🟢 max используется как slot_capacity_min
+        "exclusive_in_album": true,          // ⚪ (логика отбора, не builder)
+      },
+    },
+    
+    // Доплатные развороты — ⚪ полностью зарезервировано
+    "additional_spreads": null | {
+      "enabled": true,
+      "max_count": 4,
+      "price_per_spread": 1500,
+      "content_options": [...],
+    },
+    
+    // Сетка-миниатюры (для individual)
+    "thumbnails_section": null | {
+      "enabled": true,                       // 🟢
+      "preferred_grid_size": 12,             // 🟢
+    },
+  },
+  
+  // === УЧИТЕЛЬСКИЙ РАЗДЕЛ ===
+  "teacher_section": null | {
+    "enabled": true,                         // 🟢
+    "layout": "two_page" | "one_page",       // 🟢 (Mini-soft = one_page)
+    "show_head_teacher": true,               // 🟢
+    "max_subjects_per_page": 8,              // 🟢
+    "right_page_content":                    // 🟢
+        "auto_common_photo" | null,
+    
+    "head_teachers_count": 1,                // ⚪ (мульти-учителя позже, builder использует 1)
+    "default_text_when_empty": null,         // ⚪ (заглушка для пустого text)
+  },
+  
+  // === ОБЛОЖКА ===
+  "cover_section": {
+    "cover_type":                            // 🟢 (на будущее, в 0.5 builder не верстает обложку)
+        "portrait_photo" | "common_photo" | "design_only",
+    
+    "financial_mode":                        // ⚪
+        "required" | "optional_paid_visible" | "optional_paid_hidden",
+    "price": 300,                            // ⚪
+    "per_student": true,                     // ⚪
+  },
+  
+  // === INTRO (для soft) ===
+  "intro_section": null | {
+    "type": "single_page",                   // 🟢
+    "with_photo": true,                      // ⚪
+  },
+  
+  // === ОБЩИЙ РАЗДЕЛ (виньетки, коллажи, фото класса) — ⚪ полностью ===
+  "common_section": null | {
+    "enabled": true,
+    "auto_generate": false,
+    "vignette": {...},
+    "collages": {...},
+    "class_photo": {...},
+    "half_class_photos": {...},
+    "quarter_class_photos": {...},
+  },
+  
+  // === ПЕРСОНАЛЬНЫЙ РАЗВОРОТ ЗА ДОПЛАТУ — ⚪ полностью ===
+  "personal_spread_addon": null | {...},
+}
+```
 
 ---
 
-# ЧАСТЬ 11: Что я хочу от Сергея
+## 7 пресетов — содержание config
 
-1. **Прочитать v3 целиком**
-2. **Согласие/правки** по части 2 (полная схема config) — что добавить/убрать
-3. **Ответы на 4 открытых вопроса** в части 10
-4. После итерации — **стартуем 0.5.1**
+Все 7 — глобальные (`tenant_id = NULL`).
 
-Сегодня цель: довести спеку до состояния «можно делать код».
+### standard
+- `print_type`: layflat и soft (две записи: standard-layflat, standard-soft)
+- `student_section.base_layout_mode`: `single_page_per_student`
+- `student_section.first_spread_content.text`: `{enabled: true}`
+- `student_section.first_spread_content.friend_photos`: `null` (без фото с друзьями)
+- `teacher_section`: `{enabled: true, layout: 'two_page', ...}`
+- `intro_section`: для soft `{type: 'single_page'}`, для layflat `null`
+
+### universal
+- Всё то же что standard, но:
+- `student_section.first_spread_content.friend_photos`: `{enabled: true, min: 0, max: 2}`
+
+### maximum
+- `student_section.base_layout_mode`: `spread_per_student`
+- `student_section.first_spread_content.friend_photos`: `{enabled: true, min: 0, max: 4}`
+- остальное как standard
+
+### medium
+- `student_section.base_layout_mode`: `grid_multiple_students`
+- остальное как standard
+- (Builder выберет мастера D-Medium с slot_capacity.students=4)
+
+### light
+- `student_section.base_layout_mode`: `grid_multiple_students`
+- `student_section.first_spread_content.text`: `null` (без текста)
+- `student_section.first_spread_content.friend_photos`: `null`
+- (Builder выберет мастера L-6 с slot_capacity.students=6)
+
+### mini
+- `student_section.base_layout_mode`: `grid_multiple_students`
+- `student_section.first_spread_content.text`: `null`
+- `student_section.first_spread_content.friend_photos`: `null`
+- В soft варианте: `intro_section: null`, `teacher_section.layout: 'one_page'`
+- (Builder выберет мастера N-12 с slot_capacity.students=12)
+
+### individual
+- `student_section.base_layout_mode`: `spread_per_student`
+- `student_section.first_spread_content.friend_photos`: `{enabled: true, min: 0, max: 3}`
+- `student_section.thumbnails_section`: `{enabled: true, preferred_grid_size: 12}`
+
+---
+
+## Что меняется в коде (0.5.2-0.5.5)
+
+### Типы
+
+```typescript
+// lib/album-builder/types.ts (расширение)
+
+export type Preset = {
+  id: string;
+  slug: string;
+  name: string;
+  print_type: 'layflat' | 'soft';
+  config: PresetConfig;
+};
+
+export type PresetConfig = {
+  student_section: StudentSectionConfig;
+  teacher_section: TeacherSectionConfig | null;
+  intro_section: IntroSectionConfig | null;
+  cover_section: CoverSectionConfig;
+  // common_section, personal_spread_addon — зарезервировано, не типизируем
+};
+
+// ...подтипы StudentSectionConfig и т.д.
+```
+
+### Функция buildAlbum
+
+```typescript
+// БЫЛО:
+function buildAlbum(input, config: { config_type, print_type, template_set })
+
+// СТАЛО:
+function buildAlbum(input, preset: Preset, template_set: TemplateSet)
+```
+
+Внутри: чтение `preset.config.student_section.base_layout_mode` и роутинг в одну из 3 функций (buildSinglePagePerStudent / buildSpreadPerStudent / buildGridStudents).
+
+Существующие функции (`buildStandardStudents`, `buildMaximumStudents`, `buildAdaptiveGridStudents`, `buildMediumStudents`) обобщаются:
+- `buildSinglePagePerStudent` ← объединение standard + universal (различия по friend_photos)
+- `buildSpreadPerStudent` ← объединение maximum + individual (различия по friend_photos и thumbnails)
+- `buildGridStudents` ← объединение medium + light + mini (различия по slot_capacity.students)
+
+### Smoke-сцены
+
+58 текущих сцен переписываются: вместо `configType: 'standard'` → `presetSlug: 'standard'` (загружается из БД через тот же loadTemplateSet helper).
+
+### Endpoint /api/layout?action=build_album_test
+
+Принимает `preset_slug` (или `preset_id`) вместо `config_type`. UI обновляется — выбор из dropdown пресетов.
+
+---
+
+## Что НЕ делаем в 0.5
+
+- UI редактора кастомных пресетов
+- UI редактора каталога текстов
+- Builder обработка `additional_spreads` (надо мастеров от дизайнера)
+- Builder обработка `personal_spread_addon` (отдельный модуль)
+- Builder обработка `common_section` (idml-recon §9)
+- Builder обработка `cover_section` (отдельная фаза)
+- Виртуальные страницы (master-cleanup-tz §F)
+- Мульти-учителя
+- Шаблоны текста по умолчанию
+- Версионирование пресетов
+
+Всё это **может быть добавлено позже без миграций БД** — поля уже зарезервированы в JSONB.
+
+---
+
+## Готовность к 0.5.1
+
+После согласования этой спеки — стартуем подэтап 0.5.1.
+
+**Что сделает 0.5.1:**
+1. Миграция БД: создание `config_presets`, удаление `albums.config_type`, добавление `config_preset_id` и `template_set_id` в `albums`, добавление `config_preset_id` в `children`
+2. Файл миграции в репо
+3. **Никакого кода** — только структура БД
+
+**После 0.5.1:** билд продолжает работать как раньше (используя жёстко-зашитые SCENARIOS), потому что код пока не трогаем. Это нормально — постепенный рефакторинг.
+
+В 0.5.2-0.5.5 поэтапно перевозим код на работу с БД-пресетами. До 0.5.5 включительно сохраняется backward compatibility — старый Build Test работает с `config_type`-параметром, который маппится на пресет.
+
+---
+
+# Готов?
+
+Если да — стартуем 0.5.1 (миграция БД).
