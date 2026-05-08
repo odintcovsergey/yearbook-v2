@@ -410,3 +410,157 @@ export type BuildContext = {
   warnings: BuildWarning[];
   spreadCounter: { value: number };
 };
+
+// ─── Pressets (фаза 0.5) ──────────────────────────────────────────────────
+//
+// Тип Preset описывает гибкую конфигурацию альбома, хранящуюся в таблице
+// config_presets. В фазе 0.5.2 эти типы добавлены, но buildAlbum их пока НЕ
+// использует — продолжает работать через старый Config/ConfigType.
+//
+// В фазе 0.5.3 buildAlbum переключится на Preset, scenarios.ts будет удалён.
+//
+// Принцип "богатая БД, простая логика": PresetConfig содержит ВСЕ возможные
+// поля (включая зарезервированные на будущее additional_spreads, financial_mode,
+// common_section, etc.), но builder в фазе 0.5 читает только подмножество
+// (см. docs/phase-0.5-spec.md часть "Что builder читает в 0.5").
+
+/**
+ * Запись пресета из таблицы config_presets.
+ */
+export type Preset = {
+  id: string;
+  tenant_id: string | null;     // NULL = глобальный
+  slug: string;
+  name: string;
+  description: string | null;
+  print_type: PrintType;
+  config: PresetConfig;
+};
+
+/**
+ * Богатая структура config (JSONB в БД).
+ *
+ * 🟢 = читается buildAlbum в фазе 0.5
+ * ⚪ = зарезервировано на будущее, builder игнорирует
+ */
+export type PresetConfig = {
+  student_section: StudentSectionConfig;        // 🟢
+  teacher_section: TeacherSectionConfig | null; // 🟢
+  intro_section: IntroSectionConfig | null;     // 🟢
+  cover_section: CoverSectionConfig;            // ⚪ (cover_type зарезервирован)
+  common_section?: CommonSectionConfig | null;  // ⚪ полностью
+  personal_spread_addon?: PersonalSpreadAddonConfig | null; // ⚪ полностью
+};
+
+// ─── Student section ──────────────────────────────────────────────────────
+
+export type StudentSectionConfig = {
+  spreads_per_student: SpreadsPerStudentConfig;
+  base_layout_mode: BaseLayoutMode;
+  first_spread_content: FirstSpreadContent;
+  additional_spreads: AdditionalSpreadsConfig | null;     // ⚪
+  thumbnails_section: ThumbnailsSectionConfig | null;
+};
+
+export type SpreadsPerStudentConfig = {
+  min: number;
+  max: number;       // 🟢 (только =1 в 0.5)
+  default: number;
+  per_student: boolean; // ⚪
+};
+
+export type BaseLayoutMode =
+  | 'single_page_per_student'  // E-Student-Standard (Стандарт), E-Student-Default (Универсал)
+  | 'spread_per_student'       // E-Max-Left + E-Max-Right (Максимум, Индивидуальный)
+  | 'grid_multiple_students';  // D-Medium / L-6 / N-12 (Медиум, Лайт, Мини)
+
+export type FirstSpreadContent = {
+  portrait: boolean;       // 🟢 (всегда true в 0.5)
+  full_name: boolean;      // 🟢 (всегда true в 0.5)
+  text: TextContent | null;
+  friend_photos: FriendPhotosContent | null;
+};
+
+export type TextContent = {
+  enabled: boolean;
+  max_chars?: number;             // ⚪
+  modes_allowed?: string[];       // ⚪ ('free' / 'quote_catalog')
+  text_template_id?: string | null; // ⚪
+};
+
+export type FriendPhotosContent = {
+  enabled: boolean;
+  min: number;
+  max: number;
+  exclusive_in_album?: boolean;  // ⚪
+};
+
+export type AdditionalSpreadsConfig = {
+  enabled: boolean;
+  max_count: number;
+  price_per_spread: number;
+  content_options?: AdditionalSpreadContentOption[];
+};
+
+export type AdditionalSpreadContentOption = {
+  name: string;
+  uses_friend_photos: boolean;
+  additional_text?: boolean;
+  min_photos: number;
+  max_photos: number;
+};
+
+export type ThumbnailsSectionConfig = {
+  enabled: boolean;
+  preferred_grid_size: number;
+};
+
+// ─── Teacher section ──────────────────────────────────────────────────────
+
+export type TeacherSectionConfig = {
+  enabled: boolean;
+  layout: 'two_page' | 'one_page';
+  show_head_teacher: boolean;
+  max_subjects_per_page: number;
+  right_page_content: 'auto_common_photo' | null;
+  head_teachers_count?: number;          // ⚪ (мульти-учителя позже)
+  default_text_when_empty?: string | null; // ⚪
+};
+
+// ─── Intro section (для soft) ─────────────────────────────────────────────
+
+export type IntroSectionConfig = {
+  type: 'single_page';
+  with_photo?: boolean; // ⚪
+};
+
+// ─── Cover section ────────────────────────────────────────────────────────
+
+export type CoverSectionConfig = {
+  cover_type: 'portrait_photo' | 'common_photo' | 'design_only'; // 🟢 (на будущее)
+  financial_mode?: 'required' | 'optional_paid_visible' | 'optional_paid_hidden'; // ⚪
+  price?: number;       // ⚪
+  per_student?: boolean; // ⚪
+};
+
+// ─── Common section (виньетки, коллажи) — ⚪ полностью ────────────────────
+
+export type CommonSectionConfig = {
+  enabled: boolean;
+  auto_generate: boolean;
+  vignette?: { enabled: boolean; per_student: boolean };
+  collages?: { enabled: boolean; max_count: number };
+  class_photo?: { enabled: boolean };
+  half_class_photos?: { enabled: boolean; max_count: number };
+  quarter_class_photos?: { enabled: boolean; max_count: number };
+};
+
+// ─── Personal spread addon — ⚪ полностью (отдельный модуль продукта) ─────
+
+export type PersonalSpreadAddonConfig = {
+  enabled: boolean;
+  price: number;
+  min_photos: number;
+  max_photos: number;
+  per_student: boolean;
+};
