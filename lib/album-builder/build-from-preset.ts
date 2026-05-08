@@ -347,17 +347,17 @@ export function buildAlbumFromPreset(
   } else if (mode === 'spread_per_student') {
     buildSpreadPerStudent(ctx, ss);
   } else if (mode === 'grid_multiple_students') {
-    buildGridStudents(ctx);
+    buildGridStudents(ctx, ss);
   }
 
   // Раздел 4 — thumbnails (только для Индивидуального; в Лайт/Мини не имеет смысла)
-  const thumbnails = preset.config.student_section.thumbnails_section;
+  const thumbnails = ss.thumbnails_section;
   if (
     thumbnails !== null &&
     thumbnails.enabled &&
     mode !== 'grid_multiple_students'
   ) {
-    buildThumbnailsSection(ctx);
+    buildThumbnailsSection(ctx, ss);
   }
 
   return { spreads: ctx.spreads, warnings: ctx.warnings };
@@ -789,19 +789,503 @@ function buildSpreadPerStudent(
   }
 }
 
-// ─── Stubs (TODO 0.5.3.3) ─────────────────────────────────────────────────
+// ─── Grid students (Медиум / Лайт / Мини) ─────────────────────────────────
 
-function buildGridStudents(ctx: PresetBuildContext): void {
-  pushWarning(ctx, {
-    code: 'master_not_found',
-    detail: 'TODO: buildGridStudents not yet implemented (0.5.3.3)',
-  });
+/**
+ * Dispatcher для grid-комплектаций. Развилка по `grid_base_pages`:
+ * - `null` → fixed grid + last_spread (Медиум)
+ * - число → adaptive grid + overflow (Лайт=4, Мини=2)
+ */
+function buildGridStudents(
+  ctx: PresetBuildContext,
+  ss: StudentSectionConfig,
+): void {
+  if (ss.grid_base_pages === null) {
+    buildFixedGridStudents(ctx, ss);
+  } else {
+    buildAdaptiveGridStudents(ctx, ss);
+  }
 }
 
-function buildThumbnailsSection(ctx: PresetBuildContext): void {
+/**
+ * Fixed grid (Медиум) — обобщение `build.ts:buildMediumStudents` с заменой
+ * декларативного `last_spread.left_filter` на семантический discovery
+ * через `page_role='student_last'` + `slot_capacity_min.students`.
+ *
+ * - capacity берётся из найденного `student_grid_left` мастера
+ * - hasQuote берётся из `ss.first_spread_content.text?.enabled`
+ * - last-мастер (если найден) определяет hasQuote сам через placeholders
+ */
+function buildFixedGridStudents(
+  ctx: PresetBuildContext,
+  ss: StudentSectionConfig,
+): void {
+  const cfgType = ctx.cfgType;
+  const total = ctx.input.students.length;
+  const hasQuote = ss.first_spread_content.text?.enabled === true;
+
+  const leftR = findMaster(ctx.templateSet.spreads, {
+    page_role: 'student_grid_left',
+    applies_to_config: cfgType,
+  });
+  const rightR = findMaster(ctx.templateSet.spreads, {
+    page_role: 'student_grid_right',
+    applies_to_config: cfgType,
+  });
+  if (!leftR.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `fixed_grid student_grid_left for ${cfgType}`,
+    });
+    return;
+  }
+  if (!rightR.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `fixed_grid student_grid_right for ${cfgType}`,
+    });
+    return;
+  }
+  if (leftR.warning) pushWarning(ctx, leftR.warning);
+  if (rightR.warning) pushWarning(ctx, rightR.warning);
+
+  const N = leftR.master.slot_capacity?.students ?? 0;
+  if (N < 1) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `fixed_grid: ${leftR.master.name} has slot_capacity.students<1`,
+    });
+    return;
+  }
+
+  // Last_spread semantic discovery
+  const remainder = total % N;
+  let lastLeftMaster: SpreadTemplate | null = null;
+  let lastSlotsPerPage = 0;
+  let lastHasQuote = false;
+
+  if (remainder > 0) {
+    const lastR = findMaster(ctx.templateSet.spreads, {
+      page_role: 'student_last',
+      applies_to_config: cfgType,
+      slot_capacity_min: { students: remainder },
+    });
+    if (lastR.ok) {
+      lastLeftMaster = lastR.master;
+      lastSlotsPerPage = lastR.master.slot_capacity?.students ?? 0;
+      lastHasQuote = hasPlaceholderPrefix(lastR.master, 'studentquote_');
+      if (lastR.warning) pushWarning(ctx, lastR.warning);
+    }
+  }
+
+  const useLastSpecial = lastLeftMaster !== null;
+  const regularPages = useLastSpecial ? Math.floor(total / N) : Math.ceil(total / N);
+
+  // Regular pages с чередованием Left/Right
+  for (let i = 0; i < regularPages; i++) {
+    const slice = ctx.input.students.slice(i * N, (i + 1) * N);
+    const isLeft = i % 2 === 0;
+    const master = isLeft ? leftR.master : rightR.master;
+
+    if (slice.length < N) {
+      pushWarning(ctx, {
+        code: 'students_grid_no_special_master',
+        detail: `${cfgType}: remainder=${remainder} учеников на последней странице (${master.name}) — нет специального мастера, пустые слоты заполнены null (см. master-cleanup-tz §A5)`,
+      });
+    }
+
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: master.id,
+      template_name: master.name,
+      data: buildGridStudentData(slice, N, hasQuote),
+    });
+  }
+
+  // Special last spread: левая = last-мастер с classphotoframe, правая = dynamic G-*
+  if (useLastSpecial && lastLeftMaster) {
+    const consumed = regularPages * N;
+    const lastSlice = ctx.input.students.slice(consumed);
+
+    const leftData = buildGridStudentData(lastSlice, lastSlotsPerPage, lastHasQuote);
+    if (hasPlaceholder(lastLeftMaster, 'classphotoframe')) {
+      const fc = ctx.input.common_photos.full_class;
+      if (fc.length >= 1) {
+        leftData.classphotoframe = fc[0];
+      } else {
+        leftData.classphotoframe = null;
+        pushWarning(ctx, {
+          code: 'class_photo_missing',
+          detail: `master ${lastLeftMaster.name} has classphotoframe placeholder but common_photos.full_class is empty`,
+        });
+      }
+    }
+
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: lastLeftMaster.id,
+      template_name: lastLeftMaster.name,
+      data: leftData,
+    });
+
+    const rightMaster = pickRightCommonPhotoMaster(ctx);
+    if (!rightMaster) {
+      pushWarning(ctx, {
+        code: 'no_right_teacher_master',
+        detail: `last_spread right: ни half (>=2) ни full_class (>=1) — правая страница пропущена`,
+      });
+      return;
+    }
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: rightMaster.id,
+      template_name: rightMaster.name,
+      data: buildTeacherRightData(ctx, rightMaster, []),
+    });
+  }
+}
+
+/**
+ * Wrapper: вызывает adaptive-grid core с `basePages` из preset
+ * и `hasQuote` из `text.enabled`. Защитная проверка на `null` (диспетчер
+ * должен был отправить в `buildFixedGridStudents`).
+ */
+function buildAdaptiveGridStudents(
+  ctx: PresetBuildContext,
+  ss: StudentSectionConfig,
+): void {
+  if (ss.grid_base_pages === null) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: 'buildAdaptiveGridStudents called with grid_base_pages=null',
+    });
+    return;
+  }
+  const hasQuote = ss.first_spread_content.text?.enabled === true;
+  buildAdaptiveGridStudentsCore(ctx, ss.grid_base_pages, hasQuote);
+}
+
+/**
+ * Core adaptive grid алгоритм. Используется и для основной student_section
+ * (Лайт/Мини), и для thumbnails (Индивидуальный, hasQuote=false).
+ *
+ * Адаптировано из `build.ts:buildAdaptiveGridStudents` с заменой
+ * декларативного `section.overflow.*_filter` на семантический discovery
+ * через `page_role='student_overflow' | 'student_overflow_right'`.
+ *
+ * Шаги:
+ *   1. Clamping через max-capacity мастер: `totalForBase = min(total, basePages × maxCap)`
+ *   2. Подбор минимально-достаточных left/right мастеров через `pickAdaptiveGrid`
+ *   3. Заполнение `basePages` базовых страниц с чередованием Left/Right
+ *   4. Overflow — три ветки по `overflowCount`:
+ *      a. ≤ rowCapacity → single overflow-row
+ *      b. ≤ slotsPerPage → ещё одна regular-страница с null'ами
+ *      c. > slotsPerPage → full grid + overflow_row_right (Лайт 31-32)
+ */
+function buildAdaptiveGridStudentsCore(
+  ctx: PresetBuildContext,
+  basePages: number,
+  hasQuote: boolean,
+): void {
+  if (basePages < 1) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `adaptive_grid: basePages must be >= 1, got ${basePages}`,
+    });
+    return;
+  }
+
+  const cfgType = ctx.cfgType;
+  const total = ctx.input.students.length;
+
+  const baseLeftFilter: MasterFilter = {
+    page_role: 'student_grid_left',
+    applies_to_config: cfgType,
+  };
+  const baseRightFilter: MasterFilter = {
+    page_role: 'student_grid_right',
+    applies_to_config: cfgType,
+  };
+
+  // 1. Clamping
+  const maxLeftMaster = pickAdaptiveGridMaxCapacity(ctx, baseLeftFilter);
+  if (!maxLeftMaster) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `adaptive_grid LEFT: no candidates for cfgType=${cfgType}`,
+    });
+    return;
+  }
+  const maxCapacityPerPage = maxLeftMaster.slot_capacity?.students ?? 0;
+  if (maxCapacityPerPage < 1) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `adaptive_grid LEFT: max master ${maxLeftMaster.name} has slot_capacity.students<1`,
+    });
+    return;
+  }
+  const totalForBase = Math.min(total, basePages * maxCapacityPerPage);
+
+  // 2. Минимально-достаточные мастера
+  const leftMaster = pickAdaptiveGrid(ctx, baseLeftFilter, totalForBase, basePages);
+  const rightMaster = pickAdaptiveGrid(ctx, baseRightFilter, totalForBase, basePages);
+  if (!leftMaster || !rightMaster) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `adaptive_grid: missing left or right master for ${cfgType}`,
+    });
+    return;
+  }
+
+  const slotsPerPage = leftMaster.slot_capacity?.students ?? 0;
+  if (slotsPerPage < 1) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `adaptive_grid LEFT: ${leftMaster.name} has slot_capacity.students<1`,
+    });
+    return;
+  }
+
+  const maxOnBase = basePages * slotsPerPage;
+
+  // 3. Базовые страницы
+  const baseStudents = ctx.input.students.slice(0, Math.min(total, maxOnBase));
+  for (let i = 0; i < basePages; i++) {
+    const slice = baseStudents.slice(i * slotsPerPage, (i + 1) * slotsPerPage);
+    if (slice.length === 0) break;
+    const isLeft = i % 2 === 0;
+    const master = isLeft ? leftMaster : rightMaster;
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: master.id,
+      template_name: master.name,
+      data: buildGridStudentData(slice, slotsPerPage, hasQuote),
+    });
+  }
+
+  // 4. Overflow
+  const overflowCount = total - maxOnBase;
+  if (overflowCount <= 0) return;
+
+  const rowR = findMaster(ctx.templateSet.spreads, {
+    page_role: 'student_overflow',
+    applies_to_config: cfgType,
+  });
+  if (!rowR.ok) {
+    pushWarning(ctx, {
+      code: 'students_overflow',
+      detail: `${cfgType}: total=${total} > maxOnBase=${maxOnBase}, overflow strategy не задана (нет мастера student_overflow)`,
+    });
+    return;
+  }
+  if (rowR.warning) pushWarning(ctx, rowR.warning);
+  const rowCapacity = rowR.master.slot_capacity?.students ?? 0;
+
+  const overflowStudents = ctx.input.students.slice(maxOnBase);
+
+  if (overflowCount <= rowCapacity) {
+    // Branch 1: single overflow-row
+    buildOverflowRow(ctx, rowR.master, overflowStudents, rowCapacity);
+  } else if (overflowCount <= slotsPerPage) {
+    // Branch 2: ещё одна regular-страница с null'ами
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: leftMaster.id,
+      template_name: leftMaster.name,
+      data: buildGridStudentData(overflowStudents, slotsPerPage, hasQuote),
+    });
+  } else {
+    // Branch 3: full grid + overflow_row_right (Лайт 31-32)
+    const rightRowR = findMaster(ctx.templateSet.spreads, {
+      page_role: 'student_overflow_right',
+      applies_to_config: cfgType,
+    });
+    if (!rightRowR.ok) {
+      pushWarning(ctx, {
+        code: 'master_not_found',
+        detail: `overflow grid_plus_row: no student_overflow_right master, overflowCount=${overflowCount}`,
+      });
+      return;
+    }
+    if (rightRowR.warning) pushWarning(ctx, rightRowR.warning);
+
+    const fullSlice = overflowStudents.slice(0, slotsPerPage);
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: leftMaster.id,
+      template_name: leftMaster.name,
+      data: buildGridStudentData(fullSlice, slotsPerPage, hasQuote),
+    });
+
+    const remainSlice = overflowStudents.slice(slotsPerPage);
+    const rightRowCapacity = rightRowR.master.slot_capacity?.students ?? rowCapacity;
+    buildOverflowRow(ctx, rightRowR.master, remainSlice, rightRowCapacity);
+  }
+}
+
+/**
+ * Thumbnails-секция (только для пресетов с `thumbnails_section.enabled=true`,
+ * например Индивидуальный). Реализована через `buildAdaptiveGridStudentsCore`
+ * с `basePages = ceil(total / preferred_grid_size)` и `hasQuote=false`
+ * (у thumbnails-мастеров нет quote-слотов).
+ */
+function buildThumbnailsSection(
+  ctx: PresetBuildContext,
+  ss: StudentSectionConfig,
+): void {
+  const ts = ss.thumbnails_section;
+  if (!ts || !ts.enabled) return;
+
+  const total = ctx.input.students.length;
+  const preferred = ts.preferred_grid_size;
+  if (preferred < 1) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `thumbnails: preferred_grid_size must be >= 1, got ${preferred}`,
+    });
+    return;
+  }
+
+  const basePages = Math.ceil(total / preferred);
+  if (basePages < 1) return;
+
+  buildAdaptiveGridStudentsCore(ctx, basePages, false);
+}
+
+// ─── Grid helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Заполнить data объект для grid-страницы. Студенты идут с `_1, _2, …, _N`,
+ * пустые слоты — `null` (для скрытия placeholder'ов в фазе 2-4 рендера).
+ * Все ключи в lowercase (idml-recon §6.4): `studentportrait_N`,
+ * `studentname_N`, и опционально `studentquote_N` если `hasQuote=true`.
+ */
+function buildGridStudentData(
+  students: Student[],
+  slotsPerPage: number,
+  hasQuote: boolean,
+): Record<string, string | null> {
+  const data: Record<string, string | null> = {};
+  for (let i = 0; i < students.length; i++) {
+    const n = i + 1;
+    data[`studentportrait_${n}`] = students[i].portrait;
+    data[`studentname_${n}`] = students[i].full_name;
+    if (hasQuote) {
+      data[`studentquote_${n}`] = students[i].quote;
+    }
+  }
+  for (let n = students.length + 1; n <= slotsPerPage; n++) {
+    data[`studentportrait_${n}`] = null;
+    data[`studentname_${n}`] = null;
+    if (hasQuote) {
+      data[`studentquote_${n}`] = null;
+    }
+  }
+  return data;
+}
+
+/**
+ * Возвращает grid-мастер с **максимальной** `slot_capacity.students` среди
+ * доступных кандидатов. Используется для clamping в adaptive grid:
+ * нужно знать максимальный capacity ДО выбора оптимального через `pickAdaptiveGrid`.
+ */
+function pickAdaptiveGridMaxCapacity(
+  ctx: PresetBuildContext,
+  baseFilter: MasterFilter,
+): SpreadTemplate | null {
+  const filter: MasterFilter = { ...baseFilter, applies_to_config: ctx.cfgType };
+  const candidates = ctx.templateSet.spreads.filter((s) => {
+    if (s.page_role !== filter.page_role) return false;
+    if (s.default_for_configs.indexOf(filter.applies_to_config) < 0) return false;
+    return s.slot_capacity !== null && typeof s.slot_capacity.students === 'number';
+  });
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    const aCap = a.slot_capacity?.students ?? 0;
+    const bCap = b.slot_capacity?.students ?? 0;
+    return bCap - aCap;
+  });
+
+  return candidates[0];
+}
+
+/**
+ * Возвращает grid-мастер с **минимально-достаточной** `slot_capacity.students`
+ * для `required_capacity = ceil(totalStudents / basePages)`. Если ни один
+ * не подходит — fallback на максимальный + warning `adaptive_grid_fallback`.
+ * Если кандидатов нет — `null` (вызывающая сторона пишет `master_not_found`).
+ */
+function pickAdaptiveGrid(
+  ctx: PresetBuildContext,
+  baseFilter: MasterFilter,
+  totalStudents: number,
+  basePages: number,
+): SpreadTemplate | null {
+  const filter: MasterFilter = { ...baseFilter, applies_to_config: ctx.cfgType };
+  const requiredCapacity = Math.ceil(totalStudents / basePages);
+
+  const candidates = ctx.templateSet.spreads.filter((s) => {
+    if (s.page_role !== filter.page_role) return false;
+    if (s.default_for_configs.indexOf(filter.applies_to_config) < 0) return false;
+    return s.slot_capacity !== null && typeof s.slot_capacity.students === 'number';
+  });
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    const aCap = a.slot_capacity?.students ?? 0;
+    const bCap = b.slot_capacity?.students ?? 0;
+    return aCap - bCap;
+  });
+
+  for (let i = 0; i < candidates.length; i++) {
+    const cap = candidates[i].slot_capacity?.students ?? 0;
+    if (cap >= requiredCapacity) {
+      return candidates[i];
+    }
+  }
+
+  const fallback = candidates[candidates.length - 1];
   pushWarning(ctx, {
-    code: 'master_not_found',
-    detail: 'TODO: buildThumbnailsSection not yet implemented (0.5.3.3)',
+    code: 'adaptive_grid_fallback',
+    detail: `${ctx.cfgType}: required capacity=${requiredCapacity} (для ${totalStudents} учеников на ${basePages} страниц), max available=${fallback.slot_capacity?.students ?? 0}, выбран ${fallback.name}`,
+  });
+  return fallback;
+}
+
+/**
+ * Сборка overflow-row страницы (Лайт/Мини). Заполняет `studentportrait_N`/
+ * `studentname_N` (без quote — у overflow-row мастеров нет цитатных слотов)
+ * и опционально `classphotoframe` из `common_photos.full_class[0]`.
+ */
+function buildOverflowRow(
+  ctx: PresetBuildContext,
+  master: SpreadTemplate,
+  students: Student[],
+  rowCapacity: number,
+): void {
+  const data = buildGridStudentData(students, rowCapacity, false);
+
+  if (hasPlaceholder(master, 'classphotoframe')) {
+    const fc = ctx.input.common_photos.full_class;
+    if (fc.length >= 1) {
+      data.classphotoframe = fc[0];
+    } else {
+      data.classphotoframe = null;
+      pushWarning(ctx, {
+        code: 'class_photo_missing',
+        detail: `master ${master.name} has classphotoframe placeholder but common_photos.full_class is empty`,
+      });
+    }
+  }
+
+  ctx.spreads.push({
+    spread_index: ctx.spreadCounter.value++,
+    template_id: master.id,
+    template_name: master.name,
+    data,
   });
 }
 
@@ -957,6 +1441,18 @@ function studentSinglePageData(
 function hasPlaceholder(master: SpreadTemplate, label: string): boolean {
   for (let i = 0; i < master.placeholders.length; i++) {
     if (master.placeholders[i].label === label) return true;
+  }
+  return false;
+}
+
+/**
+ * Проверка что в `placeholders` мастера есть placeholder, label которого
+ * начинается с заданного префикса. Используется для динамического определения
+ * `hasQuote` у last-мастера (наличие `studentquote_N`-слотов).
+ */
+function hasPlaceholderPrefix(master: SpreadTemplate, prefix: string): boolean {
+  for (let i = 0; i < master.placeholders.length; i++) {
+    if (master.placeholders[i].label.indexOf(prefix) === 0) return true;
   }
   return false;
 }
