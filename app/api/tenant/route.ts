@@ -443,7 +443,7 @@ export async function GET(req: NextRequest) {
 
     const { data } = await supabaseAdmin
       .from('teachers')
-      .select('id, full_name, position, description, access_token, submitted_at, created_at')
+      .select('id, full_name, position, description, access_token, submitted_at, created_at, is_head_teacher')
       .eq('album_id', albumId)
       .order('created_at')
 
@@ -1840,7 +1840,7 @@ export async function POST(req: NextRequest) {
   // update_teacher — редактирование данных учителя
   // ----------------------------------------------------------
   if (body.action === 'update_teacher') {
-    const { teacher_id, full_name, position, description } = body
+    const { teacher_id, full_name, position, description, is_head_teacher } = body
     if (!teacher_id) {
       return NextResponse.json({ error: 'teacher_id обязателен' }, { status: 400 })
     }
@@ -1854,8 +1854,40 @@ export async function POST(req: NextRequest) {
     if (position !== undefined) updates.position = position?.trim() || null
     if (description !== undefined) updates.description = description?.trim() || ''
 
-    if (Object.keys(updates).length === 0) {
+    const headFlagProvided = is_head_teacher !== undefined
+    const wantHead = is_head_teacher === true
+
+    if (Object.keys(updates).length === 0 && !headFlagProvided) {
       return NextResponse.json({ error: 'Нет полей для обновления' }, { status: 400 })
+    }
+
+    // Radio-pattern: если выставляем is_head_teacher=true — сначала
+    // сбросить флаг у остальных учителей того же альбома (partial unique
+    // index не разрешит двух head на альбом).
+    if (headFlagProvided && wantHead) {
+      const { data: teacherRow, error: fetchErr } = await supabaseAdmin
+        .from('teachers')
+        .select('album_id')
+        .eq('id', teacher_id)
+        .single()
+
+      if (fetchErr || !teacherRow) {
+        return NextResponse.json({ error: 'Учитель не найден' }, { status: 404 })
+      }
+
+      const { error: resetErr } = await supabaseAdmin
+        .from('teachers')
+        .update({ is_head_teacher: false })
+        .eq('album_id', teacherRow.album_id)
+        .neq('id', teacher_id)
+
+      if (resetErr) {
+        return NextResponse.json({ error: resetErr.message }, { status: 500 })
+      }
+    }
+
+    if (headFlagProvided) {
+      updates.is_head_teacher = wantHead
     }
 
     const { error } = await supabaseAdmin

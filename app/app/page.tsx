@@ -2611,6 +2611,7 @@ type Teacher = {
   description: string | null
   access_token: string
   submitted_at: string | null
+  is_head_teacher: boolean
 }
 
 function TeachersTab({
@@ -2628,10 +2629,16 @@ function TeachersTab({
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<{ full_name: string; position: string; description: string }>({
+  const [editForm, setEditForm] = useState<{
+    full_name: string
+    position: string
+    description: string
+    is_head_teacher: boolean
+  }>({
     full_name: '',
     position: '',
     description: '',
+    is_head_teacher: false,
   })
 
   const load = async () => {
@@ -2669,6 +2676,7 @@ function TeachersTab({
       full_name: t.full_name ?? '',
       position: t.position ?? '',
       description: t.description ?? '',
+      is_head_teacher: t.is_head_teacher,
     })
   }
 
@@ -2683,6 +2691,7 @@ function TeachersTab({
         full_name: editForm.full_name,
         position: editForm.position,
         description: editForm.description,
+        is_head_teacher: editForm.is_head_teacher,
       }),
     })
     if (r.ok) {
@@ -2755,7 +2764,7 @@ function TeachersTab({
         </div>
       ) : (
         <div className="space-y-3">
-          {teachers.map((t, i) => (
+          {teachers.map((t) => (
             <div key={t.id} className="border border-gray-100 rounded-xl p-4">
               {editingId === t.id ? (
                 <div className="space-y-3">
@@ -2781,7 +2790,22 @@ function TeachersTab({
                       disabled={busy}
                     />
                   </div>
-                  {i === 0 && (
+                  <div>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={editForm.is_head_teacher}
+                        onChange={(e) => setEditForm(f => ({ ...f, is_head_teacher: e.target.checked }))}
+                        disabled={busy}
+                        className="w-4 h-4"
+                      />
+                      <span>Классный руководитель</span>
+                    </label>
+                    <p className="text-xs text-gray-400 mt-1 ml-6">
+                      На альбом отмечается один. При установке этого флага у других учителей альбома он автоматически снимется.
+                    </p>
+                  </div>
+                  {editForm.is_head_teacher && (
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">
                         Текст от классного руководителя
@@ -2795,7 +2819,7 @@ function TeachersTab({
                         disabled={busy}
                       />
                       <p className="text-xs text-gray-400 mt-1">
-                        Отображается только у первого учителя (классного руководителя)
+                        Отображается только у классного руководителя
                       </p>
                     </div>
                   )}
@@ -2821,7 +2845,7 @@ function TeachersTab({
                         <div className="font-medium">
                           {t.full_name || <span className="text-gray-400">Имя не заполнено</span>}
                         </div>
-                        {i === 0 && (
+                        {t.is_head_teacher && (
                           <span className="badge-blue">Классный руководитель</span>
                         )}
                         {t.submitted_at ? (
@@ -2833,7 +2857,7 @@ function TeachersTab({
                       {t.position && (
                         <div className="text-sm text-gray-500 mt-0.5">{t.position}</div>
                       )}
-                      {i === 0 && t.description && (
+                      {t.is_head_teacher && t.description && (
                         <div className="text-sm text-gray-700 mt-2 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap">
                           {t.description}
                         </div>
