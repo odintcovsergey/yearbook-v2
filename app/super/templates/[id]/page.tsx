@@ -18,8 +18,8 @@ type BuildAlbumResult = {
   summary: {
     total_spreads: number
     total_warnings: number
-    config_type: string
-    print_type: string
+    preset_slug: string
+    preset_name: string
     students_count: number
     subjects_count: number
   }
@@ -97,8 +97,7 @@ export default function TemplateDetailPage() {
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          config_type: bConfigType,
-          print_type: bPrintType,
+          preset_slug: `${bConfigType}-${bPrintType}`,
           students_count: bStudentsCount,
           subjects_count: bSubjectsCount,
           with_head_teacher: bWithHeadTeacher,
@@ -331,7 +330,9 @@ export default function TemplateDetailPage() {
                           <div>spreads: {buildResult.summary.total_spreads}</div>
                           <div>warnings: {buildResult.summary.total_warnings}</div>
                           <div className="text-xs text-gray-500 mt-1">
-                            {buildResult.summary.config_type} / {buildResult.summary.print_type}
+                            {buildResult.summary.preset_slug}
+                            {' '}
+                            <span className="text-gray-400">({buildResult.summary.preset_name})</span>
                             {' · '}
                             students={buildResult.summary.students_count}
                             {' · '}

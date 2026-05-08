@@ -4,18 +4,15 @@ import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/aut
 import { parseIdml } from '@/lib/idml-converter/parse'
 import { uploadTemplateSetToSupabase, type UploadResult } from '@/lib/idml-converter/upload'
 import type { ParsedTemplateSet } from '@/lib/idml-converter/types'
-import { buildAlbum } from '@/lib/album-builder/build'
-import { loadTemplateSet } from '@/lib/album-builder/load-template-set'
+import { buildAlbum, loadTemplateSet, loadPresetBySlug } from '@/lib/album-builder'
 import type {
   Student,
   Subject,
   HeadTeacher,
   AlbumInput,
-  Config,
-  ConfigType,
-  PrintType,
+  Preset,
   TemplateSet,
-} from '@/lib/album-builder/types'
+} from '@/lib/album-builder'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -295,13 +292,6 @@ async function handleImportIdml(
 // это инструмент проверки сценариев автовёрстки на UI.
 // ============================================================
 
-const VALID_CONFIG_TYPES: ConfigType[] = [
-  'standard', 'universal', 'maximum', 'medium',
-  'light', 'mini', 'individual',
-]
-
-const VALID_PRINT_TYPES: PrintType[] = ['layflat', 'soft']
-
 async function handleBuildAlbumTest(req: NextRequest): Promise<NextResponse> {
   let body: unknown
   try {
@@ -315,18 +305,10 @@ async function handleBuildAlbumTest(req: NextRequest): Promise<NextResponse> {
   }
   const b = body as Record<string, unknown>
 
-  const configType = b.config_type
-  if (typeof configType !== 'string' || !VALID_CONFIG_TYPES.includes(configType as ConfigType)) {
+  const presetSlug = b.preset_slug
+  if (typeof presetSlug !== 'string' || presetSlug.length === 0) {
     return NextResponse.json(
-      { error: `config_type must be one of ${VALID_CONFIG_TYPES.join(', ')}` },
-      { status: 400 },
-    )
-  }
-
-  const printType = b.print_type
-  if (typeof printType !== 'string' || !VALID_PRINT_TYPES.includes(printType as PrintType)) {
-    return NextResponse.json(
-      { error: 'print_type must be layflat or soft' },
+      { error: 'preset_slug is required (e.g. "standard-layflat")' },
       { status: 400 },
     )
   }
@@ -399,6 +381,16 @@ async function handleBuildAlbumTest(req: NextRequest): Promise<NextResponse> {
     )
   }
 
+  let preset: Preset
+  try {
+    preset = await loadPresetBySlug(supabaseAdmin, presetSlug)
+  } catch (e) {
+    return NextResponse.json(
+      { error: `preset_slug ${presetSlug} not found: ${(e as Error).message}` },
+      { status: 400 },
+    )
+  }
+
   const input: AlbumInput = {
     template_set_id: templateSet.id,
     head_teacher: headTeacher,
@@ -406,13 +398,8 @@ async function handleBuildAlbumTest(req: NextRequest): Promise<NextResponse> {
     students,
     common_photos: commonPhotos,
   }
-  const config: Config = {
-    config_type: configType as ConfigType,
-    print_type: printType as PrintType,
-    template_set: templateSet,
-  }
 
-  const result = buildAlbum(input, config)
+  const result = buildAlbum(input, preset, templateSet)
 
   return NextResponse.json({
     spreads: result.spreads,
@@ -420,8 +407,8 @@ async function handleBuildAlbumTest(req: NextRequest): Promise<NextResponse> {
     summary: {
       total_spreads: result.spreads.length,
       total_warnings: result.warnings.length,
-      config_type: config.config_type,
-      print_type: config.print_type,
+      preset_slug: preset.slug,
+      preset_name: preset.name,
       students_count: studentsCount,
       subjects_count: subjectsCount,
     },

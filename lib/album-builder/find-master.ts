@@ -21,8 +21,7 @@
  * (стабильная сортировка сохраняет порядок при равенстве).
  */
 
-import type { SpreadTemplate, BuildWarning, SlotCapacity } from './types';
-import type { MasterFilter } from './scenarios';
+import type { SpreadTemplate, BuildWarning, SlotCapacity, MasterFilter } from './types';
 
 /**
  * Результат `findMaster`.

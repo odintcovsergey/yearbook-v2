@@ -571,3 +571,31 @@ export type PersonalSpreadAddonConfig = {
   max_photos: number;
   per_student: boolean;
 };
+
+// ─── MasterFilter (резолвер мастеров, используется в find-master + builder) ─
+
+/**
+ * Семантический фильтр для поиска мастера в `template_set.spreads`.
+ *
+ * `slot_capacity_min` — минимальная требуемая ёмкость по соответствующим
+ * ключам. Кандидат проходит, если для каждого присутствующего ключа
+ * `candidate.slot_capacity[key] >= filter[key]`.
+ *
+ * `is_fallback_allowed` — по умолчанию `false`: fallback-мастера
+ * (`is_fallback=true`) рассматриваются только когда специализированный
+ * кандидат не нашёлся.
+ *
+ * `expected_name_hint` — приоритет точного совпадения имени при ambiguous
+ * match (см. find-master.ts:pickPreferringHint). Также используется для
+ * генерации `name_mismatch` warning.
+ *
+ * До 0.5.3.4 этот тип жил в scenarios.ts; перенесён сюда в финале фазы 0.5.3.
+ */
+export type MasterFilter = {
+  page_role: PageRole;
+  applies_to_config: ConfigType;
+  slot_capacity_min?: Partial<SlotCapacity>;
+  is_spread?: boolean;
+  is_fallback_allowed?: boolean;
+  expected_name_hint?: string;
+};

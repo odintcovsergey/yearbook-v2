@@ -18,11 +18,10 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import { buildAlbum } from '../lib/album-builder';
-import { loadTemplateSet } from '../lib/album-builder/load-template-set';
+import { buildAlbum, loadTemplateSet, loadPresetBySlug } from '../lib/album-builder';
 import type {
   AlbumInput,
-  Config,
+  Preset,
   TemplateSet,
   ConfigType,
   PrintType,
@@ -36,6 +35,17 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
+
+const presetCache = new Map<string, Preset>();
+
+async function getPreset(slug: string): Promise<Preset> {
+  let p = presetCache.get(slug);
+  if (!p) {
+    p = await loadPresetBySlug(supabase, slug);
+    presetCache.set(slug, p);
+  }
+  return p;
+}
 
 // ─── Тестовые данные ────────────────────────────────────────────────────────
 
@@ -857,18 +867,16 @@ function buildInput(scene: Scene, ts: TemplateSet): AlbumInput {
   };
 }
 
-function runScene(scene: Scene, ts: TemplateSet): { passed: boolean; lines: string[] } {
+async function runScene(scene: Scene, ts: TemplateSet): Promise<{ passed: boolean; lines: string[] }> {
   const lines: string[] = [];
   const input = buildInput(scene, ts);
-  const config: Config = {
-    print_type: scene.printType ?? 'layflat',
-    config_type: scene.configType,
-    template_set: ts,
-  };
+  const printType = scene.printType ?? 'layflat';
+  const slug = `${scene.configType}-${printType}`;
+  const preset = await getPreset(slug);
 
   let result;
   try {
-    result = buildAlbum(input, config);
+    result = buildAlbum(input, preset, ts);
   } catch (e) {
     lines.push(`  ❌ THROW: ${(e as Error).message}`);
     return { passed: false, lines };
@@ -930,7 +938,7 @@ async function main() {
   for (const scene of scenes) {
     total++;
     console.log(`=== ${scene.label} ===`);
-    const r = runScene(scene, ts);
+    const r = await runScene(scene, ts);
     r.lines.forEach((l) => console.log(l));
     if (r.passed) passed++;
     console.log('');

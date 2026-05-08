@@ -1,8 +1,8 @@
 /**
  * Публичный API album-builder.
  *
- * В подэтапе 0.9 экспортируются только декларации (типы + helpers + SCENARIOS).
- * Алгоритм buildAlbum появится в 0.10.
+ * Финальная версия после 0.5.3.4: единственный builder работает с Preset,
+ * scenarios.ts удалён, типы scenarios исключены из публичного API.
  */
 
 export type {
@@ -24,29 +24,28 @@ export type {
   Placeholder,
   SpreadTemplate,
   TemplateSet,
-  Config,
   SpreadInstance,
   BuildWarningCode,
   BuildWarning,
   BuildResult,
-  BuildContext,
+  MasterFilter,
+  Preset,
+  PresetConfig,
+  StudentSectionConfig,
+  TeacherSectionConfig,
+  IntroSectionConfig,
+  CoverSectionConfig,
+  BaseLayoutMode,
+  FirstSpreadContent,
+  FriendPhotosContent,
+  ThumbnailsSectionConfig,
 } from './types';
 
 export { chunk, assertExhaustive, pushWarning } from './utils';
 
-export { SCENARIOS, TEACHER_SECTION_LAYFLAT, INTRO_SECTION_S_INTRO } from './scenarios';
-export type {
-  MasterFilter,
-  StudentSection,
-  ScenarioDef,
-  TeacherSpreadVariant,
-  TeacherSection,
-  IntroSection,
-  SoftOverrides,
-  LastSpread,
-} from './scenarios';
-
 export { findMaster } from './find-master';
 export type { FindMasterResult } from './find-master';
 
-export { buildAlbum } from './build';
+export { buildAlbum } from './build-from-preset';
+
+export { loadTemplateSet, loadPresetBySlug } from './load-template-set';

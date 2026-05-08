@@ -1,25 +1,24 @@
 /**
- * buildAlbumFromPreset — новый builder, работающий напрямую с Preset (фаза 0.5.3.1).
+ * buildAlbum — единственный builder фазы 0.5.3+. Читает Preset напрямую
+ * (без промежуточного ScenarioDef) и собирает альбом через семантический
+ * resolver `findMaster` поверх `template_set.spreads`.
  *
- * Архитектурный путь Г1: прямое переписывание под Preset, без промежуточного
- * ScenarioDef. Старый `build.ts` и `scenarios.ts` продолжают работать
- * параллельно — old smoke 58/58 на старом builder'е остаётся зелёным.
- * Удаление старого builder'а — в подэтапе 0.5.3.4.
+ * Эволюция:
+ *   - 0.5.3.1 — скелет: intro, teacher (two_page/one_page), заглушки student
+ *   - 0.5.3.2 — buildSinglePagePerStudent + buildSpreadPerStudent
+ *   - 0.5.3.3 — buildGridStudents (Медиум/Лайт/Мини) + buildThumbnailsSection
+ *   - 0.5.3.4 — финал: старый build.ts/scenarios.ts удалены, функция
+ *               переименована в buildAlbum, MasterFilter перенесён в types.ts
  *
- * Статус 0.5.3.1 (скелет):
- *   ✅ Validation, empty students guard
- *   ✅ Intro section (только soft)
- *   ✅ Teacher section: layout='two_page' (F+G как в layflat) и
- *      layout='one_page' (F-*-R как в Mini-soft)
- *   ⏳ Student section dispatcher — заглушки:
- *      - single_page_per_student   (TODO 0.5.3.2)
- *      - spread_per_student        (TODO 0.5.3.2)
- *      - grid_multiple_students    (TODO 0.5.3.3)
- *   ⏳ Thumbnails section          (TODO 0.5.3.3)
- *
- * Builder из 0.5.3.1 НЕ используется production-кодом (`/api/layout` и smoke
- * продолжают работать через старый buildAlbum). Внутренний экспорт без
- * подключения к index.ts — будет открыт в 0.5.3.4.
+ * Принципы:
+ *   - Семантический resolver: фильтр (`page_role` + `applies_to_config` +
+ *     `slot_capacity_min`) вместо имени мастера
+ *   - Hardcoded teacher-варианты остаются (TEACHER_TWO_PAGE_VARIANTS,
+ *     TEACHER_ONE_PAGE_VARIANTS): набор вариантов определяет дизайн шаблона,
+ *     не пресет
+ *   - Грид-логика разбита по `grid_base_pages`: `null` → fixed (Медиум),
+ *     число → adaptive (Лайт/Мини). Thumbnails-секция переиспользует core
+ *     adaptive-grid с `hasQuote=false`
  */
 
 import type {
@@ -28,10 +27,9 @@ import type {
   BuildWarning,
   ConfigType,
   HeadTeacher,
-  PageRole,
+  MasterFilter,
   Preset,
   PrintType,
-  SlotCapacity,
   SpreadInstance,
   SpreadTemplate,
   Student,
@@ -41,22 +39,6 @@ import type {
 } from './types';
 import { findMaster } from './find-master';
 import { chunk } from './utils';
-
-// ─── Локальные типы ──────────────────────────────────────────────────────
-
-/**
- * Локальный аналог `MasterFilter` из `scenarios.ts`. Структурно идентичен,
- * совместим с `findMaster`. В 0.5.3.4 при удалении scenarios.ts остаётся
- * только эта копия.
- */
-type MasterFilter = {
-  page_role: PageRole;
-  applies_to_config: ConfigType;
-  slot_capacity_min?: Partial<SlotCapacity>;
-  is_spread?: boolean;
-  is_fallback_allowed?: boolean;
-  expected_name_hint?: string;
-};
 
 /** Variant двухстраничной учительской секции (F+G), layflat-стиль. */
 type TeacherTwoPageVariant = {
@@ -289,7 +271,7 @@ function presetSlugToConfigType(slug: string): ConfigType {
 
 // ─── Главный entry point ──────────────────────────────────────────────────
 
-export function buildAlbumFromPreset(
+export function buildAlbum(
   input: AlbumInput,
   preset: Preset,
   templateSet: TemplateSet,

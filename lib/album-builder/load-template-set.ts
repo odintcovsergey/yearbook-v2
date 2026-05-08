@@ -10,7 +10,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { TemplateSet } from './types';
+import type { Preset, TemplateSet } from './types';
 
 export async function loadTemplateSet(
   supabase: SupabaseClient,
@@ -35,4 +35,31 @@ export async function loadTemplateSet(
   }
 
   return { ...ts, spreads } as TemplateSet;
+}
+
+/**
+ * Загрузка config_preset из Supabase в формат, который ожидает buildAlbum().
+ *
+ * Используется:
+ *  - В scripts/smoke-album-builder.ts для тестового прогона
+ *  - В app/api/layout/route.ts (action=build_album_test)
+ *
+ * @param supabase — клиент с правами SELECT на config_presets
+ * @param slug — slug пресета (например 'standard-layflat', 'mini-soft')
+ */
+export async function loadPresetBySlug(
+  supabase: SupabaseClient,
+  slug: string,
+): Promise<Preset> {
+  const { data, error } = await supabase
+    .from('config_presets')
+    .select('*')
+    .eq('slug', slug)
+    .single();
+  if (error || !data) {
+    throw new Error(
+      `config_preset ${slug} not found: ${error?.message ?? 'no row'}`,
+    );
+  }
+  return data as Preset;
 }
