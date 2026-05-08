@@ -460,6 +460,13 @@ export type StudentSectionConfig = {
   first_spread_content: FirstSpreadContent;
   additional_spreads: AdditionalSpreadsConfig | null;     // ⚪
   thumbnails_section: ThumbnailsSectionConfig | null;
+  /**
+   * 🟢 0.5.3.1: жёсткая толщина страниц для adaptive_grid комплектаций.
+   * - `null` → вычислять автоматически (Медиум: ceil(total / capacity))
+   * - число → фиксированная толщина (Лайт=4, Мини=2)
+   * Используется в buildGridStudents (0.5.3.3).
+   */
+  grid_base_pages: number | null;
 };
 
 export type SpreadsPerStudentConfig = {
