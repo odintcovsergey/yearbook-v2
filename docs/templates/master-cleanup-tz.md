@@ -153,6 +153,27 @@
 
 ---
 
+### B3. Двухстраничный E-Student-Default для Универсала (решение b из фазы 0.5)
+
+**Приоритет:** P2 (после фазы 0.5)
+**Тип:** Код + миграция БД
+**Оценка:** 1.5-2 ч
+
+**Контекст:** В фазе 0 builder использует для Универсала одностраничные E-Student-Left + E-Student-Right с alternate-чередованием. В шаблоне `Плотные Мастер Белый` есть мастер E-Student-Default — двухстраничный аналог Стандарта но с photos_friend (по 2 фото на ученика). Он сейчас не используется builder'ом (default_for_configs не включает 'universal').
+
+**Зачем:** Двухстраничный мастер даёт более компактный и эстетичный вывод для чётного числа учеников (нет «висящего» одностраничного last). Партнёры предпочитают такой вариант для классов 20-26.
+
+**Что делать:**
+1. SQL-проверка: `SELECT name, default_for_configs, slot_capacity, is_fallback FROM spread_templates WHERE name LIKE 'E-Student-Default%';`
+2. Если default_for_configs не включает `universal` — UPDATE-миграция
+3. В `lib/album-builder/build-from-preset.ts:buildSinglePagePerStudent` ветка `friend_photos !== null` сначала пытается findMaster двухстраничного с `slot_capacity_min.photos_friend = friend_photos.max`
+4. При успехе — flow аналогичный buildStandardLikeFlow (chunk 2, студенты parами на двухстраничный мастер)
+5. При неудаче — fallback на текущий одностраничный alternate-flow
+
+**Сложность:** ~1.5-2 ч. Минимальный риск регрессии (только Универсал затрагивается). Можно делать в любой момент после 0.5.3.2.
+
+---
+
 ## Раздел C — Поддержка больших коллективов
 
 ### C1. G-Teachers-4x4-Left для второго учительского разворота
