@@ -34,10 +34,13 @@ import type {
   SlotCapacity,
   SpreadInstance,
   SpreadTemplate,
+  Student,
+  StudentSectionConfig,
   Subject,
   TemplateSet,
 } from './types';
 import { findMaster } from './find-master';
+import { chunk } from './utils';
 
 // ─── Локальные типы ──────────────────────────────────────────────────────
 
@@ -337,11 +340,12 @@ export function buildAlbumFromPreset(
   }
 
   // Раздел 3 — ученики (dispatcher по base_layout_mode)
-  const mode = preset.config.student_section.base_layout_mode;
+  const ss = preset.config.student_section;
+  const mode = ss.base_layout_mode;
   if (mode === 'single_page_per_student') {
-    buildSinglePagePerStudent(ctx);
+    buildSinglePagePerStudent(ctx, ss);
   } else if (mode === 'spread_per_student') {
-    buildSpreadPerStudent(ctx);
+    buildSpreadPerStudent(ctx, ss);
   } else if (mode === 'grid_multiple_students') {
     buildGridStudents(ctx);
   }
@@ -548,21 +552,244 @@ function buildTeacherSectionOnePage(ctx: PresetBuildContext): void {
   });
 }
 
-// ─── Stubs (TODO 0.5.3.2 / 0.5.3.3) ───────────────────────────────────────
+// ─── Student section builders ────────────────────────────────────────────
 
-function buildSinglePagePerStudent(ctx: PresetBuildContext): void {
-  pushWarning(ctx, {
-    code: 'master_not_found',
-    detail: 'TODO: buildSinglePagePerStudent not yet implemented (0.5.3.2)',
-  });
+/**
+ * Ученическая секция для пресетов с `base_layout_mode='single_page_per_student'`
+ * (Стандарт + Универсал). Развилка по `friend_photos`:
+ *
+ * - `friend_photos === null` → Стандарт-flow: двухстраничный E-Student-Standard,
+ *   пара учеников на разворот (логика из `build.ts:buildStandardStudents`).
+ * - `friend_photos !== null` → Универсал-flow путь (a): одностраничные
+ *   E-Student-Left/Right с alternate-чередованием по индексу ученика
+ *   (логика из `build.ts:buildUniversalStudents`).
+ *
+ * Путь (b) для Универсала (попытка двухстраничного E-Student-Default первым)
+ * зафиксирован в `docs/templates/master-cleanup-tz.md §B3` как улучшение P2.
+ */
+function buildSinglePagePerStudent(
+  ctx: PresetBuildContext,
+  ss: StudentSectionConfig,
+): void {
+  const friendPhotos = ss.first_spread_content.friend_photos;
+
+  if (friendPhotos === null) {
+    // Стандарт-flow: двухстраничный E-Student-Standard
+    const filter: MasterFilter = {
+      page_role: 'student',
+      applies_to_config: ctx.cfgType,
+      is_spread: true,
+      slot_capacity_min: { students: 2 },
+      expected_name_hint: 'E-Student-Standard',
+    };
+    const r = findMaster(ctx.templateSet.spreads, filter);
+    if (!r.ok) {
+      pushWarning(ctx, {
+        code: 'master_not_found',
+        detail: `single_page_per_student (standard): ${filter.expected_name_hint ?? '?'}`,
+      });
+      return;
+    }
+    if (r.warning) pushWarning(ctx, r.warning);
+
+    const pairs = chunk(ctx.input.students, 2);
+    for (let i = 0; i < pairs.length; i++) {
+      const pair = pairs[i];
+      const data: Record<string, string | null> = {
+        studentportrait_left: pair[0].portrait,
+        studentname_left: pair[0].full_name,
+        studentquote_left: pair[0].quote,
+      };
+      if (pair.length === 2) {
+        data.studentportrait_right = pair[1].portrait;
+        data.studentname_right = pair[1].full_name;
+        data.studentquote_right = pair[1].quote;
+      } else {
+        data.studentportrait_right = null;
+        data.studentname_right = null;
+        data.studentquote_right = null;
+        pushWarning(ctx, {
+          code: 'students_odd_in_standard',
+          detail: `student ${pair[0].full_name} is alone on right page; partner should add J-Half/J-ClassPhoto/J-Collage manually in editor (см. master-cleanup-tz §A4)`,
+        });
+      }
+      ctx.spreads.push({
+        spread_index: ctx.spreadCounter.value++,
+        template_id: r.master.id,
+        template_name: r.master.name,
+        data,
+      });
+    }
+    return;
+  }
+
+  // Универсал-flow путь (a): одностраничные E-Student-Left/Right alternate
+  const friendMax = friendPhotos.max;
+
+  const leftFilter: MasterFilter = {
+    page_role: 'student_left',
+    applies_to_config: ctx.cfgType,
+    is_spread: false,
+    slot_capacity_min: { students: 1, photos_friend: friendMax },
+    expected_name_hint: 'E-Student-Left',
+  };
+  const rightFilter: MasterFilter = {
+    page_role: 'student_right',
+    applies_to_config: ctx.cfgType,
+    is_spread: false,
+    slot_capacity_min: { students: 1, photos_friend: friendMax },
+    expected_name_hint: 'E-Student-Right',
+  };
+
+  const left = findMaster(ctx.templateSet.spreads, leftFilter);
+  const right = findMaster(ctx.templateSet.spreads, rightFilter);
+
+  if (!left.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `single_page_per_student (universal) left: ${leftFilter.expected_name_hint ?? '?'}`,
+    });
+    return;
+  }
+  if (!right.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `single_page_per_student (universal) right: ${rightFilter.expected_name_hint ?? '?'}`,
+    });
+    return;
+  }
+  if (left.warning) pushWarning(ctx, left.warning);
+  if (right.warning) pushWarning(ctx, right.warning);
+
+  for (let i = 0; i < ctx.input.students.length; i++) {
+    const s = ctx.input.students[i];
+    const m = i % 2 === 0 ? left.master : right.master;
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: m.id,
+      template_name: m.name,
+      data: studentSinglePageData(s, friendMax),
+    });
+  }
 }
 
-function buildSpreadPerStudent(ctx: PresetBuildContext): void {
-  pushWarning(ctx, {
-    code: 'master_not_found',
-    detail: 'TODO: buildSpreadPerStudent not yet implemented (0.5.3.2)',
-  });
+/**
+ * Ученическая секция для пресетов с `base_layout_mode='spread_per_student'`
+ * (Максимум + Индивидуальный). Каждый ученик = пара мастеров (E-Max-Left + E-*-Right).
+ *
+ * Правый мастер выбирается per-student через capacity-pool:
+ *   - Maximum: pool = [E-Max-Right] (capacity=4) → всегда один мастер
+ *   - Individual: pool = [E-Ind-Right-3, E-Max-Right] (capacity=3,4) → per-student
+ * Подбор: первый кандидат с `slot_capacity.photos_friend >= friendCount`,
+ * fallback — мастер с максимальной capacity + warning.
+ *
+ * Гибкость: при добавлении в БД новых вариантов (E-Max-Right-2 и т.п.) builder
+ * автоматически распространит per-student режим на новые комплектации.
+ */
+function buildSpreadPerStudent(
+  ctx: PresetBuildContext,
+  ss: StudentSectionConfig,
+): void {
+  // 1. Левый мастер (общий для всех учеников)
+  const leftFilter: MasterFilter = {
+    page_role: 'student_left',
+    applies_to_config: ctx.cfgType,
+    slot_capacity_min: { students: 1 },
+    expected_name_hint: 'E-Max-Left',
+  };
+  const left = findMaster(ctx.templateSet.spreads, leftFilter);
+  if (!left.ok) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `spread_per_student left: ${leftFilter.expected_name_hint ?? '?'}`,
+    });
+    return;
+  }
+  if (left.warning) pushWarning(ctx, left.warning);
+
+  // 2. Pool правых кандидатов, отсортированный asc по photos_friend
+  const rightCandidates = ctx.templateSet.spreads
+    .filter((s) => {
+      if (s.page_role !== 'student_right') return false;
+      if (s.default_for_configs.indexOf(ctx.cfgType) < 0) return false;
+      if (s.is_fallback) return false;
+      if (s.slot_capacity === null) return false;
+      if (
+        typeof s.slot_capacity.students !== 'number' ||
+        s.slot_capacity.students < 1
+      ) {
+        return false;
+      }
+      return true;
+    })
+    .sort(
+      (a, b) =>
+        (a.slot_capacity?.photos_friend ?? 0) -
+        (b.slot_capacity?.photos_friend ?? 0),
+    );
+
+  if (rightCandidates.length === 0) {
+    pushWarning(ctx, {
+      code: 'master_not_found',
+      detail: `spread_per_student: no right candidates for cfgType=${ctx.cfgType}`,
+    });
+    return;
+  }
+
+  // 3. Per-student loop
+  const friendMaxFromPreset = ss.first_spread_content.friend_photos?.max ?? 0;
+
+  for (let i = 0; i < ctx.input.students.length; i++) {
+    const student = ctx.input.students[i];
+
+    // Левая страница: портрет + имя
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: left.master.id,
+      template_name: left.master.name,
+      data: {
+        studentportrait: student.portrait,
+        studentname: student.full_name,
+      },
+    });
+
+    // Правая страница: выбор по friend_photos.length, обрезка по preset.max
+    let friendCount = student.friend_photos.length;
+    if (friendCount > friendMaxFromPreset) {
+      pushWarning(ctx, {
+        code: 'students_overflow',
+        detail: `spread_per_student: student ${student.full_name} has ${friendCount} friend_photos, обрезано до ${friendMaxFromPreset} (preset.max)`,
+      });
+      friendCount = friendMaxFromPreset;
+    }
+
+    let rightMaster = rightCandidates.find(
+      (c) => (c.slot_capacity?.photos_friend ?? 0) >= friendCount,
+    );
+    let usedSlots: number;
+
+    if (rightMaster) {
+      usedSlots = friendCount;
+    } else {
+      // У всех capacity ниже friendCount — берём максимальный
+      rightMaster = rightCandidates[rightCandidates.length - 1];
+      usedSlots = rightMaster.slot_capacity?.photos_friend ?? 0;
+      pushWarning(ctx, {
+        code: 'students_overflow',
+        detail: `spread_per_student: student ${student.full_name} needs ${friendCount} slots, max available ${usedSlots} (${rightMaster.name})`,
+      });
+    }
+
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: rightMaster.id,
+      template_name: rightMaster.name,
+      data: studentSinglePageData(student, usedSlots),
+    });
+  }
 }
+
+// ─── Stubs (TODO 0.5.3.3) ─────────────────────────────────────────────────
 
 function buildGridStudents(ctx: PresetBuildContext): void {
   pushWarning(ctx, {
@@ -702,6 +929,27 @@ function buildTeacherRightData(
     }
   }
 
+  return data;
+}
+
+/**
+ * Заполнение одностраничной ученической страницы (E-Student-Left/Right,
+ * E-Max-Right, E-Ind-Right-3 и т.п.) — портрет, имя, цитата + N слотов
+ * фото с друзьями. `friendSlots` — фактическое число слотов в выбранном мастере;
+ * `s.friend_photos[i] ?? null` заполняет недостающие слоты null'ами.
+ */
+function studentSinglePageData(
+  s: Student,
+  friendSlots: number,
+): Record<string, string | null> {
+  const data: Record<string, string | null> = {
+    studentportrait: s.portrait,
+    studentname: s.full_name,
+    studentquote: s.quote,
+  };
+  for (let i = 0; i < friendSlots; i++) {
+    data['studentphoto' + (i + 1)] = s.friend_photos[i] ?? null;
+  }
   return data;
 }
 
