@@ -441,13 +441,38 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
 
-    const { data } = await supabaseAdmin
+    const { data: teachers } = await supabaseAdmin
       .from('teachers')
       .select('id, full_name, position, description, access_token, submitted_at, created_at, is_head_teacher')
       .eq('album_id', albumId)
       .order('created_at')
 
-    return NextResponse.json(data ?? [])
+    const teacherIds = (teachers ?? []).map((t: any) => t.id)
+    const { data: photoLinks } = teacherIds.length > 0
+      ? await supabaseAdmin
+          .from('photo_teachers')
+          .select('teacher_id, photos(filename, storage_path)')
+          .in('teacher_id', teacherIds)
+      : { data: [] }
+
+    const photoByTeacher: Record<string, { filename: string | null; storage_path: string | null }> = {}
+    for (const link of photoLinks ?? []) {
+      const ph = (link as any).photos
+      if (ph) {
+        photoByTeacher[(link as any).teacher_id] = {
+          filename: ph.filename ?? null,
+          storage_path: ph.storage_path ?? null,
+        }
+      }
+    }
+
+    const enriched = (teachers ?? []).map((t: any) => ({
+      ...t,
+      photo_storage_path: photoByTeacher[t.id]?.storage_path ?? null,
+      photo_filename: photoByTeacher[t.id]?.filename ?? null,
+    }))
+
+    return NextResponse.json(enriched)
   }
 
   // ----------------------------------------------------------

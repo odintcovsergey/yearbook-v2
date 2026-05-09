@@ -2612,6 +2612,8 @@ type Teacher = {
   access_token: string
   submitted_at: string | null
   is_head_teacher: boolean
+  photo_storage_path: string | null
+  photo_filename: string | null
 }
 
 function TeachersTab({
@@ -2640,6 +2642,9 @@ function TeachersTab({
     description: '',
     is_head_teacher: false,
   })
+
+  const ycBase = 'https://storage.yandexcloud.net/yearbook-photos/'
+  const photoUrl = (path: string) => ycBase + path.replace('yc:', '')
 
   const load = async () => {
     const r = await api(`/api/tenant?action=teachers&album_id=${albumId}`)
@@ -2840,28 +2845,53 @@ function TeachersTab({
               ) : (
                 <div>
                   <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="font-medium">
-                          {t.full_name || <span className="text-gray-400">Имя не заполнено</span>}
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      {t.photo_storage_path ? (
+                        <a
+                          href={photoUrl(t.photo_storage_path)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100"
+                          title={t.photo_filename ?? 'Открыть оригинал'}
+                        >
+                          <img
+                            src={photoUrl(t.photo_storage_path)}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        </a>
+                      ) : (
+                        <div
+                          className="w-16 h-16 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-300 text-2xl"
+                          title="Фото не выбрано"
+                        >
+                          ?
                         </div>
-                        {t.is_head_teacher && (
-                          <span className="badge-blue">Классный руководитель</span>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="font-medium">
+                            {t.full_name || <span className="text-gray-400">Имя не заполнено</span>}
+                          </div>
+                          {t.is_head_teacher && (
+                            <span className="badge-blue">Классный руководитель</span>
+                          )}
+                          {t.submitted_at ? (
+                            <span className="badge-green">Заполнено</span>
+                          ) : (
+                            <span className="badge-gray">Ожидание</span>
+                          )}
+                        </div>
+                        {t.position && (
+                          <div className="text-sm text-gray-500 mt-0.5">{t.position}</div>
                         )}
-                        {t.submitted_at ? (
-                          <span className="badge-green">Заполнено</span>
-                        ) : (
-                          <span className="badge-gray">Ожидание</span>
+                        {t.is_head_teacher && t.description && (
+                          <div className="text-sm text-gray-700 mt-2 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap">
+                            {t.description}
+                          </div>
                         )}
                       </div>
-                      {t.position && (
-                        <div className="text-sm text-gray-500 mt-0.5">{t.position}</div>
-                      )}
-                      {t.is_head_teacher && t.description && (
-                        <div className="text-sm text-gray-700 mt-2 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap">
-                          {t.description}
-                        </div>
-                      )}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {canEdit && (
