@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core'
 import type {
   SpreadInstance,
@@ -110,6 +112,7 @@ export default function LayoutEditorPage({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [viewport, setViewport] = useState({ width: 1440, height: 900 })
+  const [activeDrag, setActiveDrag] = useState<AlbumPhoto | null>(null)
 
   useEffect(() => {
     const update = () => setViewport({
@@ -195,7 +198,17 @@ export default function LayoutEditorPage({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   )
 
+  function handleDragStart(event: DragStartEvent) {
+    const sourceData = event.active.data.current as
+      | { type?: string; photo?: AlbumPhoto }
+      | undefined
+    if (sourceData?.type === 'palette' && sourceData.photo) {
+      setActiveDrag(sourceData.photo)
+    }
+  }
+
   function handleDragEnd(event: DragEndEvent) {
+    setActiveDrag(null)
     const { active, over } = event
     if (!over) return  // drop вне drop-зоны
 
@@ -290,7 +303,11 @@ export default function LayoutEditorPage({
       </header>
 
       {/* ═══ Main: левая колонка (canvas) + правая (палитра) ═══ */}
-      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
       <div className="flex-1 flex overflow-hidden">
         {/* ─── Левая колонка: canvas + навигация ─── */}
         <main className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto">
@@ -338,6 +355,18 @@ export default function LayoutEditorPage({
         {/* ─── Правая колонка: палитра ─── */}
         <PhotoPalette spreads={spreads} photos={photos} />
       </div>
+        <DragOverlay>
+          {activeDrag && (
+            <div className="aspect-[3/4] w-[120px] bg-gray-100 rounded overflow-hidden border-2 border-blue-500 shadow-xl">
+              <img
+                src={activeDrag.thumb_url}
+                alt={activeDrag.filename}
+                draggable={false}
+                className="w-full h-full object-cover pointer-events-none"
+              />
+            </div>
+          )}
+        </DragOverlay>
       </DndContext>
     </div>
   )

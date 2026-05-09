@@ -53,8 +53,10 @@ function useImage(url: string | null): HTMLImageElement | null {
       setImg(null)
       return
     }
+    // crossOrigin не используем: YC bucket не возвращает CORS headers,
+    // и crossOrigin='anonymous' блокирует загрузку. Tainted canvas
+    // допустимо в фазе 2 (PDF-экспорт через серверный pipeline в фазе 3).
     const i = new window.Image()
-    i.crossOrigin = 'anonymous'
     i.src = url
     i.onload = () => setImg(i)
     i.onerror = () => setImg(null)

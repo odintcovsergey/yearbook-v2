@@ -67,20 +67,17 @@ function PhotoTile({
 }) {
   // useDraggable: id=photo.id, data содержит сам photo чтобы handleDragEnd
   // мог сразу взять url без поиска по id.
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
+  const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
       id: photo.id,
       data: { type: 'palette', photo },
     })
-
-  const style = transform
-    ? { transform: `translate(${transform.x}px, ${transform.y}px)`, zIndex: 50 }
-    : undefined
+  // transform из useDraggable не используем: визуал drag'а рендерится
+  // в <DragOverlay> в LayoutEditorPage (см. 2.6.3.1).
 
   return (
     <div
       ref={setNodeRef}
-      style={style}
       {...attributes}
       {...listeners}
       className={`relative aspect-[3/4] bg-gray-100 rounded overflow-hidden border border-gray-200 hover:ring-2 hover:ring-blue-300 transition cursor-grab active:cursor-grabbing ${
