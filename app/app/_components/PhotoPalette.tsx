@@ -156,17 +156,23 @@ export default function PhotoPalette({ spreads, photos }: Props) {
     return photos.filter((p) => p.filename.toLowerCase().includes(q))
   }, [photos, query])
 
-  // Группировка по source/type.
-  const portraits = filtered.filter(
-    (p) => p.source === 'selections' && p.type === 'portrait',
-  )
-  const groups = filtered.filter(
-    (p) => p.source === 'selections' && p.type === 'group',
-  )
-  const teachers = filtered.filter(
-    (p) => p.source === 'selections' && p.type === 'teacher',
-  )
-  const originals = filtered.filter((p) => p.source === 'originals')
+  // Группировка по source/type + сортировка по filename внутри каждой
+  // группы (DSC_xxxx.jpg → лексический порядок, см. 2.6.4.1).
+  const byFilename = (a: AlbumPhoto, b: AlbumPhoto) =>
+    a.filename.localeCompare(b.filename)
+
+  const portraits = filtered
+    .filter((p) => p.source === 'selections' && p.type === 'portrait')
+    .sort(byFilename)
+  const groups = filtered
+    .filter((p) => p.source === 'selections' && p.type === 'group')
+    .sort(byFilename)
+  const teachers = filtered
+    .filter((p) => p.source === 'selections' && p.type === 'teacher')
+    .sort(byFilename)
+  const originals = filtered
+    .filter((p) => p.source === 'originals')
+    .sort(byFilename)
 
   // Счётчик originals по полному пулу (не filtered) — для лейбла checkbox'а.
   const totalOriginals = photos.filter((p) => p.source === 'originals').length
