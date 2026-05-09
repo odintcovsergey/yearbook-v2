@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Stage, Layer, Rect, Image as KonvaImage, Text, Group } from 'react-konva'
-import { useDroppable } from '@dnd-kit/core'
+import { useDroppable, useDraggable } from '@dnd-kit/core'
 import type {
   SpreadInstance,
   SpreadTemplate,
@@ -199,30 +199,53 @@ function TextSlot({
   )
 }
 
-// ─── Прозрачный drop-target над Konva-placeholder'ом (mode='edit') ───────
+// ─── Drop-target над Konva-placeholder'ом + draggable если есть фото ─────
 //
-// Konva рендерит на canvas (pixels), не в DOM. @dnd-kit видит только
-// DOM-узлы. Решение: рисуем поверх Stage'а абсолютно-позиционированный
-// <div> для каждого photo-placeholder с теми же координатами что у
-// Konva-элемента. Этот div принимает drop через useDroppable.
-//
-// Размеры: placeholder.x_mm * scale → пиксели в Stage'овой системе
-// координат (которая равна containerWidth × containerHeight).
+// 2.6.3 — только droppable. 2.6.4 — добавлен draggable для swap'а
+// между placeholder'ами. Если photo-слот пуст (нет url), drag
+// disabled.
 function DropZone({
   placeholder,
   scale,
+  url,
 }: {
   placeholder: PhotoPlaceholder
   scale: number
+  url: string | null
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: placeholder.label })
+  const hasValue = !!url
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: placeholder.label,
+  })
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDragRef,
+    isDragging,
+  } = useDraggable({
+    id: `placeholder-${placeholder.label}`,
+    data: { type: 'placeholder', label: placeholder.label, url },
+    disabled: !hasValue,
+  })
+
+  // Объединяем оба ref'а: один div одновременно droppable И draggable
+  const setRef = (node: HTMLElement | null) => {
+    setDropRef(node)
+    setDragRef(node)
+  }
+
   return (
     <div
-      ref={setNodeRef}
+      ref={setRef}
+      {...(hasValue ? { ...attributes, ...listeners } : {})}
       className={`absolute pointer-events-auto transition-all ${
         isOver
           ? 'ring-2 ring-blue-500 bg-blue-100/40'
           : 'ring-1 ring-transparent hover:ring-blue-300/50'
+      } ${
+        hasValue ? 'cursor-move' : 'cursor-default'
+      } ${
+        isDragging ? 'opacity-40' : ''
       }`}
       style={{
         left: `${placeholder.x_mm * scale}px`,
@@ -290,7 +313,12 @@ export default function AlbumSpreadCanvas({
           {template.placeholders
             .filter((p): p is PhotoPlaceholder => p.type === 'photo')
             .map((p) => (
-              <DropZone key={p.label} placeholder={p} scale={scale} />
+              <DropZone
+                key={p.label}
+                placeholder={p}
+                scale={scale}
+                url={instance.data[p.label] ?? null}
+              />
             ))}
         </div>
       )}

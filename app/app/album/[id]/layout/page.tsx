@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
@@ -17,6 +17,7 @@ import type {
   SpreadTemplate,
 } from '@/lib/album-builder/types'
 import PhotoPalette from '../../../_components/PhotoPalette'
+import SaveIndicator from '../../../_components/SaveIndicator'
 
 // Konva-компонент: SSR-incompatible (использует window.Image).
 const AlbumSpreadCanvas = dynamic(
@@ -113,6 +114,9 @@ export default function LayoutEditorPage({
   const [error, setError] = useState<string | null>(null)
   const [viewport, setViewport] = useState({ width: 1440, height: 900 })
   const [activeDrag, setActiveDrag] = useState<AlbumPhoto | null>(null)
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'pending' | 'saving' | 'error'>('saved')
+  const [lastSavedSpreads, setLastSavedSpreads] = useState<SpreadInstance[] | null>(null)
+  const saveCounterRef = useRef(0)
 
   useEffect(() => {
     const update = () => setViewport({
@@ -176,6 +180,7 @@ export default function LayoutEditorPage({
 
         if (cancelled) return
         setLayout(loadedLayout)
+        setLastSavedSpreads(loadedLayout.spreads)
         setTemplates(templateJson.spread_templates ?? [])
         setPhotos(photosJson.photos ?? [])
         setAlbumTitle(title)
@@ -198,12 +203,72 @@ export default function LayoutEditorPage({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   )
 
+  async function saveLayout(spreads: SpreadInstance[]) {
+    const myCounter = ++saveCounterRef.current
+    setSaveStatus('saving')
+    try {
+      const res = await api('/api/layout?action=save_album_layout', {
+        method: 'POST',
+        body: JSON.stringify({ album_id: albumId, spreads }),
+      })
+      // Игнорируем устаревший ответ (если за время запроса начался ещё один)
+      if (myCounter !== saveCounterRef.current) return
+      if (res.ok) {
+        setLastSavedSpreads(spreads)
+        setSaveStatus('saved')
+      } else {
+        setSaveStatus('error')
+      }
+    } catch {
+      if (myCounter !== saveCounterRef.current) return
+      setSaveStatus('error')
+    }
+  }
+
+  // Debounce auto-save: при изменении layout.spreads ждём 2с тишины,
+  // потом отправляем POST. При новом изменении старый таймер отменяется.
+  useEffect(() => {
+    if (!layout || lastSavedSpreads === null) return
+    const isUnchanged =
+      JSON.stringify(layout.spreads) === JSON.stringify(lastSavedSpreads)
+    if (isUnchanged) {
+      // Изменения откатились (например swap туда-обратно) — статус saved
+      if (saveStatus !== 'saved' && saveStatus !== 'saving') {
+        setSaveStatus('saved')
+      }
+      return
+    }
+    setSaveStatus('pending')
+    const timer = setTimeout(() => {
+      saveLayout(layout.spreads)
+    }, 2000)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout?.spreads, lastSavedSpreads])
+
+  // Предупреждение перед закрытием вкладки если есть несохранённые изменения
+  useEffect(() => {
+    if (saveStatus === 'saved') return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [saveStatus])
+
   function handleDragStart(event: DragStartEvent) {
     const sourceData = event.active.data.current as
-      | { type?: string; photo?: AlbumPhoto }
+      | { type?: string; photo?: AlbumPhoto; url?: string | null }
       | undefined
     if (sourceData?.type === 'palette' && sourceData.photo) {
       setActiveDrag(sourceData.photo)
+      return
+    }
+    if (sourceData?.type === 'placeholder' && sourceData.url) {
+      // Найти photo по URL для DragOverlay (если в палитре есть)
+      const photo = photos.find((p) => p.url === sourceData.url)
+      if (photo) setActiveDrag(photo)
     }
   }
 
@@ -213,25 +278,44 @@ export default function LayoutEditorPage({
     if (!over) return  // drop вне drop-зоны
 
     const sourceData = active.data.current as
-      | { type?: string; photo?: AlbumPhoto }
+      | { type?: string; photo?: AlbumPhoto; label?: string; url?: string | null }
       | undefined
-    if (sourceData?.type !== 'palette') return  // только палитра→canvas в 2.6.3
-
-    const photo = sourceData.photo
-    if (!photo) return
-
     const targetLabel = String(over.id)
 
-    // Иммутабельная мутация: spreads[currentIdx].data[targetLabel] = photo.url
-    setLayout((prev) => {
-      if (!prev) return prev
-      const newSpreads = prev.spreads.map((s, idx) =>
-        idx === currentIdx
-          ? { ...s, data: { ...s.data, [targetLabel]: photo.url } }
-          : s,
-      )
-      return { ...prev, spreads: newSpreads }
-    })
+    if (sourceData?.type === 'palette') {
+      // Палитра → placeholder: вставить URL фото
+      const photo = sourceData.photo
+      if (!photo) return
+      setLayout((prev) => {
+        if (!prev) return prev
+        const newSpreads = prev.spreads.map((s, idx) =>
+          idx === currentIdx
+            ? { ...s, data: { ...s.data, [targetLabel]: photo.url } }
+            : s,
+        )
+        return { ...prev, spreads: newSpreads }
+      })
+      return
+    }
+
+    if (sourceData?.type === 'placeholder') {
+      // Swap между placeholder'ами в текущем спреде
+      const sourceLabel = sourceData.label
+      if (!sourceLabel || sourceLabel === targetLabel) return
+      setLayout((prev) => {
+        if (!prev) return prev
+        const newSpreads = prev.spreads.map((s, idx) => {
+          if (idx !== currentIdx) return s
+          const valueA = s.data[sourceLabel] ?? null
+          const valueB = s.data[targetLabel] ?? null
+          return {
+            ...s,
+            data: { ...s.data, [sourceLabel]: valueB, [targetLabel]: valueA },
+          }
+        })
+        return { ...prev, spreads: newSpreads }
+      })
+    }
   }
 
   // ─── Loading / error состояния ──────────────────────────────────────────
@@ -299,7 +383,7 @@ export default function LayoutEditorPage({
           </h1>
           <span className="text-xs text-gray-400">— Layout редактор</span>
         </div>
-        {/* SaveIndicator появится в 2.6.4 */}
+        <SaveIndicator status={saveStatus} />
       </header>
 
       {/* ═══ Main: левая колонка (canvas) + правая (палитра) ═══ */}
