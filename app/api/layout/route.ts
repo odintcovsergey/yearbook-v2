@@ -234,6 +234,10 @@ export async function POST(req: NextRequest) {
     return handleBuildAlbum(req, auth)
   }
 
+  if (action === 'save_album_layout') {
+    return handleSaveAlbumLayout(req, auth)
+  }
+
   if (action === 'build_album_test') {
     if (auth.role !== 'superadmin') {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 })
@@ -660,6 +664,97 @@ async function handleBuildAlbum(
       preset_slug: preset.slug,
       preset_name: preset.name,
     },
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// handleSaveAlbumLayout — POST ?action=save_album_layout
+//
+// Сохраняет ручные правки партнёра в layout альбома (drag-and-drop фото
+// в placeholder'ах из палитры редактора). Всегда ставит
+// has_user_edits=true; флаг сбрасывается обратно в false при следующем
+// build_album (см. handleBuildAlbum / 2.1).
+//
+// Body: { album_id: uuid, spreads: SpreadInstance[] }
+// Авторизация: owner/manager/viewer тенанта-владельца + view_as как
+// у handleBuildAlbum (тот же паттерн).
+//
+// 404 если layout для альбома ещё не существует (нужно сначала
+// build_album). 400 если body невалидный.
+// ─────────────────────────────────────────────────────────────────────────
+async function handleSaveAlbumLayout(
+  req: NextRequest,
+  auth: AuthContext,
+): Promise<NextResponse> {
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
+  }
+
+  if (typeof body !== 'object' || body === null) {
+    return NextResponse.json({ error: 'body must be object' }, { status: 400 })
+  }
+
+  const albumId = (body as Record<string, unknown>).album_id
+  if (typeof albumId !== 'string' || !UUID_REGEX.test(albumId)) {
+    return NextResponse.json(
+      { error: 'album_id is required (uuid)' },
+      { status: 400 },
+    )
+  }
+
+  const spreads = (body as Record<string, unknown>).spreads
+  if (!Array.isArray(spreads)) {
+    return NextResponse.json(
+      { error: 'spreads is required (array)' },
+      { status: 400 },
+    )
+  }
+
+  // view_as: тот же паттерн что у handleBuildAlbum.
+  const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+  const { data: currentTenantData } = viewAsTenantId
+    ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+    : { data: null }
+  const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
+  const tid = (canViewAs && viewAsTenantId) ? viewAsTenantId : auth.tenantId
+
+  if (!(await assertAlbumAccessLocal(auth, albumId, tid))) {
+    return NextResponse.json({ error: 'access denied' }, { status: 403 })
+  }
+
+  // UPDATE с has_user_edits=true. Если строки нет (rowsAffected=0) →
+  // layout ещё не строился, нужно сначала build_album.
+  const { data: layoutRow, error } = await supabaseAdmin
+    .from('album_layouts')
+    .update({
+      spreads,
+      has_user_edits: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('album_id', albumId)
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    return NextResponse.json(
+      { error: `save failed: ${error.message}` },
+      { status: 500 },
+    )
+  }
+
+  if (!layoutRow) {
+    return NextResponse.json(
+      { error: 'layout not found for this album, run build_album first' },
+      { status: 404 },
+    )
+  }
+
+  return NextResponse.json({
+    success: true,
+    layout_id: layoutRow.id,
   })
 }
 
