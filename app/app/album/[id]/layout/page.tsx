@@ -7,6 +7,7 @@ import type {
   SpreadInstance,
   SpreadTemplate,
 } from '@/lib/album-builder/types'
+import PhotoPalette from '../../../_components/PhotoPalette'
 
 // Konva-компонент: SSR-incompatible (использует window.Image).
 const AlbumSpreadCanvas = dynamic(
@@ -265,15 +266,8 @@ export default function LayoutEditorPage({
           )}
         </main>
 
-        {/* ─── Правая колонка: палитра (заглушка в 2.6.1) ─── */}
-        <aside className="w-[30%] min-w-[280px] max-w-[400px] bg-white border-l border-gray-200 p-4 overflow-y-auto">
-          <h2 className="text-sm font-semibold text-gray-700 mb-2">
-            Палитра фото
-          </h2>
-          <p className="text-xs text-gray-500">
-            {photos.length} фото загружено. Drag-and-drop появится в 2.6.3.
-          </p>
-        </aside>
+        {/* ─── Правая колонка: палитра ─── */}
+        <PhotoPalette spreads={spreads} photos={photos} />
       </div>
     </div>
   )
