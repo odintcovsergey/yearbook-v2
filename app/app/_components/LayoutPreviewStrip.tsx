@@ -85,9 +85,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor }: Props) {
         <button
           type="button"
           onClick={onOpenEditor}
-          disabled
-          className="text-xs px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
-          title="Редактор скоро будет доступен (подэтап 2.6)"
+          className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer"
         >
           Открыть редактор
         </button>

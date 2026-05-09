@@ -783,6 +783,7 @@ function AlbumDetailModal({
     const fullUrl = viewAsTenantId ? `${url}${sep}view_as=${viewAsTenantId}` : url
     return api(fullUrl, opts)
   }
+  const router = useRouter()
   const [stats, setStats] = useState<AlbumStats | null>(null)
   const [spreadData, setSpreadData] = useState<{child_id:string;full_name:string;class:string;photos:{id:string;filename:string;storage_path:string;sort_order:number}[]}[]>([])
   const [workflow, setWorkflow] = useState<{workflow_status:string;workflow_submitted_at?:string;workflow_taken_at?:string;workflow_delivered_at?:string;workflow_notes?:string} | null>(null)
@@ -1198,7 +1199,7 @@ function AlbumDetailModal({
                     <LayoutPreviewStrip
                       layout={layout}
                       onOpenEditor={() => {
-                        // В 2.6: router.push(`/app/album/${album.id}/layout`)
+                        router.push(`/app/album/${album.id}/layout`)
                       }}
                     />
                   )}
