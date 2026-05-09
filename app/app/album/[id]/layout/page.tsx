@@ -38,15 +38,46 @@ type AlbumPhoto = {
   created_at: string
 }
 
-// ─── Хелпер api() — копия из app/app/page.tsx, но без refresh-loop'а ─────
-// (refresh-логика тут не нужна: при истёкшем токене страница редактора
-// просто покажет ошибку и партнёр откроет её заново из /app)
+// ─── Refresh-aware api() — копия из app/app/page.tsx ─────────────────────
+//
+// При 401 пытается отрефрешить access token через /api/auth и
+// повторить исходный запрос. Дедупликация одновременных refresh'ей
+// через module-scope `_refreshing`.
+//
+// Изначально в 2.6.1 я не копировал эту логику (надеясь, что редактор
+// не нужна), но визуальная проверка 2.6.2 показала: партнёр открывает
+// редактор после нескольких часов простоя → 401 → пустой экран. Не
+// годится для долгих editing-сессий. См. 2.6.2.1.
+let _refreshing: Promise<boolean> | null = null
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (_refreshing) return _refreshing
+  _refreshing = fetch('/api/auth', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'refresh' }),
+  }).then(r => r.ok).catch(() => false).finally(() => { _refreshing = null })
+  return _refreshing
+}
+
 async function api(path: string, opts?: RequestInit): Promise<Response> {
-  return fetch(path, {
+  const res = await fetch(path, {
     ...opts,
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(opts?.headers ?? {}) },
   })
+  if (res.status === 401) {
+    const ok = await refreshAccessToken()
+    if (ok) {
+      return fetch(path, {
+        ...opts,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...(opts?.headers ?? {}) },
+      })
+    }
+  }
+  return res
 }
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -202,7 +233,7 @@ export default function LayoutEditorPage({
   const canvasContainerWidth = Math.min(widthByHeight, availableWidth)
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="h-screen flex flex-col bg-gray-50">
       {/* ═══ Header ═══ */}
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
