@@ -48,4 +48,4 @@ export type { FindMasterResult } from './find-master';
 
 export { buildAlbum } from './build-from-preset';
 
-export { loadTemplateSet, loadPresetBySlug } from './load-template-set';
+export { loadTemplateSet, loadPresetBySlug, loadPresetById } from './load-template-set';

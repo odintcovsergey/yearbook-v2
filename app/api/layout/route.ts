@@ -4,7 +4,7 @@ import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/aut
 import { parseIdml } from '@/lib/idml-converter/parse'
 import { uploadTemplateSetToSupabase, type UploadResult } from '@/lib/idml-converter/upload'
 import type { ParsedTemplateSet } from '@/lib/idml-converter/types'
-import { buildAlbum, loadTemplateSet, loadPresetBySlug } from '@/lib/album-builder'
+import { buildAlbum, loadTemplateSet, loadPresetBySlug, loadPresetById } from '@/lib/album-builder'
 import type {
   Student,
   Subject,
@@ -13,6 +13,7 @@ import type {
   Preset,
   TemplateSet,
 } from '@/lib/album-builder'
+import { buildAlbumInput, type SmartFillWarning } from '@/lib/smart-fill'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -27,6 +28,79 @@ const TEMPLATE_SET_FIELDS =
 const SPREAD_TEMPLATE_FIELDS =
   'id, name, type, is_spread, width_mm, height_mm, ' +
   'placeholders, rules, sort_order, background_url, created_at'
+
+// ============================================================
+// Локальная копия assertAlbumAccess (паттерн из app/api/tenant/route.ts).
+// Дублирование оправдано — импорт между route handler'ами создаёт
+// циркулярные риски. Вынос в shared helper — отдельная рефакторинг-задача
+// вне scope подэтапа 1.3.
+// ============================================================
+async function assertAlbumAccessLocal(
+  auth: AuthContext,
+  albumId: string,
+  tenantIdOverride?: string,
+): Promise<boolean> {
+  if (auth.role === 'superadmin') return true
+
+  const { data } = await supabaseAdmin
+    .from('albums')
+    .select('tenant_id')
+    .eq('id', albumId)
+    .single()
+
+  return data?.tenant_id === (tenantIdOverride ?? auth.tenantId)
+}
+
+// ============================================================
+// Классификация warning'ов: builder + smart-fill коды → level.
+// Spec: docs/phase-1-spec.md строки 325-343.
+// ============================================================
+type WarningLevel = 'blocking' | 'degraded' | 'info'
+
+const WARNING_LEVELS: Record<string, WarningLevel> = {
+  // Builder — blocking
+  master_not_found: 'blocking',
+  students_empty: 'blocking',
+
+  // Builder — degraded
+  students_overflow: 'degraded',
+  subjects_overflow: 'degraded',
+  students_grid_no_special_master: 'degraded',
+  name_mismatch: 'degraded',
+  class_photo_missing: 'degraded',
+  half_class_missing: 'degraded',
+  students_odd_in_standard: 'degraded',
+  no_right_teacher_master: 'degraded',
+  fallback_used: 'degraded',
+  students_too_few: 'degraded',
+  adaptive_grid_fallback: 'degraded',
+
+  // Builder — info
+  no_head_teacher: 'info',
+
+  // Smart-fill — info
+  students_no_portrait: 'info',
+  per_child_override_ignored: 'info',
+}
+
+type EnrichedWarning = {
+  code: string
+  detail: string
+  level: WarningLevel
+  source: 'builder' | 'smart_fill'
+}
+
+function enrichWarning(
+  w: { code: string; detail: string },
+  source: 'builder' | 'smart_fill',
+): EnrichedWarning {
+  return {
+    code: w.code,
+    detail: w.detail,
+    level: WARNING_LEVELS[w.code] ?? 'degraded',
+    source,
+  }
+}
 
 // ============================================================
 // GET /api/layout — read-only endpoints для template_sets
@@ -144,16 +218,29 @@ export async function GET(req: NextRequest) {
 // ============================================================
 
 export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req, ['superadmin'])
+  // Расширили роли — build_album должен быть доступен для owner/manager/viewer.
+  // Существующие superadmin-only хендлеры (import_idml, build_album_test)
+  // защищены явным guard'ом внутри.
+  const auth = await requireAuth(req, ['superadmin', 'owner', 'manager', 'viewer'])
   if (isAuthError(auth)) return auth
 
   const action = req.nextUrl.searchParams.get('action')
 
+  if (action === 'build_album') {
+    return handleBuildAlbum(req, auth)
+  }
+
   if (action === 'build_album_test') {
+    if (auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
     return handleBuildAlbumTest(req)
   }
 
   if (action === 'import_idml') {
+    if (auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
     return handleImportIdml(req, auth)
   }
 
@@ -411,6 +498,159 @@ async function handleBuildAlbumTest(req: NextRequest): Promise<NextResponse> {
       preset_name: preset.name,
       students_count: studentsCount,
       subjects_count: subjectsCount,
+    },
+  })
+}
+
+// ============================================================
+// POST /api/layout?action=build_album
+// ============================================================
+// Smart-fill endpoint: читает реальный альбом из БД, прогоняет через
+// builder, сохраняет результат в album_layouts (upsert), возвращает
+// spreads + классифицированные warnings.
+//
+// Body: { album_id: string }
+//
+// Доступ: owner/manager/viewer тенанта-владельца альбома, OkeyBook staff
+// через ?view_as=<tenant_id>, superadmin без ограничений.
+// ============================================================
+
+async function handleBuildAlbum(
+  req: NextRequest,
+  auth: AuthContext,
+): Promise<NextResponse> {
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
+  }
+
+  if (typeof body !== 'object' || body === null) {
+    return NextResponse.json({ error: 'body must be object' }, { status: 400 })
+  }
+  const albumId = (body as Record<string, unknown>).album_id
+  if (typeof albumId !== 'string' || !UUID_REGEX.test(albumId)) {
+    return NextResponse.json(
+      { error: 'album_id is required (uuid)' },
+      { status: 400 },
+    )
+  }
+
+  const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+  const { data: currentTenantData } = viewAsTenantId
+    ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+    : { data: null }
+  const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
+  const tid = (canViewAs && viewAsTenantId) ? viewAsTenantId : auth.tenantId
+
+  if (!(await assertAlbumAccessLocal(auth, albumId, tid))) {
+    return NextResponse.json({ error: 'access denied' }, { status: 403 })
+  }
+
+  const { data: album, error: albumErr } = await supabaseAdmin
+    .from('albums')
+    .select('id, config_preset_id, template_set_id')
+    .eq('id', albumId)
+    .single()
+
+  if (albumErr || !album) {
+    return NextResponse.json({ error: 'album not found' }, { status: 404 })
+  }
+
+  if (!album.config_preset_id) {
+    return NextResponse.json(
+      { error: 'album has no config_preset_id (выберите пресет вёрстки в форме редактирования)' },
+      { status: 400 },
+    )
+  }
+
+  let smartFillResult: { input: AlbumInput; warnings: SmartFillWarning[] }
+  try {
+    smartFillResult = await buildAlbumInput(supabaseAdmin, albumId)
+  } catch (e) {
+    return NextResponse.json(
+      { error: `smart-fill failed: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  let preset: Preset
+  try {
+    preset = await loadPresetById(supabaseAdmin, album.config_preset_id)
+  } catch (e) {
+    return NextResponse.json(
+      { error: `preset load failed: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  let templateSet: TemplateSet
+  try {
+    templateSet = await loadTemplateSet(supabaseAdmin)
+  } catch (e) {
+    return NextResponse.json(
+      { error: `template_set load failed: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  const result = buildAlbum(smartFillResult.input, preset, templateSet)
+
+  const enrichedWarnings: EnrichedWarning[] = [
+    ...result.warnings.map((w) => enrichWarning(w, 'builder')),
+    ...smartFillResult.warnings.map((w) => enrichWarning(w, 'smart_fill')),
+  ]
+
+  const warningsByLevel = {
+    blocking: enrichedWarnings.filter((w) => w.level === 'blocking').length,
+    degraded: enrichedWarnings.filter((w) => w.level === 'degraded').length,
+    info: enrichedWarnings.filter((w) => w.level === 'info').length,
+  }
+
+  // status намеренно не передаётся: при INSERT default='draft', при UPDATE
+  // существующее значение сохраняется (см. docs/phase-1-spec.md:49).
+  const { data: layoutRow, error: upsertErr } = await supabaseAdmin
+    .from('album_layouts')
+    .upsert(
+      {
+        album_id: albumId,
+        template_set_id: templateSet.id,
+        config_preset_id: preset.id,
+        spreads: result.spreads,
+        warnings: enrichedWarnings,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'album_id' },
+    )
+    .select('id')
+    .single()
+
+  if (upsertErr || !layoutRow) {
+    return NextResponse.json(
+      { error: `album_layouts upsert failed: ${upsertErr?.message ?? 'no row'}` },
+      { status: 500 },
+    )
+  }
+
+  await logAction(auth, 'album_layout.build', 'album', albumId, {
+    template_set_id: templateSet.id,
+    preset_slug: preset.slug,
+    total_spreads: result.spreads.length,
+    total_warnings: enrichedWarnings.length,
+    warnings_by_level: warningsByLevel,
+  })
+
+  return NextResponse.json({
+    spreads: result.spreads,
+    warnings: enrichedWarnings,
+    layout_id: layoutRow.id,
+    summary: {
+      total_spreads: result.spreads.length,
+      total_warnings: enrichedWarnings.length,
+      warnings_by_level: warningsByLevel,
+      preset_slug: preset.slug,
+      preset_name: preset.name,
     },
   })
 }

@@ -63,3 +63,27 @@ export async function loadPresetBySlug(
   }
   return data as Preset;
 }
+
+/**
+ * Загрузка config_preset по UUID. Парная к loadPresetBySlug — используется
+ * в endpoint'ах где у альбома уже есть config_preset_id (FK).
+ *
+ * @param supabase — клиент с правами SELECT на config_presets
+ * @param id — UUID пресета (из albums.config_preset_id)
+ */
+export async function loadPresetById(
+  supabase: SupabaseClient,
+  id: string,
+): Promise<Preset> {
+  const { data, error } = await supabase
+    .from('config_presets')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (error || !data) {
+    throw new Error(
+      `config_preset id=${id} not found: ${error?.message ?? 'no row'}`,
+    );
+  }
+  return data as Preset;
+}
