@@ -154,6 +154,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(data ?? [])
   }
 
+  if (action === 'album_layout') {
+    return handleGetAlbumLayout(req, auth)
+  }
+
   if (action === 'template_set_detail') {
     const id = req.nextUrl.searchParams.get('id')
     if (!id || !UUID_REGEX.test(id)) {
@@ -651,6 +655,89 @@ async function handleBuildAlbum(
       warnings_by_level: warningsByLevel,
       preset_slug: preset.slug,
       preset_name: preset.name,
+    },
+  })
+}
+
+// ============================================================
+// GET /api/layout?action=album_layout&album_id=<uuid>
+// ============================================================
+// Загружает existing layout из album_layouts. Используется в UI 1.4 для
+// persisted state — при открытии Обзора в AlbumDetailModal.
+//
+// Возвращает:
+//   { layout: null } — записи нет (альбом ещё не собирали)
+//   { layout: { layout_id, spreads, warnings, summary } } — есть запись
+//
+// Доступ: тот же что у build_album (owner/manager/viewer + view_as).
+// ============================================================
+
+async function handleGetAlbumLayout(
+  req: NextRequest,
+  auth: AuthContext,
+): Promise<NextResponse> {
+  const albumId = req.nextUrl.searchParams.get('album_id')
+  if (!albumId || !UUID_REGEX.test(albumId)) {
+    return NextResponse.json(
+      { error: 'album_id is required (uuid)' },
+      { status: 400 },
+    )
+  }
+
+  const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+  const { data: currentTenantData } = viewAsTenantId
+    ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+    : { data: null }
+  const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
+  const tid = (canViewAs && viewAsTenantId) ? viewAsTenantId : auth.tenantId
+
+  if (!(await assertAlbumAccessLocal(auth, albumId, tid))) {
+    return NextResponse.json({ error: 'access denied' }, { status: 403 })
+  }
+
+  const { data: layoutRow, error } = await supabaseAdmin
+    .from('album_layouts')
+    .select(`
+      id, spreads, warnings,
+      config_presets ( slug, name )
+    `)
+    .eq('album_id', albumId)
+    .maybeSingle()
+
+  if (error) {
+    return NextResponse.json(
+      { error: `album_layouts load failed: ${error.message}` },
+      { status: 500 },
+    )
+  }
+
+  if (!layoutRow) {
+    return NextResponse.json({ layout: null })
+  }
+
+  const spreads = (layoutRow.spreads ?? []) as Array<Record<string, unknown>>
+  const warnings = (layoutRow.warnings ?? []) as EnrichedWarning[]
+
+  const warningsByLevel = {
+    blocking: warnings.filter((w) => w.level === 'blocking').length,
+    degraded: warnings.filter((w) => w.level === 'degraded').length,
+    info: warnings.filter((w) => w.level === 'info').length,
+  }
+
+  const presetData = (layoutRow as unknown as { config_presets: { slug?: string; name?: string } | null }).config_presets
+
+  return NextResponse.json({
+    layout: {
+      layout_id: layoutRow.id,
+      spreads,
+      warnings,
+      summary: {
+        total_spreads: spreads.length,
+        total_warnings: warnings.length,
+        warnings_by_level: warningsByLevel,
+        preset_slug: presetData?.slug ?? null,
+        preset_name: presetData?.name ?? null,
+      },
     },
   })
 }

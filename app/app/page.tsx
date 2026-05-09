@@ -681,6 +681,76 @@ function StatCard({
   return <div className={baseClass}>{content}</div>
 }
 
+// ─── Smart-fill (фаза 1.4) ──────────────────────────────────────────────
+type WarningLevel = 'blocking' | 'degraded' | 'info'
+
+type EnrichedWarning = {
+  code: string
+  detail: string
+  level: WarningLevel
+  source: 'builder' | 'smart_fill'
+}
+
+type SmartFillSummary = {
+  total_spreads: number
+  total_warnings: number
+  warnings_by_level: { blocking: number; degraded: number; info: number }
+  preset_slug: string | null
+  preset_name: string | null
+}
+
+type SmartFillLayout = {
+  layout_id: string
+  spreads: unknown[]
+  warnings: EnrichedWarning[]
+  summary: SmartFillSummary
+}
+
+// ─── Категоризированный warning блок (фаза 1.4) ────────────────────────────
+function CollapseSection({
+  level,
+  warnings,
+}: {
+  level: WarningLevel
+  warnings: EnrichedWarning[]
+}) {
+  if (warnings.length === 0) return null
+
+  const config = {
+    blocking: {
+      label: 'Критично',
+      classes: 'bg-red-50 text-red-700 border-red-200',
+      summaryClasses: 'text-red-700',
+    },
+    degraded: {
+      label: 'Требует внимания',
+      classes: 'bg-amber-50 text-amber-700 border-amber-200',
+      summaryClasses: 'text-amber-700',
+    },
+    info: {
+      label: 'К сведению',
+      classes: 'bg-gray-50 text-gray-700 border-gray-200',
+      summaryClasses: 'text-gray-700',
+    },
+  }[level]
+
+  return (
+    <details className={`rounded border ${config.classes}`}>
+      <summary className={`px-3 py-1.5 text-sm cursor-pointer select-none ${config.summaryClasses}`}>
+        {config.label} ({warnings.length})
+      </summary>
+      <ul className="px-3 py-2 text-xs space-y-1">
+        {warnings.map((w, i) => (
+          <li key={`${w.code}-${i}`} className="leading-relaxed">
+            <span className="font-mono opacity-70">[{w.code}]</span>{' '}
+            <span>{w.detail}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
+}
+
 // ============================================================
 // МОДАЛКА ДЕТАЛЕЙ АЛЬБОМА (с управлением учениками)
 // ============================================================
@@ -714,6 +784,8 @@ function AlbumDetailModal({
   const [daily, setDaily] = useState<{date:string;submitted:number;started:number}[]>([])
   const [children, setChildren] = useState<Child[]>([])
   const [presets, setPresets] = useState<PresetOption[]>([])
+  const [layout, setLayout] = useState<SmartFillLayout | null>(null)
+  const [smartFillBusy, setSmartFillBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [backdropStart, setBackdropStart] = useState(false)
   const [tab, setTab] = useState<'overview' | 'children' | 'teachers' | 'responsible' | 'photos' | 'surcharges' | 'spread' | 'production'>('overview')
@@ -786,16 +858,20 @@ function AlbumDetailModal({
   }
 
   const load = async () => {
-    const [s, c, an, p] = await Promise.all([
+    const [s, c, an, p, lay] = await Promise.all([
       apiVA(`/api/tenant?action=album_stats&album_id=${album.id}`).then(r => r.json()),
       apiVA(`/api/tenant?action=children&album_id=${album.id}`).then(r => r.json()),
       apiVA(`/api/tenant?action=analytics&album_id=${album.id}`).then(r => r.json()),
       apiVA('/api/tenant?action=presets_list').then(r => r.ok ? r.json() : { presets: [] }).catch(() => ({ presets: [] })),
+      apiVA(`/api/layout?action=album_layout&album_id=${album.id}`)
+        .then(r => r.ok ? r.json() : { layout: null })
+        .catch(() => ({ layout: null })),
     ])
     setStats(s)
     setChildren(Array.isArray(c) ? c : [])
     setDaily(an.daily ?? [])
     setPresets(p.presets ?? [])
+    setLayout(lay.layout ?? null)
     setLoading(false)
   }
 
@@ -803,6 +879,44 @@ function AlbumDetailModal({
     load().catch(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [album.id])
+
+  const runSmartFill = async () => {
+    if (!album.config_preset_id || smartFillBusy) return
+    setSmartFillBusy(true)
+    try {
+      const r = await apiVA('/api/layout?action=build_album', {
+        method: 'POST',
+        body: JSON.stringify({ album_id: album.id }),
+      })
+      if (r.ok) {
+        const data = await r.json()
+        setLayout({
+          layout_id: data.layout_id,
+          spreads: data.spreads,
+          warnings: data.warnings,
+          summary: data.summary,
+        })
+        onNotify(`Layout собран: ${data.summary.total_spreads} разворотов, ${data.summary.total_warnings} предупреждений`)
+      } else {
+        const d = await r.json().catch(() => ({}))
+        onError(d.error ?? 'Сборка не удалась')
+      }
+    } catch {
+      onError('Ошибка сети при сборке')
+    } finally {
+      setSmartFillBusy(false)
+    }
+  }
+
+  const copyLayoutJson = async () => {
+    if (!layout) return
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(layout, null, 2))
+      onNotify('Layout JSON скопирован')
+    } catch {
+      onError('Не удалось скопировать (нет доступа к буферу обмена)')
+    }
+  }
 
   useEffect(() => {
     if ((tab === 'spread' || tab === 'surcharges') && (album as any).personal_spread_enabled) {
@@ -1000,15 +1114,74 @@ function AlbumDetailModal({
               {tab === 'overview' && stats && (
                 <>
                   <div className="bg-gray-50 rounded-lg p-3 text-sm mb-4">
-                    <div className="text-xs text-gray-500 uppercase mb-1">Пресет вёрстки</div>
-                    {album.config_preset_name ? (
-                      <>
-                        <div className="font-medium text-gray-900">{album.config_preset_name}</div>
-                        <div className="text-xs text-gray-400 font-mono">{album.config_preset_slug}</div>
-                      </>
-                    ) : (
-                      <div className="text-amber-600">
-                        Не выбран. Откройте «Редактировать» → задайте комплектацию и тип печати.
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div>
+                        <div className="text-xs text-gray-500 uppercase mb-1">Пресет вёрстки</div>
+                        {album.config_preset_name ? (
+                          <>
+                            <div className="font-medium text-gray-900">{album.config_preset_name}</div>
+                            <div className="text-xs text-gray-400 font-mono">{album.config_preset_slug}</div>
+                          </>
+                        ) : (
+                          <div className="text-amber-600">
+                            Не выбран. Откройте «Редактировать» → задайте комплектацию и тип печати.
+                          </div>
+                        )}
+                      </div>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={runSmartFill}
+                          disabled={!album.config_preset_id || smartFillBusy}
+                          className="btn-primary text-sm px-4 py-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={!album.config_preset_id
+                            ? 'Сначала выберите пресет вёрстки в форме редактирования'
+                            : layout
+                              ? 'Запустить сборку заново — текущий layout будет перезаписан'
+                              : 'Запустить автосборку альбома'}
+                        >
+                          {smartFillBusy
+                            ? 'Сборка...'
+                            : layout
+                              ? 'Пересобрать'
+                              : 'Собрать автоматически'}
+                        </button>
+                      )}
+                    </div>
+
+                    {layout && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+                          <div className="text-sm">
+                            <span className="text-green-600 font-medium">✓ Layout собран</span>
+                            <span className="text-gray-500"> · {layout.summary.total_spreads} разворотов</span>
+                            {layout.summary.total_warnings > 0 && (
+                              <span className="text-gray-500"> · {layout.summary.total_warnings} предупреждений</span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={copyLayoutJson}
+                            className="text-xs text-gray-500 hover:text-gray-700 underline"
+                          >
+                            Скопировать JSON
+                          </button>
+                        </div>
+
+                        <div className="space-y-1.5 mt-2">
+                          <CollapseSection
+                            level="blocking"
+                            warnings={layout.warnings.filter(w => w.level === 'blocking')}
+                          />
+                          <CollapseSection
+                            level="degraded"
+                            warnings={layout.warnings.filter(w => w.level === 'degraded')}
+                          />
+                          <CollapseSection
+                            level="info"
+                            warnings={layout.warnings.filter(w => w.level === 'info')}
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
