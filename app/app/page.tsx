@@ -2847,23 +2847,33 @@ function TeachersTab({
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div className="flex items-start gap-3 min-w-0 flex-1">
                       {t.photo_storage_path ? (
-                        <a
-                          href={photoUrl(t.photo_storage_path)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100"
-                          title={t.photo_filename ?? 'Открыть оригинал'}
-                        >
-                          <img
-                            src={photoUrl(t.photo_storage_path)}
-                            alt=""
-                            className="w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                        </a>
+                        <div className="flex flex-col items-center w-24 flex-shrink-0">
+                          <a
+                            href={photoUrl(t.photo_storage_path)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block w-24 h-24 rounded-xl overflow-hidden bg-gray-100"
+                            title={t.photo_filename ?? 'Открыть оригинал'}
+                          >
+                            <img
+                              src={photoUrl(t.photo_storage_path)}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          </a>
+                          {t.photo_filename && (
+                            <div
+                              className="text-xs text-gray-500 mt-1 truncate w-full text-center"
+                              title={t.photo_filename}
+                            >
+                              {t.photo_filename.replace(/\.[^.]+$/, '')}
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <div
-                          className="w-16 h-16 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-300 text-2xl"
+                          className="w-24 h-24 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-300 text-3xl"
                           title="Фото не выбрано"
                         >
                           ?
