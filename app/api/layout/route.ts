@@ -652,6 +652,7 @@ async function handleBuildAlbum(
     spreads: result.spreads,
     warnings: enrichedWarnings,
     layout_id: layoutRow.id,
+    template_set_id: templateSet.id,
     summary: {
       total_spreads: result.spreads.length,
       total_warnings: enrichedWarnings.length,
@@ -701,7 +702,7 @@ async function handleGetAlbumLayout(
   const { data: layoutRow, error } = await supabaseAdmin
     .from('album_layouts')
     .select(`
-      id, spreads, warnings,
+      id, template_set_id, spreads, warnings,
       config_presets ( slug, name )
     `)
     .eq('album_id', albumId)
@@ -732,6 +733,7 @@ async function handleGetAlbumLayout(
   return NextResponse.json({
     layout: {
       layout_id: layoutRow.id,
+      template_set_id: layoutRow.template_set_id,
       spreads,
       warnings,
       summary: {

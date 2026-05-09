@@ -2,7 +2,13 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import CRMModal from './CRMModal'
+
+const LayoutPreviewStrip = dynamic(
+  () => import('./_components/LayoutPreviewStrip'),
+  { ssr: false, loading: () => null },
+)
 
 // ============================================================
 // ТИПЫ
@@ -701,6 +707,7 @@ type SmartFillSummary = {
 
 type SmartFillLayout = {
   layout_id: string
+  template_set_id: string
   spreads: unknown[]
   warnings: EnrichedWarning[]
   summary: SmartFillSummary
@@ -892,6 +899,7 @@ function AlbumDetailModal({
         const data = await r.json()
         setLayout({
           layout_id: data.layout_id,
+          template_set_id: data.template_set_id,
           spreads: data.spreads,
           warnings: data.warnings,
           summary: data.summary,
@@ -1185,6 +1193,15 @@ function AlbumDetailModal({
                       </div>
                     )}
                   </div>
+
+                  {layout && (
+                    <LayoutPreviewStrip
+                      layout={layout}
+                      onOpenEditor={() => {
+                        // В 2.6: router.push(`/app/album/${album.id}/layout`)
+                      }}
+                    />
+                  )}
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                     <MiniStat label="Всего" value={stats.total} />
