@@ -70,6 +70,17 @@ export default function LayoutEditorPage({
   const [currentIdx, setCurrentIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [viewport, setViewport] = useState({ width: 1440, height: 900 })
+
+  useEffect(() => {
+    const update = () => setViewport({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    })
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
 
   // ─── Загрузка данных при монтировании ──────────────────────────────────
   useEffect(() => {
@@ -102,7 +113,7 @@ export default function LayoutEditorPage({
             `/api/layout?action=template_set_detail&id=${loadedLayout.template_set_id}`,
           ),
           api(`/api/tenant?action=album_photos&album_id=${albumId}`),
-          api(`/api/tenant?action=albums&album_id=${albumId}`),
+          api(`/api/tenant?action=album&album_id=${albumId}`),
         ])
 
         if (!templateRes.ok) {
@@ -178,10 +189,16 @@ export default function LayoutEditorPage({
     (t) => t.id === currentSpread?.template_id,
   )
 
-  // ─── Размер canvas'а — фиксированный для 2.6.1, динамика в 2.6.5 ───────
-  // 70% ширины окна минус палитра (30%) и padding'и. Берём 800px как
-  // комфортный default — на ноутбуке 1440px это даст ~ окно редактора.
-  const canvasContainerWidth = 800
+  // Динамический расчёт canvas: вписываем spread в доступное пространство
+  // с сохранением аспекта. Если по ширине шире чем доступно (двустраничный
+  // на узком окне) — limiting factor становится ширина.
+  const availableWidth = Math.max(400, viewport.width * 0.7 - 80)
+  const availableHeight = Math.max(400, viewport.height * 0.7)
+  const aspectRatio = currentTemplate
+    ? currentTemplate.width_mm / currentTemplate.height_mm
+    : 1
+  const widthByHeight = availableHeight * aspectRatio
+  const canvasContainerWidth = Math.min(widthByHeight, availableWidth)
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">

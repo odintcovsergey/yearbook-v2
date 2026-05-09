@@ -83,6 +83,27 @@ function getCoverCrop(img: HTMLImageElement, targetW: number, targetH: number) {
   }
 }
 
+// ─── Хелпер: проверка яркости цвета ──────────────────────────────────────
+//
+// Возвращает true если цвет слишком светлый (luminance > 0.7) или
+// невалидный. Используется в TextSlot для fallback на чёрный когда
+// placeholder.color из IDML светло-серый, который нечитаем на пустом
+// светло-сером photo-слоте (см. инструкцию 2.6.1.1).
+function isTooLight(hex: string | null | undefined): boolean {
+  if (!hex) return true
+  const m = hex.replace('#', '')
+  if (m.length !== 3 && m.length !== 6) return true
+  const expand = m.length === 3
+    ? m.split('').map((c) => c + c).join('')
+    : m
+  const r = parseInt(expand.slice(0, 2), 16) / 255
+  const g = parseInt(expand.slice(2, 4), 16) / 255
+  const b = parseInt(expand.slice(4, 6), 16) / 255
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return true
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b
+  return luminance > 0.7
+}
+
 // ─── Photo placeholder ────────────────────────────────────────────────────
 function PhotoSlot({
   placeholder,
@@ -168,7 +189,7 @@ function TextSlot({
       text={value}
       fontSize={placeholder.font_size_pt * PT_TO_MM}
       fontFamily="Arial, sans-serif"
-      fill={placeholder.color || '#000000'}
+      fill={isTooLight(placeholder.color) ? '#000000' : placeholder.color || '#000000'}
       align={placeholder.align}
       verticalAlign="top"
     />
