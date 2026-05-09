@@ -614,6 +614,8 @@ async function handleBuildAlbum(
 
   // status намеренно не передаётся: при INSERT default='draft', при UPDATE
   // существующее значение сохраняется (см. docs/phase-1-spec.md:49).
+  // has_user_edits явно сбрасывается в false: build_album = "обнулить
+  // layout до автосборки", флаг правок — часть состояния layout'а.
   const { data: layoutRow, error: upsertErr } = await supabaseAdmin
     .from('album_layouts')
     .upsert(
@@ -623,6 +625,7 @@ async function handleBuildAlbum(
         config_preset_id: preset.id,
         spreads: result.spreads,
         warnings: enrichedWarnings,
+        has_user_edits: false,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'album_id' },
