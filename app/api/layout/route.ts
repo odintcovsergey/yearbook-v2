@@ -797,7 +797,7 @@ async function handleGetAlbumLayout(
   const { data: layoutRow, error } = await supabaseAdmin
     .from('album_layouts')
     .select(`
-      id, template_set_id, spreads, warnings,
+      id, template_set_id, spreads, warnings, has_user_edits,
       config_presets ( slug, name )
     `)
     .eq('album_id', albumId)
@@ -831,6 +831,7 @@ async function handleGetAlbumLayout(
       template_set_id: layoutRow.template_set_id,
       spreads,
       warnings,
+      has_user_edits: layoutRow.has_user_edits ?? false,
       summary: {
         total_spreads: spreads.length,
         total_warnings: warnings.length,

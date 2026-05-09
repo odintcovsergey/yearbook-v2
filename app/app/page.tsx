@@ -739,6 +739,7 @@ type SmartFillLayout = {
   spreads: unknown[]
   warnings: EnrichedWarning[]
   summary: SmartFillSummary
+  has_user_edits: boolean
 }
 
 // ─── Категоризированный warning блок (фаза 1.4) ────────────────────────────
@@ -918,6 +919,18 @@ function AlbumDetailModal({
 
   const runSmartFill = async () => {
     if (!album.config_preset_id || smartFillBusy) return
+
+    // Защита: если в layout есть несохранённые ручные правки партнёра —
+    // подтверждаем destructive-операцию. has_user_edits=true появляется
+    // после save_album_layout (2.5) и сбрасывается в false после
+    // build_album (2.1).
+    if (layout?.has_user_edits) {
+      const ok = window.confirm(
+        'У вас есть ручные правки в редакторе. Пересборка их сотрёт. Продолжить?'
+      )
+      if (!ok) return
+    }
+
     setSmartFillBusy(true)
     try {
       const r = await apiVA('/api/layout?action=build_album', {
@@ -932,6 +945,7 @@ function AlbumDetailModal({
           spreads: data.spreads,
           warnings: data.warnings,
           summary: data.summary,
+          has_user_edits: false,  // build_album сбрасывает флаг (см. 2.1)
         })
         onNotify(`Layout собран: ${data.summary.total_spreads} разворотов, ${data.summary.total_warnings} предупреждений`)
       } else {
