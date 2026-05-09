@@ -545,6 +545,139 @@ export async function GET(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
+  // album_photos — единый список всех фото альбома для палитры
+  // будущего редактора (фаза 2.4 / phase-2-spec §4.1).
+  //
+  // Объединяет два источника:
+  //   - photos (с типом portrait/group/teacher, привязками, селекшенами)
+  //   - original_photos (оригиналы фотографа из workflow)
+  //
+  // Для photos подтягивает:
+  //   - child_ids[] из photo_children
+  //   - teacher_ids[] из photo_teachers
+  //   - selection_types[] из selections (distinct)
+  //
+  // Для original_photos все привязки/селекшены пусты, type=null.
+  // ----------------------------------------------------------
+  if (action === 'album_photos' && albumId) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    // 1. Параллельная загрузка из всех источников.
+    const [photosRes, originalsRes] = await Promise.all([
+      supabaseAdmin
+        .from('photos')
+        .select('id, filename, storage_path, thumb_path, type, created_at')
+        .eq('album_id', albumId)
+        .order('created_at'),
+      supabaseAdmin
+        .from('original_photos')
+        .select('id, filename, storage_path, file_size, created_at')
+        .eq('album_id', albumId)
+        .order('created_at'),
+    ])
+
+    if (photosRes.error) {
+      return NextResponse.json({ error: photosRes.error.message }, { status: 500 })
+    }
+    if (originalsRes.error) {
+      return NextResponse.json({ error: originalsRes.error.message }, { status: 500 })
+    }
+
+    const photos = photosRes.data ?? []
+    const originals = originalsRes.data ?? []
+    const photoIds = photos.map((p: any) => p.id)
+
+    // 2. Подгрузить связи и селекшены параллельно (только если есть photos).
+    const [childLinksRes, teacherLinksRes, selectionsRes] = photoIds.length > 0
+      ? await Promise.all([
+          supabaseAdmin
+            .from('photo_children')
+            .select('photo_id, child_id')
+            .in('photo_id', photoIds),
+          supabaseAdmin
+            .from('photo_teachers')
+            .select('photo_id, teacher_id')
+            .in('photo_id', photoIds),
+          supabaseAdmin
+            .from('selections')
+            .select('photo_id, selection_type')
+            .in('photo_id', photoIds),
+        ])
+      : [
+          { data: [], error: null },
+          { data: [], error: null },
+          { data: [], error: null },
+        ]
+
+    // Ошибки джоинов не валим запрос — просто отдаём фото с пустыми связями.
+    // Если что-то пошло не так — это видно в логах Vercel; UI сможет
+    // показать фото без привязок (читабельно деградировать).
+
+    // 3. Группировка связей по photo_id.
+    const childIdsByPhoto: Record<string, string[]> = {}
+    for (const link of childLinksRes.data ?? []) {
+      const pid = (link as any).photo_id as string
+      const cid = (link as any).child_id as string
+      if (!childIdsByPhoto[pid]) childIdsByPhoto[pid] = []
+      childIdsByPhoto[pid].push(cid)
+    }
+
+    const teacherIdsByPhoto: Record<string, string[]> = {}
+    for (const link of teacherLinksRes.data ?? []) {
+      const pid = (link as any).photo_id as string
+      const tidRow = (link as any).teacher_id as string
+      if (!teacherIdsByPhoto[pid]) teacherIdsByPhoto[pid] = []
+      teacherIdsByPhoto[pid].push(tidRow)
+    }
+
+    // selection_types: distinct через Set, потом обратно в массив.
+    const selectionTypesByPhoto: Record<string, Set<string>> = {}
+    for (const sel of selectionsRes.data ?? []) {
+      const pid = (sel as any).photo_id as string
+      const stype = (sel as any).selection_type as string
+      if (!selectionTypesByPhoto[pid]) selectionTypesByPhoto[pid] = new Set()
+      selectionTypesByPhoto[pid].add(stype)
+    }
+
+    // 4. Сборка результата: photos + originals в одном массиве.
+    const fromPhotos = photos.map((p: any) => ({
+      id: p.id,
+      filename: p.filename,
+      storage_path: p.storage_path,
+      thumb_path: p.thumb_path,
+      type: p.type as 'portrait' | 'group' | 'teacher',
+      source: 'selections' as const,
+      child_ids: childIdsByPhoto[p.id] ?? [],
+      teacher_ids: teacherIdsByPhoto[p.id] ?? [],
+      selection_types: Array.from(selectionTypesByPhoto[p.id] ?? []),
+      url: getPhotoUrl(p.storage_path),
+      thumb_url: getThumbUrl(p.storage_path, p.thumb_path),
+      created_at: p.created_at,
+    }))
+
+    const fromOriginals = originals.map((o: any) => ({
+      id: o.id,
+      filename: o.filename,
+      storage_path: o.storage_path,
+      thumb_path: null,
+      type: null,
+      source: 'originals' as const,
+      child_ids: [] as string[],
+      teacher_ids: [] as string[],
+      selection_types: [] as string[],
+      url: getPhotoUrl(o.storage_path),
+      thumb_url: getPhotoUrl(o.storage_path),  // у originals нет thumb_path
+      created_at: o.created_at,
+    }))
+
+    return NextResponse.json({
+      photos: [...fromPhotos, ...fromOriginals],
+    })
+  }
+
+  // ----------------------------------------------------------
   // leads — список реферальных заявок tenant'а
   // Возвращает заявки с именем реферера и названием альбома
   // (чтобы понять откуда пришла заявка).
