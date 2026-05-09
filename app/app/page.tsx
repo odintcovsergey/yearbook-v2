@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import React, { useState, useEffect, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import CRMModal from './CRMModal'
 
@@ -120,6 +120,28 @@ async function api(path: string, opts?: RequestInit): Promise<Response> {
 }
 
 // ============================================================
+// AlbumDeepLinkHandler — обрабатывает ?album=<UUID> в URL.
+// Вынесен в отдельный компонент чтобы локально обернуть useSearchParams
+// в Suspense (требование Next.js 14+ для CSR-bailout). См. 2.6.5.1.
+// ============================================================
+function AlbumDeepLinkHandler({
+  albums,
+  setSelectedAlbum,
+}: {
+  albums: Album[]
+  setSelectedAlbum: (a: Album) => void
+}) {
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    const queryAlbumId = searchParams.get('album')
+    if (!queryAlbumId || albums.length === 0) return
+    const found = albums.find((a) => a.id === queryAlbumId)
+    if (found) setSelectedAlbum(found)
+  }, [searchParams, albums, setSelectedAlbum])
+  return null
+}
+
+// ============================================================
 // ОСНОВНАЯ СТРАНИЦА
 // ============================================================
 
@@ -217,6 +239,12 @@ export default function AppPage() {
 
   return (
     <div className="min-h-screen">
+      <Suspense fallback={null}>
+        <AlbumDeepLinkHandler
+          albums={albums}
+          setSelectedAlbum={setSelectedAlbum}
+        />
+      </Suspense>
       {/* Шапка */}
       <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">

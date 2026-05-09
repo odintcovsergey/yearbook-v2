@@ -333,7 +333,7 @@ export default function LayoutEditorPage({
         <p className="text-red-600 max-w-md text-center">{error}</p>
         <button
           type="button"
-          onClick={() => router.push('/app')}
+          onClick={() => router.push(`/app?album=${albumId}`)}
           className="text-sm px-4 py-2 rounded border border-gray-300 hover:bg-gray-50"
         >
           ← В кабинет
@@ -373,7 +373,7 @@ export default function LayoutEditorPage({
         <div className="flex items-center gap-4">
           <button
             type="button"
-            onClick={() => router.push('/app')}
+            onClick={() => router.push(`/app?album=${albumId}`)}
             className="text-sm text-gray-600 hover:text-gray-900"
           >
             ← К альбому
