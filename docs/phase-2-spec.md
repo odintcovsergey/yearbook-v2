@@ -1,3 +1,12 @@
+> **STATUS: PHASE 2 CLOSED** ✅ (09.05.2026, см. yearbook-context-v44.md)
+>
+> 17 коммитов от 2.1 до 2.7. Полная UX-цикл редактирования
+> работает: drag из палитры, swap между placeholder'ами,
+> auto-save через 2с, beforeunload защита, deep link `?album=UUID`,
+> confirm-диалог при destructive-пересборке.
+
+---
+
 # Фаза 2 — Canvas-рендер и редактирование layout'а
 
 **Дата:** 09.05.2026
