@@ -128,7 +128,10 @@ export async function buildAlbumInput(
             'child_id, selection_type, created_at, photos(storage_path)',
           )
           .in('child_id', childIds)
-          .order('created_at')
+          // DESC: first-wins логика ниже выберет самое свежее selection.
+          // Без этого если ученик поменял выбор portrait_page, в layout
+          // попадает устаревшее (см. docs/internal/2.3.1-instructions.md).
+          .order('created_at', { ascending: false })
       : Promise.resolve({ data: [], error: null }),
     childIds.length > 0
       ? supabase

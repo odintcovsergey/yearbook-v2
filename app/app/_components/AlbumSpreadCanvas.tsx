@@ -93,7 +93,9 @@ function PhotoSlot({
 }) {
   const img = useImage(url)
 
-  // Пустой слот → dashed frame
+  // Пустой слот → светло-серая заливка с видимой обводкой.
+  // Партнёру важно видеть, где должно быть фото — на скейле миниатюры
+  // тонкая dashed-рамка не различима, поэтому используем fill.
   if (!url || !img) {
     return (
       <Rect
@@ -101,9 +103,9 @@ function PhotoSlot({
         y={placeholder.y_mm}
         width={placeholder.width_mm}
         height={placeholder.height_mm}
+        fill="#f3f4f6"
         stroke="#cbd5e1"
-        strokeWidth={0.3}
-        dash={[1, 1]}
+        strokeWidth={0.5}
       />
     )
   }

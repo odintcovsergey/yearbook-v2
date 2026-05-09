@@ -127,7 +127,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor }: Props) {
                   />
                 </div>
                 <div className="text-[10px] text-center text-gray-500 mt-1">
-                  {s.spread_index}
+                  {s.spread_index + 1}
                 </div>
               </div>
             )
