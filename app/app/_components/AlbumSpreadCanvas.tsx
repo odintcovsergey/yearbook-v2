@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Stage, Layer, Rect, Image as KonvaImage, Text, Group } from 'react-konva'
+import { useDroppable } from '@dnd-kit/core'
 import type {
   SpreadInstance,
   SpreadTemplate,
@@ -196,6 +197,41 @@ function TextSlot({
   )
 }
 
+// ─── Прозрачный drop-target над Konva-placeholder'ом (mode='edit') ───────
+//
+// Konva рендерит на canvas (pixels), не в DOM. @dnd-kit видит только
+// DOM-узлы. Решение: рисуем поверх Stage'а абсолютно-позиционированный
+// <div> для каждого photo-placeholder с теми же координатами что у
+// Konva-элемента. Этот div принимает drop через useDroppable.
+//
+// Размеры: placeholder.x_mm * scale → пиксели в Stage'овой системе
+// координат (которая равна containerWidth × containerHeight).
+function DropZone({
+  placeholder,
+  scale,
+}: {
+  placeholder: PhotoPlaceholder
+  scale: number
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: placeholder.label })
+  return (
+    <div
+      ref={setNodeRef}
+      className={`absolute pointer-events-auto transition-all ${
+        isOver
+          ? 'ring-2 ring-blue-500 bg-blue-100/40'
+          : 'ring-1 ring-transparent hover:ring-blue-300/50'
+      }`}
+      style={{
+        left: `${placeholder.x_mm * scale}px`,
+        top: `${placeholder.y_mm * scale}px`,
+        width: `${placeholder.width_mm * scale}px`,
+        height: `${placeholder.height_mm * scale}px`,
+      }}
+    />
+  )
+}
+
 // ─── Главный компонент ────────────────────────────────────────────────────
 export default function AlbumSpreadCanvas({
   instance,
@@ -208,38 +244,54 @@ export default function AlbumSpreadCanvas({
   const stageHeight = template.height_mm * scale
 
   return (
-    <Stage
-      width={stageWidth}
-      height={stageHeight}
-      scaleX={scale}
-      scaleY={scale}
-      listening={mode === 'edit'}
+    <div
+      className="relative"
+      style={{ width: `${stageWidth}px`, height: `${stageHeight}px` }}
     >
-      <Layer>
-        {/* Фон spread'а — серый прямоугольник с тонкой границей */}
-        <Rect
-          x={0}
-          y={0}
-          width={template.width_mm}
-          height={template.height_mm}
-          fill="#fafafa"
-          stroke="#e5e7eb"
-          strokeWidth={0.3}
-        />
+      <Stage
+        width={stageWidth}
+        height={stageHeight}
+        scaleX={scale}
+        scaleY={scale}
+        listening={mode === 'edit'}
+      >
+        <Layer>
+          {/* Фон spread'а — серый прямоугольник с тонкой границей */}
+          <Rect
+            x={0}
+            y={0}
+            width={template.width_mm}
+            height={template.height_mm}
+            fill="#fafafa"
+            stroke="#e5e7eb"
+            strokeWidth={0.3}
+          />
 
-        {/* Контент из instance.data */}
-        {template.placeholders.map((p: Placeholder, i) => {
-          const value = instance.data[p.label] ?? null
-          const key = `${p.label}-${i}`
-          if (p.type === 'photo') {
-            return <PhotoSlot key={key} placeholder={p} url={value} />
-          }
-          if (p.type === 'text') {
-            return <TextSlot key={key} placeholder={p} value={value} />
-          }
-          return null
-        })}
-      </Layer>
-    </Stage>
+          {/* Контент из instance.data */}
+          {template.placeholders.map((p: Placeholder, i) => {
+            const value = instance.data[p.label] ?? null
+            const key = `${p.label}-${i}`
+            if (p.type === 'photo') {
+              return <PhotoSlot key={key} placeholder={p} url={value} />
+            }
+            if (p.type === 'text') {
+              return <TextSlot key={key} placeholder={p} value={value} />
+            }
+            return null
+          })}
+        </Layer>
+      </Stage>
+
+      {/* DOM-overlay с drop-target'ами (только в edit-режиме) */}
+      {mode === 'edit' && (
+        <div className="absolute inset-0 pointer-events-none">
+          {template.placeholders
+            .filter((p): p is PhotoPlaceholder => p.type === 'photo')
+            .map((p) => (
+              <DropZone key={p.label} placeholder={p} scale={scale} />
+            ))}
+        </div>
+      )}
+    </div>
   )
 }

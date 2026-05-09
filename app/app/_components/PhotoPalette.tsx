@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useDraggable } from '@dnd-kit/core'
 import type { SpreadInstance } from '@/lib/album-builder/types'
 
 // ─── Тип AlbumPhoto (соответствует /api/tenant?action=album_photos) ──────
@@ -64,16 +65,35 @@ function PhotoTile({
   photo: AlbumPhoto
   usage: number[]
 }) {
+  // useDraggable: id=photo.id, data содержит сам photo чтобы handleDragEnd
+  // мог сразу взять url без поиска по id.
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: photo.id,
+      data: { type: 'palette', photo },
+    })
+
+  const style = transform
+    ? { transform: `translate(${transform.x}px, ${transform.y}px)`, zIndex: 50 }
+    : undefined
+
   return (
     <div
-      className="relative aspect-[3/4] bg-gray-100 rounded overflow-hidden border border-gray-200 hover:ring-2 hover:ring-blue-300 transition cursor-default"
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`relative aspect-[3/4] bg-gray-100 rounded overflow-hidden border border-gray-200 hover:ring-2 hover:ring-blue-300 transition cursor-grab active:cursor-grabbing ${
+        isDragging ? 'opacity-40' : ''
+      }`}
       title={photo.filename}
     >
       <img
         src={photo.thumb_url}
         alt={photo.filename}
         loading="lazy"
-        className="w-full h-full object-cover"
+        draggable={false}
+        className="w-full h-full object-cover pointer-events-none"
         onError={(e) => {
           // Битая картинка → серая заливка с filename как fallback
           ;(e.target as HTMLImageElement).style.display = 'none'
@@ -81,7 +101,7 @@ function PhotoTile({
       />
       <UsageBadge usage={usage} />
       {/* Filename overlay при hover */}
-      <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 text-[10px] bg-black/60 text-white opacity-0 hover:opacity-100 transition truncate">
+      <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 text-[10px] bg-black/60 text-white opacity-0 hover:opacity-100 transition truncate pointer-events-none">
         {photo.filename}
       </div>
     </div>

@@ -3,6 +3,13 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
 import type {
   SpreadInstance,
   SpreadTemplate,
@@ -184,6 +191,36 @@ export default function LayoutEditorPage({
     }
   }, [albumId])
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  )
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over) return  // drop вне drop-зоны
+
+    const sourceData = active.data.current as
+      | { type?: string; photo?: AlbumPhoto }
+      | undefined
+    if (sourceData?.type !== 'palette') return  // только палитра→canvas в 2.6.3
+
+    const photo = sourceData.photo
+    if (!photo) return
+
+    const targetLabel = String(over.id)
+
+    // Иммутабельная мутация: spreads[currentIdx].data[targetLabel] = photo.url
+    setLayout((prev) => {
+      if (!prev) return prev
+      const newSpreads = prev.spreads.map((s, idx) =>
+        idx === currentIdx
+          ? { ...s, data: { ...s.data, [targetLabel]: photo.url } }
+          : s,
+      )
+      return { ...prev, spreads: newSpreads }
+    })
+  }
+
   // ─── Loading / error состояния ──────────────────────────────────────────
   if (loading) {
     return (
@@ -253,6 +290,7 @@ export default function LayoutEditorPage({
       </header>
 
       {/* ═══ Main: левая колонка (canvas) + правая (палитра) ═══ */}
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="flex-1 flex overflow-hidden">
         {/* ─── Левая колонка: canvas + навигация ─── */}
         <main className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto">
@@ -300,6 +338,7 @@ export default function LayoutEditorPage({
         {/* ─── Правая колонка: палитра ─── */}
         <PhotoPalette spreads={spreads} photos={photos} />
       </div>
+      </DndContext>
     </div>
   )
 }
