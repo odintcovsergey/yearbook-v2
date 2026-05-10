@@ -16,9 +16,20 @@ export async function PUT(req: NextRequest) {
   if (child.submitted_at) return NextResponse.json({ error: 'Уже подтверждено' }, { status: 409 })
 
   if (action === 'lock') {
-    // Проверить не занято ли уже другим
+    // TTL для photo_locks: 15 минут с момента создания/обновления.
+    // Hot-fix 10.05.2026 — sweep нашёл orphan locks в проде.
+    // Lock с expires_at < now() игнорируется (фото снова доступно),
+    // sweep cron не требуется.
+    const expiresAtIso = new Date(Date.now() + 15 * 60 * 1000).toISOString()
+    const nowIso = new Date().toISOString()
+
+    // Проверить не занято ли уже другим — игнорируем протухшие locks.
     const { data: existing } = await supabaseAdmin
-      .from('photo_locks').select('child_id').eq('photo_id', photoId).maybeSingle()
+      .from('photo_locks')
+      .select('child_id')
+      .eq('photo_id', photoId)
+      .gt('expires_at', nowIso)
+      .maybeSingle()
 
     const { data: confirmed } = await supabaseAdmin
       .from('selections')
@@ -30,9 +41,19 @@ export async function PUT(req: NextRequest) {
     if ((existing && existing.child_id !== child.id) || (confirmed && confirmed.child_id !== child.id))
       return NextResponse.json({ error: 'Фото уже выбрано другим' }, { status: 409 })
 
+    // Upsert обновляет locked_at и expires_at — так heartbeat работает
+    // бесплатно: фронт может вызывать lock повторно для refresh TTL.
     await supabaseAdmin
       .from('photo_locks')
-      .upsert({ photo_id: photoId, child_id: child.id }, { onConflict: 'photo_id' })
+      .upsert(
+        {
+          photo_id: photoId,
+          child_id: child.id,
+          locked_at: nowIso,
+          expires_at: expiresAtIso,
+        },
+        { onConflict: 'photo_id' }
+      )
 
   } else if (action === 'unlock') {
     await supabaseAdmin

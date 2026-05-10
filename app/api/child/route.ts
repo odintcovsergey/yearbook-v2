@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
     .from('photo_locks')
     .select('photo_id, child_id')
     .in('photo_id', (allPortraits ?? []).map((p: any) => p.id))
+    .gt('expires_at', new Date().toISOString())  // hot-fix: TTL — игнорируем протухшие locks
 
   const { data: confirmedPortraits } = await supabaseAdmin
     .from('selections')
@@ -88,6 +89,7 @@ export async function GET(req: NextRequest) {
     .from('photo_locks')
     .select('photo_id, child_id')
     .in('photo_id', (groupPhotos ?? []).map((p: any) => p.id))
+    .gt('expires_at', new Date().toISOString())  // hot-fix: TTL — игнорируем протухшие locks
 
   const { data: confirmedGroups } = await supabaseAdmin
     .from('selections')
