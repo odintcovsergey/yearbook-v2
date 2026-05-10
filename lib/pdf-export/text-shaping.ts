@@ -111,43 +111,50 @@ export function drawTextShaped(
   // Считаем base position (baseline первой строки) с учётом vertical_align
   // и rotation_deg.
   //
-  // rotation=0 (стандарт): text идёт вправо от baseline, новая строка
-  // ниже на line_height.
+  // КООРДИНАТНАЯ ИНВЕРСИЯ: IDML использует Y-down, PDF — Y-up. При
+  // преобразовании знак угла инвертируется. IDML rotation=-90 → в PDF
+  // нужно rotate=+90 (после Y-flip угол меняет знак).
   //
-  // rotation=-90 (читаем сверху-вниз, текст «лежит» на правом боку, как
-  // бывает для имён учителей вдоль вертикальной стороны фото):
-  // после поворота direction baseline = вниз. Чтобы текст оказался ВНУТРИ
-  // placeholder'а:
-  //   - baseline_x = правый край placeholder − ascent (отступ для глифов)
-  //   - baseline_y = верх placeholder в PDF coords
-  //   - новая строка СЛЕВА (-line_height по x)
+  // IDML rotation=-90 (читаем сверху-вниз вдоль вертикали, top of letters
+  // facing RIGHT — стандартный способ для текста вдоль края фото):
+  //   В PDF math (Y-up) это rotate +90 (CCW 90°).
+  //   После CCW 90 от baseline (x, y): text идёт ВВЕРХ в PDF Y, то есть
+  //   visual reading direction — снизу-вверх.
+  //   Visual top-of-letters facing right.
+  //   Чтобы текст влез в placeholder:
+  //   - baseline_x = box.x + ascent (отступ от левого края для top-of-letter)
+  //   - baseline_y = box.y (нижний край в PDF coords)
+  //   - новая строка слева от предыдущей (visual): -line_height по X
   //
-  // rotation=+90 (читаем снизу-вверх): зеркально.
-  //
-  // vertical_align в rotated тексте имеет иной смысл (это горизонтальное
-  // выравнивание относительно ширины placeholder'а после поворота);
-  // обрабатываем как top по умолчанию для простоты.
+  // IDML rotation=+90 (зеркально): PDF rotate -90 (CW 90°). text идёт
+  // ВНИЗ от baseline в PDF, visual reading top-down.
+  //   - baseline_x = box.x + box.width - ascent
+  //   - baseline_y = box.y + box.height
+  //   - новая строка справа: +line_height по X
   const ascent_pt = shaped.font_size_pt * ASCENT_RATIO;
   const block_height_pt = lines.length * line_height_pt;
-  const rotation_deg = ph.rotation_deg ?? 0;
+  const idml_rotation_deg = ph.rotation_deg ?? 0;
+  const pdf_rotation_deg = -idml_rotation_deg; // координатная инверсия
 
   let first_baseline_x_pt = box.x_pt;
   let first_baseline_y_pt: number;
   let line_step_x_pt = 0;
   let line_step_y_pt = -line_height_pt;
 
-  if (rotation_deg === -90) {
-    first_baseline_x_pt = box.x_pt + box.width_pt - ascent_pt;
-    first_baseline_y_pt = box.y_pt + box.height_pt;
-    line_step_x_pt = -line_height_pt;
-    line_step_y_pt = 0;
-  } else if (rotation_deg === 90) {
+  if (idml_rotation_deg === -90) {
+    // PDF rotation +90 (CCW). Text идёт вверх от baseline.
     first_baseline_x_pt = box.x_pt + ascent_pt;
     first_baseline_y_pt = box.y_pt;
+    line_step_x_pt = -line_height_pt;
+    line_step_y_pt = 0;
+  } else if (idml_rotation_deg === 90) {
+    // PDF rotation -90 (CW). Text идёт вниз от baseline.
+    first_baseline_x_pt = box.x_pt + box.width_pt - ascent_pt;
+    first_baseline_y_pt = box.y_pt + box.height_pt;
     line_step_x_pt = line_height_pt;
     line_step_y_pt = 0;
   } else {
-    // rotation = 0 (или другое — fallback): vertical_align релевантен
+    // rotation = 0: vertical_align релевантен
     switch (ph.vertical_align) {
       case 'top':
         first_baseline_y_pt = box.y_pt + box.height_pt - ascent_pt;
@@ -167,7 +174,7 @@ export function drawTextShaped(
   // Для rotated text используем длинную сторону placeholder'а как
   // эффективную ширину (для line wrap и align).
   const effective_max_width_pt =
-    rotation_deg === 0 ? max_width_pt : box.height_pt;
+    idml_rotation_deg === 0 ? max_width_pt : box.height_pt;
 
   // Рисуем каждую строку
   const color = hexToRgb01(ph.color);
@@ -186,7 +193,7 @@ export function drawTextShaped(
       baseline_y_pt,
       effective_max_width_pt,
       ph.align,
-      rotation_deg,
+      pdf_rotation_deg, // ← инвертированный угол передаётся в pdf-lib
       is_last_line
     );
   }
