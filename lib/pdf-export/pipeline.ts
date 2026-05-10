@@ -37,6 +37,7 @@ import {
   hexToRgb01,
 } from './units';
 import type { FontRegistry } from './font-loader';
+import { embedPhotoOnPage, type PhotoEmbedContext } from './photo-embed';
 import type {
   AlbumExportInput,
   PageBoxes,
@@ -59,8 +60,8 @@ type RenderContext = {
   fontRegistry: FontRegistry;
   pageBoxes: PageBoxes;
   warnings: PdfWarning[];
-  /** Цвет заглушки фото-плейсхолдера (серый, как в Konva canvas). */
-  photoStubColor: { r: number; g: number; b: number };
+  /** Подконтекст для photo-embed (передаётся в embedPhotoOnPage). */
+  photoCtx: PhotoEmbedContext;
 };
 
 /**
@@ -83,12 +84,23 @@ export async function renderAllSpreads(
     profile.include_bleed
   );
 
+  // PhotoEmbedContext shares pdfDoc/pageBoxes/warnings с RenderContext'ом.
+  // Используем общий warnings array через передачу ссылки.
+  const photoCtx: PhotoEmbedContext = {
+    pdfDoc,
+    pageBoxes,
+    profile,
+    originals: input.originals,
+    urlToFilename: input.urlToFilename,
+    warnings,
+  };
+
   const ctx: RenderContext = {
     pdfDoc,
     fontRegistry,
     pageBoxes,
     warnings,
-    photoStubColor: { r: 0.92, g: 0.92, b: 0.92 }, // светло-серый
+    photoCtx,
   };
 
   // Индекс мастеров для O(1) lookup'а (вместо .find() на каждый разворот).
@@ -197,21 +209,25 @@ async function renderPage(
   // из IDML и заполняет background_url — здесь будет drawImage(...).
 
   // Рисуем placeholders по порядку (sort_order из IDML).
+  // Последовательно (await) — экономим RAM на sharp+fetch буферах.
+  // Параллелизм через семафор — фаза 3.X если упрёмся в производительность.
   for (const ph of placeholders) {
-    drawPlaceholder(ctx, page, ph, instance, pageHint);
+    await drawPlaceholder(ctx, page, ph, instance, pageHint);
   }
 }
 
 /**
  * Дисптачер по типу placeholder'а.
+ *
+ * Async с фазы 3.4 — drawPhoto делает fetch+sharp+embedJpg.
  */
-function drawPlaceholder(
+async function drawPlaceholder(
   ctx: RenderContext,
   page: PDFPage,
   ph: Placeholder,
   instance: SpreadInstance,
   pageHint: string
-): void {
+): Promise<void> {
   // Проверка границ: placeholder выходит за страницу = warning + clip
   // (само рисование продолжается, pdf-lib не нарисует за mediaBox).
   if (
@@ -231,52 +247,33 @@ function drawPlaceholder(
   }
 
   if (ph.type === 'photo') {
-    drawPhotoStub(ctx, page, ph, instance);
+    await drawPhoto(ctx, page, ph, instance);
   } else {
     drawTextSimple(ctx, page, ph, instance);
   }
 }
 
 /**
- * Заглушка фото-плейсхолдера: серый прямоугольник.
+ * Рендер фото placeholder'а: реальный embed через photo-embed.ts.
  *
- * В фазе 3.4 (photo-embed.ts) этот рендер заменяется на реальный
- * embed: lookup оригинала по filename → sharp resample → embedJpg →
- * drawImage. Если photo_id null или фото не найдено — оставляем
- * серый прямоугольник.
+ * С фазы 3.4 это уже не заглушка — мы lookup'аем оригинал по filename
+ * (если quality='high'/'medium'), ресэмплим через sharp к нужному dpi,
+ * и embed'им в PDF как JPEG. Поддерживаются прямоугольные и круглые
+ * (is_circle=true) фоторамки.
  *
- * Для is_circle (овалы — учительские портреты) в 3.4 будет clip-mask
- * через PDF graphics state (saveGraphicsState + intersectClippingPath).
- * В 3.3 — рисуем как обычный прямоугольник с warning.
+ * Если photo URL пустой — слот остаётся пустым (Konva рисует серый
+ * прямоугольник, в PDF — ничего, чтобы не было визуального шума).
+ * Если все попытки fetch+sharp упали — рисуется серый прямоугольник
+ * как visual fallback (логика внутри embedPhotoOnPage).
  */
-function drawPhotoStub(
+async function drawPhoto(
   ctx: RenderContext,
   page: PDFPage,
   ph: PhotoPlaceholder,
   instance: SpreadInstance
-): void {
-  const photoId = instance.data[ph.label];
-  // Заглушка: серый прямоугольник. В 3.4 будет реальное фото.
-  void photoId; // явно намекаем что в 3.4 будем использовать
-  const box = placeholderToPdfBox(
-    ph.x_mm,
-    ph.y_mm,
-    ph.width_mm,
-    ph.height_mm,
-    ctx.pageBoxes
-  );
-  page.drawRectangle({
-    x: box.x_pt,
-    y: box.y_pt,
-    width: box.width_pt,
-    height: box.height_pt,
-    color: rgb(
-      ctx.photoStubColor.r,
-      ctx.photoStubColor.g,
-      ctx.photoStubColor.b
-    ),
-    rotate: degrees(ph.rotation_deg ?? 0),
-  });
+): Promise<void> {
+  const photoUrl = instance.data[ph.label];
+  await embedPhotoOnPage(ctx.photoCtx, page, ph, photoUrl, instance.spread_index);
 }
 
 /**

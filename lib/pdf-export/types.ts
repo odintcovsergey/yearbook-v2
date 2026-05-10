@@ -59,11 +59,40 @@ export type ExportProfile = {
 // ─── Альбом-input для экспорта ────────────────────────────────────────────
 
 /**
+ * Запись из таблицы `original_photos` — оригинал фото загруженный
+ * фотографом для вёрстки (через Production tab).
+ *
+ * Используется photo embedder'ом в `lib/pdf-export/photo-embed.ts`
+ * для lookup'а по filename: если в `albumInput.students[i].portrait`
+ * URL ведёт на selection WebP с filename=`DSC1234.jpg`, и в этом
+ * массиве есть `OriginalPhoto` с тем же filename — embedder скачивает
+ * оригинал, ресэмплит через sharp к нужному dpi, и embed'ит в PDF
+ * вместо сжатого WebP.
+ *
+ * Связь selection ↔ original только по filename (без FK в БД, см.
+ * yearbook-context-v44 «АРХИТЕКТУРА ХРАНИЛИЩА»).
+ */
+export type OriginalPhoto = {
+  id: string;
+  filename: string;
+  storage_path: string;
+};
+
+/**
  * Вход в exportAlbumPdf — всё что нужно собрать PDF.
  *
  * `albumInput` — тот же тип что builder использует в фазе 1 (children,
- * teachers, photos, common). Photo embedder из фазы 3.4 использует
- * `albumInput.photos` для lookup'а оригиналов по filename.
+ * teachers, photos, common). В нём `Photo = string` — это URL фото в
+ * YC-bucket'е (через getPhotoUrl).
+ *
+ * `originals` — массив `OriginalPhoto` из таблицы `original_photos`.
+ * Photo embedder сначала ищет оригинал по filename из `urlToFilename`
+ * мапы, и если находит — использует его для embed'а в высоком качестве.
+ *
+ * `urlToFilename` — мапа URL → original filename. Заполняется из таблицы
+ * `photos.filename` в endpoint'е (фаза 3.6). Если URL нет в карте —
+ * embedder fallback'ает на сам URL (selection WebP) с warning'ом
+ * `no_original` для quality='high' профилей.
  */
 export type AlbumExportInput = {
   album: {
@@ -77,6 +106,8 @@ export type AlbumExportInput = {
   };
   templateSet: TemplateSet;
   albumInput: AlbumInput;
+  originals: OriginalPhoto[];
+  urlToFilename: Record<string, string>;
   profile: ExportProfile;
 };
 
