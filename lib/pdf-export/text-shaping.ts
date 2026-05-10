@@ -82,8 +82,15 @@ export function drawTextShaped(
     pageBoxes
   );
 
-  const max_width_pt = box.width_pt;
-  const max_height_pt = box.height_pt;
+  // Эффективные width/height для shape: для rotated text (rotation_deg ±90)
+  // длинная сторона placeholder становится текстовой "шириной" (по которой
+  // wrap), а короткая — "высотой" (по которой проверяется overflow).
+  // Без этого фикса (3.9.2.3) "Учитель физики" в rotated 18×130mm placeholder
+  // wrap'ался на 53pt узкой стороны, делясь на "Учитель"/"физики".
+  const idml_rotation_deg_for_shape = ph.rotation_deg ?? 0;
+  const isRotated = idml_rotation_deg_for_shape === 90 || idml_rotation_deg_for_shape === -90;
+  const max_width_pt = isRotated ? box.height_pt : box.width_pt;
+  const max_height_pt = isRotated ? box.width_pt : box.height_pt;
 
   // Шейпим: подбираем font_size и разбиваем на строки.
   const shaped = shapeText(
@@ -179,10 +186,9 @@ export function drawTextShaped(
     }
   }
 
-  // Для rotated text используем длинную сторону placeholder'а как
-  // эффективную ширину (для line wrap и align).
-  const effective_max_width_pt =
-    idml_rotation_deg === 0 ? max_width_pt : box.height_pt;
+  // effective_max_width_pt в drawLine — это та же rotation-aware ширина
+  // что в shapeText (для align center/right/justify).
+  const effective_max_width_pt = max_width_pt;
 
   // Рисуем каждую строку. rotation передаётся в drawLine как есть
   // (idml_rotation_deg) — без инверсии.
