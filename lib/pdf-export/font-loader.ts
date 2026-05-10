@@ -92,12 +92,17 @@ export async function loadFonts(pdfDoc: PDFDocument): Promise<FontRegistry> {
   const fontDir = path.join(process.cwd(), 'public', 'fonts');
 
   // Загружаем все 5 файлов параллельно.
+  // ВАЖНО: subset=false. С subset=true fontkit некорректно собирает
+  // подмножество глифов для Cyrillic шрифтов — часть букв пропадает
+  // ('Егоров Тимур' → 'Е е ин'). Это известная проблема pdf-lib + fontkit
+  // для не-латинских шрифтов. Полный embed добавляет ~2 МБ к PDF
+  // (5 файлов × 200-500 КБ), что приемлемо.
   const entries = await Promise.all(
     (Object.entries(FONT_FILES) as [FontKey, string][]).map(
       async ([key, filename]) => {
         const filepath = path.join(fontDir, filename);
         const buffer = await fs.readFile(filepath);
-        const font = await pdfDoc.embedFont(buffer, { subset: true });
+        const font = await pdfDoc.embedFont(buffer, { subset: false });
         return [key, font] as const;
       }
     )

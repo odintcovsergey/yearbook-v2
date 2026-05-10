@@ -108,40 +108,73 @@ export function drawTextShaped(
     }
   }
 
-  // Считаем base position (baseline первой строки) с учётом vertical_align.
+  // Считаем base position (baseline первой строки) с учётом vertical_align
+  // и rotation_deg.
+  //
+  // rotation=0 (стандарт): text идёт вправо от baseline, новая строка
+  // ниже на line_height.
+  //
+  // rotation=-90 (читаем сверху-вниз, текст «лежит» на правом боку, как
+  // бывает для имён учителей вдоль вертикальной стороны фото):
+  // после поворота direction baseline = вниз. Чтобы текст оказался ВНУТРИ
+  // placeholder'а:
+  //   - baseline_x = правый край placeholder − ascent (отступ для глифов)
+  //   - baseline_y = верх placeholder в PDF coords
+  //   - новая строка СЛЕВА (-line_height по x)
+  //
+  // rotation=+90 (читаем снизу-вверх): зеркально.
+  //
+  // vertical_align в rotated тексте имеет иной смысл (это горизонтальное
+  // выравнивание относительно ширины placeholder'а после поворота);
+  // обрабатываем как top по умолчанию для простоты.
   const ascent_pt = shaped.font_size_pt * ASCENT_RATIO;
   const block_height_pt = lines.length * line_height_pt;
+  const rotation_deg = ph.rotation_deg ?? 0;
 
-  // box.y_pt — bottom-left угол placeholder'а в PDF координатах
-  // (Y растёт вверх). Top = box.y_pt + box.height_pt.
+  let first_baseline_x_pt = box.x_pt;
   let first_baseline_y_pt: number;
-  switch (ph.vertical_align) {
-    case 'top':
-      // Baseline первой строки = top - ascent
-      first_baseline_y_pt = box.y_pt + box.height_pt - ascent_pt;
-      break;
-    case 'middle':
-      // Центр блока на середине placeholder'а
-      first_baseline_y_pt =
-        box.y_pt +
-        box.height_pt / 2 +
-        block_height_pt / 2 -
-        ascent_pt;
-      break;
-    case 'bottom':
-      // Последняя строка прижата к низу
-      first_baseline_y_pt =
-        box.y_pt + block_height_pt - ascent_pt;
-      break;
-    default:
-      first_baseline_y_pt = box.y_pt + box.height_pt - ascent_pt;
+  let line_step_x_pt = 0;
+  let line_step_y_pt = -line_height_pt;
+
+  if (rotation_deg === -90) {
+    first_baseline_x_pt = box.x_pt + box.width_pt - ascent_pt;
+    first_baseline_y_pt = box.y_pt + box.height_pt;
+    line_step_x_pt = -line_height_pt;
+    line_step_y_pt = 0;
+  } else if (rotation_deg === 90) {
+    first_baseline_x_pt = box.x_pt + ascent_pt;
+    first_baseline_y_pt = box.y_pt;
+    line_step_x_pt = line_height_pt;
+    line_step_y_pt = 0;
+  } else {
+    // rotation = 0 (или другое — fallback): vertical_align релевантен
+    switch (ph.vertical_align) {
+      case 'top':
+        first_baseline_y_pt = box.y_pt + box.height_pt - ascent_pt;
+        break;
+      case 'middle':
+        first_baseline_y_pt =
+          box.y_pt + box.height_pt / 2 + block_height_pt / 2 - ascent_pt;
+        break;
+      case 'bottom':
+        first_baseline_y_pt = box.y_pt + block_height_pt - ascent_pt;
+        break;
+      default:
+        first_baseline_y_pt = box.y_pt + box.height_pt - ascent_pt;
+    }
   }
+
+  // Для rotated text используем длинную сторону placeholder'а как
+  // эффективную ширину (для line wrap и align).
+  const effective_max_width_pt =
+    rotation_deg === 0 ? max_width_pt : box.height_pt;
 
   // Рисуем каждую строку
   const color = hexToRgb01(ph.color);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const baseline_y_pt = first_baseline_y_pt - i * line_height_pt;
+    const baseline_x_pt = first_baseline_x_pt + i * line_step_x_pt;
+    const baseline_y_pt = first_baseline_y_pt + i * line_step_y_pt;
     const is_last_line = i === lines.length - 1;
     drawLine(
       page,
@@ -149,11 +182,11 @@ export function drawTextShaped(
       font,
       shaped.font_size_pt,
       color,
-      box.x_pt,
+      baseline_x_pt,
       baseline_y_pt,
-      max_width_pt,
+      effective_max_width_pt,
       ph.align,
-      ph.rotation_deg ?? 0,
+      rotation_deg,
       is_last_line
     );
   }
