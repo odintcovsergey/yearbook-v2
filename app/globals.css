@@ -3,6 +3,57 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Шрифты для рендера layout'а в Konva-редакторе и LayoutPreviewStrip.
+ * Подключаются с того же origin что и приложение (public/fonts/), Konva
+ * использует их через fontFamily на placeholder.font_family.
+ *
+ * Идентичны шрифтам IDML-макета "Плотные Мастер Белый":
+ *   - Noto Serif Regular + Bold — заголовки и имена
+ *   - Open Sans Regular + Italic — описания и цитаты
+ *   - Slimamif Medium — декоративные надписи
+ *
+ * Те же файлы embed'ятся в PDF через pdf-lib (lib/pdf-export/font-loader.ts),
+ * поэтому визуал в редакторе и в финальном PDF идентичен.
+ *
+ * См. docs/phase-3-spec.md §4.2.
+ */
+@font-face {
+  font-family: 'Noto Serif';
+  src: url('/fonts/NotoSerif-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Noto Serif';
+  src: url('/fonts/NotoSerif-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/fonts/OpenSans-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/fonts/OpenSans-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Slimamif';
+  src: url('/fonts/Slimamif-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --font-display: 'Unbounded', sans-serif;
   --font-body: 'Geologica', sans-serif;

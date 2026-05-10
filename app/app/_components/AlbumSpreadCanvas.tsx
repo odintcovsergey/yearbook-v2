@@ -24,8 +24,10 @@ import type {
 // Stage применяет scale=containerWidth/template.width_mm; всё внутри
 // Layer'а рисуется в мм-единицах.
 //
-// Шрифты: fontFamily="Arial, sans-serif" fallback (реальные шрифты —
-// фаза 3 вместе с PDF, см. phase-2-spec §2).
+// Шрифты: реальные fontFamily из placeholder.font_family (фаза 3.8).
+// CSS @font-face для NotoSerif/OpenSans/Slimamif в app/globals.css —
+// файлы из public/fonts/ те же что embed'ятся в PDF (lib/pdf-export/
+// font-loader.ts). Fallback на serif если шрифт не загрузился.
 // ─────────────────────────────────────────────────────────────────────────
 
 const PT_TO_MM = 0.3528  // 1 typographic point = 0.3528 mm
@@ -183,6 +185,14 @@ function TextSlot({
   value: string | null
 }) {
   if (!value) return null
+  // Маппинг IDML font_weight (regular | bold | medium | light) на CSS weight.
+  // Konva принимает fontStyle строку 'bold' или 'italic' (или 'normal').
+  // Komнва не разбирает медиум/лайт — для этих весов получаем regular,
+  // что для нашего use case (имена, цитаты) визуально приемлемо. Полная
+  // поддержка сетки весов потребует custom font файлов NotoSerif-Medium
+  // и т.д. — backlog.
+  const fontStyle =
+    placeholder.font_weight === 'bold' ? 'bold' : 'normal'
   return (
     <Text
       x={placeholder.x_mm}
@@ -191,7 +201,8 @@ function TextSlot({
       height={placeholder.height_mm}
       text={value}
       fontSize={placeholder.font_size_pt * PT_TO_MM}
-      fontFamily="Arial, sans-serif"
+      fontFamily={`${placeholder.font_family}, serif`}
+      fontStyle={fontStyle}
       fill={isTooLight(placeholder.color) ? '#000000' : placeholder.color || '#000000'}
       align={placeholder.align}
       verticalAlign="top"
