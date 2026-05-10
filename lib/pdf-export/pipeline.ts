@@ -29,15 +29,11 @@
  * См. docs/phase-3-spec.md §3.4, §4.1 (фаза 3.4), §4.3 (фаза 3.5).
  */
 
-import { PDFDocument, PDFPage, rgb, degrees } from 'pdf-lib';
-import {
-  computePageBoxes,
-  mmToPt,
-  placeholderToPdfBox,
-  hexToRgb01,
-} from './units';
+import { PDFDocument, PDFPage } from 'pdf-lib';
+import { computePageBoxes, mmToPt } from './units';
 import type { FontRegistry } from './font-loader';
 import { embedPhotoOnPage, type PhotoEmbedContext } from './photo-embed';
+import { drawTextShaped } from './text-shaping';
 import type {
   AlbumExportInput,
   PageBoxes,
@@ -249,7 +245,7 @@ async function drawPlaceholder(
   if (ph.type === 'photo') {
     await drawPhoto(ctx, page, ph, instance);
   } else {
-    drawTextSimple(ctx, page, ph, instance);
+    drawText(ctx, page, ph, instance);
   }
 }
 
@@ -287,7 +283,20 @@ async function drawPhoto(
  * line wrap по словам, auto_fit с уменьшением font_size до min_size_pt,
  * vertical_align относительно bounding box, multi-line поддержка.
  */
-function drawTextSimple(
+/**
+ * Рендер текстового placeholder'а через text-shaping модуль (фаза 3.5).
+ *
+ * Полная поддержка:
+ * - Line wrap по словам (длинные цитаты переносятся)
+ * - auto_fit: уменьшение font_size до min_size_pt чтобы влезло single-line
+ * - vertical_align: top/middle/bottom внутри placeholder bounding box
+ * - align: left/center/right/justify
+ * - text_overflow warning если block высоты превышает placeholder height
+ *
+ * До 3.5 был drawTextSimple — рисовал плоско на font_size_pt без
+ * переносов и без vertical_align (длинные цитаты выезжали за рамку).
+ */
+function drawText(
   ctx: RenderContext,
   page: PDFPage,
   ph: TextPlaceholder,
@@ -302,31 +311,13 @@ function drawTextSimple(
     false // italic парсер не различает (см. font-loader.ts)
   );
 
-  const color = hexToRgb01(ph.color);
-  const box = placeholderToPdfBox(
-    ph.x_mm,
-    ph.y_mm,
-    ph.width_mm,
-    ph.height_mm,
-    ctx.pageBoxes
-  );
-
-  // В 3.3 vertical_align='top' для всех. Базовая линия = y_top - font_size×0.8
-  // (приблизительный ascender в pt).
-  // В 3.5 будет точный расчёт через font.heightAtSize() и font.widthOfTextAtSize().
-  const baselineOffsetPt = ph.font_size_pt * 0.8;
-  const baselineY_pt = box.y_pt + box.height_pt - baselineOffsetPt;
-
-  // Align: в 3.3 поддерживаем только left (это default IDML).
-  // В 3.5 для center / right / justify будет width-aware расчёт.
-  const x_pt = box.x_pt;
-
-  page.drawText(text, {
-    x: x_pt,
-    y: baselineY_pt,
-    size: ph.font_size_pt,
+  drawTextShaped(
+    page,
+    ph,
+    text,
     font,
-    color: rgb(color.r, color.g, color.b),
-    rotate: degrees(ph.rotation_deg ?? 0),
-  });
+    ctx.pageBoxes,
+    ctx.warnings,
+    instance.spread_index
+  );
 }
