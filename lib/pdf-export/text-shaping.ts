@@ -42,6 +42,9 @@ const LINE_HEIGHT_RATIO = 1.2;
 /** Доля ascent от font_size_pt (для baseline calculation). */
 const ASCENT_RATIO = 0.8;
 
+/** Доля descent от font_size_pt (для отступа descender'ов в rotated text). */
+const DESCENT_RATIO = 0.2;
+
 /** Шаг auto_fit при уменьшении font_size, в pt. */
 const AUTO_FIT_STEP_PT = 0.5;
 
@@ -111,30 +114,35 @@ export function drawTextShaped(
   // Считаем base position (baseline первой строки) с учётом vertical_align
   // и rotation_deg.
   //
-  // КООРДИНАТНАЯ ИНВЕРСИЯ: IDML использует Y-down, PDF — Y-up. При
-  // преобразовании знак угла инвертируется. IDML rotation=-90 → в PDF
-  // нужно rotate=+90 (после Y-flip угол меняет знак).
+  // Эталон проверки: эталон InDesign-разворота показывает что текст роли
+  // учителя вдоль вертикальной стороны фото (rotation=-90 в IDML и в БД)
+  // должен иметь:
+  //   - reading top-to-bottom (первая буква наверху)
+  //   - top of letters facing right (к фото)
   //
-  // IDML rotation=-90 (читаем сверху-вниз вдоль вертикали, top of letters
-  // facing RIGHT — стандартный способ для текста вдоль края фото):
-  //   В PDF math (Y-up) это rotate +90 (CCW 90°).
-  //   После CCW 90 от baseline (x, y): text идёт ВВЕРХ в PDF Y, то есть
-  //   visual reading direction — снизу-вверх.
-  //   Visual top-of-letters facing right.
-  //   Чтобы текст влез в placeholder:
-  //   - baseline_x = box.x + ascent (отступ от левого края для top-of-letter)
-  //   - baseline_y = box.y (нижний край в PDF coords)
-  //   - новая строка слева от предыдущей (visual): -line_height по X
+  // pdf-lib `rotate: degrees(-90)` даёт CW 90° rotation вокруг baseline:
+  //   - исходное +x (text direction) → -y (вниз в PDF Y-up)
+  //   - исходное +y (above baseline = top of letter) → +x (вправо)
+  //   ✓ соответствует эталону
   //
-  // IDML rotation=+90 (зеркально): PDF rotate -90 (CW 90°). text идёт
-  // ВНИЗ от baseline в PDF, visual reading top-down.
-  //   - baseline_x = box.x + box.width - ascent
-  //   - baseline_y = box.y + box.height
-  //   - новая строка справа: +line_height по X
+  // Ошибка в 3.9.2.1 — инверсия знака — была неправильной. PDF rotation
+  // совпадает с IDML rotation, без преобразования (потому что drawText
+  // в pdf-lib интерпретирует angle относительно baseline после Y-flip
+  // самой системы).
+  //
+  // Для idml=-90 baseline должна быть:
+  //   - baseline_x = box.x + descent (descender уходит влево, нужен отступ)
+  //   - baseline_y = box.y + box.height (верхний край placeholder в PDF)
+  //   - new line: visual right of previous = +x (line_step_x = +line_height)
+  //
+  // Для idml=+90 (CCW 90°) — зеркально:
+  //   - baseline_x = box.x + box.width − descent
+  //   - baseline_y = box.y (нижний край в PDF)
+  //   - new line: -x (line_step_x = -line_height)
   const ascent_pt = shaped.font_size_pt * ASCENT_RATIO;
+  const descent_pt = shaped.font_size_pt * DESCENT_RATIO;
   const block_height_pt = lines.length * line_height_pt;
   const idml_rotation_deg = ph.rotation_deg ?? 0;
-  const pdf_rotation_deg = -idml_rotation_deg; // координатная инверсия
 
   let first_baseline_x_pt = box.x_pt;
   let first_baseline_y_pt: number;
@@ -142,16 +150,16 @@ export function drawTextShaped(
   let line_step_y_pt = -line_height_pt;
 
   if (idml_rotation_deg === -90) {
-    // PDF rotation +90 (CCW). Text идёт вверх от baseline.
-    first_baseline_x_pt = box.x_pt + ascent_pt;
-    first_baseline_y_pt = box.y_pt;
-    line_step_x_pt = -line_height_pt;
-    line_step_y_pt = 0;
-  } else if (idml_rotation_deg === 90) {
-    // PDF rotation -90 (CW). Text идёт вниз от baseline.
-    first_baseline_x_pt = box.x_pt + box.width_pt - ascent_pt;
+    // CW 90°: text идёт вниз, top of letters facing right
+    first_baseline_x_pt = box.x_pt + descent_pt;
     first_baseline_y_pt = box.y_pt + box.height_pt;
     line_step_x_pt = line_height_pt;
+    line_step_y_pt = 0;
+  } else if (idml_rotation_deg === 90) {
+    // CCW 90°: text идёт вверх, top of letters facing left
+    first_baseline_x_pt = box.x_pt + box.width_pt - descent_pt;
+    first_baseline_y_pt = box.y_pt;
+    line_step_x_pt = -line_height_pt;
     line_step_y_pt = 0;
   } else {
     // rotation = 0: vertical_align релевантен
@@ -176,7 +184,8 @@ export function drawTextShaped(
   const effective_max_width_pt =
     idml_rotation_deg === 0 ? max_width_pt : box.height_pt;
 
-  // Рисуем каждую строку
+  // Рисуем каждую строку. rotation передаётся в drawLine как есть
+  // (idml_rotation_deg) — без инверсии.
   const color = hexToRgb01(ph.color);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -193,7 +202,7 @@ export function drawTextShaped(
       baseline_y_pt,
       effective_max_width_pt,
       ph.align,
-      pdf_rotation_deg, // ← инвертированный угол передаётся в pdf-lib
+      idml_rotation_deg,
       is_last_line
     );
   }
