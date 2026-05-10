@@ -10,6 +10,11 @@ const LayoutPreviewStrip = dynamic(
   { ssr: false, loading: () => null },
 )
 
+const ExportPanel = dynamic(
+  () => import('./_components/ExportPanel'),
+  { ssr: false, loading: () => null },
+)
+
 // ============================================================
 // ТИПЫ
 // ============================================================
@@ -1254,6 +1259,12 @@ function AlbumDetailModal({
                       }}
                     />
                   )}
+
+                  <ExportPanel
+                    albumId={album.id}
+                    hasLayout={Boolean(layout && layout.spreads.length > 0)}
+                    viewAsTenantId={viewAsTenantId}
+                  />
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                     <MiniStat label="Всего" value={stats.total} />
