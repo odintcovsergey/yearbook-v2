@@ -29,6 +29,7 @@
 import path from 'path';
 import { promises as fs } from 'fs';
 import type { PDFDocument, PDFFont } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
 import type { PdfWarning } from './types';
 
 /**
@@ -82,6 +83,12 @@ export type FontRegistry = {
  * рендерить «слепой» PDF.
  */
 export async function loadFonts(pdfDoc: PDFDocument): Promise<FontRegistry> {
+  // Регистрируем fontkit — без него pdf-lib умеет embed только своих
+  // стандартных Helvetica/TimesRoman/Courier (PDF spec). Для custom TTF
+  // обязательна регистрация (см. pdf-lib docs «Embed Font and Measure
+  // Text»).
+  pdfDoc.registerFontkit(fontkit);
+
   const fontDir = path.join(process.cwd(), 'public', 'fonts');
 
   // Загружаем все 5 файлов параллельно.
