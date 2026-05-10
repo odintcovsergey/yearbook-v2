@@ -429,7 +429,16 @@ export default function AppPage() {
         <AlbumDetailModal
           album={selectedAlbum}
           canEdit={canEdit}
-          onClose={() => setSelectedAlbum(null)}
+          onClose={() => {
+            setSelectedAlbum(null)
+            // Очистка ?album=UUID из URL — если модал был открыт через
+            // deep link (возврат из редактора, фаза 2.6.5), query параметр
+            // остаётся в URL после закрытия. Без replace на /app модал
+            // переоткроется при F5. См. фазу 3.0 hygiene.
+            if (typeof window !== 'undefined' && window.location.search.includes('album=')) {
+              router.replace('/app', { scroll: false })
+            }
+          }}
           onNotify={(msg) => notify(msg, 'ok')}
           onError={(msg) => notify(msg, 'err')}
         />
