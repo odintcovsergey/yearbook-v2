@@ -20,7 +20,7 @@
 
 import { PDFDocument } from 'pdf-lib';
 import { loadFonts } from './font-loader';
-import { computePageBoxes, mmToPt } from './units';
+import { renderAllSpreads } from './pipeline';
 import type {
   AlbumExportInput,
   ExportResult,
@@ -54,21 +54,27 @@ export {
 } from './units';
 export { loadFonts } from './font-loader';
 export type { FontRegistry } from './font-loader';
+export { renderAllSpreads } from './pipeline';
 
 /**
  * Главный entry point PDF-экспорта.
  *
- * В фазе 3.2 — заглушка: создаёт пустой PDF с правильным размером
- * страницы (для smoke-проверки что fundament работает) и возвращает
- * его. В 3.3 заменяется на реальный pipeline через
- * `lib/pdf-export/pipeline.ts`.
+ * Pipeline (фаза 3.3):
+ *   1. Создаёт PDFDocument с metadata
+ *   2. Загружает все 5 шрифтов через loadFonts (subset=true)
+ *   3. Вызывает renderAllSpreads — для каждого SpreadInstance
+ *      добавляет 1 или 2 страницы (зависит от is_spread мастера),
+ *      рисует placeholder'ы (заглушки фото в 3.3, реальные в 3.4)
+ *   4. Сериализует PDF
  *
- * Документирует контракт: что именно ожидается на входе и на выходе.
+ * Возвращает PDF Bytes + page count + накопленные warnings от всех
+ * подсистем (font registry + pipeline). Endpoint /api/layout?action=export
+ * (фаза 3.6) загружает Bytes в YC и записывает warnings в album_exports.
  */
 export async function exportAlbumPdf(
   input: AlbumExportInput
 ): Promise<ExportResult> {
-  const { templateSet, profile, layout } = input;
+  const warnings: PdfWarning[] = [];
 
   // 1. Создаём PDFDocument
   const pdfDoc = await PDFDocument.create();
@@ -77,60 +83,22 @@ export async function exportAlbumPdf(
   pdfDoc.setProducer('OkeyBook PDF Export (pdf-lib)');
   pdfDoc.setCreationDate(new Date());
 
-  // 2. Загружаем шрифты (subset=true). В фазе 3.2 шрифты загружаются,
-  // но в pipeline пока не используются.
+  // 2. Загружаем шрифты (subset=true)
   const fontRegistry = await loadFonts(pdfDoc);
 
-  // 3. Считаем page boxes из template_set + profile.
-  const pageBoxes = computePageBoxes(
-    templateSet.page_width_mm,
-    templateSet.page_height_mm,
-    templateSet.bleed_mm,
-    profile.include_bleed
-  );
+  // 3. Рендерим все SpreadInstance через pipeline
+  const renderResult = await renderAllSpreads(pdfDoc, fontRegistry, input);
 
-  const warnings: PdfWarning[] = [];
-
-  // 4. TODO (фаза 3.3): для каждого SpreadInstance из layout.spreads
-  // вызвать renderSpread(pdfDoc, instance, ...).
-  //
-  // В фазе 3.2 — рендерим пустые страницы правильного размера, чтобы
-  // smoke-проверить что pdfDoc создаётся, шрифты загружаются и
-  // page boxes считаются корректно.
-
-  for (let i = 0; i < layout.spreads.length; i++) {
-    const page = pdfDoc.addPage([
-      mmToPt(pageBoxes.media_width_mm),
-      mmToPt(pageBoxes.media_height_mm),
-    ]);
-
-    // TrimBox = trim-зона (без bleed)
-    if (profile.include_bleed && pageBoxes.bleed_mm > 0) {
-      page.setTrimBox(
-        mmToPt(pageBoxes.bleed_mm),
-        mmToPt(pageBoxes.bleed_mm),
-        mmToPt(pageBoxes.trim_width_mm),
-        mmToPt(pageBoxes.trim_height_mm)
-      );
-      // BleedBox = весь mediaBox (то же что mediaBox в нашем случае)
-      page.setBleedBox(
-        0,
-        0,
-        mmToPt(pageBoxes.media_width_mm),
-        mmToPt(pageBoxes.media_height_mm)
-      );
-    }
-  }
-
-  // 5. Сериализация
+  // 4. Сериализация
   const pdfBytes = await pdfDoc.save();
 
-  // 6. Мерджим warnings из всех источников
+  // 5. Мерджим warnings из всех источников
   warnings.push(...fontRegistry.warnings);
+  warnings.push(...renderResult.warnings);
 
   return {
     pdfBytes,
-    pageCount: layout.spreads.length,
+    pageCount: renderResult.pageCount,
     warnings,
   };
 }
