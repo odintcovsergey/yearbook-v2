@@ -34,6 +34,7 @@ type ExportProfile = {
   dpi: number
   pages_mode: 'all_common' | 'per_student' | 'per_student_individual_only'
   target_size_mb: number | null
+  spread_export: boolean
 }
 
 type AlbumExport = {
@@ -132,6 +133,7 @@ function profileDescription(p: ExportProfile): string {
   parts.push(`${p.dpi} dpi`)
   if (p.include_bleed) parts.push('с обрезной зоной')
   else parts.push('без обрезной зоны')
+  parts.push(p.spread_export ? 'разворотами' : 'постранично')
   if (p.pages_mode === 'per_student') parts.push('индивидуальные комплекты')
   return parts.join(' · ')
 }

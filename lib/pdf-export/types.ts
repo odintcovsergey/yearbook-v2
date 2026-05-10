@@ -54,6 +54,15 @@ export type ExportProfile = {
   pages_mode: ExportPagesMode;
   target_size_mb: number | null;
   enabled: boolean;
+  /**
+   * Если true — двухстраничные мастера (is_spread=true) экспортируются
+   * одной широкой PDF-страницей (spread, ~452×288mm для okeybook-default).
+   * Если false (дефолт) — разрезаются на 2 PDF-страницы (pages,
+   * стандарт типографии).
+   *
+   * Добавлено в фазе 3.9.3 (миграция spread-export.sql).
+   */
+  spread_export: boolean;
 };
 
 // ─── Альбом-input для экспорта ────────────────────────────────────────────

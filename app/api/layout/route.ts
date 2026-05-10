@@ -909,6 +909,7 @@ function mapExportProfile(row: Record<string, unknown>): ExportProfile {
     pages_mode: row.pages_mode as ExportProfile['pages_mode'],
     target_size_mb: row.target_size_mb != null ? Number(row.target_size_mb) : null,
     enabled: Boolean(row.enabled),
+    spread_export: Boolean(row.spread_export),
   }
 }
 

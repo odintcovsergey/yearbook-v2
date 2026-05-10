@@ -56,6 +56,8 @@ type RenderContext = {
   fontRegistry: FontRegistry;
   pageBoxes: PageBoxes;
   warnings: PdfWarning[];
+  /** Профиль экспорта (для spread_export флага и других решений рендера). */
+  profile: AlbumExportInput['profile'];
   /** Подконтекст для photo-embed (передаётся в embedPhotoOnPage). */
   photoCtx: PhotoEmbedContext;
 };
@@ -96,6 +98,7 @@ export async function renderAllSpreads(
     fontRegistry,
     pageBoxes,
     warnings,
+    profile,
     photoCtx,
   };
 
@@ -127,8 +130,11 @@ export async function renderAllSpreads(
  * Рендер одного SpreadInstance в PDFDocument.
  *
  * Если template.is_spread=false → одна страница (все placeholders как есть).
- * Если template.is_spread=true → две страницы (placeholders делятся по
- * вертикальной середине разворота; для правой — `x_mm -= page_w`).
+ * Если template.is_spread=true:
+ *   - profile.spread_export=true → одна ШИРОКАЯ страница (spread mode,
+ *     для layflat / клиентского превью); placeholders как есть
+ *   - profile.spread_export=false (дефолт) → две страницы (pages mode,
+ *     стандарт типографии); placeholders делятся по середине разворота
  *
  * @returns количество добавленных страниц (1 или 2)
  */
@@ -142,8 +148,16 @@ async function renderSpread(
     return 1;
   }
 
-  // Двухстраничный мастер. Разделяем placeholders по x_mm < page_w_mm.
-  // Для правой страницы пересчитываем x_mm на относительный.
+  // Двухстраничный мастер. Два режима:
+  if (ctx.profile.spread_export) {
+    // Spread mode: одна широкая PDF-страница на весь разворот
+    await renderPage(ctx, instance, template, template.placeholders, 'spread');
+    return 1;
+  }
+
+  // Pages mode (default): разрезаем по вертикальной середине разворота
+  // на 2 PDF-страницы. Placeholders с x_mm < page_w_mm — на левую, остальные
+  // на правую (с пересчётом x_mm на относительный).
   const page_w_mm = ctx.pageBoxes.trim_width_mm;
   const leftPlaceholders: Placeholder[] = [];
   const rightPlaceholders: Placeholder[] = [];
@@ -151,7 +165,6 @@ async function renderSpread(
     if (ph.x_mm < page_w_mm) {
       leftPlaceholders.push(ph);
     } else {
-      // Сдвиг x_mm на левую границу правой страницы.
       rightPlaceholders.push({ ...ph, x_mm: ph.x_mm - page_w_mm } as Placeholder);
     }
   }
@@ -172,43 +185,48 @@ async function renderPage(
   instance: SpreadInstance,
   template: SpreadTemplate,
   placeholders: Placeholder[],
-  pageHint: 'single' | 'left' | 'right'
+  pageHint: 'single' | 'left' | 'right' | 'spread'
 ): Promise<void> {
   const { pdfDoc, pageBoxes } = ctx;
 
-  const page = pdfDoc.addPage([
-    mmToPt(pageBoxes.media_width_mm),
-    mmToPt(pageBoxes.media_height_mm),
-  ]);
+  // Для spread mode размер страницы удваивается по ширине (spread_width_mm).
+  // Bleed остаётся тот же (по 5мм со всех сторон).
+  const isSpreadPage = pageHint === 'spread';
+  const trim_w_mm = isSpreadPage
+    ? pageBoxes.trim_width_mm * 2
+    : pageBoxes.trim_width_mm;
+  const trim_h_mm = pageBoxes.trim_height_mm;
+  const media_w_mm = trim_w_mm + pageBoxes.bleed_mm * 2;
+  const media_h_mm = pageBoxes.media_height_mm;
+
+  const page = pdfDoc.addPage([mmToPt(media_w_mm), mmToPt(media_h_mm)]);
 
   // TrimBox/BleedBox только если печатаем с bleed (typography профиль).
-  // Preview-профиль include_bleed=false — bleed=0, и сами boxes не имеют
-  // смысла (они равны mediaBox).
   if (pageBoxes.bleed_mm > 0) {
     page.setTrimBox(
       mmToPt(pageBoxes.bleed_mm),
       mmToPt(pageBoxes.bleed_mm),
-      mmToPt(pageBoxes.trim_width_mm),
-      mmToPt(pageBoxes.trim_height_mm)
+      mmToPt(trim_w_mm),
+      mmToPt(trim_h_mm)
     );
-    page.setBleedBox(
-      0,
-      0,
-      mmToPt(pageBoxes.media_width_mm),
-      mmToPt(pageBoxes.media_height_mm)
-    );
+    page.setBleedBox(0, 0, mmToPt(media_w_mm), mmToPt(media_h_mm));
   }
 
   // TODO (фаза 4): рисуем background_url первым слоем если он не null.
-  // background_url — будущее поле SpreadTemplate (сейчас не в типе
-  // album-builder'а, но в БД есть). Когда фаза 4 экстрактит фоны
-  // из IDML и заполняет background_url — здесь будет drawImage(...).
+
+  // Для spread mode placeholderToPdfBox должна работать с увеличенной
+  // шириной trim. Создаём локальный pageBoxes override для spread.
+  const localPageBoxes = isSpreadPage
+    ? { ...pageBoxes, trim_width_mm: trim_w_mm, media_width_mm: media_w_mm }
+    : pageBoxes;
+  const localCtx: RenderContext = isSpreadPage
+    ? { ...ctx, pageBoxes: localPageBoxes, photoCtx: { ...ctx.photoCtx, pageBoxes: localPageBoxes } }
+    : ctx;
 
   // Рисуем placeholders по порядку (sort_order из IDML).
   // Последовательно (await) — экономим RAM на sharp+fetch буферах.
-  // Параллелизм через семафор — фаза 3.X если упрёмся в производительность.
   for (const ph of placeholders) {
-    await drawPlaceholder(ctx, page, ph, instance, pageHint);
+    await drawPlaceholder(localCtx, page, ph, instance, pageHint);
   }
 }
 
