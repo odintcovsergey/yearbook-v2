@@ -50,15 +50,12 @@ CREATE TABLE IF NOT EXISTS album_exports (
 CREATE INDEX IF NOT EXISTS album_exports_album_id_created
   ON album_exports (album_id, created_at DESC);
 
--- Индекс для будущего cleanup-cron'а — найти просроченные записи.
-CREATE INDEX IF NOT EXISTS album_exports_expires_at
-  ON album_exports (expires_at)
-  WHERE expires_at < now();
--- WHERE-условие не работает с now() (now() не immutable), поэтому
--- индекс будет полным. Оставим без WHERE — будем брать всё.
--- Но для документирования намерения — оставляем как комментарий.
-
-DROP INDEX IF EXISTS album_exports_expires_at;
+-- Индекс на expires_at — для будущего cleanup-cron'а который будет
+-- искать просроченные записи. Без WHERE-предиката, потому что now()
+-- не IMMUTABLE и Postgres не разрешает её в index predicate
+-- (ERROR: 42P17). Полный индекс по expires_at достаточно эффективен:
+-- при ~1000 экспортов запрос `WHERE expires_at < now()` вернёт нужные
+-- строки за миллисекунды.
 CREATE INDEX IF NOT EXISTS album_exports_expires_at
   ON album_exports (expires_at);
 
