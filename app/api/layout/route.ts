@@ -1084,9 +1084,10 @@ async function handleExportPdf(
   }
 
   // 1. Load album + tenant_id для записи в album_exports.
+  // ВАЖНО: в schema.sql колонка названия — `title`, не `name`.
   const { data: album, error: albumErr } = await supabaseAdmin
     .from('albums')
-    .select('id, name, tenant_id')
+    .select('id, title, tenant_id')
     .eq('id', albumId)
     .single()
 
@@ -1252,7 +1253,10 @@ async function handleExportPdf(
   const exportInput: AlbumExportInput = {
     album: {
       id: String(album.id),
-      name: String(album.name),
+      // В БД поле называется title (см. schema.sql).
+      // В AlbumExportInput.album.name — оставлено name как унифицированное
+      // поле для PDF metadata (PDFDocument.setTitle), маппинг здесь.
+      name: String(album.title),
       tenant_id: String(album.tenant_id),
     },
     layout: {
@@ -1277,7 +1281,7 @@ async function handleExportPdf(
   }
 
   // 7. Render filename + storage_path
-  const slugAlbum = slugifyForFilename(String(album.name))
+  const slugAlbum = slugifyForFilename(String(album.title))
   const now = new Date()
   const date = now.toISOString().slice(0, 10) // YYYY-MM-DD
   const datetime = `${now.toISOString().slice(0, 10)}_${now
