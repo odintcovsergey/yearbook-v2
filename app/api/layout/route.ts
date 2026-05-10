@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin, getPhotoUrl } from '@/lib/supabase'
+import { ycUpload, ycPhotoUrl } from '@/lib/storage'
 import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
 import { parseIdml } from '@/lib/idml-converter/parse'
 import { uploadTemplateSetToSupabase, type UploadResult } from '@/lib/idml-converter/upload'
@@ -14,6 +15,12 @@ import type {
   TemplateSet,
 } from '@/lib/album-builder'
 import { buildAlbumInput, type SmartFillWarning } from '@/lib/smart-fill'
+import {
+  exportAlbumPdf,
+  type AlbumExportInput,
+  type ExportProfile,
+  type OriginalPhoto,
+} from '@/lib/pdf-export'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -158,6 +165,14 @@ export async function GET(req: NextRequest) {
     return handleGetAlbumLayout(req, auth)
   }
 
+  if (action === 'list_export_profiles') {
+    return handleListExportProfiles(req, auth)
+  }
+
+  if (action === 'list_album_exports') {
+    return handleListAlbumExports(req, auth)
+  }
+
   if (action === 'template_set_detail') {
     const id = req.nextUrl.searchParams.get('id')
     if (!id || !UUID_REGEX.test(id)) {
@@ -236,6 +251,10 @@ export async function POST(req: NextRequest) {
 
   if (action === 'save_album_layout') {
     return handleSaveAlbumLayout(req, auth)
+  }
+
+  if (action === 'export') {
+    return handleExportPdf(req, auth)
   }
 
   if (action === 'build_album_test') {
@@ -840,5 +859,503 @@ async function handleGetAlbumLayout(
         preset_name: presetData?.name ?? null,
       },
     },
+  })
+}
+
+// ============================================================
+// PDF Export handlers (фаза 3.6)
+// ============================================================
+//
+// 3 endpoint'а, тесно связанных:
+//
+//   GET  ?action=list_export_profiles
+//   GET  ?action=list_album_exports&album_id=<UUID>
+//   POST ?action=export                         body: { album_id, profile_slug }
+//
+// list_export_profiles — для UI dropdown'а (фаза 3.7 ExportPanel).
+// list_album_exports — для UI истории экспортов в Обзоре альбома.
+// export — собственно генерация PDF + upload в YC + запись в БД.
+//
+// Авторизация: owner/manager/viewer тенанта, или superadmin/staff main
+// с view_as. Тот же паттерн что в handleBuildAlbum.
+//
+// Лимиты: spreads.length <= 80 (Vercel sync timeout 60-300 сек).
+// Для большего размера — async pipeline с polling, фаза 3.X.
+//
+// Profile.pages_mode != 'all_common' → 501. Per-student pipeline = фаза 3.A.
+//
+// Связь со спекой: docs/phase-3-spec.md §4.5, §4.6.
+// ============================================================
+
+/**
+ * Маппинг строки из БД export_profiles в типизированный объект.
+ * Изолирует кодирующий снаружи модуль (lib/pdf-export) от формата БД.
+ */
+function mapExportProfile(row: Record<string, unknown>): ExportProfile {
+  return {
+    id: String(row.id),
+    tenant_id: row.tenant_id ? String(row.tenant_id) : null,
+    slug: String(row.slug),
+    name: String(row.name),
+    is_default: Boolean(row.is_default),
+    purpose: row.purpose as ExportProfile['purpose'],
+    format: row.format as ExportProfile['format'],
+    quality: row.quality as ExportProfile['quality'],
+    include_bleed: Boolean(row.include_bleed),
+    color_mode: row.color_mode as ExportProfile['color_mode'],
+    dpi: Number(row.dpi),
+    jpeg_quality: Number(row.jpeg_quality),
+    filename_template: String(row.filename_template),
+    pages_mode: row.pages_mode as ExportProfile['pages_mode'],
+    target_size_mb: row.target_size_mb != null ? Number(row.target_size_mb) : null,
+    enabled: Boolean(row.enabled),
+  }
+}
+
+/**
+ * Slugify имя альбома для filename. Удаляет спецсимволы запрещённые
+ * в Windows/macOS/Linux file systems, заменяет пробелы на _.
+ * Кириллица сохраняется (современные FS поддерживают).
+ *
+ * Если результат пустой — возвращает 'album'.
+ */
+function slugifyForFilename(name: string): string {
+  const cleaned = name.replace(/[\\/:"*?<>|]/g, '').replace(/\s+/g, '_').trim()
+  return cleaned || 'album'
+}
+
+/**
+ * Подстановка переменных в filename_template из export_profiles.
+ *
+ * Поддерживаемые переменные:
+ *   {album_name} {date} {datetime} {ext} {student_name}
+ *
+ * Неподдержанные — оставляются как есть (для отладки).
+ */
+function renderFilename(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? `{${key}}`)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/layout?action=list_export_profiles
+//
+// Возвращает enabled профили доступные текущему тенанту: глобальные
+// (tenant_id IS NULL) + кастомные тенанта (фаза 3.X — пока их нет).
+// Сортировка: is_default=true первым, потом по имени.
+// ─────────────────────────────────────────────────────────────────────────
+async function handleListExportProfiles(
+  _req: NextRequest,
+  auth: AuthContext,
+): Promise<NextResponse> {
+  let query = supabaseAdmin
+    .from('export_profiles')
+    .select('*')
+    .eq('enabled', true)
+    .order('is_default', { ascending: false })
+    .order('name', { ascending: true })
+
+  if (auth.role !== 'superadmin') {
+    query = query.or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+  }
+
+  const { data, error } = await query
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  const profiles = (data ?? []).map((row) => mapExportProfile(row as Record<string, unknown>))
+  return NextResponse.json({ profiles })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/layout?action=list_album_exports&album_id=<UUID>
+//
+// Последние 10 экспортов альбома с download_url'ами. Используется UI
+// ExportPanel для отображения истории.
+//
+// Поддерживает view_as как в handleBuildAlbum.
+// ─────────────────────────────────────────────────────────────────────────
+async function handleListAlbumExports(
+  req: NextRequest,
+  auth: AuthContext,
+): Promise<NextResponse> {
+  const albumId = req.nextUrl.searchParams.get('album_id')
+  if (!albumId || !UUID_REGEX.test(albumId)) {
+    return NextResponse.json({ error: 'album_id (uuid) required' }, { status: 400 })
+  }
+
+  const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+  const { data: currentTenantData } = viewAsTenantId
+    ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+    : { data: null }
+  const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
+  const tid = (canViewAs && viewAsTenantId) ? viewAsTenantId : auth.tenantId
+
+  if (!(await assertAlbumAccessLocal(auth, albumId, tid))) {
+    return NextResponse.json({ error: 'access denied' }, { status: 403 })
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('album_exports')
+    .select(
+      'id, profile_id, filename, storage_path, file_size, page_count, ' +
+      'warnings, created_at, expires_at, ' +
+      'export_profiles ( slug, name, format, purpose )'
+    )
+    .eq('album_id', albumId)
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  // Обогащаем download_url для каждой записи (presigned URL не делаем —
+  // bucket public-read, security through obscurity через UUID в имени).
+  const rows = (data ?? []) as unknown as Array<Record<string, unknown>>
+  const enriched = rows.map((row) => ({
+    ...row,
+    download_url: ycPhotoUrl(String(row.storage_path)),
+  }))
+
+  return NextResponse.json({ exports: enriched })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/layout?action=export
+// Body: { album_id: uuid, profile_slug: string }
+//
+// Главный endpoint фазы 3.6 — генерация PDF из layout'а альбома.
+//
+// Алгоритм:
+// 1. Validate body и доступ к альбому (с view_as)
+// 2. Load profile by slug (глобальный или текущего тенанта)
+// 3. Validate profile.enabled, pages_mode='all_common' (иначе 501)
+// 4. Load layout from album_layouts (404 если нет)
+// 5. Validate spreads.length: 0 < N <= 80
+// 6. Сборка AlbumExportInput:
+//    - album metadata
+//    - layout.spreads + has_user_edits
+//    - templateSet через loadTemplateSet
+//    - albumInput через buildAlbumInput (smart-fill)
+//    - originals[] из original_photos
+//    - urlToFilename мапа из photos
+// 7. exportAlbumPdf → pdfBytes + pageCount + warnings
+// 8. ycUpload в album_id/exports/<ts>_<slug>.pdf
+// 9. Insert album_exports с layout_snapshot
+// 10. logAction('album_export.create')
+// 11. Response с download_url
+// ─────────────────────────────────────────────────────────────────────────
+async function handleExportPdf(
+  req: NextRequest,
+  auth: AuthContext,
+): Promise<NextResponse> {
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
+  }
+
+  if (typeof body !== 'object' || body === null) {
+    return NextResponse.json({ error: 'body must be object' }, { status: 400 })
+  }
+
+  const albumId = (body as Record<string, unknown>).album_id
+  const profileSlug = (body as Record<string, unknown>).profile_slug
+
+  if (typeof albumId !== 'string' || !UUID_REGEX.test(albumId)) {
+    return NextResponse.json({ error: 'album_id (uuid) required' }, { status: 400 })
+  }
+  if (typeof profileSlug !== 'string' || profileSlug.length === 0) {
+    return NextResponse.json({ error: 'profile_slug required' }, { status: 400 })
+  }
+
+  // view_as поддержка
+  const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+  const { data: currentTenantData } = viewAsTenantId
+    ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+    : { data: null }
+  const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
+  const tid = (canViewAs && viewAsTenantId) ? viewAsTenantId : auth.tenantId
+
+  if (!(await assertAlbumAccessLocal(auth, albumId, tid))) {
+    return NextResponse.json({ error: 'access denied' }, { status: 403 })
+  }
+
+  // 1. Load album + tenant_id для записи в album_exports.
+  const { data: album, error: albumErr } = await supabaseAdmin
+    .from('albums')
+    .select('id, name, tenant_id')
+    .eq('id', albumId)
+    .single()
+
+  if (albumErr || !album) {
+    return NextResponse.json({ error: 'album not found' }, { status: 404 })
+  }
+
+  // 2. Load profile by slug. Доступны: глобальные + текущего tenant'а
+  // (фаза 3 — кастомных тенант-профилей не существует, но архитектура
+  // готова).
+  let profileQuery = supabaseAdmin
+    .from('export_profiles')
+    .select('*')
+    .eq('slug', profileSlug)
+    .eq('enabled', true)
+
+  if (auth.role !== 'superadmin') {
+    profileQuery = profileQuery.or(
+      `tenant_id.is.null,tenant_id.eq.${auth.tenantId}`,
+    )
+  }
+
+  const { data: profileRow, error: profileErr } = await profileQuery.maybeSingle()
+  if (profileErr) {
+    return NextResponse.json(
+      { error: `profile load failed: ${profileErr.message}` },
+      { status: 500 },
+    )
+  }
+  if (!profileRow) {
+    return NextResponse.json(
+      { error: `Профиль экспорта "${profileSlug}" не найден или отключён` },
+      { status: 404 },
+    )
+  }
+
+  const profile = mapExportProfile(profileRow as Record<string, unknown>)
+
+  // 3. Per-student режим — пока не реализован (фаза 3.A)
+  if (profile.pages_mode !== 'all_common') {
+    return NextResponse.json(
+      {
+        error:
+          'Per-student режим экспорта в разработке (фаза 3.A). ' +
+          'Используйте профиль "okeybook-print" или "okeybook-client-preview".',
+        code: 'pages_mode_not_implemented',
+      },
+      { status: 501 },
+    )
+  }
+
+  // jpg-pages driver — пока не реализован (фаза 3.X)
+  if (profile.format !== 'pdf') {
+    return NextResponse.json(
+      {
+        error: `Формат "${profile.format}" в разработке. В фазе 3 поддерживается только PDF.`,
+        code: 'format_not_implemented',
+      },
+      { status: 501 },
+    )
+  }
+
+  // 4. Load layout from album_layouts
+  const { data: layoutRow, error: layoutErr } = await supabaseAdmin
+    .from('album_layouts')
+    .select('id, spreads, has_user_edits')
+    .eq('album_id', albumId)
+    .maybeSingle()
+
+  if (layoutErr) {
+    return NextResponse.json(
+      { error: `layout load failed: ${layoutErr.message}` },
+      { status: 500 },
+    )
+  }
+  if (!layoutRow) {
+    return NextResponse.json(
+      {
+        error:
+          'Layout альбома не собран. Сначала нажмите "Собрать автоматически" в Обзоре альбома.',
+      },
+      { status: 404 },
+    )
+  }
+
+  const spreads = (layoutRow.spreads ?? []) as Array<Record<string, unknown>>
+  if (spreads.length === 0) {
+    return NextResponse.json(
+      { error: 'Layout пустой. Пересоберите его.' },
+      { status: 400 },
+    )
+  }
+  if (spreads.length > 80) {
+    return NextResponse.json(
+      {
+        error: `Альбом слишком большой для синхронного экспорта: ${spreads.length} разворотов (лимит 80). Обратитесь в поддержку.`,
+        code: 'too_many_spreads',
+      },
+      { status: 400 },
+    )
+  }
+
+  // 5. Сборка AlbumExportInput
+  // 5a. albumInput через smart-fill
+  let smartFillResult: { input: AlbumInput; warnings: SmartFillWarning[] }
+  try {
+    smartFillResult = await buildAlbumInput(supabaseAdmin, albumId)
+  } catch (e) {
+    return NextResponse.json(
+      { error: `smart-fill failed: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  // 5b. template_set
+  let templateSet: TemplateSet
+  try {
+    templateSet = await loadTemplateSet(supabaseAdmin)
+  } catch (e) {
+    return NextResponse.json(
+      { error: `template_set load failed: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  // 5c. originals из original_photos
+  const { data: originalsData, error: originalsErr } = await supabaseAdmin
+    .from('original_photos')
+    .select('id, filename, storage_path')
+    .eq('album_id', albumId)
+
+  if (originalsErr) {
+    return NextResponse.json(
+      { error: `originals load failed: ${originalsErr.message}` },
+      { status: 500 },
+    )
+  }
+  const originals: OriginalPhoto[] = (originalsData ?? []).map((row) => ({
+    id: String(row.id),
+    filename: String(row.filename),
+    storage_path: String(row.storage_path),
+  }))
+
+  // 5d. urlToFilename мапа из photos
+  const { data: photosData, error: photosErr } = await supabaseAdmin
+    .from('photos')
+    .select('filename, storage_path')
+    .eq('album_id', albumId)
+
+  if (photosErr) {
+    return NextResponse.json(
+      { error: `photos load failed: ${photosErr.message}` },
+      { status: 500 },
+    )
+  }
+  const urlToFilename: Record<string, string> = {}
+  for (const p of photosData ?? []) {
+    const url = getPhotoUrl(String((p as Record<string, unknown>).storage_path))
+    if (url) urlToFilename[url] = String((p as Record<string, unknown>).filename)
+  }
+
+  // 6. exportAlbumPdf
+  const exportInput: AlbumExportInput = {
+    album: {
+      id: String(album.id),
+      name: String(album.name),
+      tenant_id: String(album.tenant_id),
+    },
+    layout: {
+      spreads: spreads as unknown as AlbumExportInput['layout']['spreads'],
+      has_user_edits: Boolean(layoutRow.has_user_edits),
+    },
+    templateSet,
+    albumInput: smartFillResult.input,
+    originals,
+    urlToFilename,
+    profile,
+  }
+
+  let pdfResult: Awaited<ReturnType<typeof exportAlbumPdf>>
+  try {
+    pdfResult = await exportAlbumPdf(exportInput)
+  } catch (e) {
+    return NextResponse.json(
+      { error: `pdf generation failed: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  // 7. Render filename + storage_path
+  const slugAlbum = slugifyForFilename(String(album.name))
+  const now = new Date()
+  const date = now.toISOString().slice(0, 10) // YYYY-MM-DD
+  const datetime = `${now.toISOString().slice(0, 10)}_${now
+    .toISOString()
+    .slice(11, 16)
+    .replace(':', '-')}` // YYYY-MM-DD_HH-MM
+  const ext = profile.format === 'pdf' ? 'pdf' : 'jpg'
+
+  const filename = renderFilename(profile.filename_template, {
+    album_name: slugAlbum,
+    date,
+    datetime,
+    ext,
+    student_name: '', // не используется в all_common, оставлено для будущего 3.A
+  })
+
+  const ts = Math.floor(now.getTime() / 1000)
+  const storagePath = `${albumId}/exports/${ts}_${profile.slug}.${ext}`
+
+  // 8. Upload в YC
+  try {
+    await ycUpload(
+      storagePath,
+      Buffer.from(pdfResult.pdfBytes),
+      'application/pdf',
+    )
+  } catch (e) {
+    return NextResponse.json(
+      { error: `yc upload failed: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  // 9. Insert в album_exports
+  const expiresAt = new Date()
+  expiresAt.setDate(expiresAt.getDate() + 90)
+
+  const { data: insertedRow, error: insertErr } = await supabaseAdmin
+    .from('album_exports')
+    .insert({
+      album_id: albumId,
+      tenant_id: album.tenant_id,
+      profile_id: profile.id,
+      storage_path: storagePath,
+      filename,
+      file_size: pdfResult.pdfBytes.length,
+      page_count: pdfResult.pageCount,
+      layout_snapshot: spreads,
+      warnings: pdfResult.warnings,
+      created_by: auth.userId,
+      expires_at: expiresAt.toISOString(),
+    })
+    .select('id')
+    .single()
+
+  if (insertErr || !insertedRow) {
+    return NextResponse.json(
+      { error: `album_exports insert failed: ${insertErr?.message ?? 'no row'}` },
+      { status: 500 },
+    )
+  }
+
+  // 10. Audit log
+  await logAction(auth, 'album_export.create', 'album', albumId, {
+    profile_slug: profile.slug,
+    page_count: pdfResult.pageCount,
+    file_size: pdfResult.pdfBytes.length,
+    warnings_count: pdfResult.warnings.length,
+    smart_fill_warnings_count: smartFillResult.warnings.length,
+  })
+
+  // 11. Response
+  return NextResponse.json({
+    export_id: insertedRow.id,
+    download_url: ycPhotoUrl(storagePath),
+    filename,
+    file_size: pdfResult.pdfBytes.length,
+    page_count: pdfResult.pageCount,
+    warnings: pdfResult.warnings,
   })
 }

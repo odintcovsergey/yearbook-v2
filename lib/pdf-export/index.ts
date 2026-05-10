@@ -32,6 +32,7 @@ export type {
   AlbumExportInput,
   ExportResult,
   ExportProfile,
+  OriginalPhoto,
   PdfWarning,
   PdfWarningCode,
   PageBoxes,
