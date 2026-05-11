@@ -318,5 +318,193 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  // ── register_retouched — фаза К.3 — регистрация обработанных оригиналов ─
+  //
+  // Клиент сначала залил каждый файл напрямую в YC через /api/upload-url
+  // (upload_type='originals' → путь <album_id>/originals/<ts>_<filename>).
+  // Затем шлёт сюда массив {filename, storage_path}.
+  //
+  // Сервер для каждого filename ищет photo (album_id + filename), и:
+  //   - если match: обновляет photos.original_path, удаляет старый файл из YC
+  //   - если no match: оставляет файл в YC (для К.5 ручной привязки),
+  //     возвращает в unmatched
+  //
+  // Body: { album_id, files: [{ filename, storage_path }] }
+  // Response: { matched, unmatched, replaced }
+  if (action === 'register_retouched') {
+    const files: { filename: string; storage_path: string }[] = body.files ?? []
+    if (!Array.isArray(files) || files.length === 0) {
+      return NextResponse.json({ error: 'files array required' }, { status: 400 })
+    }
+
+    // Безопасность: все storage_path должны быть в пределах /originals/
+    // этого альбома. Иначе клиент мог бы передать произвольный путь и
+    // привязать его как оригинал любому фото.
+    const expectedPrefix = `yc:${album_id}/originals/`
+    for (const f of files) {
+      if (!f.filename || !f.storage_path || !f.storage_path.startsWith(expectedPrefix)) {
+        return NextResponse.json(
+          {
+            error: 'invalid file entry',
+            hint: `storage_path должен начинаться с ${expectedPrefix}`,
+            file: f,
+          },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Достаём photos одним запросом — все filename'ы из input
+    const filenames = Array.from(new Set(files.map((f) => f.filename)))
+    const { data: photos } = await supabaseAdmin
+      .from('photos')
+      .select('id, filename, type, original_path')
+      .eq('album_id', album_id)
+      .in('filename', filenames)
+
+    // Маппинг filename → photos (может быть несколько при дублях, берём
+    // первый по порядку из БД)
+    const photoByFilename = new Map<string, any>()
+    for (const p of (photos ?? []) as any[]) {
+      if (!photoByFilename.has(p.filename)) photoByFilename.set(p.filename, p)
+    }
+
+    const replaced: Array<{
+      photo_id: string
+      filename: string
+      type: string
+      old_original_path: string | null
+      new_original_path: string
+    }> = []
+    const unmatched: Array<{ filename: string; storage_path: string }> = []
+    const oldPathsToDelete: string[] = []
+
+    for (const f of files) {
+      const photo = photoByFilename.get(f.filename)
+      if (!photo) {
+        unmatched.push({ filename: f.filename, storage_path: f.storage_path })
+        continue
+      }
+
+      // Обновляем БД
+      const { error: updErr } = await supabaseAdmin
+        .from('photos')
+        .update({ original_path: f.storage_path })
+        .eq('id', photo.id)
+
+      if (updErr) {
+        // Не падаем целиком — считаем как unmatched для отчёта,
+        // файл останется в YC и его можно будет привязать вручную (К.5).
+        unmatched.push({ filename: f.filename, storage_path: f.storage_path })
+        continue
+      }
+
+      replaced.push({
+        photo_id: photo.id,
+        filename: photo.filename,
+        type: photo.type,
+        old_original_path: photo.original_path ?? null,
+        new_original_path: f.storage_path,
+      })
+
+      // Готовим к удалению старый файл — но не сейчас, после всех updates,
+      // чтобы не удалить случайно если 2 photos в одном альбоме имели один
+      // и тот же original_path (теоретически невозможно, но защищаемся).
+      if (
+        photo.original_path &&
+        photo.original_path !== f.storage_path &&
+        photo.original_path.startsWith('yc:')
+      ) {
+        oldPathsToDelete.push(photo.original_path)
+      }
+    }
+
+    // Удаляем старые файлы параллельно. Игнорируем ошибки — если файл
+    // уже отсутствует в YC, ycDelete вернёт 204/404, не критично.
+    if (oldPathsToDelete.length > 0) {
+      await Promise.all(
+        oldPathsToDelete.map((p) => ycDelete(stripYcPrefix(p)).catch(() => null))
+      )
+    }
+
+    await logAction(auth, 'workflow.register_retouched', 'album', album_id, {
+      replaced: replaced.length,
+      unmatched: unmatched.length,
+      old_files_deleted: oldPathsToDelete.length,
+    })
+
+    return NextResponse.json({
+      matched: replaced.length,
+      unmatched_count: unmatched.length,
+      unmatched,
+      replaced,
+    })
+  }
+
+  // ── rebind_retouched — фаза К.5 — ручная привязка unmatched файла ──────
+  //
+  // Используется когда автоматический матчинг не нашёл photo для файла
+  // (другое имя после ретуши, типос и т.п.). Партнёр в UI выбирает
+  // photo_id вручную, файл уже лежит в YC.
+  //
+  // Body: { album_id, photo_id, storage_path }
+  if (action === 'rebind_retouched') {
+    const { photo_id, storage_path } = body
+    if (!photo_id || !storage_path) {
+      return NextResponse.json({ error: 'photo_id and storage_path required' }, { status: 400 })
+    }
+    const expectedPrefix = `yc:${album_id}/originals/`
+    if (typeof storage_path !== 'string' || !storage_path.startsWith(expectedPrefix)) {
+      return NextResponse.json(
+        { error: 'invalid storage_path', hint: `должен начинаться с ${expectedPrefix}` },
+        { status: 400 }
+      )
+    }
+
+    const { data: photo } = await supabaseAdmin
+      .from('photos')
+      .select('id, album_id, original_path')
+      .eq('id', photo_id)
+      .single()
+
+    if (!photo || photo.album_id !== album_id) {
+      return NextResponse.json({ error: 'photo not found in this album' }, { status: 404 })
+    }
+
+    const oldPath = photo.original_path
+    const { error: updErr } = await supabaseAdmin
+      .from('photos')
+      .update({ original_path: storage_path })
+      .eq('id', photo_id)
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+
+    if (oldPath && oldPath !== storage_path && oldPath.startsWith('yc:')) {
+      await ycDelete(stripYcPrefix(oldPath)).catch(() => null)
+    }
+
+    await logAction(auth, 'workflow.rebind_retouched', 'album', album_id, {
+      photo_id,
+      old_path: oldPath,
+      new_path: storage_path,
+    })
+
+    return NextResponse.json({ ok: true, photo_id, new_original_path: storage_path })
+  }
+
+  // ── discard_retouched — фаза К.5 — удалить unmatched файл из YC ────────
+  //
+  // Партнёр решил что этот файл не нужен (например ZIP содержал лишние).
+  // Body: { album_id, storage_path }
+  if (action === 'discard_retouched') {
+    const { storage_path } = body
+    const expectedPrefix = `yc:${album_id}/originals/`
+    if (typeof storage_path !== 'string' || !storage_path.startsWith(expectedPrefix)) {
+      return NextResponse.json({ error: 'invalid storage_path' }, { status: 400 })
+    }
+    await ycDelete(stripYcPrefix(storage_path)).catch(() => null)
+    await logAction(auth, 'workflow.discard_retouched', 'album', album_id, { storage_path })
+    return NextResponse.json({ ok: true })
+  }
+
   return NextResponse.json({ error: 'unknown action' }, { status: 400 })
 }
