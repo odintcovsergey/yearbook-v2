@@ -1553,6 +1553,7 @@ export async function POST(req: NextRequest) {
       'print_type',
       'config_preset_id',
       'template_set_id',
+      'vignettes_enabled',  // А.3.4 — override виньеток (true/false/null)
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {

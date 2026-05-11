@@ -49,6 +49,7 @@ type Album = {
   config_preset_id?: string | null
   config_preset_slug?: string | null
   config_preset_name?: string | null
+  vignettes_enabled?: boolean | null  // А.3.4: null=дефолт пресета, true/false=override
   stats: { total: number; submitted: number; in_progress: number }
   teacher_token: string | null
   teachers: { total: number; done: number } | null
@@ -801,6 +802,89 @@ function CollapseSection({
   )
 }
 
+// А.3.4 — Dropdown override настройки виньеток на уровне альбома.
+// Inline-обновление через POST update_album. Локальный state позволяет
+// показывать выбор без перезагрузки родительского компонента.
+// Effective значение применится при следующей пересборке альбома
+// (Сборка/Пересобрать кнопка выше).
+function VignettesControl({
+  album,
+  apiVA,
+  onNotify,
+  onError,
+}: {
+  album: Album
+  apiVA: (url: string, opts?: RequestInit) => Promise<Response>
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  // Локальный state — оптимистичный update сразу, rollback при ошибке.
+  const [value, setValue] = useState<boolean | null>(album.vignettes_enabled ?? null)
+  const [saving, setSaving] = useState(false)
+
+  const handleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const v = e.target.value
+    const newValue: boolean | null = v === 'on' ? true : v === 'off' ? false : null
+    const prevValue = value
+    setValue(newValue)
+    setSaving(true)
+    try {
+      const r = await apiVA('/api/tenant', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'update_album',
+          album_id: album.id,
+          vignettes_enabled: newValue,
+        }),
+      })
+      if (r.ok) {
+        onNotify(
+          newValue === true
+            ? 'Виньетки включены. Пересоберите альбом чтобы применить.'
+            : newValue === false
+              ? 'Виньетки выключены. Пересоберите альбом чтобы применить.'
+              : 'Виньетки: дефолт пресета. Пересоберите альбом чтобы применить.'
+        )
+      } else {
+        // Rollback
+        setValue(prevValue)
+        const d = await r.json().catch(() => ({}))
+        onError(d.error ?? 'Не удалось сохранить настройку')
+      }
+    } catch (err: unknown) {
+      setValue(prevValue)
+      onError(err instanceof Error ? err.message : 'Ошибка сети')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const selectValue = value === true ? 'on' : value === false ? 'off' : 'auto'
+  const description =
+    value === null
+      ? '«Авто» использует дефолт комплектации: в Индивидуальной — включено, в остальных — выключено.'
+      : value
+        ? 'Виньеточный разворот добавится в конце альбома.'
+        : 'Виньеточный разворот не будет создан.'
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-3 flex-wrap">
+      <div className="text-xs text-gray-500 uppercase">Виньетки класса</div>
+      <select
+        value={selectValue}
+        onChange={handleChange}
+        disabled={saving}
+        className="text-sm px-2 py-1 border border-gray-300 rounded bg-white disabled:opacity-50"
+      >
+        <option value="auto">Авто (по комплектации)</option>
+        <option value="on">Включить</option>
+        <option value="off">Выключить</option>
+      </select>
+      <div className="text-xs text-gray-400 flex-1 min-w-[200px]">{description}</div>
+    </div>
+  )
+}
+
 // ============================================================
 // МОДАЛКА ДЕТАЛЕЙ АЛЬБОМА (с управлением учениками)
 // ============================================================
@@ -1213,6 +1297,18 @@ function AlbumDetailModal({
                         </button>
                       )}
                     </div>
+
+                    {/* А.3.4 — Override виньеток на уровне альбома.
+                        NULL = дефолт пресета (виньетки в Индивидуальной,
+                        выключены в остальных). true/false = принудительно. */}
+                    {canEdit && album.config_preset_id && (
+                      <VignettesControl
+                        album={album}
+                        apiVA={apiVA}
+                        onNotify={onNotify}
+                        onError={onError}
+                      />
+                    )}
 
                     {layout && (
                       <div className="mt-3 pt-3 border-t border-gray-200">
