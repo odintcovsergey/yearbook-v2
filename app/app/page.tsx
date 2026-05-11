@@ -6601,6 +6601,19 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
   >(null)
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set())
 
+  // Фаза К.4 — загрузка обработанных оригиналов
+  const [uploadingRetouched, setUploadingRetouched] = useState(false)
+  const [retouchedProgress, setRetouchedProgress] = useState({ done: 0, total: 0 })
+  const [retouchedSummary, setRetouchedSummary] = useState<
+    | null
+    | {
+        matched: number
+        unmatched_count: number
+        unmatched: { filename: string; storage_path: string }[]
+        replaced: { photo_id: string; filename: string; type: string }[]
+      }
+  >(null)
+
   const status = workflow?.workflow_status ?? (album as any).workflow_status ?? 'active'
   const statusInfo = WORKFLOW_LABELS[status] ?? { label: status, color: 'bg-gray-100 text-gray-700' }
 
@@ -6745,6 +6758,100 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
       )
     : 0
 
+  // Фаза К.4 — загрузка обработанных оригиналов
+  const handleUploadRetouched = async (files: FileList) => {
+    const arr = Array.from(files)
+    if (arr.length === 0) return
+    setUploadingRetouched(true)
+    setRetouchedProgress({ done: 0, total: arr.length })
+    setRetouchedSummary(null)
+
+    // Шаг 1: для каждого файла — presigned URL + PUT прямо в YC.
+    // Это обходит Vercel 4.5 МБ лимит. uploadedFiles накапливаются
+    // независимо от результата матчинга (К.3 сам решит что куда).
+    const uploadedFiles: { filename: string; storage_path: string }[] = []
+    const failedToUpload: string[] = []
+    let done = 0
+    for (const file of arr) {
+      try {
+        const urlRes = await fetch('/api/upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            album_id: (album as any).id,
+            filename: file.name,
+            content_type: file.type || 'application/octet-stream',
+            upload_type: 'originals',
+          }),
+        })
+        if (!urlRes.ok) throw new Error(`presigned URL ${urlRes.status}`)
+        const urlData = await urlRes.json()
+        if (!urlData.upload_url || !urlData.storage_path) {
+          throw new Error('no upload URL in response')
+        }
+
+        const putRes = await fetch(urlData.upload_url, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          body: file,
+        })
+        if (!putRes.ok) throw new Error(`PUT ${putRes.status}`)
+
+        uploadedFiles.push({ filename: file.name, storage_path: urlData.storage_path })
+      } catch {
+        failedToUpload.push(file.name)
+      }
+      done++
+      setRetouchedProgress({ done, total: arr.length })
+    }
+
+    if (uploadedFiles.length === 0) {
+      onError(
+        failedToUpload.length > 0
+          ? `Не удалось загрузить ни один файл (${failedToUpload.length})`
+          : 'Не удалось загрузить файлы'
+      )
+      setUploadingRetouched(false)
+      setRetouchedProgress({ done: 0, total: 0 })
+      return
+    }
+
+    // Шаг 2: регистрация → матчинг + замена original_path.
+    try {
+      const res = await fetch('/api/workflow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'register_retouched',
+          album_id: (album as any).id,
+          files: uploadedFiles,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        onError(data.error || `Ошибка регистрации (HTTP ${res.status})`)
+      } else {
+        setRetouchedSummary({
+          matched: data.matched ?? 0,
+          unmatched_count: data.unmatched_count ?? 0,
+          unmatched: data.unmatched ?? [],
+          replaced: data.replaced ?? [],
+        })
+        const matched = data.matched ?? 0
+        const unmatched = data.unmatched_count ?? 0
+        onNotify(
+          unmatched > 0
+            ? `Обновлено ${matched} · ${unmatched} не найдено`
+            : `Обновлено ${matched} оригиналов`
+        )
+      }
+    } catch (e: any) {
+      onError(e?.message || 'Ошибка регистрации')
+    } finally {
+      setUploadingRetouched(false)
+      setRetouchedProgress({ done: 0, total: 0 })
+    }
+  }
   const formatSize = (bytes: number) => {
     if (!bytes) return ''
     if (bytes > 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} МБ`
@@ -6879,6 +6986,97 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
               </div>
             </div>
           )}
+
+          {/* Загрузка обработанных оригиналов (фаза К.4) */}
+          <div className="mt-3 pt-3 border-t border-blue-100">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-gray-500 flex-1">
+                После ретуши загрузите файлы обратно — система заменит оригиналы по имени файла.
+                Имена должны совпадать с теми, что были в скачанном ZIP.
+              </p>
+              <label
+                className={`btn-secondary text-sm cursor-pointer whitespace-nowrap ${
+                  uploadingRetouched ? 'opacity-50 cursor-wait pointer-events-none' : ''
+                }`}
+              >
+                <input
+                  type="file"
+                  className="hidden"
+                  multiple
+                  accept="image/jpeg,image/jpg,image/png,image/tiff"
+                  onChange={(e) => {
+                    if (e.target.files) handleUploadRetouched(e.target.files)
+                    // Сброс input чтобы можно было выбрать те же файлы снова
+                    e.target.value = ''
+                  }}
+                  disabled={uploadingRetouched}
+                />
+                {uploadingRetouched
+                  ? `Загружаем ${retouchedProgress.done}/${retouchedProgress.total}…`
+                  : '📤 Загрузить обработанные'}
+              </label>
+            </div>
+
+            {uploadingRetouched && retouchedProgress.total > 0 && (
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-2">
+                <div
+                  className="h-full bg-blue-500 rounded-full transition-all"
+                  style={{
+                    width: `${
+                      (retouchedProgress.done / retouchedProgress.total) * 100
+                    }%`,
+                  }}
+                />
+              </div>
+            )}
+
+            {retouchedSummary && (
+              <div className="mt-3 space-y-2">
+                {retouchedSummary.matched > 0 && (
+                  <div className="p-2 bg-green-50 border border-green-200 rounded text-sm text-green-800 flex items-start justify-between gap-2">
+                    <span>
+                      ✅ Обновлено {retouchedSummary.matched} оригиналов — новые версии
+                      будут использованы при следующем экспорте PDF
+                    </span>
+                    <button
+                      className="text-green-700 hover:text-green-900 text-xs"
+                      onClick={() => setRetouchedSummary(null)}
+                      title="Скрыть"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+                {retouchedSummary.unmatched_count > 0 && (
+                  <div className="p-2 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">
+                    <div className="flex items-start justify-between gap-2">
+                      <span>
+                        ⚠️ Не найдено {retouchedSummary.unmatched_count} файлов — возможно
+                        имена не совпадают с оригиналами:
+                      </span>
+                      <button
+                        className="text-amber-700 hover:text-amber-900 text-xs"
+                        onClick={() => setRetouchedSummary(null)}
+                        title="Скрыть"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <ul className="mt-1 ml-5 list-disc text-xs space-y-0.5 max-h-32 overflow-y-auto">
+                      {retouchedSummary.unmatched.map((u, i) => (
+                        <li key={i}>{u.filename}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-xs italic">
+                      Файлы загружены в систему, но не привязаны. Переименуйте их в соответствии
+                      с оригинальными именами и загрузите снова, либо привяжите вручную
+                      (функция в работе).
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
