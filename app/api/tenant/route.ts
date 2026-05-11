@@ -2256,6 +2256,63 @@ export async function POST(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
+  // register_original — регистрация оригинала фото в БД (Б.1.2)
+  // Используется после успешной загрузки оригинала через presigned URL.
+  //
+  // Поток (см. Б.1.3 в page.tsx):
+  //   1. Клиент компрессирует → POST /api/upload → photo_id + WebP в storage_path
+  //   2. Клиент параллельно: POST /api/upload-url с upload_type='originals' →
+  //      presigned URL + storage_path для originals
+  //   3. Клиент PUT'ом заливает оригинал в YC по presigned URL
+  //   4. Клиент: POST register_original с photo_id + storage_path оригинала →
+  //      UPDATE photos SET original_path
+  //
+  // Storage path validation: должен начинаться с album_id/originals/
+  // и фото должно принадлежать тому же album_id. Защита от подмены.
+  // ----------------------------------------------------------
+  if (body.action === 'register_original') {
+    const { photo_id, original_path } = body
+
+    if (!photo_id || !original_path) {
+      return NextResponse.json({ error: 'photo_id и original_path обязательны' }, { status: 400 })
+    }
+
+    // Получаем фото с проверкой принадлежности тенанту (assertAlbumAccess внутри).
+    const photo = await getOwnedPhoto(auth, photo_id)
+    if (!photo) {
+      return NextResponse.json({ error: 'Фото не найдено' }, { status: 404 })
+    }
+
+    // Защита: original_path должен указывать на originals/ внутри того же
+    // альбома. Иначе клиент мог бы подсунуть путь чужого альбома.
+    // Принимаем оба формата для гибкости: с префиксом yc: и без.
+    const cleanPath = original_path.startsWith('yc:') ? original_path.slice(3) : original_path
+    const expectedPrefix = `${(photo as { album_id: string }).album_id}/originals/`
+    if (!cleanPath.startsWith(expectedPrefix)) {
+      return NextResponse.json({
+        error: `original_path должен начинаться с ${expectedPrefix}`,
+      }, { status: 400 })
+    }
+
+    // Нормализуем — всегда храним с префиксом yc: для консистентности
+    // с storage_path (см. lib/supabase.ts getPhotoUrl).
+    const normalizedPath = original_path.startsWith('yc:') ? original_path : `yc:${original_path}`
+
+    const { error } = await supabaseAdmin
+      .from('photos')
+      .update({ original_path: normalizedPath })
+      .eq('id', photo_id)
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    await logAction(auth, 'photo.register_original', 'photo', photo_id, {
+      original_path: normalizedPath,
+    })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
   // delete_photo — удалить фото (+ thumb из Storage, + связи из БД)
   // Автоматически сбрасывает submitted_at у детей, которые выбрали это фото.
   // ----------------------------------------------------------

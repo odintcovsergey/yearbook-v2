@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
 
   // Регистрируем в БД
   const filename = originalName  // сохраняем оригинальное имя как есть
-  const { error: dbErr } = await supabaseAdmin
+  const { data: photoRow, error: dbErr } = await supabaseAdmin
     .from('photos')
     .insert({
       album_id: albumId,
@@ -85,14 +85,22 @@ export async function POST(req: NextRequest) {
       thumb_path: null,
       type,
     })
+    .select('id')
+    .single()
 
-  if (dbErr) {
+  if (dbErr || !photoRow) {
     // Откатываем файл из YC если БД упала
     try { await ycUpload(ycKey, Buffer.alloc(0)) } catch {}
-    return NextResponse.json({ error: dbErr.message }, { status: 500 })
+    return NextResponse.json({ error: dbErr?.message ?? 'insert failed' }, { status: 500 })
   }
 
   await logAction(auth, 'photo.upload_yc', 'album', albumId, { filename, type })
 
-  return NextResponse.json({ ok: true, storage_path: storagePath })
+  // photo_id возвращается для Б.1.3 — клиент делает второй параллельный
+  // запрос register_original c этим id после загрузки оригинала.
+  return NextResponse.json({
+    ok: true,
+    storage_path: storagePath,
+    photo_id: (photoRow as { id: string }).id,
+  })
 }
