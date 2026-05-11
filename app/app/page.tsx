@@ -3481,11 +3481,11 @@ function photoKindLabel(k: PhotoKind): string {
     case 'portrait': return 'Портреты'
     case 'group': return 'Групповые'
     case 'teacher': return 'Учителя'
-    case 'common_spread': return 'Общий: на разворот'
-    case 'common_full': return 'Общий: полная страница'
-    case 'common_half': return 'Общий: половина'
-    case 'common_quarter': return 'Общий: четверть'
-    case 'common_sixth': return 'Общий: 1/6'
+    case 'common_spread': return 'Общее фото на разворот'
+    case 'common_full': return 'Общие фото класса'
+    case 'common_half': return 'Фото по полкласса'
+    case 'common_quarter': return 'Фото 1/4 класса'
+    case 'common_sixth': return 'Фото 1/6 класса'
   }
 }
 
@@ -3773,9 +3773,9 @@ function PhotosTab({
       )}
 
       {/* Галерея */}
-      <div className="card p-5">
+      <div className="card p-5 min-h-[420px]">
         <div className="flex flex-wrap gap-1 mb-4 border-b border-gray-100">
-          {PHOTO_KINDS_ALL.map((t, i) => (
+          {PHOTO_KINDS_ALL.map(t => (
             <button
               key={t}
               type="button"
@@ -3784,9 +3784,6 @@ function PhotosTab({
                 activeKind === t
                   ? 'border-gray-900 text-gray-900'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
-              } ${
-                // визуальная граница между личными и общим разделом
-                i === PHOTO_KINDS_PERSONAL.length ? 'ml-3 border-l border-gray-200 pl-4' : ''
               }`}
             >
               {photoKindLabel(t)}
