@@ -3490,17 +3490,32 @@ function photoKindLabel(k: PhotoKind): string {
 }
 
 /**
- * Параллельная клиентская загрузка:
- * 1. browser-image-compression → WebP ~2048px
- * 2. Прямая заливка в Supabase Storage под путём album_id/type/ts_name.webp
- * 3. POST register_photo для создания записи в БД
+ * Параллельная клиентская загрузка фото.
  *
- * Thumb генерируется Supabase on-the-fly через ?width=400 (серверная
- * трансформация). Это компромисс: зато загрузка быстрее.
+ * Двойная загрузка каждого файла (Б.1.3 — 11.05.2026):
+ *   1. browser-image-compression → WebP ~2048px (~0.5-1 МБ)
+ *   2. POST /api/upload c WebP → { photo_id, storage_path }
+ *      (фото сразу появляется в БД и UI с WebP версией)
+ *   3. ПАРАЛЛЕЛЬНО с шагом 2 (точнее: после получения photo_id):
+ *      a. POST /api/upload-url upload_type='originals' →
+ *         { upload_url, storage_path }
+ *      b. PUT upload_url с оригинальным File body → YC
+ *      c. POST /api/tenant action=register_original → UPDATE photos
  *
- * Для принудительной генерации настоящего thumb_path через sharp
- * используется серверный upload_photo (multipart) — fallback, если
- * клиентская компрессия упала.
+ * Шаг 3 нужен для PDF-экспорта в типографию (Б.2). Если упал на любом
+ * этапе — фото остаётся с WebP-only, photos.original_path IS NULL,
+ * PDF-export сделает fallback на storage_path. Не критичная ошибка,
+ * пишем как warning а не error.
+ *
+ * Прогресс: один файл = один done. Шаг 3 идёт фоном после шага 2,
+ * прогресс инкрементится сразу после шага 2 (UX-причина: фотограф
+ * видит что WebP загрузился, не ждёт лишний раз пока 5+ МБ оригинал
+ * докачается). Если оригинал упал — увидит в errors.
+ *
+ * Размер оригинала: лимита нет в этой версии (фотограф несёт
+ * ответственность). YC принимает до 5 ТБ на объект. На практике
+ * 5-10 МБ JPEG из камеры. Если в будущем понадобится — добавим
+ * проверку на клиенте + серверный re-compress через sharp.
  */
 async function uploadFilesParallel(
   files: File[],
@@ -3509,15 +3524,65 @@ async function uploadFilesParallel(
   onProgress: (done: number) => void,
   onFileError: (name: string, msg: string) => void,
 ) {
-  const { createClient } = await import('@supabase/supabase-js')
   const imageCompression = (await import('browser-image-compression')).default
-  const sb = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  )
 
   let done = 0
   const queue = [...files]
+
+  // Фоновая загрузка оригинала — не блокирует прогресс-бар, ошибки идут
+  // в onFileError со суффиксом '(оригинал)' чтобы фотограф мог различить.
+  // Файл уже виден в галерее как WebP, оригинал просто докачивается.
+  const uploadOriginalBackground = async (file: File, photoId: string) => {
+    try {
+      // 1. Получаем presigned URL
+      const urlRes = await fetch('/api/upload-url', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          album_id: albumId,
+          filename: file.name,
+          content_type: file.type || 'application/octet-stream',
+          upload_type: 'originals',
+        }),
+      })
+      if (!urlRes.ok) {
+        const d = await urlRes.json().catch(() => ({}))
+        throw new Error(d.error ?? `HTTP ${urlRes.status}`)
+      }
+      const { upload_url, storage_path } = await urlRes.json()
+
+      // 2. PUT оригинала прямо в YC (минуя Vercel 4.5МБ limit)
+      const putRes = await fetch(upload_url, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      })
+      if (!putRes.ok) {
+        throw new Error(`PUT в YC: HTTP ${putRes.status}`)
+      }
+
+      // 3. Регистрируем путь в БД
+      const regRes = await fetch('/api/tenant', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'register_original',
+          photo_id: photoId,
+          original_path: storage_path,
+        }),
+      })
+      if (!regRes.ok) {
+        const d = await regRes.json().catch(() => ({}))
+        throw new Error(d.error ?? `register_original HTTP ${regRes.status}`)
+      }
+    } catch (e: any) {
+      // Не критично: WebP уже залит, фото видно в галерее. Просто оригинала
+      // для печати нет. Сообщаем фотографу чтобы знал.
+      onFileError(`${file.name} (оригинал)`, e?.message ?? 'Не удалось загрузить оригинал для печати')
+    }
+  }
 
   const worker = async () => {
     while (queue.length > 0) {
@@ -3536,7 +3601,7 @@ async function uploadFilesParallel(
           // если компрессия упала — заливаем оригинал
         }
 
-        // Загружаем через сервер → Yandex Object Storage
+        // Загружаем WebP через сервер → Yandex Object Storage
         const formData = new FormData()
         const webpFile = new File([compressed], file.name.replace(/\.[^.]+$/, '.webp'), { type: 'image/webp' })
         formData.append('file', webpFile)
@@ -3552,6 +3617,15 @@ async function uploadFilesParallel(
         if (!res.ok) {
           const d = await res.json().catch(() => ({}))
           onFileError(file.name, d.error ?? 'Ошибка загрузки')
+        } else {
+          // Шаг 3 — параллельная загрузка оригинала в фоне, не ждём.
+          // Прогресс-бар инкрементится прямо сейчас (после успешной
+          // загрузки WebP), пользователь видит что фото готово.
+          const data = await res.json().catch(() => ({}))
+          if (data?.photo_id) {
+            // void: запускаем и забываем. Ошибка прилетит через onFileError.
+            void uploadOriginalBackground(file, data.photo_id)
+          }
         }
       } catch (e: any) {
         onFileError(file.name, e?.message ?? 'Неизвестная ошибка')
