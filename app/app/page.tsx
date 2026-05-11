@@ -6651,6 +6651,10 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
   const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 })
   // Фаза К.2 — скачивание оригиналов для ретуши
   const [downloadingOriginalsZip, setDownloadingOriginalsZip] = useState(false)
+  // По умолчанию false — выгружаем только выбранные родителями portrait/group
+  // + все teacher/common_*. Чекбокс позволяет фотографу запросить весь архив
+  // (например, чтобы отретушировать заранее, до завершения отбора).
+  const [includeUnselected, setIncludeUnselected] = useState(false)
   const [bigAlbumOptions, setBigAlbumOptions] = useState<
     | null
     | {
@@ -6758,6 +6762,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
       const params = new URLSearchParams({ album_id: (album as any).id })
       if (categories && categories.length > 0) params.set('categories', categories.join(','))
       if (viewAsTenantId) params.set('view_as', viewAsTenantId)
+      if (includeUnselected) params.set('include_unselected', '1')
       const res = await fetch(`/api/workflow/originals-zip?${params.toString()}`)
       if (!res.ok) {
         // Пробуем разобрать JSON-ошибку (404, 413, 500)
@@ -6771,6 +6776,14 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
             by_category: data.by_category || {},
           })
           setSelectedCategories(new Set())
+          return
+        }
+        // 404 с filtered_out > 0 — есть фото, но никто не выбрал. Подсказываем
+        // про чекбокс «Включить невыбранные».
+        if (res.status === 404 && data?.filtered_out > 0) {
+          onError(
+            `${data.error}. ${data.hint || ''} Включите «Скачать также невыбранные фото» и попробуйте снова.`
+          )
           return
         }
         onError(data?.error || data?.hint || `Не удалось скачать оригиналы (HTTP ${res.status})`)
@@ -7092,11 +7105,30 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
               className="btn-secondary text-sm whitespace-nowrap"
               onClick={() => handleDownloadOriginalsZip()}
               disabled={downloadingOriginalsZip}
-              title="Скачать ZIP-архив оригиналов всех фото альбома"
+              title={
+                includeUnselected
+                  ? 'Скачать все оригиналы альбома (включая невыбранные)'
+                  : 'Скачать оригиналы выбранных родителями фото + учителей + общего раздела'
+              }
             >
               {downloadingOriginalsZip ? 'Собираем ZIP…' : '📥 Скачать оригиналы'}
             </button>
           </div>
+
+          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none mt-1">
+            <input
+              type="checkbox"
+              checked={includeUnselected}
+              onChange={(e) => setIncludeUnselected(e.target.checked)}
+              className="w-3.5 h-3.5"
+            />
+            <span>
+              Скачать также невыбранные фото
+              <span className="text-gray-400 ml-1">
+                (по умолчанию только выбранные родителями портреты и групповые; учителя и общий раздел всегда включены)
+              </span>
+            </span>
+          </label>
 
           {/* Панель частичной выгрузки — показывается когда альбом слишком большой */}
           {bigAlbumOptions && (

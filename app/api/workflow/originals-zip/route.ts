@@ -73,6 +73,62 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
   }
 
+  // По умолчанию выгружаем только выбранные родителями фото — не нужно
+  // ретушировать всё подряд. include_unselected=1 позволяет фотографу
+  // запросить полный архив (например, если хочет отретушировать заранее
+  // до того как родители завершат выбор).
+  //
+  // Логика «выбранности» по типам:
+  //   portrait → есть запись в selections (selection_type
+  //              'portrait_page' или 'portrait_cover') ИЛИ
+  //              в cover_selections.photo_id (когда cover_option='other')
+  //   group    → есть запись в selections (selection_type='group')
+  //   teacher  → нет селекта от родителей, выгружаем ВСЕ (фотограф/
+  //              менеджер сам решает кого включать в альбом)
+  //   common_* → нет селекта, выгружаем ВСЕ (общий раздел собирает
+  //              фотограф)
+  const includeUnselected = req.nextUrl.searchParams.get('include_unselected') === '1'
+
+  // Собираем множество photo_id выбранных учениками этого альбома.
+  // Делаем это только если фильтр включён И запрошены portrait/group
+  // (иначе бессмысленно тянуть JOIN'ы).
+  let selectedPhotoIds: Set<string> | null = null
+  if (!includeUnselected) {
+    const needPortrait =
+      !requestedCategories || requestedCategories.includes('portrait')
+    const needGroup =
+      !requestedCategories || requestedCategories.includes('group')
+    if (needPortrait || needGroup) {
+      selectedPhotoIds = new Set<string>()
+
+      // selections JOIN children → отфильтровать по album_id
+      const types: string[] = []
+      if (needPortrait) types.push('portrait_page', 'portrait_cover')
+      if (needGroup) types.push('group')
+      const { data: selRows } = await supabaseAdmin
+        .from('selections')
+        .select('photo_id, children!inner(album_id)')
+        .eq('children.album_id', albumId)
+        .in('selection_type', types)
+      for (const r of (selRows ?? []) as any[]) {
+        if (r.photo_id) selectedPhotoIds.add(r.photo_id)
+      }
+
+      // cover_selections — отдельная таблица для обложки «other»
+      if (needPortrait) {
+        const { data: covRows } = await supabaseAdmin
+          .from('cover_selections')
+          .select('photo_id, children!inner(album_id)')
+          .eq('children.album_id', albumId)
+          .eq('cover_option', 'other')
+          .not('photo_id', 'is', null)
+        for (const r of (covRows ?? []) as any[]) {
+          if (r.photo_id) selectedPhotoIds.add(r.photo_id)
+        }
+      }
+    }
+  }
+
   // Берём только фото с оригиналом. Старые фото (до Б.1.0) и фото с
   // ошибочной загрузкой оригинала имеют original_path = NULL — их в этой
   // выгрузке нет.
@@ -86,25 +142,47 @@ export async function GET(req: NextRequest) {
   if (requestedCategories && requestedCategories.length > 0) {
     photosQ = photosQ.in('type', requestedCategories)
   }
-  const { data: photos, error: photosErr } = await photosQ
+  const { data: photosRaw, error: photosErr } = await photosQ
   if (photosErr) {
     return NextResponse.json({ error: photosErr.message }, { status: 500 })
   }
-  if (!photos || photos.length === 0) {
+
+  // Применяем фильтр выбранности на уровне JS (а не SQL) потому что
+  // правила разные для разных type'ов. PostgREST не даёт удобно
+  // выразить «portrait/group фильтровать по selections, остальные нет».
+  type PhotoRow = { id: string; filename: string; original_path: string | null; type: string; created_at: string }
+  const photos: PhotoRow[] = !selectedPhotoIds
+    ? ((photosRaw ?? []) as PhotoRow[])
+    : ((photosRaw ?? []) as PhotoRow[]).filter((p) => {
+        if (p.type === 'portrait' || p.type === 'group') {
+          return selectedPhotoIds!.has(p.id)
+        }
+        // teacher и common_* — пропускаем все
+        return true
+      })
+
+  if (photos.length === 0) {
     // Считаем фото без original_path — это подсказка ретушёру что
     // оригиналы вообще не загружались (старый альбом до Б.1).
     const { count: totalCount } = await supabaseAdmin
       .from('photos')
       .select('id', { count: 'exact', head: true })
       .eq('album_id', albumId)
+    // Считаем фото которые есть, но не выбраны (для UX-подсказки).
+    const filteredOutCount = (photosRaw ?? []).length - photos.length
     return NextResponse.json(
       {
-        error: 'Нет загруженных оригиналов в этом альбоме',
+        error: filteredOutCount > 0
+          ? 'Нет выбранных учениками фото в этом альбоме'
+          : 'Нет загруженных оригиналов в этом альбоме',
         hint:
-          totalCount && totalCount > 0
-            ? 'Альбом содержит фото без сохранённых оригиналов (возможно загружены до фазы Б). Загрузите фото заново для получения оригиналов.'
-            : 'Сначала загрузите фото в раздел Фото.',
+          filteredOutCount > 0
+            ? `Альбом содержит ${filteredOutCount} фото с оригиналами, но они ещё не выбраны учениками. Дождитесь завершения отбора или используйте «Включить невыбранные» для скачивания всех фото.`
+            : totalCount && totalCount > 0
+              ? 'Альбом содержит фото без сохранённых оригиналов (возможно загружены до фазы Б). Загрузите фото заново для получения оригиналов.'
+              : 'Сначала загрузите фото в раздел Фото.',
         total_photos: totalCount ?? 0,
+        filtered_out: filteredOutCount,
       },
       { status: 404 }
     )
@@ -230,6 +308,7 @@ export async function GET(req: NextRequest) {
     generated_at: new Date().toISOString(),
     generated_by: auth.userId,
     categories: (requestedCategories ?? ALL_CATEGORIES.slice()) as Category[],
+    only_selected: !includeUnselected,
     total_requested: photos.length,
     total_downloaded: successes.length,
     failures: failures.length,
@@ -256,23 +335,70 @@ export async function GET(req: NextRequest) {
     `Файлов в архиве: ${successes.length}${
       failures.length > 0 ? ` (${failures.length} не докачались, см. manifest.json)` : ''
     }`,
+    includeUnselected
+      ? 'Режим: ВСЕ загруженные оригиналы (включая невыбранные)'
+      : 'Режим: только выбранные родителями + все учителя и общий раздел',
     '',
-    'СТРУКТУРА:',
-    '  manifest.json    — метаданные альбома и список фото (нужен для импорта обратно)',
+    '════════════════════════════════════════════════════════════',
+    'СТРУКТУРА АРХИВА',
+    '════════════════════════════════════════════════════════════',
+    '',
+    '  manifest.json    — метаданные альбома (нужен системе, не удалять)',
     '  portrait/        — портреты учеников',
     '  group/           — групповые фото для личных страниц',
     '  teacher/         — фото учителей',
-    '  common_*/        — фото общего раздела (на разворот, полностраничные, ...)',
+    '  common_*/        — фото общего раздела (на разворот, полные, ...)',
     '',
-    'КАК ВЕРНУТЬ ОБРАБОТАННЫЕ ФАЙЛЫ:',
-    '  1. Отретушируйте файлы в Lightroom/Photoshop (сохраняйте имена!)',
-    '  2. Архив можно реструктурировать как удобно — система матчит по имени файла',
-    '  3. Загрузите все обработанные файлы обратно через кнопку',
-    '     «Загрузить обработанные оригиналы» во вкладке Производство альбома',
+    '════════════════════════════════════════════════════════════',
+    'РЕТУШЬ В ADOBE LIGHTROOM CLASSIC',
+    '════════════════════════════════════════════════════════════',
     '',
-    'ВАЖНО:',
-    '  Не переименовывайте файлы — система ищет совпадения по имени.',
-    '  Если файл был переименован, привяжите его к фото вручную после загрузки.',
+    'ИМПОРТ:',
+    '  1. Распакуйте архив в любую папку.',
+    '  2. В Lightroom: File → Import Photos and Video... (⌘⇧I / Ctrl+Shift+I)',
+    '  3. Слева выберите распакованную папку. Включите «Include Subfolders»',
+    '     чтобы Lightroom подхватил все подпапки (portrait/, group/, ...).',
+    '  4. Сверху выберите режим «Add» — фото остаются на месте,',
+    '     Lightroom только индексирует их (быстрее и не занимает место).',
+    '  5. Нажмите Import.',
+    '',
+    'РЕТУШЬ:',
+    '  Работайте в модуле Develop как обычно. Применяйте пресеты,',
+    '  кисти, цветокор. При желании скопируйте настройки на партию',
+    '  кадров: ПКМ на фото → Develop Settings → Copy Settings →',
+    '  выделите остальные → Paste Settings.',
+    '',
+    'ЭКСПОРТ (КРИТИЧНО — СОХРАНИТЕ ИМЕНА!):',
+    '  1. Выделите все обработанные фото (⌘A / Ctrl+A).',
+    '  2. File → Export... (⌘⇧E / Ctrl+Shift+E)',
+    '  3. Export Location: выберите ЛЮБУЮ новую папку. Подпапки можно',
+    '     не сохранять — система найдёт фото по имени.',
+    '  4. File Naming: ОБЯЗАТЕЛЬНО снимите галочку «Rename To»',
+    '     (или выберите шаблон «Filename» без модификаций).',
+    '     Если имена изменятся — система не найдёт фото для подмены.',
+    '  5. File Settings: JPEG, Quality 90-100, Color Space sRGB.',
+    '  6. Image Sizing: «Do not resize» (для печати нужно полное',
+    '     разрешение, ресайз сделает наша система).',
+    '  7. Output Sharpening: Screen (Standard) или выключить.',
+    '  8. Export.',
+    '',
+    '════════════════════════════════════════════════════════════',
+    'ВОЗВРАТ В СИСТЕМУ',
+    '════════════════════════════════════════════════════════════',
+    '',
+    '  1. Откройте альбом → вкладка «Производство»',
+    '  2. Кнопка «Загрузить обработанные» в блоке «Цветокор и ретушь»',
+    '  3. Выберите все экспортированные файлы из одной папки.',
+    '  4. Система сопоставит файлы с оригиналами по имени.',
+    '     Совпавшие — заменят оригиналы (PDF-экспорт автоматически',
+    '     возьмёт новые версии).',
+    '     Не нашлись — будут показаны для ручной привязки.',
+    '',
+    'ЕСЛИ ИМЯ ИЗМЕНИЛОСЬ:',
+    '  В UI после загрузки появится список «Не найдено N файлов».',
+    '  Для каждого можно начать вводить оригинальное имя — система',
+    '  подскажет из автокомплита. Кнопка «Привязать» подменит',
+    '  оригинал на новую версию.',
   ].join('\n')
   zip.file('README.txt', readme)
 
@@ -289,6 +415,7 @@ export async function GET(req: NextRequest) {
     downloaded: successes.length,
     failures: failures.length,
     categories: requestedCategories ?? null,
+    only_selected: !includeUnselected,
     size_bytes: zipBuffer.length,
   })
 
