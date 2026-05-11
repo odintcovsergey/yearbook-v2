@@ -61,7 +61,7 @@ export async function buildAlbumInput(
 ): Promise<BuildAlbumInputResult> {
   const { data: album, error: albumErr } = await supabase
     .from('albums')
-    .select('id, template_set_id')
+    .select('id, template_set_id, common_section_max_spreads')
     .eq('id', albumId)
     .single();
 
@@ -281,6 +281,9 @@ export async function buildAlbumInput(
     subjects,
     students,
     common_photos,
+    // А.4 — лимит количества разворотов в общем разделе (NULL = без лимита).
+    common_section_max_spreads:
+      (album as { common_section_max_spreads?: number | null }).common_section_max_spreads ?? null,
   };
 
   const warnings: SmartFillWarning[] = [];

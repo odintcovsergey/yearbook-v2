@@ -106,6 +106,17 @@ export type AlbumInput = {
   subjects: Subject[];
   students: Student[];
   common_photos: CommonPhotos;
+  /**
+   * Лимит числа SpreadInstance в общем разделе (фаза А.4 от 11.05.2026).
+   * - `undefined` или `null` — без ограничения (текущее поведение)
+   * - `0` — общий раздел отключён
+   * - `>0` — максимум N SpreadInstance в общем разделе. Фото приоретизируются
+   *   в порядке spread → full → half → quarter → sixth (крупное приоритетнее).
+   *   Лишнее не размещается в layout, warning common_section_truncated.
+   *
+   * Заполняется из `albums.common_section_max_spreads` в smart-fill.
+   */
+  common_section_max_spreads?: number | null;
 };
 
 // ─── Литералы (синхронны с CHECK constraints) ─────────────────────────────
@@ -400,7 +411,9 @@ export type BuildWarningCode =
   | 'no_master_for_common_spread'   // нет мастера J-Spread (A5)
   | 'right_mirror_not_found'        // зеркальный мастер для правой страницы не нашёлся
   | 'common_right_page_empty'       // нечётное число фото, правая страница пустая
-  | 'common_section_skipped';       // мастер не найден, фото не размещены
+  | 'common_section_skipped'        // мастер не найден, фото не размещены
+  // А.4 — лимит на разворотов общего раздела:
+  | 'common_section_truncated';     // достигнут лимит, часть фото не размещена
 
 export type BuildWarning = {
   code: BuildWarningCode;

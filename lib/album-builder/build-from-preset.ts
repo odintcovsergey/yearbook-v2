@@ -1199,9 +1199,45 @@ type CommonPairOpts = {
  * Порядок размещения: spread → full_class → half → quarter → sixth.
  * Внутри каждой категории фото берутся в том порядке, в каком были
  * загружены (created_at ASC из smart-fill).
+ *
+ * А.4 (11.05.2026): respects `input.common_section_max_spreads` лимит.
+ * Считается число SpreadInstance, добавленных функцией. По достижении
+ * лимита остальные категории пропускаются (с warning common_section_truncated).
+ * NULL/undefined = без ограничения (legacy поведение).
+ * 0 = общий раздел отключён вообще (тоже пропускаем).
  */
 function buildCommonSection(ctx: PresetBuildContext): void {
   const cp = ctx.input.common_photos;
+  const maxSpreads = ctx.input.common_section_max_spreads;
+
+  // Если лимит = 0, общий раздел не создаём.
+  if (maxSpreads === 0) {
+    // Считаем сколько фото в принципе было — для информативного warning.
+    const totalSkipped =
+      cp.spread.length +
+      cp.full_class.length +
+      cp.half.length +
+      cp.quarter.length +
+      cp.sixth.length;
+    if (totalSkipped > 0) {
+      pushWarning(ctx, {
+        code: 'common_section_truncated',
+        detail: `common_section_max_spreads=0 — общий раздел отключён, ${totalSkipped} фото не размещены`,
+      });
+    }
+    return;
+  }
+
+  // Запоминаем counter до начала чтобы посчитать сколько добавили.
+  const initialCounter = ctx.spreadCounter.value;
+
+  // Хелпер: возвращает true если лимит достигнут и нужно прекратить
+  // добавление новых spread'ов общего раздела.
+  const limitReached = (): boolean => {
+    if (maxSpreads === undefined || maxSpreads === null) return false;
+    const addedSoFar = ctx.spreadCounter.value - initialCounter;
+    return addedSoFar >= maxSpreads;
+  };
 
   // 1. spread — нет мастера J-Spread (A5 в master-cleanup-tz). Warning и
   // продолжаем — фото не размещены в layout, партнёр может вручную
@@ -1214,35 +1250,41 @@ function buildCommonSection(ctx: PresetBuildContext): void {
   }
 
   // 2. full_class — J-ClassPhoto + J-ClassPhoto-Right (есть зеркало)
-  buildCommonPair(ctx, cp.full_class, {
-    left_hint: 'J-ClassPhoto',
-    right_hint: 'J-ClassPhoto-Right',
-    slot_filter: { photos_full: 1 },
-    photos_per_page: 1,
-    placeholder_label: () => 'classphotoframe',
-    category_name: 'full_class',
-  });
+  if (!limitReached()) {
+    buildCommonPair(ctx, cp.full_class, {
+      left_hint: 'J-ClassPhoto',
+      right_hint: 'J-ClassPhoto-Right',
+      slot_filter: { photos_full: 1 },
+      photos_per_page: 1,
+      placeholder_label: () => 'classphotoframe',
+      category_name: 'full_class',
+    }, initialCounter, maxSpreads);
+  }
 
   // 3. half — J-Half (симметричный, один мастер на обе стороны разворота)
-  buildCommonPair(ctx, cp.half, {
-    left_hint: 'J-Half',
-    right_hint: 'J-Half',
-    slot_filter: { photos_half: 2 },
-    photos_per_page: 2,
-    placeholder_label: (n) => `halfphoto_${n}`,
-    category_name: 'half',
-  });
+  if (!limitReached()) {
+    buildCommonPair(ctx, cp.half, {
+      left_hint: 'J-Half',
+      right_hint: 'J-Half',
+      slot_filter: { photos_half: 2 },
+      photos_per_page: 2,
+      placeholder_label: (n) => `halfphoto_${n}`,
+      category_name: 'half',
+    }, initialCounter, maxSpreads);
+  }
 
   // 4. quarter — J-Quarter (симметричный). slot_capacity = photos_quarter:2
   // согласно audit_notes мастера J-Quarter (2 фото четверти на странице).
-  buildCommonPair(ctx, cp.quarter, {
-    left_hint: 'J-Quarter',
-    right_hint: 'J-Quarter',
-    slot_filter: { photos_quarter: 2 },
-    photos_per_page: 2,
-    placeholder_label: (n) => `quarterphoto_${n}`,
-    category_name: 'quarter',
-  });
+  if (!limitReached()) {
+    buildCommonPair(ctx, cp.quarter, {
+      left_hint: 'J-Quarter',
+      right_hint: 'J-Quarter',
+      slot_filter: { photos_quarter: 2 },
+      photos_per_page: 2,
+      placeholder_label: (n) => `quarterphoto_${n}`,
+      category_name: 'quarter',
+    }, initialCounter, maxSpreads);
+  }
 
   // 5. sixth (1/6 класса) — J-Collage (симметричный). ВНИМАНИЕ: ключ в
   // slot_capacity у J-Collage в БД называется photos_collage (исторический
@@ -1250,14 +1292,25 @@ function buildCommonSection(ctx: PresetBuildContext): void {
   // CommonPhotos называется sixth — это явное различие, сохранено в коде.
   // В будущем стоит переименовать в БД на photos_sixth для консистентности
   // (отдельная миграция, см. master-cleanup-tz).
-  buildCommonPair(ctx, cp.sixth, {
-    left_hint: 'J-Collage',
-    right_hint: 'J-Collage',
-    slot_filter: { photos_collage: 6 },
-    photos_per_page: 6,
-    placeholder_label: (n) => `collagephoto_${n}`,
-    category_name: 'sixth',
-  });
+  if (!limitReached()) {
+    buildCommonPair(ctx, cp.sixth, {
+      left_hint: 'J-Collage',
+      right_hint: 'J-Collage',
+      slot_filter: { photos_collage: 6 },
+      photos_per_page: 6,
+      placeholder_label: (n) => `collagephoto_${n}`,
+      category_name: 'sixth',
+    }, initialCounter, maxSpreads);
+  }
+
+  // Финал: если лимит сработал и есть необработанные фото — warning.
+  if (limitReached()) {
+    const addedSpreads = ctx.spreadCounter.value - initialCounter;
+    pushWarning(ctx, {
+      code: 'common_section_truncated',
+      detail: `Лимит common_section_max_spreads=${maxSpreads} достигнут (добавлено ${addedSpreads} разворотов). Часть фото общего раздела не размещена в layout — отображение во вкладке Фото сохранено.`,
+    });
+  }
 }
 
 /**
@@ -1281,8 +1334,20 @@ function buildCommonPair(
   ctx: PresetBuildContext,
   photos: string[],
   opts: CommonPairOpts,
+  /** Counter ctx.spreadCounter.value на момент входа в buildCommonSection. */
+  initialCounter?: number,
+  /** Лимит из input.common_section_max_spreads. undefined/null = нет лимита. */
+  maxSpreads?: number | null,
 ): void {
   if (photos.length === 0) return;
+
+  // А.4: проверка лимита перед каждым push. Возвращает true если уже достигли.
+  const limitReached = (): boolean => {
+    if (maxSpreads === undefined || maxSpreads === null) return false;
+    if (initialCounter === undefined) return false;
+    const addedSoFar = ctx.spreadCounter.value - initialCounter;
+    return addedSoFar >= maxSpreads;
+  };
 
   // Найти левый мастер. is_spread:false — явно требуем одностраничный
   // (Вариант 1 алгоритма). Защищает от случайного выбора двухстраничных
@@ -1334,6 +1399,10 @@ function buildCommonPair(
   const groups = chunk(photos, photos_per_spread);
 
   for (const group of groups) {
+    // А.4: если лимит достигнут — выйти из цикла. Warning общий
+    // выдаётся в buildCommonSection после всех вызовов buildCommonPair.
+    if (limitReached()) break;
+
     const left_photos = group.slice(0, opts.photos_per_page);
     const right_photos = group.slice(opts.photos_per_page);
 
@@ -1349,6 +1418,18 @@ function buildCommonPair(
       template_name: leftMaster.name,
       data: left_data,
     });
+
+    // А.4: проверка после левой страницы — может быть лимит = 1
+    // и правую страницу уже не пускаем. Это сценарий 'жёсткий лимит
+    // в нечётной середине', но он валидный: получим разворот с
+    // пустой правой как при common_right_page_empty.
+    if (limitReached()) {
+      pushWarning(ctx, {
+        code: 'common_right_page_empty',
+        detail: `common_${opts.category_name}: лимит common_section_max_spreads достигнут после левой страницы, правая пропущена`,
+      });
+      break;
+    }
 
     // Правая страница — только если есть хотя бы одно фото справа
     if (right_photos.length > 0) {
