@@ -1276,11 +1276,15 @@ function buildCommonPair(
 ): void {
   if (photos.length === 0) return;
 
-  // Найти левый мастер
+  // Найти левый мастер. is_spread:false — явно требуем одностраничный
+  // (Вариант 1 алгоритма). Защищает от случайного выбора двухстраничных
+  // комбинированных мастеров J-HalfSixth/SixthFull/SixthSixth когда
+  // их добавят в default_for_configs (А.2.2.c).
   const leftR = findMaster(ctx.templateSet.spreads, {
     page_role: 'common',
     applies_to_config: ctx.cfgType,
     slot_capacity_min: opts.slot_filter,
+    is_spread: false,
     expected_name_hint: opts.left_hint,
   });
   if (!leftR.ok) {
@@ -1302,6 +1306,7 @@ function buildCommonPair(
       page_role: 'common',
       applies_to_config: ctx.cfgType,
       slot_capacity_min: opts.slot_filter,
+      is_spread: false,
       expected_name_hint: opts.right_hint,
     });
     if (!rightR.ok) {
