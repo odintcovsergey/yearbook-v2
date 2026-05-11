@@ -50,6 +50,7 @@ type Album = {
   config_preset_slug?: string | null
   config_preset_name?: string | null
   vignettes_enabled?: boolean | null  // А.3.4: null=дефолт пресета, true/false=override
+  common_section_max_spreads?: number | null  // А.4.3: null=без лимита, 0=отключён, >0=лимит
   stats: { total: number; submitted: number; in_progress: number }
   teacher_token: string | null
   teachers: { total: number; done: number } | null
@@ -885,6 +886,109 @@ function VignettesControl({
   )
 }
 
+// А.4.3 — Числовой инпут лимита разворотов в общем разделе альбома.
+// null = без ограничения (builder вставляет всё), 0 = раздел отключён,
+// >0 = жёсткий лимит. Применяется при следующей пересборке альбома.
+function CommonSectionLimitControl({
+  album,
+  apiVA,
+  onNotify,
+  onError,
+}: {
+  album: Album
+  apiVA: (url: string, opts?: RequestInit) => Promise<Response>
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  // Локальный state — оптимистичный update + rollback. Храним как string
+  // чтобы пользователь мог временно очистить поле прежде чем ввести
+  // новое число; null = пустая строка в инпуте.
+  const initialString =
+    album.common_section_max_spreads === null || album.common_section_max_spreads === undefined
+      ? ''
+      : String(album.common_section_max_spreads)
+  const [value, setValue] = useState<string>(initialString)
+  const [saving, setSaving] = useState(false)
+
+  const persist = async (newValue: number | null) => {
+    setSaving(true)
+    try {
+      const r = await apiVA('/api/tenant', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'update_album',
+          album_id: album.id,
+          common_section_max_spreads: newValue,
+        }),
+      })
+      if (r.ok) {
+        onNotify(
+          newValue === null
+            ? 'Лимит снят (без ограничения). Пересоберите альбом чтобы применить.'
+            : newValue === 0
+              ? 'Общий раздел отключён. Пересоберите альбом чтобы применить.'
+              : `Лимит ${newValue} разворотов установлен. Пересоберите альбом чтобы применить.`
+        )
+      } else {
+        const d = await r.json().catch(() => ({}))
+        onError(d.error ?? 'Не удалось сохранить настройку')
+      }
+    } catch (err: unknown) {
+      onError(err instanceof Error ? err.message : 'Ошибка сети')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleBlur = () => {
+    // Парсим значение из input. Пустая строка → null. Число < 0 → 0.
+    const trimmed = value.trim()
+    let newValue: number | null
+    if (trimmed === '') {
+      newValue = null
+    } else {
+      const n = parseInt(trimmed, 10)
+      if (isNaN(n) || n < 0) {
+        newValue = 0
+        setValue('0')
+      } else {
+        newValue = n
+        setValue(String(n))
+      }
+    }
+    // Если значение не изменилось — не дёргаем API.
+    const currentDbValue = album.common_section_max_spreads ?? null
+    if (currentDbValue === newValue) return
+    void persist(newValue)
+  }
+
+  const description =
+    value.trim() === ''
+      ? 'Без ограничения — builder вставит все загруженные фото общего раздела.'
+      : parseInt(value, 10) === 0
+        ? 'Общий раздел не будет создан.'
+        : `Не более ${parseInt(value, 10)} разворотов. Приоритет: крупные фото (full → half → quarter → sixth).`
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-3 flex-wrap">
+      <div className="text-xs text-gray-500 uppercase">Разворотов в общем разделе</div>
+      <input
+        type="number"
+        min={0}
+        max={50}
+        step={1}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        disabled={saving}
+        placeholder="без ограничения"
+        className="text-sm px-2 py-1 border border-gray-300 rounded bg-white disabled:opacity-50 w-32"
+      />
+      <div className="text-xs text-gray-400 flex-1 min-w-[200px]">{description}</div>
+    </div>
+  )
+}
+
 // ============================================================
 // МОДАЛКА ДЕТАЛЕЙ АЛЬБОМА (с управлением учениками)
 // ============================================================
@@ -1303,6 +1407,18 @@ function AlbumDetailModal({
                         выключены в остальных). true/false = принудительно. */}
                     {canEdit && album.config_preset_id && (
                       <VignettesControl
+                        album={album}
+                        apiVA={apiVA}
+                        onNotify={onNotify}
+                        onError={onError}
+                      />
+                    )}
+
+                    {/* А.4.3 — Лимит разворотов общего раздела.
+                        NULL = без лимита (builder вставит всё), 0 = отключить,
+                        >0 = жёсткий лимит с приоритетом крупных фото. */}
+                    {canEdit && album.config_preset_id && (
+                      <CommonSectionLimitControl
                         album={album}
                         apiVA={apiVA}
                         onNotify={onNotify}
