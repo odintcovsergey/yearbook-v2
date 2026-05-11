@@ -6614,6 +6614,13 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
       }
   >(null)
 
+  // Фаза К.5 — ручная привязка unmatched файлов к photo_id
+  const [albumPhotos, setAlbumPhotos] = useState<
+    null | { id: string; filename: string; type: string }[]
+  >(null)
+  const [rebindSelections, setRebindSelections] = useState<Record<string, string>>({})
+  const [rebindingPaths, setRebindingPaths] = useState<Set<string>>(new Set())
+
   const status = workflow?.workflow_status ?? (album as any).workflow_status ?? 'active'
   const statusInfo = WORKFLOW_LABELS[status] ?? { label: status, color: 'bg-gray-100 text-gray-700' }
 
@@ -6852,6 +6859,120 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
       setRetouchedProgress({ done: 0, total: 0 })
     }
   }
+
+  // Фаза К.5 — ручная привязка unmatched
+  const ensureAlbumPhotos = async () => {
+    if (albumPhotos !== null) return
+    try {
+      const sep = viewAsTenantId ? `&view_as=${viewAsTenantId}` : ''
+      const res = await fetch(
+        `/api/tenant?action=album_photos&album_id=${(album as any).id}${sep}`
+      )
+      const data = await res.json()
+      const photos: { id: string; filename: string; type: string }[] = (data.photos ?? []).map(
+        (p: any) => ({ id: p.id, filename: p.filename, type: p.type })
+      )
+      setAlbumPhotos(photos)
+    } catch {
+      setAlbumPhotos([])
+    }
+  }
+
+  const handleRebindRetouched = async (storage_path: string) => {
+    const photoId = rebindSelections[storage_path]
+    if (!photoId) {
+      onError('Сначала выберите фото из списка')
+      return
+    }
+    setRebindingPaths((prev) => new Set(prev).add(storage_path))
+    try {
+      const res = await fetch('/api/workflow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'rebind_retouched',
+          album_id: (album as any).id,
+          photo_id: photoId,
+          storage_path,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        onError(data.error || 'Не удалось привязать')
+        return
+      }
+      // Убираем из unmatched, инкрементим matched
+      setRetouchedSummary((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          matched: prev.matched + 1,
+          unmatched_count: Math.max(0, prev.unmatched_count - 1),
+          unmatched: prev.unmatched.filter((u) => u.storage_path !== storage_path),
+        }
+      })
+      setRebindSelections((prev) => {
+        const next = { ...prev }
+        delete next[storage_path]
+        return next
+      })
+      onNotify('Файл привязан к фото')
+    } catch (e: any) {
+      onError(e?.message || 'Ошибка привязки')
+    } finally {
+      setRebindingPaths((prev) => {
+        const next = new Set(prev)
+        next.delete(storage_path)
+        return next
+      })
+    }
+  }
+
+  const handleDiscardRetouched = async (storage_path: string) => {
+    if (!confirm('Удалить этот файл из системы?')) return
+    setRebindingPaths((prev) => new Set(prev).add(storage_path))
+    try {
+      const res = await fetch('/api/workflow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'discard_retouched',
+          album_id: (album as any).id,
+          storage_path,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        onError(data.error || 'Не удалось удалить')
+        return
+      }
+      setRetouchedSummary((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          unmatched_count: Math.max(0, prev.unmatched_count - 1),
+          unmatched: prev.unmatched.filter((u) => u.storage_path !== storage_path),
+        }
+      })
+      onNotify('Файл удалён')
+    } catch (e: any) {
+      onError(e?.message || 'Ошибка удаления')
+    } finally {
+      setRebindingPaths((prev) => {
+        const next = new Set(prev)
+        next.delete(storage_path)
+        return next
+      })
+    }
+  }
+
+  // Резолв filename из datalist в photo_id (input value === filename)
+  const resolvePhotoIdByFilename = (filename: string): string | undefined => {
+    if (!albumPhotos) return undefined
+    const match = albumPhotos.find((p) => p.filename === filename)
+    return match?.id
+  }
+
   const formatSize = (bytes: number) => {
     if (!bytes) return ''
     if (bytes > 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} МБ`
@@ -7048,11 +7169,11 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                   </div>
                 )}
                 {retouchedSummary.unmatched_count > 0 && (
-                  <div className="p-2 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">
-                    <div className="flex items-start justify-between gap-2">
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">
+                    <div className="flex items-start justify-between gap-2 mb-2">
                       <span>
-                        ⚠️ Не найдено {retouchedSummary.unmatched_count} файлов — возможно
-                        имена не совпадают с оригиналами:
+                        ⚠️ Не найдено {retouchedSummary.unmatched_count} файлов — имена не
+                        совпадают с оригиналами. Привяжите их вручную или удалите:
                       </span>
                       <button
                         className="text-amber-700 hover:text-amber-900 text-xs"
@@ -7062,16 +7183,70 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                         ×
                       </button>
                     </div>
-                    <ul className="mt-1 ml-5 list-disc text-xs space-y-0.5 max-h-32 overflow-y-auto">
-                      {retouchedSummary.unmatched.map((u, i) => (
-                        <li key={i}>{u.filename}</li>
-                      ))}
+                    <datalist id={`album-photos-${(album as any).id}`}>
+                      {(albumPhotos ?? []).map((p) => {
+                        const typeLabel =
+                          p.type === 'portrait' ? 'портрет' :
+                          p.type === 'group' ? 'группа' :
+                          p.type === 'teacher' ? 'учитель' :
+                          p.type.startsWith('common_') ? 'общий' :
+                          p.type
+                        return (
+                          <option key={p.id} value={p.filename}>
+                            {typeLabel}
+                          </option>
+                        )
+                      })}
+                    </datalist>
+                    <ul className="space-y-1.5 max-h-64 overflow-y-auto">
+                      {retouchedSummary.unmatched.map((u) => {
+                        const selectedFilename = rebindSelections[u.storage_path] ?? ''
+                        const resolvedId = resolvePhotoIdByFilename(selectedFilename)
+                        const isProcessing = rebindingPaths.has(u.storage_path)
+                        return (
+                          <li
+                            key={u.storage_path}
+                            className="flex items-center gap-2 bg-white border border-amber-100 rounded px-2 py-1.5"
+                          >
+                            <span className="text-xs text-gray-700 truncate flex-1 min-w-0" title={u.filename}>
+                              {u.filename}
+                            </span>
+                            <span className="text-gray-400 text-xs">→</span>
+                            <input
+                              type="text"
+                              list={`album-photos-${(album as any).id}`}
+                              className="text-xs border border-gray-300 rounded px-2 py-0.5 flex-1 min-w-0"
+                              placeholder="Начните вводить имя оригинала…"
+                              value={selectedFilename}
+                              onFocus={ensureAlbumPhotos}
+                              onChange={(e) =>
+                                setRebindSelections((prev) => ({
+                                  ...prev,
+                                  [u.storage_path]: e.target.value,
+                                }))
+                              }
+                              disabled={isProcessing}
+                            />
+                            <button
+                              className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              onClick={() => handleRebindRetouched(u.storage_path)}
+                              disabled={!resolvedId || isProcessing}
+                              title={resolvedId ? `Привязать к photo ${resolvedId.slice(0, 8)}` : 'Выберите фото из списка'}
+                            >
+                              {isProcessing ? '…' : 'Привязать'}
+                            </button>
+                            <button
+                              className="text-xs px-1 text-gray-400 hover:text-red-500"
+                              onClick={() => handleDiscardRetouched(u.storage_path)}
+                              disabled={isProcessing}
+                              title="Удалить файл"
+                            >
+                              🗑
+                            </button>
+                          </li>
+                        )
+                      })}
                     </ul>
-                    <p className="mt-2 text-xs italic">
-                      Файлы загружены в систему, но не привязаны. Переименуйте их в соответствии
-                      с оригинальными именами и загрузите снова, либо привяжите вручную
-                      (функция в работе).
-                    </p>
                   </div>
                 )}
               </div>
