@@ -858,6 +858,7 @@ function buildInput(scene: Scene, ts: TemplateSet): AlbumInput {
     subjects: makeSubjects(scene.subjectsCount),
     students,
     common_photos: {
+      spread: scene.commonPhotos?.spread ?? [],
       full_class: scene.commonPhotos?.full_class ?? [],
       half: scene.commonPhotos?.half ?? [],
       quarter: scene.commonPhotos?.quarter ?? [],

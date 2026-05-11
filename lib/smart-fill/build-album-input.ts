@@ -114,6 +114,7 @@ export async function buildAlbumInput(
     teacherPhotoLinksRes,
     selectionsRes,
     textsRes,
+    commonPhotosRes,
   ] = await Promise.all([
     teacherIds.length > 0
       ? supabase
@@ -139,6 +140,22 @@ export async function buildAlbumInput(
           .select('child_id, text')
           .in('child_id', childIds)
       : Promise.resolve({ data: [], error: null }),
+    // А.2.1 — фото общего раздела: photos.type='common_*' (миграция А.1.1).
+    // Родители НЕ голосуют за эти фото, builder сам раскладывает в общий
+    // раздел альбома (фаза А.2.2). Ordering: по created_at ASC для
+    // стабильности порядка между запусками build_album.
+    supabase
+      .from('photos')
+      .select('id, type, storage_path, filename, created_at')
+      .eq('album_id', albumId)
+      .in('type', [
+        'common_spread',
+        'common_full',
+        'common_half',
+        'common_quarter',
+        'common_sixth',
+      ])
+      .order('created_at', { ascending: true }),
   ]);
 
   if ((teacherPhotoLinksRes as any).error) {
@@ -154,6 +171,11 @@ export async function buildAlbumInput(
   if ((textsRes as any).error) {
     throw new Error(
       `student_texts load failed: ${(textsRes as any).error.message}`,
+    );
+  }
+  if ((commonPhotosRes as any).error) {
+    throw new Error(
+      `common photos load failed: ${(commonPhotosRes as any).error.message}`,
     );
   }
 
@@ -222,13 +244,36 @@ export async function buildAlbumInput(
     ),
   }));
 
+  // А.2.1 — распределение common_* фото из БД по полям CommonPhotos.
+  // Маппинг:
+  //   photos.type='common_spread'  → CommonPhotos.spread
+  //   photos.type='common_full'    → CommonPhotos.full_class
+  //   photos.type='common_half'    → CommonPhotos.half
+  //   photos.type='common_quarter' → CommonPhotos.quarter
+  //   photos.type='common_sixth'   → CommonPhotos.sixth
+  //
+  // Поле `collage` оставлено пустым массивом для backward-compat со
+  // smoke-tests. В новом коде использовать `sixth`.
   const common_photos: CommonPhotos = {
+    spread: [],
     full_class: [],
     half: [],
     quarter: [],
     sixth: [],
     collage: [],
   };
+  for (const ph of (commonPhotosRes as any).data ?? []) {
+    if (!ph?.storage_path) continue;
+    const url = getPhotoUrl(ph.storage_path);
+    switch (ph.type) {
+      case 'common_spread':  common_photos.spread.push(url); break;
+      case 'common_full':    common_photos.full_class.push(url); break;
+      case 'common_half':    common_photos.half.push(url); break;
+      case 'common_quarter': common_photos.quarter.push(url); break;
+      case 'common_sixth':   common_photos.sixth.push(url); break;
+      // .in() в запросе уже отфильтровал; default не нужен.
+    }
+  }
 
   const input: AlbumInput = {
     template_set_id: templateSetId,

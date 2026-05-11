@@ -63,21 +63,35 @@ export type Subject = {
  * а также используются в S-Intro/L-Last/N-Overflow и пр. (idml-recon §4
  * «Общие фото»).
  *
- * - `full_class` — `classPhotoFrame`
- * - `half`       — `halfLeftPhoto`/`halfRightPhoto`/`halfPhoto_*`
- * - `quarter`    — `quarterPhoto_*`
- * - `sixth`      — `collagePhoto_*` в J-HalfSixth/SixthSixth/SixthFull
- * - `collage`    — `collagePhoto_*` в J-Collage
+ * Маппинг полей CommonPhotos ↔ photos.type в БД (после А.1.1):
+ * - `spread`     — `common_spread` (одно фото на весь разворот).
+ *                  Внимание: для этого типа в template_set okeybook-default
+ *                  пока нет специализированного мастера (J-Spread). См.
+ *                  master-cleanup-tz.md (зависимость от дизайнера).
+ * - `full_class` — `common_full`. Слоты `classPhotoFrame` в J-ClassPhoto
+ *                  и J-ClassPhoto-Right.
+ * - `half`       — `common_half`. `halfLeftPhoto`/`halfRightPhoto`/
+ *                  `halfPhoto_*` в J-Half и J-HalfSixth.
+ * - `quarter`    — `common_quarter`. `quarterPhoto_*` в J-Quarter.
+ * - `sixth`      — `common_sixth` (одна шестая, по-старому «коллаж»).
+ *                  `collagePhoto_*` в J-Collage, J-HalfSixth,
+ *                  J-SixthSixth, J-SixthFull.
+ * - `collage`    — DEPRECATED, оставлен для обратной совместимости со
+ *                  smoke-tests. В новом коде использовать `sixth`.
+ *                  Сергей подтвердил 10.05.2026: collage и sixth — одно
+ *                  и то же (см. designer-questions-2026-05-10.md
+ *                  уточнение про collage).
  *
- * В фазе 0 общий раздел `buildAlbum` не генерирует (см. idml-recon §9),
- * но соответствующие фото уже принимаются на вход — пригодятся в фазе 2-4.
+ * Заполняется в `lib/smart-fill/build-album-input.ts` чтением
+ * `photos WHERE type IN ('common_spread',...)` (А.2.1).
  */
 export type CommonPhotos = {
+  spread: Photo[];      // А.2.1 — фото на разворот (common_spread)
   full_class: Photo[];
   half: Photo[];
   quarter: Photo[];
   sixth: Photo[];
-  collage: Photo[];
+  collage: Photo[];     // DEPRECATED — alias для sixth, оставлен для совместимости
 };
 
 /**

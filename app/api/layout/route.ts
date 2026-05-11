@@ -478,6 +478,7 @@ async function handleBuildAlbumTest(req: NextRequest): Promise<NextResponse> {
     Array.from({ length: n }, (_, i) => `https://fake/${prefix}-${i + 1}.jpg`)
 
   const commonPhotos = {
+    spread: makeUrls(Number(commonPhotosInput.spread ?? 0), 'spread'),
     full_class: makeUrls(Number(commonPhotosInput.full_class ?? 0), 'class'),
     half: makeUrls(Number(commonPhotosInput.half ?? 0), 'half'),
     quarter: makeUrls(Number(commonPhotosInput.quarter ?? 0), 'quarter'),
