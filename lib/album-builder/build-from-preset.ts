@@ -342,6 +342,12 @@ export function buildAlbum(
     buildThumbnailsSection(ctx, ss);
   }
 
+  // Раздел 5 — общий раздел альбома (А.2.2.b)
+  // Жадно размещает common_* фото в J-* мастера. Если фото нет — функция
+  // тихо возвращается. Не зависит от preset.config.common_section (он пока
+  // зарезервирован, ⚪) — алгоритм работает напрямую из input.common_photos.
+  buildCommonSection(ctx);
+
   return { spreads: ctx.spreads, warnings: ctx.warnings };
 }
 
@@ -1132,6 +1138,226 @@ function buildThumbnailsSection(
   if (basePages < 1) return;
 
   buildAdaptiveGridStudentsCore(ctx, basePages, false);
+}
+
+// ─── Common section (А.2.2.b) ─────────────────────────────────────────────
+
+/**
+ * Опции для одной категории фото общего раздела.
+ *
+ * Алгоритм buildCommonPair (Вариант 1, одностраничные парами):
+ *   1. Найти левый и правый одностраничные J-* мастера по hint+slotFilter
+ *   2. Разбить photos на группы по `photos_per_page * 2` (фото на разворот)
+ *   3. Для каждой группы добавить 2 SpreadInstance (левая + правая)
+ *   4. Если фото < photos_per_page на правой → правая страница пропускается
+ *      с warning `common_right_page_empty`
+ *
+ * Двухстраничные комбинированные мастера (J-HalfSixth, J-SixthFull,
+ * J-SixthSixth) в этом варианте НЕ используются — это А.2.2.c, опциональное
+ * расширение если партнёры пожалуются на длинный общий раздел.
+ */
+type CommonPairOpts = {
+  /** Hint для findMaster левой страницы (например 'J-ClassPhoto'). */
+  left_hint: string;
+  /** Hint для правой страницы. Если совпадает с left_hint — переиспользуем
+   *  тот же мастер (симметричный одностраничный мастер используется и слева
+   *  и справа). */
+  right_hint: string;
+  /** Фильтр slot_capacity_min для findMaster. Ключ — как в БД мастера. */
+  slot_filter: Partial<{
+    photos_full: number;
+    photos_half: number;
+    photos_quarter: number;
+    photos_collage: number;
+  }>;
+  /** Сколько фото вмещается на одну страницу (1, 2 или 6). */
+  photos_per_page: number;
+  /** Функция генерации label placeholder'а по индексу (1-based). */
+  placeholder_label: (n: number) => string;
+  /** Имя категории для warning detail (например 'full_class'). */
+  category_name: string;
+};
+
+/**
+ * Сборка общего раздела альбома (А.2.2.b). Вызывается в конце buildAlbum.
+ *
+ * Категории фото и их мастера:
+ *   spread     — нет специализированного мастера (A5, dependent on designer)
+ *   full_class — J-ClassPhoto (left) + J-ClassPhoto-Right (right)
+ *   half       — J-Half × 2 (симметричный)
+ *   quarter    — J-Quarter × 2 (симметричный)
+ *   sixth      — J-Collage × 2 (симметричный, ключ slot_capacity = photos_collage)
+ *
+ * Порядок размещения: spread → full_class → half → quarter → sixth.
+ * Внутри каждой категории фото берутся в том порядке, в каком были
+ * загружены (created_at ASC из smart-fill).
+ */
+function buildCommonSection(ctx: PresetBuildContext): void {
+  const cp = ctx.input.common_photos;
+
+  // 1. spread — нет мастера J-Spread (A5 в master-cleanup-tz). Warning и
+  // продолжаем — фото не размещены в layout, партнёр может вручную
+  // вставить через редактор фаз 2-4.
+  if (cp.spread.length > 0) {
+    pushWarning(ctx, {
+      code: 'no_master_for_common_spread',
+      detail: `${cp.spread.length} фото common_spread не размещены — мастер J-Spread не реализован в template_set (см. master-cleanup-tz A5)`,
+    });
+  }
+
+  // 2. full_class — J-ClassPhoto + J-ClassPhoto-Right (есть зеркало)
+  buildCommonPair(ctx, cp.full_class, {
+    left_hint: 'J-ClassPhoto',
+    right_hint: 'J-ClassPhoto-Right',
+    slot_filter: { photos_full: 1 },
+    photos_per_page: 1,
+    placeholder_label: () => 'classphotoframe',
+    category_name: 'full_class',
+  });
+
+  // 3. half — J-Half (симметричный, один мастер на обе стороны разворота)
+  buildCommonPair(ctx, cp.half, {
+    left_hint: 'J-Half',
+    right_hint: 'J-Half',
+    slot_filter: { photos_half: 2 },
+    photos_per_page: 2,
+    placeholder_label: (n) => `halfphoto_${n}`,
+    category_name: 'half',
+  });
+
+  // 4. quarter — J-Quarter (симметричный). slot_capacity = photos_quarter:2
+  // согласно audit_notes мастера J-Quarter (2 фото четверти на странице).
+  buildCommonPair(ctx, cp.quarter, {
+    left_hint: 'J-Quarter',
+    right_hint: 'J-Quarter',
+    slot_filter: { photos_quarter: 2 },
+    photos_per_page: 2,
+    placeholder_label: (n) => `quarterphoto_${n}`,
+    category_name: 'quarter',
+  });
+
+  // 5. sixth (1/6 класса) — J-Collage (симметричный). ВНИМАНИЕ: ключ в
+  // slot_capacity у J-Collage в БД называется photos_collage (исторический
+  // legacy с тех пор когда категорию называли "коллаж"). Поле в
+  // CommonPhotos называется sixth — это явное различие, сохранено в коде.
+  // В будущем стоит переименовать в БД на photos_sixth для консистентности
+  // (отдельная миграция, см. master-cleanup-tz).
+  buildCommonPair(ctx, cp.sixth, {
+    left_hint: 'J-Collage',
+    right_hint: 'J-Collage',
+    slot_filter: { photos_collage: 6 },
+    photos_per_page: 6,
+    placeholder_label: (n) => `collagephoto_${n}`,
+    category_name: 'sixth',
+  });
+}
+
+/**
+ * Сборка одной категории общего раздела через пару одностраничных J-* мастеров.
+ *
+ * Разбивает входной массив `photos` на группы размера `photos_per_page * 2`
+ * (фото на разворот). Для каждой группы добавляет в `ctx.spreads`:
+ *   - Левая страница: left_hint мастер с photo_per_page слотами
+ *   - Правая страница: right_hint мастер с photo_per_page слотами
+ *
+ * Edge cases:
+ *   - photos.length === 0 → ничего не делаем (тихо)
+ *   - left_hint мастер не нашёлся → warning common_section_skipped, return
+ *   - right_hint мастер не нашёлся (когда отличается от left_hint) →
+ *     warning right_mirror_not_found, fallback на left_hint мастер
+ *   - последняя группа неполная (фото < photos_per_page * 2) → правая
+ *     страница пропускается с warning common_right_page_empty, либо
+ *     заполняется частично с null для пустых слотов
+ */
+function buildCommonPair(
+  ctx: PresetBuildContext,
+  photos: string[],
+  opts: CommonPairOpts,
+): void {
+  if (photos.length === 0) return;
+
+  // Найти левый мастер
+  const leftR = findMaster(ctx.templateSet.spreads, {
+    page_role: 'common',
+    applies_to_config: ctx.cfgType,
+    slot_capacity_min: opts.slot_filter,
+    expected_name_hint: opts.left_hint,
+  });
+  if (!leftR.ok) {
+    pushWarning(ctx, {
+      code: 'common_section_skipped',
+      detail: `common_${opts.category_name}: ${opts.left_hint} не найден, ${photos.length} фото не размещены`,
+    });
+    return;
+  }
+  if (leftR.warning) pushWarning(ctx, leftR.warning);
+  const leftMaster = leftR.master;
+
+  // Найти правый мастер — либо тот же (если симметричный), либо отдельный
+  let rightMaster: SpreadTemplate;
+  if (opts.left_hint === opts.right_hint) {
+    rightMaster = leftMaster;
+  } else {
+    const rightR = findMaster(ctx.templateSet.spreads, {
+      page_role: 'common',
+      applies_to_config: ctx.cfgType,
+      slot_capacity_min: opts.slot_filter,
+      expected_name_hint: opts.right_hint,
+    });
+    if (!rightR.ok) {
+      pushWarning(ctx, {
+        code: 'right_mirror_not_found',
+        detail: `common_${opts.category_name}: ${opts.right_hint} не найден, используется ${opts.left_hint} вместо зеркала`,
+      });
+      rightMaster = leftMaster;
+    } else {
+      if (rightR.warning) pushWarning(ctx, rightR.warning);
+      rightMaster = rightR.master;
+    }
+  }
+
+  // Группируем фото по разворотам
+  const photos_per_spread = opts.photos_per_page * 2;
+  const groups = chunk(photos, photos_per_spread);
+
+  for (const group of groups) {
+    const left_photos = group.slice(0, opts.photos_per_page);
+    const right_photos = group.slice(opts.photos_per_page);
+
+    // Левая страница
+    const left_data: Record<string, string | null> = {};
+    for (let i = 0; i < opts.photos_per_page; i++) {
+      const label = opts.placeholder_label(i + 1);
+      left_data[label] = left_photos[i] ?? null;
+    }
+    ctx.spreads.push({
+      spread_index: ctx.spreadCounter.value++,
+      template_id: leftMaster.id,
+      template_name: leftMaster.name,
+      data: left_data,
+    });
+
+    // Правая страница — только если есть хотя бы одно фото справа
+    if (right_photos.length > 0) {
+      const right_data: Record<string, string | null> = {};
+      for (let i = 0; i < opts.photos_per_page; i++) {
+        const label = opts.placeholder_label(i + 1);
+        right_data[label] = right_photos[i] ?? null;
+      }
+      ctx.spreads.push({
+        spread_index: ctx.spreadCounter.value++,
+        template_id: rightMaster.id,
+        template_name: rightMaster.name,
+        data: right_data,
+      });
+    } else {
+      // Нечётное количество фото — последняя группа без правой
+      pushWarning(ctx, {
+        code: 'common_right_page_empty',
+        detail: `common_${opts.category_name}: разворот с пустой правой страницей (${left_photos.length} из ${opts.photos_per_page} фото на левой)`,
+      });
+    }
+  }
 }
 
 // ─── Grid helpers ─────────────────────────────────────────────────────────

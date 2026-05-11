@@ -395,7 +395,12 @@ export type BuildWarningCode =
   | 'half_class_missing'
   | 'no_right_teacher_master'
   | 'students_grid_no_special_master'
-  | 'adaptive_grid_fallback';
+  | 'adaptive_grid_fallback'
+  // А.2.2.b — общий раздел альбома:
+  | 'no_master_for_common_spread'   // нет мастера J-Spread (A5)
+  | 'right_mirror_not_found'        // зеркальный мастер для правой страницы не нашёлся
+  | 'common_right_page_empty'       // нечётное число фото, правая страница пустая
+  | 'common_section_skipped';       // мастер не найден, фото не размещены
 
 export type BuildWarning = {
   code: BuildWarningCode;
