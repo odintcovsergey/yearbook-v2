@@ -3444,18 +3444,49 @@ type Photo = {
   filename: string
   storage_path: string
   thumb_path: string | null
-  type: 'portrait' | 'group' | 'teacher'
+  type: PhotoKind
   url: string
   thumb_url: string
   tags: string[]
 }
 
-type PhotoKind = 'portrait' | 'group' | 'teacher'
+type PhotoKind =
+  | 'portrait'
+  | 'group'
+  | 'teacher'
+  // А.1.1 — общий раздел альбома (фото класса разной величины):
+  | 'common_spread'
+  | 'common_full'
+  | 'common_half'
+  | 'common_quarter'
+  | 'common_sixth'
+
+// Порядок отображения в UI (загрузка + табы галереи). Сначала
+// личные категории, затем общий раздел. Между группами в UI
+// рендерится разделитель.
+const PHOTO_KINDS_PERSONAL: PhotoKind[] = ['portrait', 'group', 'teacher']
+const PHOTO_KINDS_COMMON: PhotoKind[] = [
+  'common_spread',
+  'common_full',
+  'common_half',
+  'common_quarter',
+  'common_sixth',
+]
+const PHOTO_KINDS_ALL: PhotoKind[] = [...PHOTO_KINDS_PERSONAL, ...PHOTO_KINDS_COMMON]
 
 const UPLOAD_CONCURRENCY = 5
 
 function photoKindLabel(k: PhotoKind): string {
-  return k === 'portrait' ? 'Портреты' : k === 'group' ? 'Групповые' : 'Учителя'
+  switch (k) {
+    case 'portrait': return 'Портреты'
+    case 'group': return 'Групповые'
+    case 'teacher': return 'Учителя'
+    case 'common_spread': return 'Общий: на разворот'
+    case 'common_full': return 'Общий: полная страница'
+    case 'common_half': return 'Общий: половина'
+    case 'common_quarter': return 'Общий: четверть'
+    case 'common_sixth': return 'Общий: 1/6'
+  }
 }
 
 /**
@@ -3559,9 +3590,14 @@ function PhotosTab({
   const [upload, setUpload] = useState<
     Record<PhotoKind, { files: File[]; uploading: boolean; done: number; errors: string[] }>
   >({
-    portrait: { files: [], uploading: false, done: 0, errors: [] },
-    group:    { files: [], uploading: false, done: 0, errors: [] },
-    teacher:  { files: [], uploading: false, done: 0, errors: [] },
+    portrait:       { files: [], uploading: false, done: 0, errors: [] },
+    group:          { files: [], uploading: false, done: 0, errors: [] },
+    teacher:        { files: [], uploading: false, done: 0, errors: [] },
+    common_spread:  { files: [], uploading: false, done: 0, errors: [] },
+    common_full:    { files: [], uploading: false, done: 0, errors: [] },
+    common_half:    { files: [], uploading: false, done: 0, errors: [] },
+    common_quarter: { files: [], uploading: false, done: 0, errors: [] },
+    common_sixth:   { files: [], uploading: false, done: 0, errors: [] },
   })
 
   const setUploadState = (
@@ -3609,7 +3645,7 @@ function PhotosTab({
   }
 
   const uploadAll = () => {
-    ;(['portrait', 'group', 'teacher'] as PhotoKind[])
+    PHOTO_KINDS_ALL
       .filter(t => upload[t].files.length > 0)
       .forEach(t => runUpload(t))
   }
@@ -3670,39 +3706,55 @@ function PhotosTab({
           </div>
 
           <div className="space-y-3">
-            {(['portrait', 'group', 'teacher'] as PhotoKind[]).map(t => {
-              const s = upload[t]
-              const pct = s.files.length > 0 && s.uploading ? Math.round(s.done / s.files.length * 100) : 0
-              return (
-                <div key={t} className="border border-gray-200 rounded-xl p-3">
-                  <div className="flex items-center justify-between mb-2 gap-2">
-                    <span className="text-sm font-medium text-gray-700">{photoKindLabel(t)}</span>
-                    {s.files.length > 0 && !s.uploading && (
-                      <span className="text-xs text-gray-500">{s.files.length} файлов выбрано</span>
-                    )}
-                    {s.uploading && (
-                      <span className="text-xs text-blue-600">{s.done} / {s.files.length}</span>
+            {(() => {
+              const renderUploadCard = (t: PhotoKind) => {
+                const s = upload[t]
+                const pct = s.files.length > 0 && s.uploading ? Math.round(s.done / s.files.length * 100) : 0
+                return (
+                  <div key={t} className="border border-gray-200 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-2 gap-2">
+                      <span className="text-sm font-medium text-gray-700">{photoKindLabel(t)}</span>
+                      {s.files.length > 0 && !s.uploading && (
+                        <span className="text-xs text-gray-500">{s.files.length} файлов выбрано</span>
+                      )}
+                      {s.uploading && (
+                        <span className="text-xs text-blue-600">{s.done} / {s.files.length}</span>
+                      )}
+                    </div>
+                    {s.uploading ? (
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 rounded-full transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    ) : (
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={e => setUploadState(t, { files: Array.from(e.target.files ?? []) })}
+                        className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                      />
                     )}
                   </div>
-                  {s.uploading ? (
-                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500 rounded-full transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  ) : (
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={e => setUploadState(t, { files: Array.from(e.target.files ?? []) })}
-                      className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
-                    />
-                  )}
-                </div>
+                )
+              }
+              return (
+                <>
+                  {PHOTO_KINDS_PERSONAL.map(renderUploadCard)}
+                  <div className="pt-3 mt-1 border-t border-gray-200">
+                    <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Общий раздел альбома
+                    </h5>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      Фото класса для конца альбома — родители их не выбирают, builder сам раскладывает по разворотам
+                    </p>
+                  </div>
+                  {PHOTO_KINDS_COMMON.map(renderUploadCard)}
+                </>
               )
-            })}
+            })()}
           </div>
 
           <button
@@ -3722,8 +3774,8 @@ function PhotosTab({
 
       {/* Галерея */}
       <div className="card p-5">
-        <div className="flex gap-1 mb-4 border-b border-gray-100">
-          {(['portrait', 'group', 'teacher'] as PhotoKind[]).map(t => (
+        <div className="flex flex-wrap gap-1 mb-4 border-b border-gray-100">
+          {PHOTO_KINDS_ALL.map((t, i) => (
             <button
               key={t}
               type="button"
@@ -3732,6 +3784,9 @@ function PhotosTab({
                 activeKind === t
                   ? 'border-gray-900 text-gray-900'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
+              } ${
+                // визуальная граница между личными и общим разделом
+                i === PHOTO_KINDS_PERSONAL.length ? 'ml-3 border-l border-gray-200 pl-4' : ''
               }`}
             >
               {photoKindLabel(t)}
