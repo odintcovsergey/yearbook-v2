@@ -464,9 +464,14 @@ function buildTeacherSectionTwoPage(ctx: PresetBuildContext): void {
   } else {
     rightMaster = pickRightCommonPhotoMaster(ctx);
     if (!rightMaster) {
+      // С 11.05.2026 (А.3 фикс смещения) этот warning срабатывает только
+      // если в template_set вообще нет ни одного teacher_right мастера —
+      // pickRightCommonPhotoMaster теперь делает fallback на G-FullClass
+      // с пустым фрейм. То есть достижение этой ветки означает что
+      // template_set сломан.
       pushWarning(ctx, {
         code: 'no_right_teacher_master',
-        detail: `subjects.length=${subjects.length}: ни half (>=2) ни full_class (>=1) — правая учительская страница пропущена`,
+        detail: `template_set ${ctx.templateSet.id}: нет ни одного мастера с page_role='teacher_right' applies_to_config=${ctx.cfgType}`,
       });
     }
   }
@@ -918,9 +923,12 @@ function buildFixedGridStudents(
 
     const rightMaster = pickRightCommonPhotoMaster(ctx);
     if (!rightMaster) {
+      // С 11.05.2026 (А.3 фикс) этот warning значит «template_set сломан»
+      // — нет teacher_right мастеров вообще. pickRightCommonPhotoMaster
+      // теперь делает fallback на G-FullClass с пустым фрейм.
       pushWarning(ctx, {
         code: 'no_right_teacher_master',
-        detail: `last_spread right: ни half (>=2) ни full_class (>=1) — правая страница пропущена`,
+        detail: `last_spread right: template_set ${ctx.templateSet.id} не содержит ни одного teacher_right мастера для ${ctx.cfgType}`,
       });
       return;
     }
@@ -1508,9 +1516,26 @@ function buildOverflowRow(
  * Динамический выбор правого мастера учительского разворота на основе
  * `common_photos`. Адаптировано из `build.ts:pickRightCommonPhotoMaster`.
  *
- * 1) `common_photos.half >= 2`        → G-HalfClass
- * 2) `common_photos.full_class >= 1`  → G-FullClass
- * 3) иначе                            → null
+ * Приоритет:
+ *   1) `common_photos.half >= 2`        → G-HalfClass (2 фото полкласса)
+ *   2) `common_photos.full_class >= 1`  → G-FullClass (1 фото всего класса)
+ *   3) G-FullClass БЕЗ фото (заглушка)  → пустой фрейм + warning
+ *      class_photo_missing (см. buildTeacherRightData).
+ *
+ * Третий fallback (заглушка) добавлен 11.05.2026 по запросу Сергея
+ * после теста Индивидуальной комплектации: если фотограф ещё не
+ * загрузил common_full и не загрузил common_half >= 2 — правая
+ * учительская страница раньше пропускалась (return null), что
+ * приводило к смещению всего альбома на 1 страницу: следующая
+ * личная страница вставала на правую половину учительского разворота
+ * вместо начала нового разворота.
+ *
+ * Теперь возвращаем G-FullClass с пустым classphotoframe (заглушка).
+ * Партнёр в редакторе фаз 2-4 может:
+ *   - Загрузить общее фото класса → автоматически заполнится при
+ *     следующей пересборке
+ *   - Загрузить 2 фото половин → выберется G-HalfClass через приоритет 1
+ *   - Заменить мастер вручную на другой
  */
 function pickRightCommonPhotoMaster(ctx: PresetBuildContext): SpreadTemplate | null {
   const cp = ctx.input.common_photos;
@@ -1540,6 +1565,22 @@ function pickRightCommonPhotoMaster(ctx: PresetBuildContext): SpreadTemplate | n
       return r.master;
     }
   }
+
+  // Fallback (заглушка) — G-FullClass без фото. Гарантирует что правая
+  // страница учительского разворота будет занята, иначе следующая страница
+  // (личная ученика) уйдёт на эту правую половину и весь альбом сместится.
+  // Warning class_photo_missing будет сгенерирован в buildTeacherRightData.
+  const placeholderResult = findMaster(spreads, {
+    page_role: 'teacher_right',
+    applies_to_config: ctx.cfgType,
+    slot_capacity_min: { photos_full: 1 },
+    expected_name_hint: 'G-FullClass',
+  });
+  if (placeholderResult.ok) {
+    if (placeholderResult.warning) pushWarning(ctx, placeholderResult.warning);
+    return placeholderResult.master;
+  }
+
   return null;
 }
 
