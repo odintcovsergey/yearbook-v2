@@ -1,0 +1,316 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { supabaseAdmin } from '@/lib/supabase'
+import { requireAuth, isAuthError, logAction } from '@/lib/auth'
+import { stripYcPrefix } from '@/lib/storage'
+import JSZip from 'jszip'
+
+export const dynamic = 'force-dynamic'
+// ZIP может собираться долго при большом числе фото. Лимит 60 сек уже стоит
+// в остальных workflow-роутах, придерживаемся.
+export const maxDuration = 60
+
+// Безопасный потолок на одну выгрузку. При среднем 5 МБ/файл — это ~1 ГБ
+// исходных данных, что разумно умещается в 60 сек таймаута Vercel при
+// скачивании из того же региона. Партнёр с большим альбомом использует
+// фильтр ?categories=portrait,group для частичной выгрузки (К.2 предложит
+// это в UI).
+const MAX_PHOTOS = 200
+
+const ALL_CATEGORIES = [
+  'portrait',
+  'group',
+  'teacher',
+  'common_spread',
+  'common_full',
+  'common_half',
+  'common_quarter',
+  'common_sixth',
+] as const
+type Category = (typeof ALL_CATEGORIES)[number]
+const ALL_CATEGORIES_SET = new Set<string>(ALL_CATEGORIES)
+
+// Имена внутри ZIP не должны содержать слешей и спецсимволов файловой
+// системы. Кириллицу и пробелы оставляем (ZIP их понимает).
+function safeZipName(name: string): string {
+  return name.replace(/[\/\\:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim() || 'file'
+}
+
+export async function GET(req: NextRequest) {
+  const auth = await requireAuth(req, ['owner', 'manager', 'viewer', 'superadmin'])
+  if (isAuthError(auth)) return auth
+
+  const albumId = req.nextUrl.searchParams.get('album_id')
+  if (!albumId) {
+    return NextResponse.json({ error: 'album_id required' }, { status: 400 })
+  }
+
+  // view_as: суперадмин и сотрудники главного тенанта могут скачивать
+  // оригиналы от имени партнёра.
+  const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+  const { data: currentTenantData } = viewAsTenantId
+    ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+    : { data: null }
+  const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
+  const tid = canViewAs && viewAsTenantId ? viewAsTenantId : auth.tenantId
+
+  // Опциональный фильтр по категориям. Игнорируем неизвестные значения.
+  const categoriesParam = req.nextUrl.searchParams.get('categories')
+  const requestedCategories: Category[] | null = categoriesParam
+    ? (categoriesParam
+        .split(',')
+        .map((s) => s.trim())
+        .filter((c) => ALL_CATEGORIES_SET.has(c)) as Category[])
+    : null
+
+  // Проверяем доступ к альбому.
+  const albumQ = supabaseAdmin
+    .from('albums')
+    .select('id, title, tenant_id')
+    .eq('id', albumId)
+  if (auth.role !== 'superadmin') albumQ.eq('tenant_id', tid)
+  const { data: album } = await albumQ.single()
+  if (!album) {
+    return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+  }
+
+  // Берём только фото с оригиналом. Старые фото (до Б.1.0) и фото с
+  // ошибочной загрузкой оригинала имеют original_path = NULL — их в этой
+  // выгрузке нет.
+  let photosQ = supabaseAdmin
+    .from('photos')
+    .select('id, filename, original_path, type, created_at')
+    .eq('album_id', albumId)
+    .not('original_path', 'is', null)
+    .order('type')
+    .order('created_at')
+  if (requestedCategories && requestedCategories.length > 0) {
+    photosQ = photosQ.in('type', requestedCategories)
+  }
+  const { data: photos, error: photosErr } = await photosQ
+  if (photosErr) {
+    return NextResponse.json({ error: photosErr.message }, { status: 500 })
+  }
+  if (!photos || photos.length === 0) {
+    // Считаем фото без original_path — это подсказка ретушёру что
+    // оригиналы вообще не загружались (старый альбом до Б.1).
+    const { count: totalCount } = await supabaseAdmin
+      .from('photos')
+      .select('id', { count: 'exact', head: true })
+      .eq('album_id', albumId)
+    return NextResponse.json(
+      {
+        error: 'Нет загруженных оригиналов в этом альбоме',
+        hint:
+          totalCount && totalCount > 0
+            ? 'Альбом содержит фото без сохранённых оригиналов (возможно загружены до фазы Б). Загрузите фото заново для получения оригиналов.'
+            : 'Сначала загрузите фото в раздел Фото.',
+        total_photos: totalCount ?? 0,
+      },
+      { status: 404 }
+    )
+  }
+
+  if (photos.length > MAX_PHOTOS) {
+    // Считаем по категориям чтобы партнёр в UI мог выбрать что скачать.
+    const byCategory: Record<string, number> = {}
+    for (const p of photos as any[]) {
+      byCategory[p.type] = (byCategory[p.type] ?? 0) + 1
+    }
+    return NextResponse.json(
+      {
+        error: `Слишком много фото для одной выгрузки (${photos.length} > ${MAX_PHOTOS}).`,
+        hint: 'Используйте параметр ?categories=portrait,group для частичной выгрузки.',
+        total_count: photos.length,
+        max_per_request: MAX_PHOTOS,
+        by_category: byCategory,
+      },
+      { status: 413 }
+    )
+  }
+
+  const photoIds = (photos as any[]).map((p) => p.id)
+
+  // Связи с детьми/учителями — для манифеста. Это help для ретушёра
+  // (видит «фото портрета Иванова Ивана») и для будущего матчинга в К.3.
+  const [childrenLinks, teachersLinks] = await Promise.all([
+    supabaseAdmin
+      .from('photo_children')
+      .select('photo_id, children(full_name)')
+      .in('photo_id', photoIds),
+    supabaseAdmin
+      .from('photo_teachers')
+      .select('photo_id, teachers(full_name)')
+      .in('photo_id', photoIds),
+  ])
+
+  const childByPhoto = new Map<string, string[]>()
+  for (const link of (childrenLinks.data ?? []) as any[]) {
+    const name = link.children?.full_name
+    if (!name) continue
+    const arr = childByPhoto.get(link.photo_id) ?? []
+    arr.push(name)
+    childByPhoto.set(link.photo_id, arr)
+  }
+  const teacherByPhoto = new Map<string, string[]>()
+  for (const link of (teachersLinks.data ?? []) as any[]) {
+    const name = link.teachers?.full_name
+    if (!name) continue
+    const arr = teacherByPhoto.get(link.photo_id) ?? []
+    arr.push(name)
+    teacherByPhoto.set(link.photo_id, arr)
+  }
+
+  // Pre-compute путей внутри ZIP с обработкой коллизий filename'ов.
+  // Один photo.filename может встречаться у нескольких photo (повторная
+  // загрузка, разные категории и т.п.). При коллизии префиксуем имя
+  // первыми 8 символами photo.id чтобы файлы не перезаписывали друг друга.
+  const seenZipPaths = new Set<string>()
+  const zipPathByPhoto = new Map<string, string>()
+  for (const p of photos as any[]) {
+    const safeFilename = safeZipName(p.filename)
+    let zipPath = `${p.type}/${safeFilename}`
+    if (seenZipPaths.has(zipPath)) {
+      zipPath = `${p.type}/${String(p.id).slice(0, 8)}_${safeFilename}`
+    }
+    seenZipPaths.add(zipPath)
+    zipPathByPhoto.set(p.id, zipPath)
+  }
+
+  const YC_BASE = `https://storage.yandexcloud.net/${
+    process.env.YC_BUCKET_NAME ?? 'yearbook-photos'
+  }/`
+
+  const zip = new JSZip()
+
+  // Скачивание батчами по 5 — компромисс между скоростью и нагрузкой
+  // на сеть/память внутри Vercel function (буферим arrayBuffer'ы).
+  const failures: { id: string; filename: string; reason: string }[] = []
+  const successes: string[] = []
+  const batchSize = 5
+  for (let i = 0; i < photos.length; i += batchSize) {
+    const batch = (photos as any[]).slice(i, i + batchSize)
+    await Promise.all(
+      batch.map(async (p) => {
+        if (!p.original_path) {
+          failures.push({ id: p.id, filename: p.filename, reason: 'no original_path' })
+          return
+        }
+        try {
+          const url = YC_BASE + stripYcPrefix(p.original_path)
+          const res = await fetch(url)
+          if (!res.ok) {
+            failures.push({
+              id: p.id,
+              filename: p.filename,
+              reason: `HTTP ${res.status}`,
+            })
+            return
+          }
+          const buffer = await res.arrayBuffer()
+          const zipPath = zipPathByPhoto.get(p.id)!
+          zip.file(zipPath, buffer)
+          successes.push(p.id)
+        } catch (err: any) {
+          failures.push({
+            id: p.id,
+            filename: p.filename,
+            reason: err?.message || 'fetch failed',
+          })
+        }
+      })
+    )
+  }
+
+  // Собираем манифест после скачивания — отражает реальное содержимое
+  // ZIP (успешно докачанные файлы + список ошибок).
+  const manifest = {
+    album_id: album.id,
+    album_title: album.title,
+    tenant_id: album.tenant_id,
+    generated_at: new Date().toISOString(),
+    generated_by: auth.userId,
+    categories: (requestedCategories ?? ALL_CATEGORIES.slice()) as Category[],
+    total_requested: photos.length,
+    total_downloaded: successes.length,
+    failures: failures.length,
+    photos: (photos as any[])
+      .filter((p) => successes.includes(p.id))
+      .map((p) => ({
+        id: p.id,
+        filename: p.filename,
+        type: p.type,
+        zip_path: zipPathByPhoto.get(p.id),
+        attached_children: childByPhoto.get(p.id) ?? [],
+        attached_teachers: teacherByPhoto.get(p.id) ?? [],
+      })),
+    ...(failures.length > 0 ? { failed_photos: failures } : {}),
+  }
+  zip.file('manifest.json', JSON.stringify(manifest, null, 2))
+
+  // README с короткой инструкцией для ретушёра — чтобы открывая ZIP
+  // человек сразу понимал что куда. Дополнительно полезно если архив
+  // пересылают между людьми.
+  const readme = [
+    `Альбом: ${album.title}`,
+    `Сгенерирован: ${manifest.generated_at}`,
+    `Файлов в архиве: ${successes.length}${
+      failures.length > 0 ? ` (${failures.length} не докачались, см. manifest.json)` : ''
+    }`,
+    '',
+    'СТРУКТУРА:',
+    '  manifest.json    — метаданные альбома и список фото (нужен для импорта обратно)',
+    '  portrait/        — портреты учеников',
+    '  group/           — групповые фото для личных страниц',
+    '  teacher/         — фото учителей',
+    '  common_*/        — фото общего раздела (на разворот, полностраничные, ...)',
+    '',
+    'КАК ВЕРНУТЬ ОБРАБОТАННЫЕ ФАЙЛЫ:',
+    '  1. Отретушируйте файлы в Lightroom/Photoshop (сохраняйте имена!)',
+    '  2. Архив можно реструктурировать как удобно — система матчит по имени файла',
+    '  3. Загрузите все обработанные файлы обратно через кнопку',
+    '     «Загрузить обработанные оригиналы» во вкладке Производство альбома',
+    '',
+    'ВАЖНО:',
+    '  Не переименовывайте файлы — система ищет совпадения по имени.',
+    '  Если файл был переименован, привяжите его к фото вручную после загрузки.',
+  ].join('\n')
+  zip.file('README.txt', readme)
+
+  const zipBuffer = await zip.generateAsync({
+    type: 'nodebuffer',
+    compression: 'DEFLATE',
+    // Фото уже сжаты (JPEG), повторное сжатие почти ничего не даёт.
+    // Level 1 — самый быстрый, экономит секунды на сборке.
+    compressionOptions: { level: 1 },
+  })
+
+  await logAction(auth, 'workflow.download_originals_zip', 'album', albumId, {
+    requested: photos.length,
+    downloaded: successes.length,
+    failures: failures.length,
+    categories: requestedCategories ?? null,
+    size_bytes: zipBuffer.length,
+  })
+
+  const safeTitle = (album.title || 'альбом').replace(
+    /[^a-zA-Z0-9а-яА-ЯёЁ]/g,
+    '_'
+  )
+  const filename = `оригиналы_${safeTitle}.zip`
+
+  return new NextResponse(zipBuffer as unknown as BodyInit, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(
+        filename
+      )}`,
+      'Content-Length': String(zipBuffer.length),
+      // Метаданные в заголовках — UI (К.2) считает их и показывает summary
+      // без необходимости открывать ZIP.
+      'X-Originals-Total': String(photos.length),
+      'X-Originals-Downloaded': String(successes.length),
+      'X-Originals-Failed': String(failures.length),
+    },
+  })
+}
