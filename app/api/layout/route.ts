@@ -578,7 +578,7 @@ async function handleBuildAlbum(
 
   const { data: album, error: albumErr } = await supabaseAdmin
     .from('albums')
-    .select('id, config_preset_id, template_set_id')
+    .select('id, config_preset_id, template_set_id, vignettes_enabled')
     .eq('id', albumId)
     .single()
 
@@ -622,6 +622,27 @@ async function handleBuildAlbum(
       { status: 500 },
     )
   }
+
+  // А.3.3 — Override настройки виньеток на уровне альбома.
+  // Если albums.vignettes_enabled IS NOT NULL, перезаписываем
+  // preset.config.student_section.thumbnails_section перед buildAlbum.
+  //   true  → {enabled: true, preferred_grid_size: 12} — включаем
+  //           виньеточный раздел в комплектации где его нет по дефолту
+  //   false → null — отключаем виньетки в Индивидуальной если фотограф
+  //           хочет нестандартную конфигурацию
+  //   NULL  → не трогаем (дефолт пресета)
+  //
+  // Безопасно мутировать preset — loadPresetById возвращает свежую копию
+  // из БД, не кэширует.
+  if (album.vignettes_enabled === true) {
+    preset.config.student_section.thumbnails_section = {
+      enabled: true,
+      preferred_grid_size: 12,
+    }
+  } else if (album.vignettes_enabled === false) {
+    preset.config.student_section.thumbnails_section = null
+  }
+  // album.vignettes_enabled === null → ничего не делаем, читаем дефолт пресета
 
   const result = buildAlbum(smartFillResult.input, preset, templateSet)
 
