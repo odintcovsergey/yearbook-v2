@@ -2315,6 +2315,113 @@ export async function POST(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
+  // delete_photos_by_type — массовое удаление всех фото категории
+  // (портреты / групповые / учителя / общий: разворот/полный/половина/...)
+  // 11.05.2026: запрошено для быстрой очистки тестовых альбомов и
+  // случаев когда фотограф загрузил весь батч не в ту категорию.
+  //
+  // Поведение полностью повторяет delete_photo но в массовом порядке:
+  //   - удаление WebP + thumb + оригинала (original_path) из YC
+  //   - удаление всех связей (selections, photo_children, photo_teachers,
+  //     photo_locks)
+  //   - сброс submitted_at у затронутых детей (если фото уже было
+  //     выбрано родителями)
+  //   - audit_log
+  //
+  // Безопасность: requireAuth + assertAlbumAccess по tid (учитывает
+  // view_as для сотрудников OkeyBook). Viewer не может удалять.
+  // ----------------------------------------------------------
+  if (body.action === 'delete_photos_by_type') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
+    const { album_id, photo_type } = body
+    if (!album_id || !photo_type) {
+      return NextResponse.json({ error: 'album_id и photo_type обязательны' }, { status: 400 })
+    }
+    const allowedTypes = [
+      'portrait', 'group', 'teacher',
+      'common_spread', 'common_full', 'common_half', 'common_quarter', 'common_sixth',
+    ]
+    if (!allowedTypes.includes(photo_type)) {
+      return NextResponse.json({ error: 'неизвестный photo_type' }, { status: 400 })
+    }
+    if (!(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    // 1. Достаём все фото категории — для удаления файлов из YC
+    //    и для подсчёта затронутых детей.
+    const { data: photos, error: photosErr } = await supabaseAdmin
+      .from('photos')
+      .select('id, storage_path, thumb_path, original_path, filename')
+      .eq('album_id', album_id)
+      .eq('type', photo_type)
+    if (photosErr) return NextResponse.json({ error: photosErr.message }, { status: 500 })
+
+    if (!photos || photos.length === 0) {
+      return NextResponse.json({ ok: true, deleted: 0, resetChildren: 0 })
+    }
+
+    const photoIds = photos.map((p: any) => p.id)
+
+    // 2. Какие дети выбирали эти фото — им нужно сбросить submitted_at.
+    const { data: affectedSelections } = await supabaseAdmin
+      .from('selections')
+      .select('child_id')
+      .in('photo_id', photoIds)
+    const affectedChildIds = Array.from(
+      new Set((affectedSelections ?? []).map((s: any) => s.child_id))
+    )
+
+    // 3. Удаление файлов из YC параллельно. Каждый photo может иметь
+    //    до 3 файлов (storage_path/thumb_path/original_path). Ошибки
+    //    ycDelete не критичны — даже если YC уже удалил файл, БД-запись
+    //    нужно убрать.
+    const deletePaths: string[] = []
+    for (const p of photos as any[]) {
+      if (p.storage_path && isYcPath(p.storage_path)) deletePaths.push(p.storage_path)
+      if (p.thumb_path && isYcPath(p.thumb_path)) deletePaths.push(p.thumb_path)
+      if (p.original_path && isYcPath(p.original_path)) deletePaths.push(p.original_path)
+    }
+    // Для очень больших категорий (тысячи фото) — батчим по 50 параллельно,
+    // чтобы не выгрузить сеть и не упереться в Vercel function timeout.
+    const BATCH = 50
+    for (let i = 0; i < deletePaths.length; i += BATCH) {
+      const batch = deletePaths.slice(i, i + BATCH)
+      await Promise.all(batch.map((p) => ycDelete(stripYcPrefix(p)).catch(() => null)))
+    }
+
+    // 4. Удаляем все связи и сами фото. Порядок важен — сначала связи,
+    //    потом photos (хоть FK с ON DELETE CASCADE и сделал бы это
+    //    автоматически, явное удаление яснее для аудита).
+    await supabaseAdmin.from('selections').delete().in('photo_id', photoIds)
+    await supabaseAdmin.from('photo_teachers').delete().in('photo_id', photoIds)
+    await supabaseAdmin.from('photo_children').delete().in('photo_id', photoIds)
+    await supabaseAdmin.from('photo_locks').delete().in('photo_id', photoIds)
+    await supabaseAdmin.from('photos').delete().in('id', photoIds)
+
+    // 5. Сброс submitted_at у затронутых детей
+    if (affectedChildIds.length > 0) {
+      await supabaseAdmin.from('children')
+        .update({ submitted_at: null })
+        .in('id', affectedChildIds)
+    }
+
+    await logAction(auth, 'photo.delete_by_type', 'album', album_id, {
+      photo_type,
+      deleted: photos.length,
+      reset_children: affectedChildIds.length,
+    })
+
+    return NextResponse.json({
+      ok: true,
+      deleted: photos.length,
+      resetChildren: affectedChildIds.length,
+    })
+  }
+
+  // ----------------------------------------------------------
   // delete_photo — удалить фото (+ thumb из Storage, + связи из БД)
   // Автоматически сбрасывает submitted_at у детей, которые выбрали это фото.
   // ----------------------------------------------------------

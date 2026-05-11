@@ -3957,6 +3957,53 @@ function PhotosTab({
     }
   }
 
+  // Массовое удаление всех фото текущей категории.
+  // Требует ввода слова «УДАЛИТЬ» — операция необратима, удаляются
+  // файлы из YC, связи, сбрасывается submitted_at у затронутых учеников.
+  const [deletingAll, setDeletingAll] = useState(false)
+  const deleteAllOfKind = async () => {
+    if (photos.length === 0) return
+    const label = photoKindLabel(activeKind).toLowerCase()
+    const typed = window.prompt(
+      `Удалить ВСЕ ${photos.length} фото в категории «${label}»?\n\n` +
+      `Будут удалены файлы из хранилища и все привязки. ` +
+      `Если фото были выбраны учениками — те ученики вернутся в статус «В процессе».\n\n` +
+      `Введите УДАЛИТЬ заглавными буквами для подтверждения:`
+    )
+    if (typed !== 'УДАЛИТЬ') {
+      if (typed !== null) onError('Удаление отменено — слово введено неверно')
+      return
+    }
+
+    setDeletingAll(true)
+    try {
+      const r = await api('/api/tenant', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'delete_photos_by_type',
+          album_id: albumId,
+          photo_type: activeKind,
+        }),
+      })
+      if (r.ok) {
+        const d = await r.json()
+        setPhotos([])
+        if (d.resetChildren > 0) {
+          onNotify(`Удалено ${d.deleted} фото. Сброшено учеников: ${d.resetChildren}`)
+        } else {
+          onNotify(`Удалено ${d.deleted} фото`)
+        }
+      } else {
+        const d = await r.json().catch(() => ({}))
+        onError(d.error ?? 'Не удалось удалить')
+      }
+    } catch (e: any) {
+      onError(e?.message || 'Ошибка удаления')
+    } finally {
+      setDeletingAll(false)
+    }
+  }
+
   const totalFiles = Object.values(upload).reduce((s, v) => s + v.files.length, 0)
   const anyUploading = Object.values(upload).some(v => v.uploading)
   const totalDone = Object.values(upload).reduce((s, v) => s + v.done, 0)
@@ -4086,7 +4133,20 @@ function PhotosTab({
           </div>
         ) : (
           <>
-            <p className="text-xs text-gray-400 mb-3">{photos.length} фото</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-gray-400">{photos.length} фото</p>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={deleteAllOfKind}
+                  disabled={deletingAll}
+                  className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-50 disabled:cursor-wait"
+                  title={`Удалить все фото в категории «${photoKindLabel(activeKind)}»`}
+                >
+                  {deletingAll ? 'Удаляем…' : `✕ Удалить все (${photos.length})`}
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
               {photos.map(photo => (
                 <div key={photo.id} className="relative group aspect-square bg-gray-100 rounded-lg overflow-hidden">
