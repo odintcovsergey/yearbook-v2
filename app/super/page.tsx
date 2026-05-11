@@ -191,6 +191,9 @@ export default function SuperPage() {
           </div>
         )}
 
+        {/* YC Storage widget — фаза В.2 */}
+        <YcStorageWidget />
+
         {/* Таб-бар */}
         <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
           {([
@@ -348,6 +351,147 @@ function StatCard({ label, value, subValue }: { label: string; value: number; su
         <div className="text-2xl font-semibold text-gray-900">{value}</div>
         {subValue && <div className="text-sm text-gray-400">{subValue}</div>}
       </div>
+    </div>
+  )
+}
+
+// ─── YC Storage Widget (фаза В.2) ──────────────────────────────────────
+// Виджет статистики Yandex Cloud Object Storage. По запросу запускает
+// тяжёлую операцию ListObjectsV2 (через /api/yc-stats), показывает
+// общий размер, разбивку по папкам, прогноз стоимости.
+type YcCategoryStats = {
+  name: string
+  size_bytes: number
+  object_count: number
+}
+
+type YcStats = {
+  total_size_bytes: number
+  total_object_count: number
+  total_size_gb: number
+  estimated_cost_rub: number
+  by_category: YcCategoryStats[]
+  scanned_at: string
+  pages_scanned: number
+  truncated: boolean
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  originals: 'Оригиналы (печать)',
+  exports: 'PDF-экспорты',
+  delivery: 'Доставка (от OkeyBook)',
+  personal: 'Личные развороты',
+  portrait: 'Портреты',
+  group: 'Групповые',
+  teacher: 'Учителя',
+  common: 'Общий раздел',
+  tenants: 'Логотипы партнёров',
+  other: 'Прочее',
+}
+
+function YcStorageWidget() {
+  const [stats, setStats] = useState<YcStats | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const loadStats = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const r = await api('/api/yc-stats')
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}))
+        setError(d.error ?? `HTTP ${r.status}`)
+        return
+      }
+      setStats(await r.json())
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Ошибка сети')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="card p-5 mb-8">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div>
+          <div className="text-xs text-gray-500 uppercase">Yandex Cloud Storage</div>
+          {stats && (
+            <div className="flex items-baseline gap-3 mt-1">
+              <div className="text-2xl font-semibold text-gray-900">{stats.total_size_gb} ГБ</div>
+              <div className="text-sm text-gray-400">
+                {stats.total_object_count.toLocaleString('ru')} объектов · прогноз ₽{stats.estimated_cost_rub}/мес
+              </div>
+            </div>
+          )}
+          {!stats && !loading && (
+            <div className="text-sm text-gray-400 mt-1">
+              Нажми «Обновить» чтобы посчитать размер хранилища
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={loadStats}
+          disabled={loading}
+          className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+        >
+          {loading ? 'Считаем…' : stats ? 'Обновить' : 'Обновить статистику'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="text-xs text-red-600 mb-2">{error}</div>
+      )}
+
+      {stats && stats.by_category.length > 0 && (
+        <div className="space-y-1.5 mt-3">
+          {stats.by_category.map((cat) => {
+            const pct = stats.total_size_bytes > 0
+              ? (cat.size_bytes / stats.total_size_bytes) * 100
+              : 0
+            return (
+              <div key={cat.name} className="flex items-center gap-3 text-sm">
+                <div className="w-44 text-gray-600">{CATEGORY_LABELS[cat.name] ?? cat.name}</div>
+                <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-full bg-blue-400 rounded-full"
+                    style={{ width: `${Math.max(pct, 0.5)}%` }}
+                  />
+                </div>
+                <div className="w-24 text-right text-gray-500 text-xs">
+                  {formatBytes(cat.size_bytes)}
+                </div>
+                <div className="w-20 text-right text-gray-400 text-xs">
+                  {cat.object_count.toLocaleString('ru')} файлов
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {stats?.truncated && (
+        <div className="text-xs text-amber-600 mt-3">
+          ⚠️ Просканировано {stats.pages_scanned * 1000}+ объектов (max). Реальный размер может быть больше.
+        </div>
+      )}
+
+      {stats && (
+        <div className="text-xs text-gray-400 mt-3">
+          Обновлено: {new Date(stats.scanned_at).toLocaleString('ru')}
+          {' · '}
+          Стоимость по тарифу Standard (₽1.95/ГБ/мес). Может быть ниже при настройке lifecycle.
+        </div>
+      )}
     </div>
   )
 }
