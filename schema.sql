@@ -54,7 +54,7 @@ create table photos (
   album_id      uuid not null references albums(id) on delete cascade,
   filename      text not null,
   storage_path  text not null,
-  type          text not null check (type in ('portrait','group','teacher')),
+  type          text not null check (type in ('portrait','group','teacher','common_spread','common_full','common_half','common_quarter','common_sixth')),
   created_at    timestamptz default now()
 );
 
