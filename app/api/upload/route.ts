@@ -5,7 +5,17 @@ import { ycUpload } from '@/lib/storage'
 
 export const runtime = 'nodejs'
 
-const ALLOWED_TYPES = ['portrait', 'group', 'teacher']
+const ALLOWED_TYPES = [
+  'portrait',
+  'group',
+  'teacher',
+  // Общий раздел альбома (А.1.1):
+  'common_spread',
+  'common_full',
+  'common_half',
+  'common_quarter',
+  'common_sixth',
+]
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuth(req, ['superadmin', 'owner', 'manager'])

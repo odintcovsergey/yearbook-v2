@@ -647,7 +647,7 @@ export async function GET(req: NextRequest) {
       filename: p.filename,
       storage_path: p.storage_path,
       thumb_path: p.thumb_path,
-      type: p.type as 'portrait' | 'group' | 'teacher',
+      type: p.type as 'portrait' | 'group' | 'teacher' | 'common_spread' | 'common_full' | 'common_half' | 'common_quarter' | 'common_sixth',
       source: 'selections' as const,
       child_ids: childIdsByPhoto[p.id] ?? [],
       teacher_ids: teacherIdsByPhoto[p.id] ?? [],
@@ -1305,7 +1305,10 @@ export async function POST(req: NextRequest) {
 
     // ----------------------------------------------------------
     // upload_photo (default multipart action) — фото альбома
-    // Формат: file, type (portrait|group|teacher), album_id
+    // Формат: file, type, album_id
+    // type ∈ {portrait, group, teacher,
+    //         common_spread, common_full, common_half,
+    //         common_quarter, common_sixth}.
     // Делает WebP full (2048px) + thumb (400px) через sharp,
     // заливает оба в Storage, создаёт запись в photos.
     // ----------------------------------------------------------
@@ -1317,7 +1320,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Не хватает данных (file, type, album_id)' }, { status: 400 })
     }
 
-    if (!['portrait', 'group', 'teacher'].includes(type)) {
+    if (!['portrait', 'group', 'teacher',
+          'common_spread', 'common_full', 'common_half',
+          'common_quarter', 'common_sixth'].includes(type)) {
       return NextResponse.json({ error: 'Неверный type' }, { status: 400 })
     }
 
@@ -2197,6 +2202,9 @@ export async function POST(req: NextRequest) {
   // Используется при клиентской компрессии (быстрая параллельная загрузка).
   // Клиент сам заливает файл в Storage под путём album_id/type/ts_name.webp,
   // затем вызывает этот endpoint для создания записи в photos.
+  // type ∈ {portrait, group, teacher,
+  //         common_spread, common_full, common_half,
+  //         common_quarter, common_sixth}.
   // ----------------------------------------------------------
   if (body.action === 'register_photo') {
     const { album_id, filename, storage_path, thumb_path, type } = body
@@ -2205,7 +2213,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Не хватает данных' }, { status: 400 })
     }
 
-    if (!['portrait', 'group', 'teacher'].includes(type)) {
+    if (!['portrait', 'group', 'teacher',
+          'common_spread', 'common_full', 'common_half',
+          'common_quarter', 'common_sixth'].includes(type)) {
       return NextResponse.json({ error: 'Неверный type' }, { status: 400 })
     }
 
