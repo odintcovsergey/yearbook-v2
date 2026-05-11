@@ -961,7 +961,7 @@ function AlbumDetailModal({
           summary: data.summary,
           has_user_edits: false,  // build_album сбрасывает флаг (см. 2.1)
         })
-        onNotify(`Layout собран: ${data.summary.total_spreads} разворотов, ${data.summary.total_warnings} предупреждений`)
+        onNotify(`Layout собран: ${data.summary.total_spreads} элементов, ${data.summary.total_warnings} предупреждений`)
       } else {
         const d = await r.json().catch(() => ({}))
         onError(d.error ?? 'Сборка не удалась')
@@ -1219,7 +1219,7 @@ function AlbumDetailModal({
                         <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
                           <div className="text-sm">
                             <span className="text-green-600 font-medium">✓ Layout собран</span>
-                            <span className="text-gray-500"> · {layout.summary.total_spreads} разворотов</span>
+                            <span className="text-gray-500"> · {layout.summary.total_spreads} элементов</span>
                             {layout.summary.total_warnings > 0 && (
                               <span className="text-gray-500"> · {layout.summary.total_warnings} предупреждений</span>
                             )}
