@@ -1966,6 +1966,7 @@ function AlbumDetailModal({
                   delivery={delivery}
                   canEdit={canEdit}
                   isSuperAdmin={false}
+                  viewAsTenantId={viewAsTenantId}
                   onWorkflowUpdate={(w) => setWorkflow(w)}
                   onOriginalsUpdate={(o) => setOriginals(o)}
                   onDeliveryUpdate={(d) => setDelivery(d)}
@@ -6571,13 +6572,14 @@ const WORKFLOW_LABELS: Record<string, { label: string; color: string }> = {
   delivered:     { label: 'Готов',             color: 'bg-green-100 text-green-700' },
 }
 
-function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperAdmin, onWorkflowUpdate, onOriginalsUpdate, onDeliveryUpdate, onNotify, onError }: {
+function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperAdmin, viewAsTenantId, onWorkflowUpdate, onOriginalsUpdate, onDeliveryUpdate, onNotify, onError }: {
   album: Album
   workflow: any
   originals: any[]
   delivery: any[]
   canEdit: boolean
   isSuperAdmin: boolean
+  viewAsTenantId?: string
   onWorkflowUpdate: (w: any) => void
   onOriginalsUpdate: (o: any[]) => void
   onDeliveryUpdate: (d: any[]) => void
@@ -6587,6 +6589,17 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
   const [submitting, setSubmitting] = useState(false)
   const [uploadingOriginals, setUploadingOriginals] = useState(false)
   const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 })
+  // Фаза К.2 — скачивание оригиналов для ретуши
+  const [downloadingOriginalsZip, setDownloadingOriginalsZip] = useState(false)
+  const [bigAlbumOptions, setBigAlbumOptions] = useState<
+    | null
+    | {
+        total_count: number
+        max_per_request: number
+        by_category: Record<string, number>
+      }
+  >(null)
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set())
 
   const status = workflow?.workflow_status ?? (album as any).workflow_status ?? 'active'
   const statusInfo = WORKFLOW_LABELS[status] ?? { label: status, color: 'bg-gray-100 text-gray-700' }
@@ -6658,6 +6671,80 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
     window.open(url, '_blank')
   }
 
+  // Фаза К.2 — скачивание ZIP оригиналов для ретуши
+  const handleDownloadOriginalsZip = async (categories?: string[]) => {
+    setDownloadingOriginalsZip(true)
+    try {
+      const params = new URLSearchParams({ album_id: (album as any).id })
+      if (categories && categories.length > 0) params.set('categories', categories.join(','))
+      if (viewAsTenantId) params.set('view_as', viewAsTenantId)
+      const res = await fetch(`/api/workflow/originals-zip?${params.toString()}`)
+      if (!res.ok) {
+        // Пробуем разобрать JSON-ошибку (404, 413, 500)
+        let data: any = null
+        try { data = await res.json() } catch { /* not json */ }
+        if (res.status === 413 && data) {
+          // Альбом слишком большой — предлагаем частичную выгрузку.
+          setBigAlbumOptions({
+            total_count: data.total_count,
+            max_per_request: data.max_per_request,
+            by_category: data.by_category || {},
+          })
+          setSelectedCategories(new Set())
+          return
+        }
+        onError(data?.error || data?.hint || `Не удалось скачать оригиналы (HTTP ${res.status})`)
+        return
+      }
+      // Сбрасываем панель частичной выгрузки если она была открыта
+      setBigAlbumOptions(null)
+
+      const blob = await res.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      // Имя файла из Content-Disposition (UTF-8 encoded)
+      const cd = res.headers.get('Content-Disposition') || ''
+      const m = cd.match(/filename\*=UTF-8''([^;]+)/i)
+      const filename = m ? decodeURIComponent(m[1]) : `оригиналы_${(album as any).id}.zip`
+
+      const a = document.createElement('a')
+      a.href = objectUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      // Освобождаем blob через секунду чтобы браузер успел инициировать скачивание
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+
+      const downloaded = res.headers.get('X-Originals-Downloaded')
+      const failed = res.headers.get('X-Originals-Failed')
+      const failedNum = failed ? Number(failed) : 0
+      onNotify(
+        `Скачано ${downloaded ?? '?'} оригиналов${failedNum > 0 ? ` (${failedNum} не докачались, см. manifest.json)` : ''}`
+      )
+    } catch (e: any) {
+      onError(e?.message || 'Не удалось скачать оригиналы')
+    } finally {
+      setDownloadingOriginalsZip(false)
+    }
+  }
+
+  const toggleCategory = (cat: string) => {
+    setSelectedCategories((prev) => {
+      const next = new Set(prev)
+      if (next.has(cat)) next.delete(cat)
+      else next.add(cat)
+      return next
+    })
+  }
+
+  // Сумма выбранных категорий для UI
+  const selectedSum = bigAlbumOptions
+    ? Array.from(selectedCategories).reduce(
+        (s, c) => s + (bigAlbumOptions.by_category[c] ?? 0),
+        0
+      )
+    : 0
+
   const formatSize = (bytes: number) => {
     if (!bytes) return ''
     if (bytes > 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} МБ`
@@ -6699,6 +6786,99 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           <p className="font-medium mb-1">Комментарий от OkeyBook:</p>
           <p>{workflow.workflow_notes}</p>
+        </div>
+      )}
+
+      {/* Цветокор и ретушь (фаза К) ─────────────────────────────────────── */}
+      {canEdit && (
+        <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div>
+              <h4 className="font-semibold text-gray-800">Цветокор и ретушь</h4>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Скачайте оригиналы для обработки в Lightroom/Photoshop, затем загрузите
+                обратно — система заменит фото в макете
+              </p>
+            </div>
+            <button
+              className="btn-secondary text-sm whitespace-nowrap"
+              onClick={() => handleDownloadOriginalsZip()}
+              disabled={downloadingOriginalsZip}
+              title="Скачать ZIP-архив оригиналов всех фото альбома"
+            >
+              {downloadingOriginalsZip ? 'Собираем ZIP…' : '📥 Скачать оригиналы'}
+            </button>
+          </div>
+
+          {/* Панель частичной выгрузки — показывается когда альбом слишком большой */}
+          {bigAlbumOptions && (
+            <div className="mt-3 p-3 bg-white border border-blue-200 rounded-lg space-y-2">
+              <p className="text-sm text-gray-700">
+                В альбоме <span className="font-medium">{bigAlbumOptions.total_count} фото</span> с
+                оригиналами, это больше лимита одной выгрузки ({bigAlbumOptions.max_per_request}).
+                Выберите категории для частичной выгрузки:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                {Object.entries(bigAlbumOptions.by_category)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([cat, count]) => {
+                    const label =
+                      cat === 'portrait' ? 'Портреты' :
+                      cat === 'group' ? 'Групповые фото' :
+                      cat === 'teacher' ? 'Учителя' :
+                      cat === 'common_spread' ? 'Общий: на разворот' :
+                      cat === 'common_full' ? 'Общий: фото класса' :
+                      cat === 'common_half' ? 'Общий: полкласса' :
+                      cat === 'common_quarter' ? 'Общий: 1/4 класса' :
+                      cat === 'common_sixth' ? 'Общий: 1/6 класса' :
+                      cat
+                    return (
+                      <label
+                        key={cat}
+                        className="flex items-center gap-2 px-2 py-1 hover:bg-blue-50 rounded cursor-pointer text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedCategories.has(cat)}
+                          onChange={() => toggleCategory(cat)}
+                        />
+                        <span className="text-gray-700">{label}</span>
+                        <span className="text-gray-400 text-xs ml-auto">{count}</span>
+                      </label>
+                    )
+                  })}
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-blue-100">
+                <span className="text-xs text-gray-500">
+                  Выбрано: {selectedSum} из {bigAlbumOptions.total_count}
+                  {selectedSum > bigAlbumOptions.max_per_request && (
+                    <span className="text-red-500 ml-1">
+                      — больше лимита ({bigAlbumOptions.max_per_request})
+                    </span>
+                  )}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    className="btn-secondary text-xs"
+                    onClick={() => setBigAlbumOptions(null)}
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    className="btn-primary text-xs"
+                    onClick={() => handleDownloadOriginalsZip(Array.from(selectedCategories))}
+                    disabled={
+                      downloadingOriginalsZip ||
+                      selectedCategories.size === 0 ||
+                      selectedSum > bigAlbumOptions.max_per_request
+                    }
+                  >
+                    {downloadingOriginalsZip ? 'Собираем…' : 'Скачать выбранные'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
