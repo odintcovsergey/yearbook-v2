@@ -1215,28 +1215,43 @@ async function handleExportPdf(
     )
   }
 
-  // 5c. originals из original_photos
-  const { data: originalsData, error: originalsErr } = await supabaseAdmin
+  // 5c. originals — два источника, объединяются с приоритетом нового (Б.2).
+  //
+  // Источник 1 (Б.1, 11.05.2026): photos.original_path — заполняется
+  // автоматически при загрузке фото через uploadFilesParallel в PhotosTab.
+  // Это новый основной механизм.
+  //
+  // Источник 2 (legacy): original_photos таблица — заполнялась через
+  // вкладку «Производство → Загрузка оригиналов». Этот механизм потерял
+  // актуальность с переходом системы от инструмента отбора к полноценной
+  // автовёрстке (комментарий Сергея 11.05.2026). UI вкладки можно будет
+  // удалить отдельной задачей; backend оставлен работать чтобы не сломать
+  // существующие альбомы.
+  //
+  // Объединяем: photos.original_path в начале массива → выигрывает в
+  // .find(filename) lookup'е в photo-embed.ts при коллизии.
+  const { data: legacyOriginalsData, error: legacyOriginalsErr } = await supabaseAdmin
     .from('original_photos')
     .select('id, filename, storage_path')
     .eq('album_id', albumId)
 
-  if (originalsErr) {
+  if (legacyOriginalsErr) {
     return NextResponse.json(
-      { error: `originals load failed: ${originalsErr.message}` },
+      { error: `legacy originals load failed: ${legacyOriginalsErr.message}` },
       { status: 500 },
     )
   }
-  const originals: OriginalPhoto[] = (originalsData ?? []).map((row) => ({
+  const legacyOriginals: OriginalPhoto[] = (legacyOriginalsData ?? []).map((row) => ({
     id: String(row.id),
     filename: String(row.filename),
     storage_path: String(row.storage_path),
   }))
 
-  // 5d. urlToFilename мапа из photos
+  // 5d. urlToFilename мапа + photos.original_path для originals[].
+  // Один запрос: тянем сразу всё нужное.
   const { data: photosData, error: photosErr } = await supabaseAdmin
     .from('photos')
-    .select('filename, storage_path')
+    .select('id, filename, storage_path, original_path')
     .eq('album_id', albumId)
 
   if (photosErr) {
@@ -1246,10 +1261,35 @@ async function handleExportPdf(
     )
   }
   const urlToFilename: Record<string, string> = {}
+  // Оригиналы из photos.original_path. Кладём в начало originals[] чтобы
+  // выиграть в .find() lookup'е при коллизии filename'ов с legacy таблицей.
+  // storage_path может прийти с префиксом 'yc:' (норма) или без (на всякий
+  // случай). photo-embed.ts:buildYcUrl ожидает БЕЗ префикса, поэтому
+  // нормализуем: убираем 'yc:' если есть.
+  const inlineOriginals: OriginalPhoto[] = []
   for (const p of photosData ?? []) {
-    const url = getPhotoUrl(String((p as Record<string, unknown>).storage_path))
-    if (url) urlToFilename[url] = String((p as Record<string, unknown>).filename)
+    const row = p as Record<string, unknown>
+    const storagePath = String(row.storage_path)
+    const url = getPhotoUrl(storagePath)
+    const filename = String(row.filename)
+    if (url) urlToFilename[url] = filename
+
+    const originalPath = row.original_path
+    if (typeof originalPath === 'string' && originalPath.length > 0) {
+      const cleanPath = originalPath.startsWith('yc:')
+        ? originalPath.slice(3)
+        : originalPath
+      inlineOriginals.push({
+        id: String(row.id),
+        filename,
+        storage_path: cleanPath,
+      })
+    }
   }
+
+  // Финальный массив: новые (photos.original_path) → legacy (original_photos).
+  // При коллизии filename'ов выиграет первый — то есть новый.
+  const originals: OriginalPhoto[] = [...inlineOriginals, ...legacyOriginals]
 
   // 6. exportAlbumPdf
   const exportInput: AlbumExportInput = {
