@@ -27,6 +27,11 @@ type PhotoContextMenuProps = {
   // не найден в списке фото альбома (странный кейс).
   photoInfo: { id: string; album_id: string; has_original: boolean } | null
   onClear: () => void
+  // Загрузить новое фото целиком (WebP + оригинал) и поставить в этот слот.
+  // Обновляет превью в макете И оригинал для PDF — обычный happy path.
+  onReplaceFull: () => void
+  // Подменить только оригинал — превью в макете НЕ меняется, обновляется
+  // только source для PDF. Используется для доретуши после согласования.
   onReplaceOriginal: () => void
   onClose: () => void
 }
@@ -38,6 +43,7 @@ export default function PhotoContextMenu({
   clientY,
   photoInfo,
   onClear,
+  onReplaceFull,
   onReplaceOriginal,
   onClose,
 }: PhotoContextMenuProps) {
@@ -105,6 +111,29 @@ export default function PhotoContextMenu({
         <span>Очистить слот</span>
       </button>
 
+      {/* Главный happy path — заменить фото полностью. Меняется ВСЁ:
+          превью на canvas и оригинал для PDF. Это то что обычно ожидает
+          партнёр когда говорит «хочу другое фото». */}
+      <button
+        type="button"
+        onClick={() => {
+          onReplaceFull()
+          onClose()
+        }}
+        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2"
+        title="Выбрать новое фото с компьютера. Превью в макете обновится, оригинал тоже загрузится для печати."
+      >
+        <span>📷</span>
+        <span>Загрузить другое фото</span>
+      </button>
+
+      <div className="px-3 py-1 mt-1 text-[10px] text-gray-400 uppercase tracking-wide border-t border-gray-100">
+        Продвинутое
+      </div>
+
+      {/* Продвинутый use-case — заменить ТОЛЬКО оригинал. WebP в макете
+          не меняется. Используется когда макет согласован с клиентом,
+          и нужно дорeтушировать конкретное фото без пересогласования. */}
       <button
         type="button"
         onClick={() => {
@@ -117,12 +146,12 @@ export default function PhotoContextMenu({
           !photoInfo
             ? 'Информация о фото недоступна'
             : photoInfo.has_original
-              ? 'Загрузить новый оригинал — WebP в макете не изменится, PDF-экспорт возьмёт новую версию'
-              : 'У этого фото пока нет оригинала. Загрузить файл — он станет оригиналом для PDF-экспорта.'
+              ? 'Подменить ТОЛЬКО оригинал для печати. Превью в макете останется прежним. Используйте если клиент согласовал макет, но просит доретушировать одно фото.'
+              : 'У этого фото пока нет оригинала. Загрузить файл — он станет оригиналом для PDF-экспорта (превью в макете не изменится).'
         }
       >
         <span>🎨</span>
-        <span>{photoInfo?.has_original ? 'Заменить оригинал' : 'Загрузить оригинал'}</span>
+        <span>{photoInfo?.has_original ? 'Подменить только оригинал' : 'Загрузить только оригинал'}</span>
       </button>
     </div>
   )

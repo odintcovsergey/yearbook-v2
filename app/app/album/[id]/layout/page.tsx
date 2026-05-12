@@ -618,6 +618,143 @@ export default function LayoutEditorPage({
     input.click()
   }
 
+  // Замена фото целиком: загружаем новый файл, сжимаем в WebP,
+  // регистрируем как photo, в фоне грузим оригинал, ставим в слот.
+  // Этот flow — то что обычно ожидает партнёр при «загрузить другое фото».
+  //
+  // photo_type для нового photo наследуется от текущего фото в слоте
+  // (если есть). Если слот пуст — fallback на 'portrait'. Партнёр потом
+  // может перенастроить через PhotoTab если нужно.
+  async function handleReplaceFullPhoto(label: string, currentUrl: string | null) {
+    // Определяем type для нового photo по текущему в слоте
+    const currentPhoto = currentUrl ? photos.find((p) => p.url === currentUrl) : null
+    const photoType =
+      (currentPhoto?.type as 'portrait' | 'group' | 'teacher' | null) || 'portrait'
+
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+
+      setReplacingOriginal(`${file.name} (новое фото)`)
+      try {
+        // 1. Сжать в WebP клиентом (тот же flow что в PhotoTab.uploadFilesParallel)
+        const imageCompression = (await import('browser-image-compression')).default
+        let compressed: File | Blob = file
+        try {
+          compressed = await imageCompression(file, {
+            maxSizeMB: 1.2,
+            maxWidthOrHeight: 2048,
+            useWebWorker: true,
+            initialQuality: 0.85,
+            fileType: 'image/webp',
+          })
+        } catch {
+          // компрессия упала — загружаем оригинал как WebP
+        }
+
+        // 2. Загружаем WebP через /api/upload (создаёт photos запись)
+        const formData = new FormData()
+        const webpFile = new File(
+          [compressed],
+          file.name.replace(/\.[^.]+$/, '.webp'),
+          { type: 'image/webp' },
+        )
+        formData.append('file', webpFile)
+        formData.append('album_id', albumId)
+        formData.append('type', photoType)
+        formData.append('original_name', file.name)
+
+        const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          credentials: 'include',
+          body: formData,
+        })
+        if (!uploadRes.ok) {
+          const d = await uploadRes.json().catch(() => ({}))
+          throw new Error(d.error ?? `upload HTTP ${uploadRes.status}`)
+        }
+        const uploadData = await uploadRes.json()
+        const newPhotoId = uploadData.photo_id
+        if (!newPhotoId) throw new Error('upload не вернул photo_id')
+
+        // 3. Reload photos чтобы найти новое фото и узнать его URL
+        // (URL формируется в backend через getPhotoUrl, проще получить готовым).
+        const photosRes = await api(`/api/tenant?action=album_photos&album_id=${albumId}`)
+        if (!photosRes.ok) {
+          throw new Error(`reload photos HTTP ${photosRes.status}`)
+        }
+        const photosData = await photosRes.json()
+        const newPhotos = (photosData.photos ?? []) as AlbumPhoto[]
+        setPhotos(newPhotos)
+        const newPhoto = newPhotos.find((p) => p.id === newPhotoId)
+        if (!newPhoto) {
+          throw new Error('новое фото не найдено в палитре после загрузки')
+        }
+
+        // 4. Ставим новое фото в слот — обновляем layout.spreads.
+        // History trackingу это нормальное действие, popадёт в past.
+        setLayout((prev) => {
+          if (!prev) return prev
+          const newSpreads = prev.spreads.map((s, idx) =>
+            idx === currentIdx
+              ? { ...s, data: { ...s.data, [label]: newPhoto.url } }
+              : s,
+          )
+          return { ...prev, spreads: newSpreads }
+        })
+
+        // 5. В фоне — загружаем оригинал через presigned URL.
+        // Не блокируем UI (партнёр уже видит новое фото в макете).
+        void (async () => {
+          try {
+            const urlRes = await api('/api/upload-url', {
+              method: 'POST',
+              body: JSON.stringify({
+                album_id: albumId,
+                filename: file.name,
+                content_type: file.type || 'application/octet-stream',
+                upload_type: 'originals',
+              }),
+            })
+            if (!urlRes.ok) return
+            const { upload_url, storage_path: origPath } = await urlRes.json()
+
+            const putRes = await fetch(upload_url, {
+              method: 'PUT',
+              body: file,
+              headers: { 'Content-Type': file.type || 'application/octet-stream' },
+            })
+            if (!putRes.ok) return
+
+            await api('/api/tenant', {
+              method: 'POST',
+              body: JSON.stringify({
+                action: 'register_original',
+                photo_id: newPhotoId,
+                original_path: origPath,
+              }),
+            })
+            // Обновляем has_original в photos state
+            setPhotos((prev) =>
+              prev.map((p) => (p.id === newPhotoId ? { ...p, has_original: true } : p)),
+            )
+          } catch {
+            // Не критично — WebP уже стоит в слоте, оригинал можно
+            // догрузить отдельно (PhotoTab «📤 Догрузить оригинал»).
+          }
+        })()
+      } catch (e: any) {
+        alert(`Не удалось загрузить фото: ${e?.message ?? 'неизвестная ошибка'}`)
+      } finally {
+        setReplacingOriginal(null)
+      }
+    }
+    input.click()
+  }
+
   // ─── Loading / error состояния ──────────────────────────────────────────
   if (loading) {
     return (
@@ -822,6 +959,9 @@ export default function LayoutEditorPage({
             }
           })()}
           onClear={() => handleClearPhoto(photoContextMenu.label)}
+          onReplaceFull={() =>
+            handleReplaceFullPhoto(photoContextMenu.label, photoContextMenu.url)
+          }
           onReplaceOriginal={() => {
             const p = photos.find((ph) => ph.url === photoContextMenu.url)
             if (p) void handleReplaceOriginal(p.id)
@@ -836,7 +976,7 @@ export default function LayoutEditorPage({
           <div className="flex items-center gap-3 text-sm">
             <span className="animate-spin">⏳</span>
             <span className="text-gray-700">
-              Заменяем оригинал: <span className="font-medium">{replacingOriginal}</span>
+              Загружаем: <span className="font-medium">{replacingOriginal}</span>
             </span>
           </div>
         </div>
