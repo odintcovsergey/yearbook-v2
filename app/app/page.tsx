@@ -3658,6 +3658,7 @@ type Photo = {
   storage_path: string
   thumb_path: string | null
   type: PhotoKind
+  has_original?: boolean  // П.3 — для бейджика «нет оригинала» в галерее
   url: string
   thumb_url: string
   tags: string[]
@@ -3736,11 +3737,36 @@ async function uploadFilesParallel(
   albumId: string,
   onProgress: (done: number) => void,
   onFileError: (name: string, msg: string) => void,
+  // П.1 — tracking фоновой загрузки оригиналов:
+  // - onOriginalsStart: вызывается ОДИН РАЗ когда WebP-фаза стартует;
+  //   передаёт сколько оригиналов ожидается и общий размер в байтах.
+  // - onOriginalProgress: каждый раз когда один оригинал докачался
+  //   (успешно или с ошибкой). filename + bytes (file.size) + ok.
+  // - onOriginalsAllDone: вызывается когда ВСЕ фоновые upload'ы
+  //   завершены (resolved/rejected все Promise'ы).
+  //
+  // Тип кода файлов: ВСЕ files, потому что для каждого WebP запускаем
+  // и попытку загрузки оригинала. Поэтому total = files.length.
+  callbacks?: {
+    onOriginalsStart?: (total: number, totalBytes: number) => void
+    onOriginalProgress?: (filename: string, bytes: number, ok: boolean) => void
+    onOriginalsAllDone?: () => void
+  },
 ) {
   const imageCompression = (await import('browser-image-compression')).default
 
   let done = 0
   const queue = [...files]
+
+  // П.1 — собираем promise'ы фоновых upload'ов чтобы дождаться их в конце
+  // и вызвать onOriginalsAllDone. Без этого Promise.all не понимает
+  // когда фон закончился.
+  const originalPromises: Promise<void>[] = []
+
+  // Уведомляем UI сколько оригиналов будет грузиться. Total bytes для
+  // прогресс-бара (показывает «X МБ из Y МБ»).
+  const totalOriginalBytes = files.reduce((sum, f) => sum + f.size, 0)
+  callbacks?.onOriginalsStart?.(files.length, totalOriginalBytes)
 
   // Фоновая загрузка оригинала — не блокирует прогресс-бар, ошибки идут
   // в onFileError со суффиксом '(оригинал)' чтобы фотограф мог различить.
@@ -3790,10 +3816,14 @@ async function uploadFilesParallel(
         const d = await regRes.json().catch(() => ({}))
         throw new Error(d.error ?? `register_original HTTP ${regRes.status}`)
       }
+      // П.1 — успех: уведомляем UI чтобы прогресс-бар двинулся вперёд
+      callbacks?.onOriginalProgress?.(file.name, file.size, true)
     } catch (e: any) {
       // Не критично: WebP уже залит, фото видно в галерее. Просто оригинала
       // для печати нет. Сообщаем фотографу чтобы знал.
       onFileError(`${file.name} (оригинал)`, e?.message ?? 'Не удалось загрузить оригинал для печати')
+      // П.1 — fail: всё равно уведомляем UI (счётчик «failed» инкрементируется)
+      callbacks?.onOriginalProgress?.(file.name, file.size, false)
     }
   }
 
@@ -3830,18 +3860,29 @@ async function uploadFilesParallel(
         if (!res.ok) {
           const d = await res.json().catch(() => ({}))
           onFileError(file.name, d.error ?? 'Ошибка загрузки')
+          // П.1 — для упавшего WebP оригинал не запускаем, но счётчик
+          // уже total включает этот файл. Уведомляем чтобы он не «висел».
+          callbacks?.onOriginalProgress?.(file.name, file.size, false)
         } else {
-          // Шаг 3 — параллельная загрузка оригинала в фоне, не ждём.
-          // Прогресс-бар инкрементится прямо сейчас (после успешной
-          // загрузки WebP), пользователь видит что фото готово.
+          // Шаг 3 — параллельная загрузка оригинала в фоне.
+          // Прогресс-бар (WebP) инкрементится прямо сейчас (после успешной
+          // загрузки WebP), пользователь видит что фото готово как WebP.
+          // Сам upload оригинала продолжает работать фоном.
           const data = await res.json().catch(() => ({}))
           if (data?.photo_id) {
-            // void: запускаем и забываем. Ошибка прилетит через onFileError.
-            void uploadOriginalBackground(file, data.photo_id)
+            // П.1 — собираем promise чтобы дождаться в конце.
+            // uploadOriginalBackground никогда не throw'ит (имеет
+            // внутренний try-catch), поэтому Promise всегда resolved.
+            originalPromises.push(uploadOriginalBackground(file, data.photo_id))
+          } else {
+            // photo_id не вернулся — оригинал не запустится, уведомляем
+            callbacks?.onOriginalProgress?.(file.name, file.size, false)
           }
         }
       } catch (e: any) {
         onFileError(file.name, e?.message ?? 'Неизвестная ошибка')
+        // П.1 — упавший WebP, оригинал не запустится
+        callbacks?.onOriginalProgress?.(file.name, file.size, false)
       }
       done++
       onProgress(done)
@@ -3851,6 +3892,16 @@ async function uploadFilesParallel(
   await Promise.all(
     Array.from({ length: Math.min(UPLOAD_CONCURRENCY, files.length) }, worker),
   )
+
+  // П.1 — после завершения всех WebP-workers'ов ждём завершения всех
+  // фоновых upload'ов оригиналов. Это может занять много минут для
+  // больших альбомов, но UI partнёра уже виден прогресс-бар. После
+  // завершения вызываем onOriginalsAllDone — UI скрывает прогресс
+  // (или показывает «готово» / «N ошибок»).
+  if (originalPromises.length > 0) {
+    await Promise.all(originalPromises)
+  }
+  callbacks?.onOriginalsAllDone?.()
 }
 
 function PhotosTab({
@@ -3872,6 +3923,40 @@ function PhotosTab({
   const [photos, setPhotos] = useState<Photo[]>([])
   const [loading, setLoading] = useState(true)
   const [showImportTags, setShowImportTags] = useState(false)
+
+  // П.1 — агрегированный прогресс фоновой загрузки оригиналов.
+  // Один state на всех — даже если партнёр запустил upload в нескольких
+  // категориях подряд, прогресс-бар показывает суммарный статус.
+  // null = ничего не грузится / последняя сессия завершена и сброшена.
+  const [originalsProgress, setOriginalsProgress] = useState<
+    | null
+    | {
+        total: number
+        done: number
+        failed: number
+        totalBytes: number
+        doneBytes: number
+        failedFilenames: string[]
+        completed: boolean  // все upload'ы закончились (включая failed)
+      }
+  >(null)
+
+  // П.2 — beforeunload protection пока есть pending оригиналы.
+  // Партнёр получит модальное предупреждение браузера при попытке
+  // закрыть вкладку или перейти на другой URL.
+  useEffect(() => {
+    if (!originalsProgress || originalsProgress.completed) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      // В современных браузерах текст ниже игнорируется и показывается
+      // дефолтное «Сайт хочет закрыть вкладку, есть несохранённые изменения».
+      // Не идеально, но это всё что можно сделать кроссбраузерно.
+      e.returnValue =
+        'Идёт загрузка оригиналов для печати. Если закрыть сейчас — фотографии не будут в высоком качестве в PDF.'
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [originalsProgress])
 
   // состояние загрузки по каждому типу
   const [upload, setUpload] = useState<
@@ -3918,6 +4003,48 @@ function PhotosTab({
       albumId,
       done => setUploadState(type, { done }),
       (name, msg) => errors.push(`${name}: ${msg}`),
+      {
+        // П.1 — агрегируем прогресс оригиналов в общий state.
+        // Если уже идёт другая сессия (партнёр запустил upload подряд
+        // в нескольких категориях) — мерджим: total/totalBytes складываем.
+        onOriginalsStart: (total, totalBytes) => {
+          setOriginalsProgress(prev => {
+            if (prev && !prev.completed) {
+              // Продолжаем существующую сессию
+              return {
+                ...prev,
+                total: prev.total + total,
+                totalBytes: prev.totalBytes + totalBytes,
+              }
+            }
+            // Новая сессия
+            return {
+              total,
+              done: 0,
+              failed: 0,
+              totalBytes,
+              doneBytes: 0,
+              failedFilenames: [],
+              completed: false,
+            }
+          })
+        },
+        onOriginalProgress: (filename, bytes, ok) => {
+          setOriginalsProgress(prev => {
+            if (!prev) return prev
+            return {
+              ...prev,
+              done: prev.done + 1,
+              failed: prev.failed + (ok ? 0 : 1),
+              doneBytes: prev.doneBytes + bytes,
+              failedFilenames: ok ? prev.failedFilenames : [...prev.failedFilenames, filename],
+            }
+          })
+        },
+        onOriginalsAllDone: () => {
+          setOriginalsProgress(prev => prev ? { ...prev, completed: true } : null)
+        },
+      },
     )
     setUploadState(type, { uploading: false, files: [], done: 0, errors })
     const ok = files.length - errors.length
@@ -3955,6 +4082,75 @@ function PhotosTab({
       const d = await r.json().catch(() => ({}))
       onError(d.error ?? 'Не удалось удалить')
     }
+  }
+
+  // П.3 — догрузить оригинал для photo которое его не имеет.
+  // Открывает file picker → presigned URL → PUT в YC → register_original
+  // (то же что фоновая загрузка в uploadFilesParallel.uploadOriginalBackground,
+  // но через UI кнопку для recovery после catastrophic fail).
+  //
+  // Для повторной загрузки (если оригинал уже есть) используется
+  // rebind_retouched в редакторе макета (PhotoContextMenu).
+  const [uploadingOriginalFor, setUploadingOriginalFor] = useState<string | null>(null)
+  const uploadOriginalForPhoto = async (photo: Photo) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/jpeg,image/jpg,image/png,image/tiff'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      setUploadingOriginalFor(photo.id)
+      try {
+        // 1. Presigned URL
+        const urlRes = await api('/api/upload-url', {
+          method: 'POST',
+          body: JSON.stringify({
+            album_id: albumId,
+            filename: file.name,
+            content_type: file.type || 'application/octet-stream',
+            upload_type: 'originals',
+          }),
+        })
+        if (!urlRes.ok) {
+          const d = await urlRes.json().catch(() => ({}))
+          throw new Error(d.error ?? `presigned URL HTTP ${urlRes.status}`)
+        }
+        const { upload_url, storage_path } = await urlRes.json()
+
+        // 2. PUT в YC
+        const putRes = await fetch(upload_url, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        })
+        if (!putRes.ok) throw new Error(`PUT в YC: HTTP ${putRes.status}`)
+
+        // 3. register_original
+        const regRes = await api('/api/tenant', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'register_original',
+            photo_id: photo.id,
+            original_path: storage_path,
+          }),
+        })
+        if (!regRes.ok) {
+          const d = await regRes.json().catch(() => ({}))
+          throw new Error(d.error ?? `register_original HTTP ${regRes.status}`)
+        }
+
+        // Обновляем локальный state: бейджик «нет оригинала» пропадает
+        setPhotos(prev => prev.map(p =>
+          p.id === photo.id ? { ...p, has_original: true } : p,
+        ))
+        onNotify(`Оригинал для «${photo.filename}» загружен`)
+      } catch (e: any) {
+        onError(`Не удалось загрузить оригинал: ${e?.message ?? 'unknown'}`)
+      } finally {
+        setUploadingOriginalFor(null)
+      }
+    }
+    input.click()
   }
 
   // Массовое удаление всех фото текущей категории.
@@ -4106,6 +4302,118 @@ function PhotosTab({
         </div>
       )}
 
+      {/* П.1+П.2 — прогресс фоновой загрузки оригиналов для печати.
+          WebP грузится быстро (~30 сек), оригиналы могут идти много минут.
+          Этот блок остаётся видим пока все оригиналы не докачаются. */}
+      {originalsProgress && (
+        <div
+          className={`card p-4 ${
+            originalsProgress.completed
+              ? originalsProgress.failed > 0
+                ? 'border-amber-300 bg-amber-50/50'
+                : 'border-green-300 bg-green-50/50'
+              : 'border-blue-300 bg-blue-50/50'
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div className="flex-1 min-w-0">
+              {!originalsProgress.completed ? (
+                <>
+                  <p className="text-sm font-medium text-gray-800">
+                    📤 Загружаем оригиналы для печати
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Не закрывайте вкладку до завершения — оригиналы нужны для качества печати в типографии
+                  </p>
+                </>
+              ) : originalsProgress.failed > 0 ? (
+                <>
+                  <p className="text-sm font-medium text-amber-900">
+                    ⚠ Загружено {originalsProgress.done - originalsProgress.failed} из {originalsProgress.total}, ошибок: {originalsProgress.failed}
+                  </p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    У фото без оригинала будет бейджик в галерее — можно догрузить вручную
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-green-900">
+                    ✓ Все оригиналы загружены ({originalsProgress.total} шт)
+                  </p>
+                  <p className="text-xs text-green-700 mt-0.5">
+                    Теперь PDF-экспорт будет в высоком качестве для печати
+                  </p>
+                </>
+              )}
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-mono text-gray-700">
+                {originalsProgress.done} / {originalsProgress.total}
+              </p>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                {(originalsProgress.doneBytes / (1024 * 1024)).toFixed(0)} МБ
+                {' / '}
+                {(originalsProgress.totalBytes / (1024 * 1024)).toFixed(0)} МБ
+              </p>
+            </div>
+          </div>
+
+          {/* Прогресс-бар */}
+          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${
+                originalsProgress.completed
+                  ? originalsProgress.failed > 0
+                    ? 'bg-amber-500'
+                    : 'bg-green-500'
+                  : 'bg-blue-500'
+              }`}
+              style={{
+                width: `${originalsProgress.total > 0
+                  ? Math.round((originalsProgress.done / originalsProgress.total) * 100)
+                  : 0}%`,
+              }}
+            />
+          </div>
+
+          {/* Кнопка «Скрыть» когда всё завершено успешно */}
+          {originalsProgress.completed && originalsProgress.failed === 0 && (
+            <div className="flex justify-end mt-3">
+              <button
+                type="button"
+                onClick={() => setOriginalsProgress(null)}
+                className="text-xs text-gray-500 hover:text-gray-700"
+              >
+                Скрыть
+              </button>
+            </div>
+          )}
+
+          {/* Список упавших файлов (свёрнутый по умолчанию) */}
+          {originalsProgress.completed && originalsProgress.failed > 0 && (
+            <details className="mt-3 text-xs">
+              <summary className="cursor-pointer text-amber-800 hover:text-amber-900">
+                Показать {originalsProgress.failed} файлов которые не загрузились
+              </summary>
+              <ul className="mt-2 max-h-32 overflow-y-auto bg-white/50 rounded p-2 space-y-1">
+                {originalsProgress.failedFilenames.map((name, i) => (
+                  <li key={i} className="text-gray-600 truncate" title={name}>
+                    {name}
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                onClick={() => setOriginalsProgress(null)}
+                className="mt-2 text-xs text-gray-500 hover:text-gray-700"
+              >
+                Скрыть это сообщение
+              </button>
+            </details>
+          )}
+        </div>
+      )}
+
       {/* Галерея */}
       <div className="card p-5 min-h-[420px]">
         <div className="flex flex-wrap gap-1 mb-4 border-b border-gray-100">
@@ -4148,34 +4456,58 @@ function PhotosTab({
               )}
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {photos.map(photo => (
-                <div key={photo.id} className="relative group aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                  <img
-                    src={photo.thumb_url}
-                    alt={photo.filename}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={() => deletePhoto(photo)}
-                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 text-xs items-center justify-center hidden group-hover:flex"
-                      title="Удалить"
-                    >
-                      ✕
-                    </button>
-                  )}
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="truncate">{photo.filename}</div>
-                    {photo.tags.length > 0 && (
-                      <div className="truncate text-green-200 mt-0.5">
-                        {photo.tags.length === 1 ? photo.tags[0] : `${photo.tags.length} привязок`}
+              {photos.map(photo => {
+                const missingOriginal = photo.has_original === false
+                const uploadingThis = uploadingOriginalFor === photo.id
+                return (
+                  <div key={photo.id} className="relative group aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                    <img
+                      src={photo.thumb_url}
+                      alt={photo.filename}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                    {/* П.3 — бейджик «нет оригинала» */}
+                    {missingOriginal && (
+                      <div
+                        className="absolute top-1 left-1 bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium shadow-sm pointer-events-none"
+                        title="У фото нет оригинала для печати — PDF будет в WebP качестве. Наведите для кнопки «Догрузить»."
+                      >
+                        ⚠ нет оригинала
                       </div>
                     )}
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => deletePhoto(photo)}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 text-xs items-center justify-center hidden group-hover:flex"
+                        title="Удалить"
+                      >
+                        ✕
+                      </button>
+                    )}
+                    {/* П.3 — кнопка «Догрузить оригинал» при hover, если оригинала нет */}
+                    {canEdit && missingOriginal && (
+                      <button
+                        type="button"
+                        onClick={() => uploadOriginalForPhoto(photo)}
+                        disabled={uploadingThis}
+                        className="absolute inset-x-1 bottom-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-wait"
+                      >
+                        {uploadingThis ? '⏳ Загружаем…' : '📤 Догрузить оригинал'}
+                      </button>
+                    )}
+                    <div className={`absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-1 ${missingOriginal && canEdit ? 'opacity-0 group-hover:opacity-0' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
+                      <div className="truncate">{photo.filename}</div>
+                      {photo.tags.length > 0 && (
+                        <div className="truncate text-green-200 mt-0.5">
+                          {photo.tags.length === 1 ? photo.tags[0] : `${photo.tags.length} привязок`}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </>
         )}

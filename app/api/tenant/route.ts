@@ -504,7 +504,7 @@ export async function GET(req: NextRequest) {
 
     let query = supabaseAdmin
       .from('photos')
-      .select('id, filename, storage_path, thumb_path, type, created_at')
+      .select('id, filename, storage_path, thumb_path, type, original_path, created_at')
       .eq('album_id', albumId)
       .order('created_at')
 
@@ -536,6 +536,10 @@ export async function GET(req: NextRequest) {
       storage_path: p.storage_path,
       thumb_path: p.thumb_path,
       type: p.type,
+      // П.3 — для UI бейджика «нет оригинала» в галерее. Boolean
+      // вместо самого пути — defence in depth (партнёр не должен
+      // видеть internal YC paths).
+      has_original: Boolean(p.original_path),
       url: getPhotoUrl(p.storage_path),
       thumb_url: getThumbUrl(p.storage_path, p.thumb_path),
       tags: tagsByPhoto[p.id] ?? [],
