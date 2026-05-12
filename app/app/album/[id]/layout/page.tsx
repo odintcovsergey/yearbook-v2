@@ -209,6 +209,37 @@ function LayoutEditorPageInner({
 
   const isReadOnly = !canEdit || isMobile
 
+  // Л.5 — onboarding tooltip при первом открытии редактора.
+  // localStorage флаг `yearbook_layout_editor_seen` — если уже видели
+  // (true), tooltip не показываем. Чтобы партнёр мог вернуться к
+  // подсказке — есть кнопка «?» в header (но shortcuts modal мы
+  // решили не делать, поэтому пока убрана).
+  //
+  // Не показываем в read-only — там и так есть баннер с пояснением.
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (isReadOnly) return
+    if (loading || error || !layout) return
+    try {
+      const seen = window.localStorage.getItem('yearbook_layout_editor_seen')
+      if (!seen) {
+        setShowOnboarding(true)
+      }
+    } catch {
+      // localStorage отключён (приватный режим) — пропускаем
+    }
+  }, [loading, error, layout, isReadOnly])
+
+  function dismissOnboarding() {
+    setShowOnboarding(false)
+    try {
+      window.localStorage.setItem('yearbook_layout_editor_seen', '1')
+    } catch {
+      // ignore
+    }
+  }
+
   useEffect(() => {
     const update = () => setViewport({
       width: window.innerWidth,
@@ -471,6 +502,33 @@ function LayoutEditorPageInner({
     return () => window.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [history, layout, lastSavedSpreads, isReadOnly])
+
+  // Л.5 — стрелки ← / → для навигации между разворотами.
+  // Работают всегда (даже в read-only — это просмотр, не редактирование).
+  // Игнорируются если фокус в input/textarea (стрелки внутри textarea
+  // нужны для перемещения курсора в тексте) или если editingText активен.
+  useEffect(() => {
+    function onArrow(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return
+      }
+      // Игнорируем если есть зажатые модификаторы — Ctrl+← / Cmd+← это
+      // обычно «назад в истории браузера», не наша область
+      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        setCurrentIdx((i) => Math.max(0, i - 1))
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        const total = layout?.spreads.length ?? 0
+        setCurrentIdx((i) => Math.min(total - 1, i + 1))
+      }
+    }
+    window.addEventListener('keydown', onArrow)
+    return () => window.removeEventListener('keydown', onArrow)
+  }, [layout?.spreads.length])
 
   function handleDragStart(event: DragStartEvent) {
     if (isReadOnly) return  // Л.4a — drag заблокирован в read-only
@@ -1098,6 +1156,74 @@ function LayoutEditorPageInner({
             <span className="text-gray-700">
               Загружаем: <span className="font-medium">{replacingOriginal}</span>
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* Л.5 — onboarding tooltip при первом открытии редактора.
+          Модальный backdrop + центрированная карточка с подсказками.
+          Закрывается по «Понятно» или Esc. */}
+      {showOnboarding && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={dismissOnboarding}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') dismissOnboarding()
+          }}
+          role="dialog"
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              👋 Добро пожаловать в редактор макета
+            </h2>
+            <ul className="space-y-3 text-sm text-gray-700">
+              <li className="flex gap-3">
+                <span className="text-blue-500 flex-shrink-0">📷</span>
+                <span>
+                  <b>Фото:</b> перетащите из правой палитры в макет. Чтобы поменять
+                  местами — перетащите одно фото на другое. Правый клик —
+                  очистить или заменить.
+                </span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-blue-500 flex-shrink-0">✏️</span>
+                <span>
+                  <b>Текст:</b> кликните на ФИО, цитату или любой текст
+                  в макете чтобы исправить. Enter — подтвердить, Esc — отменить.
+                </span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-blue-500 flex-shrink-0">↶</span>
+                <span>
+                  <b>Отмена действий:</b> Ctrl+Z (⌘Z на Mac) или кнопка
+                  «↶ Отменить» в шапке. До 50 шагов назад.
+                </span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-blue-500 flex-shrink-0">◀▶</span>
+                <span>
+                  <b>Навигация:</b> стрелки ← / → на клавиатуре или кнопки внизу.
+                </span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-green-500 flex-shrink-0">💾</span>
+                <span>
+                  <b>Автосохранение:</b> все изменения сохраняются автоматически.
+                  Индикатор статуса в шапке справа.
+                </span>
+              </li>
+            </ul>
+            <button
+              type="button"
+              onClick={dismissOnboarding}
+              className="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 rounded-lg transition-colors"
+              autoFocus
+            >
+              Понятно, начинаем
+            </button>
           </div>
         </div>
       )}
