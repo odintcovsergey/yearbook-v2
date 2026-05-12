@@ -739,6 +739,73 @@ function LayoutEditorPageInner({
     setAddAfterIdx(null)
   }
 
+  // М.3 — замена шаблона существующего разворота.
+  // replaceTemplateForIdx === null когда picker закрыт.
+  // Mapping старых данных в новые placeholder'ы:
+  //   - Сравниваем по label (e.g. 'studentphoto', 'studentname')
+  //   - Если есть в новом шаблоне → переносим значение
+  //   - Иначе данные теряются (партнёр получит warning + Ctrl+Z восстановит)
+  // Это безопасно для типовых сценариев (поменяли E-Student-Standard
+  // на E-Student-Quote — labels пересекаются на 80-90%), но для
+  // несовместимых шаблонов часть данных пропадёт.
+  const [replaceTemplateForIdx, setReplaceTemplateForIdx] = useState<number | null>(null)
+
+  function handleReplaceTemplate(newTemplate: SpreadTemplate) {
+    if (!layout || replaceTemplateForIdx === null) {
+      setReplaceTemplateForIdx(null)
+      return
+    }
+    const idx = replaceTemplateForIdx
+    const oldSpread = layout.spreads[idx]
+    if (!oldSpread) {
+      setReplaceTemplateForIdx(null)
+      return
+    }
+
+    // Перенос данных: новые placeholder'ы получают значения от старых
+    // если label совпадает. Лишние данные (label которых нет в новом
+    // шаблоне) отбрасываются.
+    const newData: Record<string, string | null> = {}
+    let preserved = 0
+    let lost = 0
+    for (const ph of newTemplate.placeholders) {
+      if (ph.label in oldSpread.data) {
+        newData[ph.label] = oldSpread.data[ph.label] ?? null
+        if (oldSpread.data[ph.label]) preserved++
+      } else {
+        newData[ph.label] = null
+      }
+    }
+    for (const label of Object.keys(oldSpread.data)) {
+      if (!newTemplate.placeholders.some((p) => p.label === label)) {
+        if (oldSpread.data[label]) lost++
+      }
+    }
+
+    if (lost > 0) {
+      const ok = confirm(
+        `Перенесено ${preserved} значений, потеряется ${lost} (фото/текст которых нет в новом шаблоне).\n\n` +
+        `Это можно отменить через Ctrl+Z. Заменить?`,
+      )
+      if (!ok) {
+        setReplaceTemplateForIdx(null)
+        return
+      }
+    }
+
+    const newSpreads = layout.spreads.map((s, i) => {
+      if (i !== idx) return s
+      return {
+        ...s,
+        template_id: newTemplate.id,
+        template_name: newTemplate.name,
+        data: newData,
+      }
+    })
+    setLayout({ ...layout, spreads: newSpreads })
+    setReplaceTemplateForIdx(null)
+  }
+
   // Замена оригинала фото без смены WebP. WebP в макете не меняется,
   // PDF-экспорт при следующем рендере возьмёт новый оригинал.
   // Реиспользует action rebind_retouched из К.3 (фаза К workflow).
@@ -1120,7 +1187,7 @@ function LayoutEditorPageInner({
               </div>
 
               {/* Навигация */}
-              <div className="mt-4 flex items-center gap-3">
+              <div className="mt-4 flex items-center gap-3 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setCurrentIdx((i) => Math.max(0, i - 1))}
@@ -1142,6 +1209,17 @@ function LayoutEditorPageInner({
                 >
                   Вперёд ▶
                 </button>
+                {/* М.3 — заменить шаблон текущего разворота */}
+                {!isReadOnly && currentTemplate && (
+                  <button
+                    type="button"
+                    onClick={() => setReplaceTemplateForIdx(currentIdx)}
+                    className="ml-auto px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+                    title={`Текущий шаблон: ${currentTemplate.name}. Заменить на другой.`}
+                  >
+                    🔄 Заменить шаблон
+                  </button>
+                )}
               </div>
             </>
           ) : (
@@ -1197,6 +1275,24 @@ function LayoutEditorPageInner({
           onClose={() => setAddAfterIdx(null)}
         />
       )}
+
+      {/* М.3 — модал замены шаблона существующего разворота */}
+      {replaceTemplateForIdx !== null && (() => {
+        const oldName = layout?.spreads[replaceTemplateForIdx]?.template_name ?? ''
+        return (
+          <TemplatePickerModal
+            templates={templates}
+            title={`Заменить шаблон разворота ${replaceTemplateForIdx + 1}`}
+            description={
+              oldName
+                ? `Текущий шаблон: ${oldName}. Данные будут перенесены по совпадающим placeholder'ам — несовместимые потеряются (можно отменить Ctrl+Z).`
+                : 'Выберите новый шаблон. Несовместимые данные могут потеряться.'
+            }
+            onSelect={handleReplaceTemplate}
+            onClose={() => setReplaceTemplateForIdx(null)}
+          />
+        )
+      })()}
 
         <DragOverlay dropAnimation={null}>
           {dragState?.mode === 'palette' ? (
