@@ -4330,7 +4330,7 @@ function PhotosTab({
             <div>
               <h4 className="font-medium text-gray-800">Загрузка фотографий</h4>
               <p className="text-xs text-gray-400 mt-0.5">
-                Выберите файлы для каждого типа — загружаются параллельно, сжимаются в WebP
+                Выберите файлы для каждого типа. Сначала загрузятся превью (быстро), затем — оригиналы для печати (дольше).
               </p>
             </div>
             <button
@@ -4341,6 +4341,118 @@ function PhotosTab({
               Импорт тегов CSV
             </button>
           </div>
+
+          {/* П.1+техдолг#4 — прогресс загрузки оригиналов.
+              Перемещён НАВЕРХ загрузочного блока (между заголовком и
+              файловыми инпутами) — это главное что партнёр должен видеть.
+              Оригиналы — узкое место по времени; превью (WebP) проходит
+              быстро и его прогресс не важен в общем UI. */}
+          {originalsProgress && (
+            <div
+              className={`rounded-lg border-2 p-4 ${
+                originalsProgress.completed
+                  ? originalsProgress.failed > 0
+                    ? 'border-amber-400 bg-amber-50'
+                    : 'border-green-400 bg-green-50'
+                  : 'border-blue-400 bg-blue-50'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex-1 min-w-0">
+                  {!originalsProgress.completed ? (
+                    <>
+                      <p className="text-base font-semibold text-blue-900 flex items-center gap-2">
+                        <span className="animate-pulse">📤</span>
+                        Загружаем оригиналы для печати
+                      </p>
+                      <p className="text-xs text-blue-700 mt-1">
+                        Не закрывайте вкладку до завершения — оригиналы нужны для качества печати в типографии.
+                      </p>
+                    </>
+                  ) : originalsProgress.failed > 0 ? (
+                    <>
+                      <p className="text-base font-semibold text-amber-900 flex items-center gap-2">
+                        <span>⚠</span>
+                        Загружено {originalsProgress.done - originalsProgress.failed} из {originalsProgress.total}, ошибок: {originalsProgress.failed}
+                      </p>
+                      <p className="text-xs text-amber-800 mt-1">
+                        У фото без оригинала будет бейджик в галерее — можно догрузить вручную.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-base font-semibold text-green-900 flex items-center gap-2">
+                        <span>✓</span>
+                        Все оригиналы загружены ({originalsProgress.total} шт)
+                      </p>
+                      <p className="text-xs text-green-800 mt-1">
+                        Теперь PDF-экспорт будет в высоком качестве для печати.
+                      </p>
+                    </>
+                  )}
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-2xl font-bold tabular-nums text-gray-900">
+                    {originalsProgress.done}
+                    <span className="text-gray-400 mx-1">/</span>
+                    {originalsProgress.total}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5 tabular-nums">
+                    {(originalsProgress.doneBytes / (1024 * 1024)).toFixed(0)}
+                    {' / '}
+                    {(originalsProgress.totalBytes / (1024 * 1024)).toFixed(0)} МБ
+                  </p>
+                </div>
+              </div>
+
+              {/* Прогресс-бар — главный визуальный элемент */}
+              <div className="h-3 bg-white rounded-full overflow-hidden border border-gray-200">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    originalsProgress.completed
+                      ? originalsProgress.failed > 0
+                        ? 'bg-amber-500'
+                        : 'bg-green-500'
+                      : 'bg-blue-500'
+                  }`}
+                  style={{
+                    width: `${originalsProgress.total > 0
+                      ? Math.round((originalsProgress.done / originalsProgress.total) * 100)
+                      : 0}%`,
+                  }}
+                />
+              </div>
+
+              {/* Список упавших файлов */}
+              {originalsProgress.completed && originalsProgress.failed > 0 && (
+                <details className="mt-3 text-xs">
+                  <summary className="cursor-pointer text-amber-800 hover:text-amber-900 font-medium">
+                    Показать {originalsProgress.failed} файлов которые не загрузились
+                  </summary>
+                  <ul className="mt-2 max-h-40 overflow-y-auto bg-white/60 rounded p-2 space-y-1">
+                    {originalsProgress.failedFilenames.map((name, i) => (
+                      <li key={i} className="text-gray-700 truncate" title={name}>
+                        {name}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+
+              {/* Кнопка «Скрыть» только когда завершено */}
+              {originalsProgress.completed && (
+                <div className="flex justify-end mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setOriginalsProgress(null)}
+                    className="text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    Скрыть
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-3">
             {(() => {
@@ -4394,130 +4506,31 @@ function PhotosTab({
             })()}
           </div>
 
+          {/* UX#1 — кнопка показывает общее состояние загрузки:
+              1. WebP фаза: 'Загружаю превью (X/N)'
+              2. Оригиналы: блокирована, но текст 'Идёт загрузка оригиналов'
+                 (детали в прогресс-баре выше)
+              3. Готова: '▶ Загрузить все' / 'Выберите файлы выше'
+              Кнопка disabled пока идёт ЛЮБАЯ фаза — нельзя начать новую
+              загрузку поверх текущей (могут пересечься сессии). */}
           <button
             className="btn-primary w-full"
             onClick={uploadAll}
-            disabled={totalFiles === 0 || anyUploading}
+            disabled={
+              totalFiles === 0 ||
+              anyUploading ||
+              (originalsProgress !== null && !originalsProgress.completed)
+            }
             type="button"
           >
             {anyUploading
-              ? `Загружаю... (${totalDone} / ${totalFiles})`
-              : totalFiles > 0
-                ? `▶ Загрузить все (${totalFiles} фото)`
-                : 'Выберите файлы выше'}
+              ? `Подготовка превью... (${totalDone} / ${totalFiles})`
+              : originalsProgress && !originalsProgress.completed
+                ? `Идёт загрузка оригиналов (${originalsProgress.done} / ${originalsProgress.total})`
+                : totalFiles > 0
+                  ? `▶ Загрузить все (${totalFiles} фото)`
+                  : 'Выберите файлы выше'}
           </button>
-        </div>
-      )}
-
-      {/* П.1+П.2 — прогресс фоновой загрузки оригиналов для печати.
-          WebP грузится быстро (~30 сек), оригиналы могут идти много минут.
-          Этот блок остаётся видим пока все оригиналы не докачаются. */}
-      {originalsProgress && (
-        <div
-          className={`card p-4 ${
-            originalsProgress.completed
-              ? originalsProgress.failed > 0
-                ? 'border-amber-300 bg-amber-50/50'
-                : 'border-green-300 bg-green-50/50'
-              : 'border-blue-300 bg-blue-50/50'
-          }`}
-        >
-          <div className="flex items-start justify-between gap-3 mb-2">
-            <div className="flex-1 min-w-0">
-              {!originalsProgress.completed ? (
-                <>
-                  <p className="text-sm font-medium text-gray-800">
-                    📤 Загружаем оригиналы для печати
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Не закрывайте вкладку до завершения — оригиналы нужны для качества печати в типографии
-                  </p>
-                </>
-              ) : originalsProgress.failed > 0 ? (
-                <>
-                  <p className="text-sm font-medium text-amber-900">
-                    ⚠ Загружено {originalsProgress.done - originalsProgress.failed} из {originalsProgress.total}, ошибок: {originalsProgress.failed}
-                  </p>
-                  <p className="text-xs text-amber-700 mt-0.5">
-                    У фото без оригинала будет бейджик в галерее — можно догрузить вручную
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm font-medium text-green-900">
-                    ✓ Все оригиналы загружены ({originalsProgress.total} шт)
-                  </p>
-                  <p className="text-xs text-green-700 mt-0.5">
-                    Теперь PDF-экспорт будет в высоком качестве для печати
-                  </p>
-                </>
-              )}
-            </div>
-            <div className="text-right">
-              <p className="text-sm font-mono text-gray-700">
-                {originalsProgress.done} / {originalsProgress.total}
-              </p>
-              <p className="text-[11px] text-gray-500 mt-0.5">
-                {(originalsProgress.doneBytes / (1024 * 1024)).toFixed(0)} МБ
-                {' / '}
-                {(originalsProgress.totalBytes / (1024 * 1024)).toFixed(0)} МБ
-              </p>
-            </div>
-          </div>
-
-          {/* Прогресс-бар */}
-          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${
-                originalsProgress.completed
-                  ? originalsProgress.failed > 0
-                    ? 'bg-amber-500'
-                    : 'bg-green-500'
-                  : 'bg-blue-500'
-              }`}
-              style={{
-                width: `${originalsProgress.total > 0
-                  ? Math.round((originalsProgress.done / originalsProgress.total) * 100)
-                  : 0}%`,
-              }}
-            />
-          </div>
-
-          {/* Кнопка «Скрыть» когда всё завершено успешно */}
-          {originalsProgress.completed && originalsProgress.failed === 0 && (
-            <div className="flex justify-end mt-3">
-              <button
-                type="button"
-                onClick={() => setOriginalsProgress(null)}
-                className="text-xs text-gray-500 hover:text-gray-700"
-              >
-                Скрыть
-              </button>
-            </div>
-          )}
-
-          {/* Список упавших файлов (свёрнутый по умолчанию) */}
-          {originalsProgress.completed && originalsProgress.failed > 0 && (
-            <details className="mt-3 text-xs">
-              <summary className="cursor-pointer text-amber-800 hover:text-amber-900">
-                Показать {originalsProgress.failed} файлов которые не загрузились
-              </summary>
-              <ul className="mt-2 max-h-32 overflow-y-auto bg-white/50 rounded p-2 space-y-1">
-                {originalsProgress.failedFilenames.map((name, i) => (
-                  <li key={i} className="text-gray-600 truncate" title={name}>
-                    {name}
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                onClick={() => setOriginalsProgress(null)}
-                className="mt-2 text-xs text-gray-500 hover:text-gray-700"
-              >
-                Скрыть это сообщение
-              </button>
-            </details>
-          )}
         </div>
       )}
 
