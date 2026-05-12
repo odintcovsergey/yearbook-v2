@@ -4260,6 +4260,165 @@ function PhotosTab({
     input.click()
   }
 
+  // Техдолг#4-bulk — массовая догрузка оригиналов для photo которые
+  // их не имеют. Партнёр выбирает несколько файлов (или папку), система
+  // матчит по filename и загружает через тот же pipeline.
+  //
+  // Use cases:
+  //   - После catastrophic fail при первой загрузке (сеть, лимит YC и т.д.)
+  //   - Бэкфилл оригиналов для старых альбомов (до CORS-фикса 11.05)
+  //
+  // Прогресс показывается через тот же originalsProgress (lifted в AppPage,
+  // глобальный индикатор в header'е + блок наверху PhotoTab).
+  const uploadOriginalsBulk = async () => {
+    // Photos которым нужен оригинал
+    const photosNeedingOriginal = photos.filter(p => p.has_original === false)
+    if (photosNeedingOriginal.length === 0) {
+      onNotify('Все фото уже имеют оригиналы')
+      return
+    }
+
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/jpeg,image/jpg,image/png,image/tiff'
+    input.multiple = true
+    input.onchange = async () => {
+      const files = Array.from(input.files ?? [])
+      if (files.length === 0) return
+
+      // Матчинг по filename. Photo.filename — это оригинальное имя файла
+      // (DSC08521.jpg), сохранённое при первоначальной загрузке.
+      // Сравниваем case-insensitive чтобы не было сюрпризов с macOS vs Windows.
+      const photoByFilename = new Map<string, Photo>()
+      for (const p of photosNeedingOriginal) {
+        photoByFilename.set(p.filename.toLowerCase(), p)
+      }
+
+      const matched: { file: File; photo: Photo }[] = []
+      const unmatched: string[] = []
+      for (const f of files) {
+        const photo = photoByFilename.get(f.name.toLowerCase())
+        if (photo) {
+          matched.push({ file: f, photo })
+        } else {
+          unmatched.push(f.name)
+        }
+      }
+
+      if (matched.length === 0) {
+        onError(
+          `Ни один из ${files.length} файлов не совпал по имени с фото без оригиналов. ` +
+          `Проверьте имена файлов — они должны совпадать с тем что было загружено изначально.`,
+        )
+        return
+      }
+
+      // Подтверждение если есть несовпадения (партнёр должен понимать
+      // что часть файлов пропускается).
+      if (unmatched.length > 0) {
+        const preview = unmatched.slice(0, 5).join(', ')
+        const more = unmatched.length > 5 ? `, и ещё ${unmatched.length - 5}` : ''
+        if (!confirm(
+          `Найдено ${matched.length} совпадений из ${files.length} файлов.\n\n` +
+          `Не совпали (будут пропущены): ${preview}${more}\n\n` +
+          `Продолжить?`,
+        )) {
+          return
+        }
+      } else {
+        onNotify(`Найдено ${matched.length} совпадений, начинаем загрузку`)
+      }
+
+      // Инициализируем прогресс (тот же state что используется при
+      // обычной загрузке — глобальный индикатор подхватит).
+      const totalBytes = matched.reduce((sum, m) => sum + m.file.size, 0)
+      setOriginalsProgress({
+        total: matched.length,
+        done: 0,
+        failed: 0,
+        totalBytes,
+        doneBytes: 0,
+        failedFilenames: [],
+        completed: false,
+      })
+
+      // Параллельная загрузка с ограничением concurrency.
+      const CONCURRENCY = 5
+      const queue = [...matched]
+
+      const uploadOne = async ({ file, photo }: { file: File; photo: Photo }) => {
+        try {
+          const urlRes = await api('/api/upload-url', {
+            method: 'POST',
+            body: JSON.stringify({
+              album_id: albumId,
+              filename: file.name,
+              content_type: file.type || 'application/octet-stream',
+              upload_type: 'originals',
+            }),
+          })
+          if (!urlRes.ok) {
+            const d = await urlRes.json().catch(() => ({}))
+            throw new Error(d.error ?? `presigned URL HTTP ${urlRes.status}`)
+          }
+          const { upload_url, storage_path } = await urlRes.json()
+
+          const putRes = await fetch(upload_url, {
+            method: 'PUT',
+            body: file,
+            headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          })
+          if (!putRes.ok) throw new Error(`PUT в YC: HTTP ${putRes.status}`)
+
+          const regRes = await api('/api/tenant', {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'register_original',
+              photo_id: photo.id,
+              original_path: storage_path,
+            }),
+          })
+          if (!regRes.ok) {
+            const d = await regRes.json().catch(() => ({}))
+            throw new Error(d.error ?? `register_original HTTP ${regRes.status}`)
+          }
+
+          setPhotos(prev => prev.map(p =>
+            p.id === photo.id ? { ...p, has_original: true } : p,
+          ))
+          setOriginalsProgress(prev => prev ? {
+            ...prev,
+            done: prev.done + 1,
+            doneBytes: prev.doneBytes + file.size,
+          } : prev)
+        } catch {
+          setOriginalsProgress(prev => prev ? {
+            ...prev,
+            done: prev.done + 1,
+            failed: prev.failed + 1,
+            doneBytes: prev.doneBytes + file.size,
+            failedFilenames: [...prev.failedFilenames, file.name],
+          } : prev)
+        }
+      }
+
+      const worker = async () => {
+        while (queue.length > 0) {
+          const item = queue.shift()
+          if (!item) return
+          await uploadOne(item)
+        }
+      }
+
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, matched.length) }, worker),
+      )
+
+      setOriginalsProgress(prev => prev ? { ...prev, completed: true } : prev)
+    }
+    input.click()
+  }
+
   // Массовое удаление всех фото текущей категории.
   // Требует ввода слова «УДАЛИТЬ» — операция необратима, удаляются
   // файлы из YC, связи, сбрасывается submitted_at у затронутых учеников.
@@ -4561,19 +4720,45 @@ function PhotosTab({
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs text-gray-400">{photos.length} фото</p>
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={deleteAllOfKind}
-                  disabled={deletingAll}
-                  className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-50 disabled:cursor-wait"
-                  title={`Удалить все фото в категории «${photoKindLabel(activeKind)}»`}
-                >
-                  {deletingAll ? 'Удаляем…' : `✕ Удалить все (${photos.length})`}
-                </button>
-              )}
+            <div className="flex items-center justify-between mb-3 gap-3">
+              <p className="text-xs text-gray-400">
+                {photos.length} фото
+                {/* Подсказка сколько без оригинала */}
+                {(() => {
+                  const missingCount = photos.filter(p => p.has_original === false).length
+                  if (missingCount === 0) return null
+                  return (
+                    <span className="ml-2 text-amber-600">
+                      · {missingCount} без оригинала
+                    </span>
+                  )
+                })()}
+              </p>
+              <div className="flex items-center gap-3">
+                {/* Техдолг#4-bulk — массовая догрузка оригиналов */}
+                {canEdit && photos.some(p => p.has_original === false) && (
+                  <button
+                    type="button"
+                    onClick={uploadOriginalsBulk}
+                    disabled={originalsProgress !== null && !originalsProgress.completed}
+                    className="text-xs px-2 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Выберите все оригиналы папкой — система найдёт совпадения по имени файла и догрузит только отсутствующие"
+                  >
+                    📤 Догрузить оригиналы
+                  </button>
+                )}
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={deleteAllOfKind}
+                    disabled={deletingAll}
+                    className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-50 disabled:cursor-wait"
+                    title={`Удалить все фото в категории «${photoKindLabel(activeKind)}»`}
+                  >
+                    {deletingAll ? 'Удаляем…' : `✕ Удалить все (${photos.length})`}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
               {photos.map(photo => {
