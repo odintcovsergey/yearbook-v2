@@ -17,6 +17,7 @@ import type {
   SpreadTemplate,
 } from '@/lib/album-builder/types'
 import PhotoPalette from '../../../_components/PhotoPalette'
+import SpreadOrderStrip from '../../../_components/SpreadOrderStrip'
 import SaveIndicator from '../../../_components/SaveIndicator'
 import PhotoContextMenu from '../../../_components/PhotoContextMenu'
 
@@ -667,6 +668,19 @@ function LayoutEditorPageInner({
     })
   }
 
+  // М.1 — переупорядочивание разворотов через drag-and-drop strip.
+  // SpreadOrderStrip уже:
+  //   1. Перевычислил spread_index в новых позициях
+  //   2. Сохранил ссылку на текущий активный разворот (передаёт onSelect
+  //      с новым idx если активный сдвинулся)
+  // Здесь просто применяем новый порядок к layout.spreads.
+  function handleReorderSpreads(newSpreads: SpreadInstance[]) {
+    setLayout((prev) => {
+      if (!prev) return prev
+      return { ...prev, spreads: newSpreads }
+    })
+  }
+
   // Замена оригинала фото без смены WebP. WebP в макете не меняется,
   // PDF-экспорт при следующем рендере возьмёт новый оригинал.
   // Реиспользует action rebind_retouched из К.3 (фаза К workflow).
@@ -1098,6 +1112,20 @@ function LayoutEditorPageInner({
           </aside>
         )}
       </div>
+
+      {/* М.1 — strip миниатюр с drag-to-reorder.
+          В read-only режиме доступна только клик-навигация. */}
+      {layout && (
+        <SpreadOrderStrip
+          spreads={spreads}
+          templates={templates}
+          currentIdx={currentIdx}
+          onSelect={setCurrentIdx}
+          onReorder={handleReorderSpreads}
+          readOnly={isReadOnly}
+        />
+      )}
+
         <DragOverlay dropAnimation={null}>
           {dragState?.mode === 'palette' ? (
             // Палитра → placeholder: фикс 120px overlay (миниатюра палитры
