@@ -766,6 +766,44 @@ async function handleSaveAlbumLayout(
     return NextResponse.json({ error: 'access denied' }, { status: 403 })
   }
 
+  // Фаза Л.4a — серверная защита read-only режима.
+  // Зеркалирует логику can_edit из handleGetAlbumLayout — клиент тоже
+  // блокирует save, но защита на сервере критична: запрос мог прийти
+  // от багнутого/устаревшего клиента.
+  //
+  // - viewer не может save
+  // - view_as (просмотр от имени партнёра) не может save
+  // - submitted/in_production/delivered — только superadmin
+  if (auth.role !== 'superadmin') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json(
+        { error: 'Viewer не может редактировать макет' },
+        { status: 403 },
+      )
+    }
+    if (canViewAs && viewAsTenantId) {
+      return NextResponse.json(
+        { error: 'Сохранение от имени партнёра запрещено — только просмотр' },
+        { status: 403 },
+      )
+    }
+    const { data: albumRow } = await supabaseAdmin
+      .from('albums')
+      .select('workflow_status')
+      .eq('id', albumId)
+      .maybeSingle()
+    const ws = albumRow?.workflow_status as string | undefined
+    if (ws && ['submitted', 'in_production', 'delivered'].includes(ws)) {
+      return NextResponse.json(
+        {
+          error:
+            'Альбом передан в работу — редактирование заблокировано. Обратитесь к OkeyBook если нужны изменения.',
+        },
+        { status: 403 },
+      )
+    }
+  }
+
   // UPDATE с has_user_edits=true. Если строки нет (rowsAffected=0) →
   // layout ещё не строился, нужно сначала build_album.
   const { data: layoutRow, error } = await supabaseAdmin
@@ -851,8 +889,48 @@ async function handleGetAlbumLayout(
     )
   }
 
+  // Фаза Л.4a — для read-only логики возвращаем workflow_status
+  // и вычисляем can_edit. Загружаем рядом с layout — один запрос
+  // экономит сетевой round-trip.
+  const { data: albumRow } = await supabaseAdmin
+    .from('albums')
+    .select('workflow_status')
+    .eq('id', albumId)
+    .maybeSingle()
+
+  const workflowStatus = (albumRow?.workflow_status ?? 'active') as
+    | 'active' | 'ready' | 'submitted' | 'in_production' | 'delivered'
+
+  // can_edit логика (Л.4a):
+  // - superadmin может всегда (даже после submitted — для исправлений)
+  // - viewer не может никогда
+  // - view_as (просмотр от имени партнёра сотрудником OkeyBook) → read-only
+  // - workflow_status submitted/in_production/delivered → read-only
+  //   (партнёр УЖЕ передал альбом в работу, защита от случайной правки)
+  let canEdit = true
+  let editBlockReason: 'role' | 'view_as' | 'submitted' | null = null
+
+  if (auth.role === 'superadmin') {
+    canEdit = true
+  } else if (auth.role === 'viewer') {
+    canEdit = false
+    editBlockReason = 'role'
+  } else if (canViewAs && viewAsTenantId) {
+    // Сотрудник OkeyBook смотрит альбом партнёра — только просмотр
+    canEdit = false
+    editBlockReason = 'view_as'
+  } else if (['submitted', 'in_production', 'delivered'].includes(workflowStatus)) {
+    canEdit = false
+    editBlockReason = 'submitted'
+  }
+
   if (!layoutRow) {
-    return NextResponse.json({ layout: null })
+    return NextResponse.json({
+      layout: null,
+      workflow_status: workflowStatus,
+      can_edit: canEdit,
+      edit_block_reason: editBlockReason,
+    })
   }
 
   const spreads = (layoutRow.spreads ?? []) as Array<Record<string, unknown>>
@@ -881,6 +959,10 @@ async function handleGetAlbumLayout(
         preset_name: presetData?.name ?? null,
       },
     },
+    // Фаза Л.4a — read-only сигналы для клиента
+    workflow_status: workflowStatus,
+    can_edit: canEdit,
+    edit_block_reason: editBlockReason,
   })
 }
 

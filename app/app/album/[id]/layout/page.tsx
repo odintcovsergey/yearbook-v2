@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
   DndContext,
@@ -99,12 +99,35 @@ async function api(path: string, opts?: RequestInit): Promise<Response> {
 // spread в edit-режиме, правая колонка-заглушка, навигация ◀▶ между
 // разворотами. Drag-and-drop, палитра, auto-save — в подэтапах 2.6.2-4.
 // ═════════════════════════════════════════════════════════════════════════
+// Suspense-обёртка для default export. useSearchParams в Next 14
+// требует client-side render и Suspense boundary для SSG/build.
+// Inner-компонент содержит всю логику.
 export default function LayoutEditorPage({
   params,
 }: {
   params: { id: string }
 }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center text-gray-500">
+          Загружаем редактор…
+        </div>
+      }
+    >
+      <LayoutEditorPageInner params={params} />
+    </Suspense>
+  )
+}
+
+function LayoutEditorPageInner({
+  params,
+}: {
+  params: { id: string }
+}) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const viewAsTenantId = searchParams?.get('view_as') ?? null
   const albumId = params.id
 
   const [layout, setLayout] = useState<LayoutData | null>(null)
@@ -160,6 +183,32 @@ export default function LayoutEditorPage({
   const skipNextHistoryRef = useRef(false)
   const prevSpreadsRef = useRef<SpreadInstance[] | null>(null)
 
+  // Фаза Л.4a — read-only режим.
+  // canEdit: false если backend сказал can_edit=false (workflow submitted,
+  // view_as, viewer role). isMobile: true для экранов <768px — мобильный
+  // редактор это view-only по UX причинам (drag и edit неудобны).
+  // Эффективный isReadOnly = !canEdit || isMobile.
+  const [canEdit, setCanEdit] = useState<boolean>(true)
+  const [editBlockReason, setEditBlockReason] = useState<
+    'role' | 'view_as' | 'submitted' | null
+  >(null)
+  const [workflowStatus, setWorkflowStatus] = useState<string>('active')
+  const [isMobile, setIsMobile] = useState<boolean>(false)
+
+  // Подписка на изменение размера экрана для mobile detection.
+  // Используем matchMedia вместо resize event — он реактивно
+  // срабатывает только на пересечении breakpoint'а.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 767px)')
+    setIsMobile(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  const isReadOnly = !canEdit || isMobile
+
   useEffect(() => {
     const update = () => setViewport({
       width: window.innerWidth,
@@ -176,14 +225,23 @@ export default function LayoutEditorPage({
 
     async function load() {
       try {
-        // 1. Загружаем layout (получаем template_set_id)
+        // Helper для добавления view_as к URL если нужно
+        const va = viewAsTenantId ? `&view_as=${viewAsTenantId}` : ''
+
+        // 1. Загружаем layout (получаем template_set_id + can_edit + workflow_status)
         const layoutRes = await api(
-          `/api/layout?action=album_layout&album_id=${albumId}`,
+          `/api/layout?action=album_layout&album_id=${albumId}${va}`,
         )
         if (!layoutRes.ok) {
           throw new Error(`layout load failed: ${layoutRes.status}`)
         }
         const layoutJson = await layoutRes.json()
+        // Сохраняем read-only сигналы независимо от того есть ли layout
+        if (!cancelled) {
+          setCanEdit(layoutJson.can_edit ?? true)
+          setEditBlockReason(layoutJson.edit_block_reason ?? null)
+          setWorkflowStatus(layoutJson.workflow_status ?? 'active')
+        }
         if (!layoutJson.layout) {
           throw new Error(
             'Layout ещё не построен. Откройте альбом в кабинете и нажмите «Собрать автоматически».',
@@ -198,10 +256,10 @@ export default function LayoutEditorPage({
         // 2. Параллельно: template_set_detail + album_photos + album title
         const [templateRes, photosRes, albumRes] = await Promise.all([
           api(
-            `/api/layout?action=template_set_detail&id=${loadedLayout.template_set_id}`,
+            `/api/layout?action=template_set_detail&id=${loadedLayout.template_set_id}${va}`,
           ),
-          api(`/api/tenant?action=album_photos&album_id=${albumId}`),
-          api(`/api/tenant?action=album&album_id=${albumId}`),
+          api(`/api/tenant?action=album_photos&album_id=${albumId}${va}`),
+          api(`/api/tenant?action=album&album_id=${albumId}${va}`),
         ])
 
         if (!templateRes.ok) {
@@ -269,8 +327,10 @@ export default function LayoutEditorPage({
 
   // Debounce auto-save: при изменении layout.spreads ждём 2с тишины,
   // потом отправляем POST. При новом изменении старый таймер отменяется.
+  // Read-only режим (Л.4a) полностью отключает auto-save.
   useEffect(() => {
     if (!layout || lastSavedSpreads === null) return
+    if (isReadOnly) return  // Л.4a — в read-only не сохраняем
     const isUnchanged =
       JSON.stringify(layout.spreads) === JSON.stringify(lastSavedSpreads)
     if (isUnchanged) {
@@ -286,7 +346,7 @@ export default function LayoutEditorPage({
     }, 2000)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout?.spreads, lastSavedSpreads])
+  }, [layout?.spreads, lastSavedSpreads, isReadOnly])
 
   // Предупреждение перед закрытием вкладки если есть несохранённые изменения
   useEffect(() => {
@@ -387,6 +447,7 @@ export default function LayoutEditorPage({
   // undo браузера (важно для inline text editor'a).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (isReadOnly) return  // Л.4a — Ctrl+Z/Ctrl+S отключены в read-only
       const target = e.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return
@@ -409,9 +470,10 @@ export default function LayoutEditorPage({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history, layout, lastSavedSpreads])
+  }, [history, layout, lastSavedSpreads, isReadOnly])
 
   function handleDragStart(event: DragStartEvent) {
+    if (isReadOnly) return  // Л.4a — drag заблокирован в read-only
     const sourceData = event.active.data.current as
       | { type?: string; photo?: AlbumPhoto; url?: string | null; label?: string }
       | undefined
@@ -443,6 +505,7 @@ export default function LayoutEditorPage({
 
   function handleDragEnd(event: DragEndEvent) {
     setDragState(null)
+    if (isReadOnly) return  // Л.4a — drop не применяется в read-only
     const { active, over } = event
     if (!over) return  // drop вне drop-зоны
 
@@ -803,6 +866,13 @@ export default function LayoutEditorPage({
   const widthByHeight = availableHeight * aspectRatio
   const canvasContainerWidth = Math.min(widthByHeight, availableWidth)
 
+  // Вычисляем причину read-only для UX подсказки
+  const readOnlyReason = (() => {
+    if (isMobile) return 'mobile'
+    if (!canEdit) return editBlockReason
+    return null
+  })()
+
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* ═══ Header ═══ */}
@@ -819,11 +889,42 @@ export default function LayoutEditorPage({
             {albumTitle || 'Альбом'}
           </h1>
           <span className="text-xs text-gray-400">— Layout редактор</span>
+          {/* Л.4a — бейдж режима когда нельзя редактировать */}
+          {isReadOnly && (
+            <span
+              className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                readOnlyReason === 'submitted'
+                  ? 'bg-orange-100 text-orange-700'
+                  : readOnlyReason === 'view_as'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-700'
+              }`}
+              title={
+                readOnlyReason === 'submitted'
+                  ? 'Альбом передан в работу — редактирование заблокировано. Обратитесь в OkeyBook если нужны изменения.'
+                  : readOnlyReason === 'view_as'
+                    ? 'Просмотр от имени партнёра — изменения сохранять нельзя'
+                    : readOnlyReason === 'mobile'
+                      ? 'Редактирование доступно с компьютера, на мобильном — только просмотр'
+                      : 'Только просмотр'
+              }
+            >
+              👁 {
+                readOnlyReason === 'submitted'
+                  ? 'Передан в работу'
+                  : readOnlyReason === 'view_as'
+                    ? 'Просмотр партнёра'
+                    : readOnlyReason === 'mobile'
+                      ? 'Только просмотр (моб)'
+                      : 'Только просмотр'
+              }
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3">
-          {/* Л.3 — кнопки Undo/Redo. Показываем счётчики past/future
-              чтобы партнёр видел сколько шагов в истории. */}
-          <div className="flex items-center gap-1">
+          {/* Л.3 — кнопки Undo/Redo. Скрыты в read-only. */}
+          {!isReadOnly && (
+            <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={handleUndo}
@@ -856,8 +957,9 @@ export default function LayoutEditorPage({
                 <span className="ml-1 text-xs text-gray-400">({history.future.length})</span>
               )}
             </button>
-          </div>
-          <SaveIndicator status={saveStatus} />
+            </div>
+          )}
+          {!isReadOnly && <SaveIndicator status={saveStatus} />}
         </div>
       </header>
 
@@ -877,13 +979,13 @@ export default function LayoutEditorPage({
                   instance={currentSpread}
                   template={currentTemplate}
                   containerWidth={canvasContainerWidth}
-                  mode="edit"
+                  mode={isReadOnly ? 'preview' : 'edit'}
                   draggingLabel={dragState?.mode === 'swap' ? dragState.label : null}
                   editingTextLabel={editingTextLabel}
-                  onTextClick={handleTextClick}
-                  onTextSubmit={handleTextSubmit}
-                  onTextCancel={handleTextCancel}
-                  onPhotoContextMenu={handlePhotoContextMenu}
+                  onTextClick={isReadOnly ? undefined : handleTextClick}
+                  onTextSubmit={isReadOnly ? undefined : handleTextSubmit}
+                  onTextCancel={isReadOnly ? undefined : handleTextCancel}
+                  onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
                 />
               </div>
 
@@ -918,7 +1020,25 @@ export default function LayoutEditorPage({
         </main>
 
         {/* ─── Правая колонка: палитра ─── */}
-        <PhotoPalette spreads={spreads} photos={photos} />
+        {/* Л.4a — палитра видна только в edit-режиме.
+            В read-only / mobile отображается компактный баннер. */}
+        {!isReadOnly ? (
+          <PhotoPalette spreads={spreads} photos={photos} />
+        ) : (
+          <aside className="hidden md:flex w-80 bg-gray-50 border-l border-gray-200 flex-col items-center justify-center p-6 text-center">
+            <div className="text-4xl mb-2">👁</div>
+            <p className="text-sm font-medium text-gray-700 mb-1">Только просмотр</p>
+            <p className="text-xs text-gray-500">
+              {readOnlyReason === 'submitted'
+                ? 'Альбом передан в работу — изменения заблокированы. Обратитесь в OkeyBook если нужны правки.'
+                : readOnlyReason === 'view_as'
+                  ? 'Вы смотрите альбом партнёра. Сохранение от его имени запрещено.'
+                  : readOnlyReason === 'mobile'
+                    ? 'Откройте на компьютере для редактирования макета.'
+                    : 'Редактирование заблокировано'}
+            </p>
+          </aside>
+        )}
       </div>
         <DragOverlay dropAnimation={null}>
           {dragState?.mode === 'palette' ? (
