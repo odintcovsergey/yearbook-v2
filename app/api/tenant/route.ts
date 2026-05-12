@@ -568,7 +568,7 @@ export async function GET(req: NextRequest) {
     const [photosRes, originalsRes] = await Promise.all([
       supabaseAdmin
         .from('photos')
-        .select('id, filename, storage_path, thumb_path, type, created_at')
+        .select('id, filename, storage_path, thumb_path, type, original_path, created_at')
         .eq('album_id', albumId)
         .order('created_at'),
       supabaseAdmin
@@ -652,6 +652,9 @@ export async function GET(req: NextRequest) {
       child_ids: childIdsByPhoto[p.id] ?? [],
       teacher_ids: teacherIdsByPhoto[p.id] ?? [],
       selection_types: Array.from(selectionTypesByPhoto[p.id] ?? []),
+      // Л.2 — для UI «Заменить оригинал» нужно знать есть ли оригинал
+      // у фото. Просто boolean, без раскрытия пути (defence in depth).
+      has_original: Boolean(p.original_path),
       url: getPhotoUrl(p.storage_path),
       thumb_url: getThumbUrl(p.storage_path, p.thumb_path),
       created_at: p.created_at,
@@ -667,6 +670,7 @@ export async function GET(req: NextRequest) {
       child_ids: [] as string[],
       teacher_ids: [] as string[],
       selection_types: [] as string[],
+      has_original: false,  // originals — это и есть оригиналы, поле для photos.original_path
       url: getPhotoUrl(o.storage_path),
       thumb_url: getPhotoUrl(o.storage_path),  // у originals нет thumb_path
       created_at: o.created_at,

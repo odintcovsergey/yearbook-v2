@@ -18,6 +18,7 @@ import type {
 } from '@/lib/album-builder/types'
 import PhotoPalette from '../../../_components/PhotoPalette'
 import SaveIndicator from '../../../_components/SaveIndicator'
+import PhotoContextMenu from '../../../_components/PhotoContextMenu'
 
 // Konva-компонент: SSR-incompatible (использует window.Image).
 const AlbumSpreadCanvas = dynamic(
@@ -43,6 +44,7 @@ type AlbumPhoto = {
   child_ids: string[]
   teacher_ids: string[]
   selection_types: string[]
+  has_original?: boolean  // Л.2: чтобы UI «Заменить оригинал» знал доступно ли действие
   url: string
   thumb_url: string
   created_at: string
@@ -131,6 +133,15 @@ export default function LayoutEditorPage({
   // (или null если ничего не редактируется). При смене разворота
   // автоматически сбрасывается (см. useEffect ниже).
   const [editingTextLabel, setEditingTextLabel] = useState<string | null>(null)
+  // Л.2 — контекстное меню photo placeholder.
+  // null = меню закрыто. Когда открыто — храним label, url, координаты клика.
+  const [photoContextMenu, setPhotoContextMenu] = useState<
+    | null
+    | { label: string; url: string | null; clientX: number; clientY: number }
+  >(null)
+  // Идёт ли сейчас загрузка нового оригинала через replace_original.
+  // Показывается toast в header'е чтобы партнёр видел что процесс идёт.
+  const [replacingOriginal, setReplacingOriginal] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'saved' | 'pending' | 'saving' | 'error'>('saved')
   const [lastSavedSpreads, setLastSavedSpreads] = useState<SpreadInstance[] | null>(null)
   const saveCounterRef = useRef(0)
@@ -383,7 +394,103 @@ export default function LayoutEditorPage({
   // изменён до переключения (через onBlur → handleTextSubmit).
   useEffect(() => {
     setEditingTextLabel(null)
+    setPhotoContextMenu(null)
   }, [currentIdx])
+
+  // ─── Фаза Л.2: handlers для photo context menu ──────────────────────────
+
+  function handlePhotoContextMenu(
+    label: string,
+    url: string | null,
+    clientX: number,
+    clientY: number,
+  ) {
+    setPhotoContextMenu({ label, url, clientX, clientY })
+  }
+
+  function handleClearPhoto(label: string) {
+    setLayout((prev) => {
+      if (!prev) return prev
+      const newSpreads = prev.spreads.map((s, idx) => {
+        if (idx !== currentIdx) return s
+        if (s.data[label] === null || s.data[label] === undefined) return s
+        return { ...s, data: { ...s.data, [label]: null } }
+      })
+      return { ...prev, spreads: newSpreads }
+    })
+  }
+
+  // Замена оригинала фото без смены WebP. WebP в макете не меняется,
+  // PDF-экспорт при следующем рендере возьмёт новый оригинал.
+  // Реиспользует action rebind_retouched из К.3 (фаза К workflow).
+  async function handleReplaceOriginal(photoId: string) {
+    // Открываем file picker программно
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/jpeg,image/jpg,image/png,image/tiff'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+
+      setReplacingOriginal(file.name)
+      try {
+        // 1. Получаем presigned URL для нового оригинала в YC
+        const urlRes = await api('/api/upload-url', {
+          method: 'POST',
+          body: JSON.stringify({
+            album_id: albumId,
+            filename: file.name,
+            content_type: file.type || 'application/octet-stream',
+            upload_type: 'originals',
+          }),
+        })
+        if (!urlRes.ok) {
+          const d = await urlRes.json().catch(() => ({}))
+          throw new Error(d.error ?? `presigned URL HTTP ${urlRes.status}`)
+        }
+        const { upload_url, storage_path } = await urlRes.json()
+
+        // 2. PUT файла в YC (минуя Vercel 4.5МБ лимит)
+        const putRes = await fetch(upload_url, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        })
+        if (!putRes.ok) {
+          throw new Error(`PUT в YC: HTTP ${putRes.status}`)
+        }
+
+        // 3. Привязываем новый оригинал к photo через rebind_retouched
+        // (action из К.3). Старый оригинал удаляется внутри endpoint'а.
+        const rebindRes = await api('/api/workflow', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'rebind_retouched',
+            album_id: albumId,
+            photo_id: photoId,
+            storage_path,
+          }),
+        })
+        if (!rebindRes.ok) {
+          const d = await rebindRes.json().catch(() => ({}))
+          throw new Error(d.error ?? `rebind HTTP ${rebindRes.status}`)
+        }
+
+        // Обновляем локальный photos чтобы has_original всё ещё был true
+        // (а если у photo раньше его не было — стал true).
+        setPhotos((prev) =>
+          prev.map((p) => (p.id === photoId ? { ...p, has_original: true } : p)),
+        )
+
+        alert(`Оригинал для "${file.name}" заменён. PDF-экспорт будет использовать новую версию.`)
+      } catch (e: any) {
+        alert(`Не удалось заменить оригинал: ${e?.message ?? 'неизвестная ошибка'}`)
+      } finally {
+        setReplacingOriginal(null)
+      }
+    }
+    input.click()
+  }
 
   // ─── Loading / error состояния ──────────────────────────────────────────
   if (loading) {
@@ -475,6 +582,7 @@ export default function LayoutEditorPage({
                   onTextClick={handleTextClick}
                   onTextSubmit={handleTextSubmit}
                   onTextCancel={handleTextCancel}
+                  onPhotoContextMenu={handlePhotoContextMenu}
                 />
               </div>
 
@@ -528,6 +636,47 @@ export default function LayoutEditorPage({
               preview через CSS transform (см. AlbumSpreadCanvas.DropZone). */}
         </DragOverlay>
       </DndContext>
+
+      {/* ─── Контекстное меню photo (Л.2) ─── */}
+      {photoContextMenu && (
+        <PhotoContextMenu
+          label={photoContextMenu.label}
+          url={photoContextMenu.url}
+          clientX={photoContextMenu.clientX}
+          clientY={photoContextMenu.clientY}
+          photoInfo={(() => {
+            // Находим photo в загруженном photos по url. Это нужно
+            // чтобы PhotoContextMenu знал can-do для каждого action'a
+            // (например «Заменить оригинал» disabled если нет original).
+            if (!photoContextMenu.url) return null
+            const p = photos.find((ph) => ph.url === photoContextMenu.url)
+            if (!p) return null
+            return {
+              id: p.id,
+              album_id: albumId,
+              has_original: !!p.has_original,
+            }
+          })()}
+          onClear={() => handleClearPhoto(photoContextMenu.label)}
+          onReplaceOriginal={() => {
+            const p = photos.find((ph) => ph.url === photoContextMenu.url)
+            if (p) void handleReplaceOriginal(p.id)
+          }}
+          onClose={() => setPhotoContextMenu(null)}
+        />
+      )}
+
+      {/* Toast «заменяем оригинал» — поверх редактора, blocking */}
+      {replacingOriginal && (
+        <div className="fixed bottom-4 right-4 bg-white border border-blue-200 rounded-lg shadow-lg px-4 py-3 z-50">
+          <div className="flex items-center gap-3 text-sm">
+            <span className="animate-spin">⏳</span>
+            <span className="text-gray-700">
+              Заменяем оригинал: <span className="font-medium">{replacingOriginal}</span>
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

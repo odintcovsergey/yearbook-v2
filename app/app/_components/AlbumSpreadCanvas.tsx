@@ -56,6 +56,9 @@ type Props = {
   onTextClick?: (label: string, currentValue: string | null) => void
   onTextSubmit?: (label: string, newValue: string | null) => void
   onTextCancel?: () => void
+  // Л.2 — контекстное меню на photo placeholder (правый клик).
+  // Parent получает label, текущий url, и координаты клика для позиционирования popover.
+  onPhotoContextMenu?: (label: string, url: string | null, clientX: number, clientY: number) => void
 }
 
 // ─── Хелпер: загрузка HTMLImageElement из URL ────────────────────────────
@@ -403,10 +406,15 @@ function DropZone({
   placeholder,
   scale,
   url,
+  onContextMenu,
 }: {
   placeholder: PhotoPlaceholder
   scale: number
   url: string | null
+  // Л.2 — правый клик на photo слот открывает popover с действиями
+  // (Очистить / Заменить оригинал). Координаты клика передаются parent'у
+  // чтобы он мог позиционировать popover.
+  onContextMenu?: (label: string, url: string | null, clientX: number, clientY: number) => void
 }) {
   const hasValue = !!url
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -434,6 +442,15 @@ function DropZone({
     <div
       ref={setRef}
       {...(hasValue ? { ...attributes, ...listeners } : {})}
+      onContextMenu={(e) => {
+        // Только если есть фото — иначе нечего «делать» в меню.
+        // Также блокируем native browser menu (там бесполезные пункты
+        // типа Save Image As для пустого div'a).
+        if (!onContextMenu) return
+        e.preventDefault()
+        e.stopPropagation()
+        onContextMenu(placeholder.label, url, e.clientX, e.clientY)
+      }}
       className={`absolute pointer-events-auto transition-all ${
         isOver
           ? 'ring-2 ring-blue-500 bg-blue-100/40'
@@ -486,6 +503,7 @@ export default function AlbumSpreadCanvas({
   onTextClick,
   onTextSubmit,
   onTextCancel,
+  onPhotoContextMenu,
 }: Props) {
   const scale = containerWidth / template.width_mm
   const stageWidth = template.width_mm * scale
@@ -547,6 +565,7 @@ export default function AlbumSpreadCanvas({
                   placeholder={p}
                   scale={scale}
                   url={instance.data[p.label] ?? null}
+                  onContextMenu={onPhotoContextMenu}
                 />
               )
             }
