@@ -126,6 +126,11 @@ export default function LayoutEditorPage({
     | { mode: 'swap'; photo: AlbumPhoto; label: string }
     | null
   const [dragState, setDragState] = useState<DragState>(null)
+  // Фаза Л.1 — редактирование текста.
+  // editingTextLabel: label сейчас редактируемого text-placeholder'а
+  // (или null если ничего не редактируется). При смене разворота
+  // автоматически сбрасывается (см. useEffect ниже).
+  const [editingTextLabel, setEditingTextLabel] = useState<string | null>(null)
   const [saveStatus, setSaveStatus] = useState<'saved' | 'pending' | 'saving' | 'error'>('saved')
   const [lastSavedSpreads, setLastSavedSpreads] = useState<SpreadInstance[] | null>(null)
   const saveCounterRef = useRef(0)
@@ -345,6 +350,41 @@ export default function LayoutEditorPage({
     }
   }
 
+  // ─── Фаза Л.1: handlers для редактирования текста ───────────────────────
+
+  function handleTextClick(label: string, _currentValue: string | null) {
+    // Если уже что-то редактируется — сначала закрываем (с сохранением
+    // через onBlur эффект textarea), потом открываем новое.
+    // setEditingTextLabel'у одного значения достаточно: textarea со
+    // старым label получает unmount → onBlur → handleTextSubmit → cleanup.
+    setEditingTextLabel(label)
+  }
+
+  function handleTextSubmit(label: string, newValue: string | null) {
+    setLayout((prev) => {
+      if (!prev) return prev
+      const newSpreads = prev.spreads.map((s, idx) => {
+        if (idx !== currentIdx) return s
+        const oldValue = s.data[label] ?? null
+        if (oldValue === newValue) return s  // ничего не изменилось
+        return { ...s, data: { ...s.data, [label]: newValue } }
+      })
+      return { ...prev, spreads: newSpreads }
+    })
+    setEditingTextLabel(null)
+  }
+
+  function handleTextCancel() {
+    setEditingTextLabel(null)
+  }
+
+  // При смене разворота — закрываем текущий редактор текста (если открыт).
+  // Auto-save от useEffect выше всё равно сохранит текст если он был
+  // изменён до переключения (через onBlur → handleTextSubmit).
+  useEffect(() => {
+    setEditingTextLabel(null)
+  }, [currentIdx])
+
   // ─── Loading / error состояния ──────────────────────────────────────────
   if (loading) {
     return (
@@ -431,6 +471,10 @@ export default function LayoutEditorPage({
                   containerWidth={canvasContainerWidth}
                   mode="edit"
                   draggingLabel={dragState?.mode === 'swap' ? dragState.label : null}
+                  editingTextLabel={editingTextLabel}
+                  onTextClick={handleTextClick}
+                  onTextSubmit={handleTextSubmit}
+                  onTextCancel={handleTextCancel}
                 />
               </div>
 
