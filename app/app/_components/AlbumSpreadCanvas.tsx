@@ -42,6 +42,10 @@ type Props = {
   // Drag handlers (используются в фазе 2.6, в 2.2 типизированы но не вызываются)
   onDrop?: (label: string, photoId: string) => void
   onSwap?: (fromLabel: string, toLabel: string) => void
+  // 12.05.2026 (Л-pre-fix): если задан label фото которое сейчас drag'ается,
+  // Konva-копия скрывается чтобы пользователь не видел двойную картинку
+  // (Konva + DOM-overlay в DropZone). Передаётся из LayoutEditorPage.
+  draggingLabel?: string | null
 }
 
 // ─── Хелпер: загрузка HTMLImageElement из URL ────────────────────────────
@@ -215,6 +219,14 @@ function TextSlot({
 // 2.6.3 — только droppable. 2.6.4 — добавлен draggable для swap'а
 // между placeholder'ами. Если photo-слот пуст (нет url), drag
 // disabled.
+//
+// 12.05.2026 (Л-pre-fix) — рендерим img-copy ВНУТРИ DropZone с CSS
+// transform когда isDragging. Раньше использовался DragOverlay через
+// React portal — в нашем layout @dnd-kit неправильно позиционировал
+// overlay (курсор оказывался у левого-верхнего угла независимо от
+// точки клика). CSS transform на DOM-элементе гарантированно сохраняет
+// точку клика под курсором (это базовое поведение translate). Konva
+// фото на время drag скрывается через draggingLabel prop в parent'е.
 function DropZone({
   placeholder,
   scale,
@@ -233,6 +245,7 @@ function DropZone({
     listeners,
     setNodeRef: setDragRef,
     isDragging,
+    transform,
   } = useDraggable({
     id: `placeholder-${placeholder.label}`,
     data: { type: 'placeholder', label: placeholder.label, url },
@@ -255,8 +268,6 @@ function DropZone({
           : 'ring-1 ring-transparent hover:ring-blue-300/50'
       } ${
         hasValue ? 'cursor-move' : 'cursor-default'
-      } ${
-        isDragging ? 'opacity-40' : ''
       }`}
       style={{
         left: `${placeholder.x_mm * scale}px`,
@@ -264,7 +275,31 @@ function DropZone({
         width: `${placeholder.width_mm * scale}px`,
         height: `${placeholder.height_mm * scale}px`,
       }}
-    />
+    >
+      {/* Drag-preview: видна только когда фото перетаскивается.
+          CSS translate(transform.x, transform.y) гарантирует что точка
+          клика остаётся под курсором. zIndex: 10 поднимает над другими
+          DropZone'ами. pointerEvents: none чтобы курсор продолжал
+          hit-test'ить drop-зоны под preview. */}
+      {isDragging && hasValue && transform && (
+        <div
+          className="absolute inset-0"
+          style={{
+            transform: `translate(${transform.x}px, ${transform.y}px)`,
+            zIndex: 10,
+            pointerEvents: 'none',
+          }}
+        >
+          <img
+            src={url ?? undefined}
+            alt=""
+            draggable={false}
+            className="w-full h-full object-cover rounded border-2 border-blue-500 shadow-xl"
+            style={{ opacity: 0.9, display: 'block' }}
+          />
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -274,6 +309,7 @@ export default function AlbumSpreadCanvas({
   template,
   containerWidth,
   mode = 'preview',
+  draggingLabel,
 }: Props) {
   const scale = containerWidth / template.width_mm
   const stageWidth = template.width_mm * scale
@@ -308,6 +344,9 @@ export default function AlbumSpreadCanvas({
             const value = instance.data[p.label] ?? null
             const key = `${p.label}-${i}`
             if (p.type === 'photo') {
+              // Скрываем Konva-копию фото на время drag — preview
+              // отрисовывается через DOM-overlay в DropZone (CSS transform)
+              if (draggingLabel === p.label) return null
               return <PhotoSlot key={key} placeholder={p} url={value} />
             }
             if (p.type === 'text') {

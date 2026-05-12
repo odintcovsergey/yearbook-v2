@@ -113,27 +113,17 @@ export default function LayoutEditorPage({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [viewport, setViewport] = useState({ width: 1440, height: 900 })
-  // Один state для drag-состояния — атомарность гарантирует что overlay
-  // с первого рендера получит правильные размеры (без промежуточного
-  // кадра с дефолтным 120px overlay, при котором dnd-kit фиксировал
-  // неверную начальную позицию overlay'a).
-  //
-  // - mode='palette': drag фото из правой колонки. Overlay — мелкий
-  //   thumbnail 120px (миниатюра палитры маленькая, фикс размер уместен).
-  // - mode='swap': drag фото между placeholder'ами на canvas'е. Overlay
-  //   тех же размеров что source div + offset точки клика, чтобы
-  //   курсор оставался в той же относительной точке overlay'a
-  //   (где кликнул в source).
+  // Drag-состояние:
+  // - mode='palette': drag фото из правой колонки. DragOverlay используется
+  //   с дефолтным 120px thumbnail (палитра маленькая, фикс размер уместен).
+  // - mode='swap': drag фото между placeholder'ами в canvas. DragOverlay
+  //   НЕ используется — DropZone сам рендерит img-copy с CSS transform.
+  //   Это гарантирует что точка клика остаётся под курсором. label
+  //   нужен чтобы AlbumSpreadCanvas скрыл Konva-копию (избежать двойного
+  //   отображения).
   type DragState =
     | { mode: 'palette'; photo: AlbumPhoto }
-    | {
-        mode: 'swap'
-        photo: AlbumPhoto
-        width: number
-        height: number
-        offsetX: number
-        offsetY: number
-      }
+    | { mode: 'swap'; photo: AlbumPhoto; label: string }
     | null
   const [dragState, setDragState] = useState<DragState>(null)
   const [saveStatus, setSaveStatus] = useState<'saved' | 'pending' | 'saving' | 'error'>('saved')
@@ -281,7 +271,7 @@ export default function LayoutEditorPage({
 
   function handleDragStart(event: DragStartEvent) {
     const sourceData = event.active.data.current as
-      | { type?: string; photo?: AlbumPhoto; url?: string | null }
+      | { type?: string; photo?: AlbumPhoto; url?: string | null; label?: string }
       | undefined
 
     if (sourceData?.type === 'palette' && sourceData.photo) {
@@ -289,32 +279,23 @@ export default function LayoutEditorPage({
       return
     }
 
-    if (sourceData?.type === 'placeholder' && sourceData.url) {
-      // Найти photo по URL — нужен для рендера overlay'a
+    if (sourceData?.type === 'placeholder' && sourceData.url && sourceData.label) {
+      // Для swap-режима НЕ используем DragOverlay (он рендерится через
+      // portal и в нашем layout @dnd-kit неправильно позиционирует его —
+      // курсор оказывается у левого-верхнего угла независимо от точки
+      // клика). Вместо этого DropZone сам рендерит img-copy с CSS
+      // transform — это гарантированно сохраняет точку клика под
+      // курсором (базовое поведение translate).
+      //
+      // draggingLabel передаётся в AlbumSpreadCanvas чтобы скрыть
+      // Konva-копию фото и избежать двойного отображения.
       const photo = photos.find((p) => p.url === sourceData.url)
       if (!photo) return
-
-      // Захватываем размер source и точку клика. event.active.rect.current.initial
-      // — это getBoundingClientRect source div'a на момент start drag.
-      // event.activatorEvent — это pointerdown event который инициировал drag,
-      // с clientX/clientY координатами курсора.
-      const rect = event.active.rect.current.initial
-      const ev = event.activatorEvent as PointerEvent | MouseEvent | null
-      if (rect && ev && 'clientX' in ev) {
-        setDragState({
-          mode: 'swap',
-          photo,
-          width: rect.width,
-          height: rect.height,
-          offsetX: ev.clientX - rect.left,
-          offsetY: ev.clientY - rect.top,
-        })
-      } else {
-        // Fallback: rect или event недоступны (не должно случаться, но
-        // на всякий случай не блокируем drag — используем palette-style
-        // mini overlay).
-        setDragState({ mode: 'palette', photo })
-      }
+      setDragState({
+        mode: 'swap',
+        photo,
+        label: sourceData.label,
+      })
     }
   }
 
@@ -449,6 +430,7 @@ export default function LayoutEditorPage({
                   template={currentTemplate}
                   containerWidth={canvasContainerWidth}
                   mode="edit"
+                  draggingLabel={dragState?.mode === 'swap' ? dragState.label : null}
                 />
               </div>
 
@@ -485,34 +467,8 @@ export default function LayoutEditorPage({
         {/* ─── Правая колонка: палитра ─── */}
         <PhotoPalette spreads={spreads} photos={photos} />
       </div>
-        <DragOverlay
-          // Для swap-режима используем кастомный dropAnimation=null чтобы
-          // overlay исчезал моментально при drop (без visual lag).
-          dropAnimation={null}
-        >
-          {dragState?.mode === 'swap' ? (
-            // Swap placeholder→placeholder: overlay тех же размеров что
-            // исходный div. Поскольку state установлен атомарно в
-            // handleDragStart, overlay рендерится с правильным размером
-            // СРАЗУ — нет промежуточного кадра с 120px размером при
-            // котором dnd-kit зафиксировал бы position по неверному
-            // размеру.
-            <div
-              className="bg-gray-100 rounded overflow-hidden border-2 border-blue-500 shadow-xl"
-              style={{
-                width: `${dragState.width}px`,
-                height: `${dragState.height}px`,
-                pointerEvents: 'none',
-              }}
-            >
-              <img
-                src={dragState.photo.url}
-                alt={dragState.photo.filename}
-                draggable={false}
-                className="w-full h-full object-cover pointer-events-none"
-              />
-            </div>
-          ) : dragState?.mode === 'palette' ? (
+        <DragOverlay dropAnimation={null}>
+          {dragState?.mode === 'palette' ? (
             // Палитра → placeholder: фикс 120px overlay (миниатюра палитры
             // и так маленькая, фикс размер уместен).
             <div className="aspect-[3/4] w-[120px] bg-gray-100 rounded overflow-hidden border-2 border-blue-500 shadow-xl">
@@ -524,6 +480,8 @@ export default function LayoutEditorPage({
               />
             </div>
           ) : null}
+          {/* swap-mode не использует DragOverlay — DropZone сам рендерит
+              preview через CSS transform (см. AlbumSpreadCanvas.DropZone). */}
         </DragOverlay>
       </DndContext>
     </div>
