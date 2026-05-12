@@ -111,18 +111,18 @@ export default function PhotoContextMenu({
           onReplaceOriginal()
           onClose()
         }}
-        disabled={!photoInfo || !photoInfo.has_original}
+        disabled={!photoInfo}
         className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
         title={
           !photoInfo
             ? 'Информация о фото недоступна'
-            : !photoInfo.has_original
-              ? 'У этого фото нет загруженного оригинала (старое фото до фазы Б.1). Перезагрузите фото целиком через раздел Фото.'
-              : 'Загрузить новый оригинал — WebP в макете не изменится, PDF-экспорт возьмёт новую версию'
+            : photoInfo.has_original
+              ? 'Загрузить новый оригинал — WebP в макете не изменится, PDF-экспорт возьмёт новую версию'
+              : 'У этого фото пока нет оригинала. Загрузить файл — он станет оригиналом для PDF-экспорта.'
         }
       >
         <span>🎨</span>
-        <span>Заменить оригинал</span>
+        <span>{photoInfo?.has_original ? 'Заменить оригинал' : 'Загрузить оригинал'}</span>
       </button>
     </div>
   )
