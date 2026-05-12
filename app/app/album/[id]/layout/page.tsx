@@ -113,24 +113,29 @@ export default function LayoutEditorPage({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [viewport, setViewport] = useState({ width: 1440, height: 900 })
-  const [activeDrag, setActiveDrag] = useState<AlbumPhoto | null>(null)
-  // Для placeholder→placeholder swap: размер исходного div'a (в пикселях)
-  // + offset точки клика относительно левого-верхнего угла этого div'a.
-  // Используется для:
-  //   1) DragOverlay тех же размеров что и source (а не фикс 120px) —
-  //      пользователь видит «реальное» фото которое тянет
-  //   2) modifier который смещает overlay так, чтобы курсор оставался
-  //      в той же относительной точке (если кликнул в правый верхний
-  //      угол — overlay будет привязан к правому верхнему углу,
-  //      а не центрирован под курсором)
-  // Для drag из палитры эти значения остаются null — там работает
-  // дефолтное поведение (центр overlay'a под курсором, размер 120px).
-  const [dragGeometry, setDragGeometry] = useState<{
-    width: number
-    height: number
-    offsetX: number  // 0..width: где внутри source был клик
-    offsetY: number  // 0..height
-  } | null>(null)
+  // Один state для drag-состояния — атомарность гарантирует что overlay
+  // с первого рендера получит правильные размеры (без промежуточного
+  // кадра с дефолтным 120px overlay, при котором dnd-kit фиксировал
+  // неверную начальную позицию overlay'a).
+  //
+  // - mode='palette': drag фото из правой колонки. Overlay — мелкий
+  //   thumbnail 120px (миниатюра палитры маленькая, фикс размер уместен).
+  // - mode='swap': drag фото между placeholder'ами на canvas'е. Overlay
+  //   тех же размеров что source div + offset точки клика, чтобы
+  //   курсор оставался в той же относительной точке overlay'a
+  //   (где кликнул в source).
+  type DragState =
+    | { mode: 'palette'; photo: AlbumPhoto }
+    | {
+        mode: 'swap'
+        photo: AlbumPhoto
+        width: number
+        height: number
+        offsetX: number
+        offsetY: number
+      }
+    | null
+  const [dragState, setDragState] = useState<DragState>(null)
   const [saveStatus, setSaveStatus] = useState<'saved' | 'pending' | 'saving' | 'error'>('saved')
   const [lastSavedSpreads, setLastSavedSpreads] = useState<SpreadInstance[] | null>(null)
   const saveCounterRef = useRef(0)
@@ -278,37 +283,43 @@ export default function LayoutEditorPage({
     const sourceData = event.active.data.current as
       | { type?: string; photo?: AlbumPhoto; url?: string | null }
       | undefined
+
     if (sourceData?.type === 'palette' && sourceData.photo) {
-      setActiveDrag(sourceData.photo)
-      setDragGeometry(null)  // палитра — без геометрии, дефолтный overlay
+      setDragState({ mode: 'palette', photo: sourceData.photo })
       return
     }
-    if (sourceData?.type === 'placeholder' && sourceData.url) {
-      // Найти photo по URL для DragOverlay (если в палитре есть)
-      const photo = photos.find((p) => p.url === sourceData.url)
-      if (photo) setActiveDrag(photo)
 
-      // Захватываем размер исходного div'a и точку клика — для overlay'a
-      // тех же размеров и для смещающего modifier'а.
-      // activatorEvent — это pointerdown event который инициировал drag.
+    if (sourceData?.type === 'placeholder' && sourceData.url) {
+      // Найти photo по URL — нужен для рендера overlay'a
+      const photo = photos.find((p) => p.url === sourceData.url)
+      if (!photo) return
+
+      // Захватываем размер source и точку клика. event.active.rect.current.initial
+      // — это getBoundingClientRect source div'a на момент start drag.
+      // event.activatorEvent — это pointerdown event который инициировал drag,
+      // с clientX/clientY координатами курсора.
       const rect = event.active.rect.current.initial
-      const activator = event.activatorEvent as PointerEvent | MouseEvent | undefined
-      if (rect && activator && 'clientX' in activator) {
-        setDragGeometry({
+      const ev = event.activatorEvent as PointerEvent | MouseEvent | null
+      if (rect && ev && 'clientX' in ev) {
+        setDragState({
+          mode: 'swap',
+          photo,
           width: rect.width,
           height: rect.height,
-          offsetX: activator.clientX - rect.left,
-          offsetY: activator.clientY - rect.top,
+          offsetX: ev.clientX - rect.left,
+          offsetY: ev.clientY - rect.top,
         })
       } else {
-        setDragGeometry(null)
+        // Fallback: rect или event недоступны (не должно случаться, но
+        // на всякий случай не блокируем drag — используем palette-style
+        // mini overlay).
+        setDragState({ mode: 'palette', photo })
       }
     }
   }
 
   function handleDragEnd(event: DragEndEvent) {
-    setActiveDrag(null)
-    setDragGeometry(null)
+    setDragState(null)
     const { active, over } = event
     if (!over) return  // drop вне drop-зоны
 
@@ -474,42 +485,45 @@ export default function LayoutEditorPage({
         {/* ─── Правая колонка: палитра ─── */}
         <PhotoPalette spreads={spreads} photos={photos} />
       </div>
-        <DragOverlay>
-          {activeDrag && (
-            dragGeometry ? (
-              // Swap placeholder→placeholder: overlay тех же размеров что
-              // исходный div. @dnd-kit при useDraggable позиционирует overlay
-              // так чтобы его top-left совпадал с top-left source при старте
-              // drag. При одинаковых размерах это значит курсор остаётся
-              // в той же относительной точке overlay'a где был клик —
-              // ровно то поведение которое мы хотим.
-              <div
-                className="bg-gray-100 rounded overflow-hidden border-2 border-blue-500 shadow-xl"
-                style={{
-                  width: `${dragGeometry.width}px`,
-                  height: `${dragGeometry.height}px`,
-                }}
-              >
-                <img
-                  src={activeDrag.url}
-                  alt={activeDrag.filename}
-                  draggable={false}
-                  className="w-full h-full object-cover pointer-events-none"
-                />
-              </div>
-            ) : (
-              // Палитра → placeholder: дефолтный 120px overlay (thumbnail
-              // из палитры и так маленький, фикс размер уместен).
-              <div className="aspect-[3/4] w-[120px] bg-gray-100 rounded overflow-hidden border-2 border-blue-500 shadow-xl">
-                <img
-                  src={activeDrag.thumb_url}
-                  alt={activeDrag.filename}
-                  draggable={false}
-                  className="w-full h-full object-cover pointer-events-none"
-                />
-              </div>
-            )
-          )}
+        <DragOverlay
+          // Для swap-режима используем кастомный dropAnimation=null чтобы
+          // overlay исчезал моментально при drop (без visual lag).
+          dropAnimation={null}
+        >
+          {dragState?.mode === 'swap' ? (
+            // Swap placeholder→placeholder: overlay тех же размеров что
+            // исходный div. Поскольку state установлен атомарно в
+            // handleDragStart, overlay рендерится с правильным размером
+            // СРАЗУ — нет промежуточного кадра с 120px размером при
+            // котором dnd-kit зафиксировал бы position по неверному
+            // размеру.
+            <div
+              className="bg-gray-100 rounded overflow-hidden border-2 border-blue-500 shadow-xl"
+              style={{
+                width: `${dragState.width}px`,
+                height: `${dragState.height}px`,
+                pointerEvents: 'none',
+              }}
+            >
+              <img
+                src={dragState.photo.url}
+                alt={dragState.photo.filename}
+                draggable={false}
+                className="w-full h-full object-cover pointer-events-none"
+              />
+            </div>
+          ) : dragState?.mode === 'palette' ? (
+            // Палитра → placeholder: фикс 120px overlay (миниатюра палитры
+            // и так маленькая, фикс размер уместен).
+            <div className="aspect-[3/4] w-[120px] bg-gray-100 rounded overflow-hidden border-2 border-blue-500 shadow-xl">
+              <img
+                src={dragState.photo.thumb_url}
+                alt={dragState.photo.filename}
+                draggable={false}
+                className="w-full h-full object-cover pointer-events-none"
+              />
+            </div>
+          ) : null}
         </DragOverlay>
       </DndContext>
     </div>
