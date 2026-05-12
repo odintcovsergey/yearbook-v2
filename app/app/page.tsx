@@ -197,6 +197,10 @@ export default function AppPage() {
         total: number
         done: number
         failed: number
+        // UX#2 — счётчик сейчас активно загружающихся (started но не done).
+        // Помогает партнёру понять что 'после WebP=100%' процесс не завис,
+        // а оригиналы реально идут network'ом в фоне.
+        inProgress: number
         totalBytes: number
         doneBytes: number
         failedFilenames: string[]
@@ -329,6 +333,11 @@ export default function AppPage() {
                     <span className="animate-pulse">📤</span>
                     <span>
                       Оригиналы: {originalsProgress.done}/{originalsProgress.total}
+                      {originalsProgress.inProgress > 0 && originalsProgress.done < originalsProgress.total && (
+                        <span className="text-blue-500 ml-1">
+                          (⏳{originalsProgress.inProgress})
+                        </span>
+                      )}
                     </span>
                   </>
                 ) : originalsProgress.failed > 0 ? (
@@ -3848,15 +3857,18 @@ async function uploadFilesParallel(
   // П.1 — tracking фоновой загрузки оригиналов:
   // - onOriginalsStart: вызывается ОДИН РАЗ когда WebP-фаза стартует;
   //   передаёт сколько оригиналов ожидается и общий размер в байтах.
+  //   ВАЖНО: вызывается ДО первого compression'а — UI сразу показывает
+  //   '0 / N' блок чтобы партнёр понял что фоновая загрузка предстоит.
+  // - onOriginalStarted: вызывается когда конкретный оригинал реально
+  //   стартовал network-запрос (presigned URL получен). UI показывает
+  //   '⏳ в работе K' активных upload'ов.
   // - onOriginalProgress: каждый раз когда один оригинал докачался
   //   (успешно или с ошибкой). filename + bytes (file.size) + ok.
   // - onOriginalsAllDone: вызывается когда ВСЕ фоновые upload'ы
   //   завершены (resolved/rejected все Promise'ы).
-  //
-  // Тип кода файлов: ВСЕ files, потому что для каждого WebP запускаем
-  // и попытку загрузки оригинала. Поэтому total = files.length.
   callbacks?: {
     onOriginalsStart?: (total: number, totalBytes: number) => void
+    onOriginalStarted?: (filename: string) => void
     onOriginalProgress?: (filename: string, bytes: number, ok: boolean) => void
     onOriginalsAllDone?: () => void
   },
@@ -3880,6 +3892,11 @@ async function uploadFilesParallel(
   // в onFileError со суффиксом '(оригинал)' чтобы фотограф мог различить.
   // Файл уже виден в галерее как WebP, оригинал просто докачивается.
   const uploadOriginalBackground = async (file: File, photoId: string) => {
+    // П.1 — уведомляем UI что upload реально начался (network-запрос).
+    // Между push'ем в originalPromises и реальным стартом fetch'a может
+    // быть пауза если event loop занят WebP-compression'ами других файлов.
+    // onOriginalStarted позволит UI показать '⏳ в работе K' активных.
+    callbacks?.onOriginalStarted?.(file.name)
     try {
       // 1. Получаем presigned URL
       const urlRes = await fetch('/api/upload-url', {
@@ -4036,6 +4053,7 @@ function PhotosTab({
         total: number
         done: number
         failed: number
+        inProgress: number
         totalBytes: number
         doneBytes: number
         failedFilenames: string[]
@@ -4048,6 +4066,7 @@ function PhotosTab({
           total: number
           done: number
           failed: number
+          inProgress: number
           totalBytes: number
           doneBytes: number
           failedFilenames: string[]
@@ -4129,11 +4148,22 @@ function PhotosTab({
               total,
               done: 0,
               failed: 0,
+              inProgress: 0,
               totalBytes,
               doneBytes: 0,
               failedFilenames: [],
               completed: false,
             }
+          })
+        },
+        // UX#2 — реальный старт upload'а оригинала (network-фаза).
+        // Между добавлением в originalPromises и реальным fetch'ем
+        // может быть пауза из-за CPU-bottleneck (WebP compression).
+        // inProgress показывает 'сколько прямо сейчас активно'.
+        onOriginalStarted: (_filename) => {
+          setOriginalsProgress(prev => {
+            if (!prev) return prev
+            return { ...prev, inProgress: prev.inProgress + 1 }
           })
         },
         onOriginalProgress: (filename, bytes, ok) => {
@@ -4143,6 +4173,7 @@ function PhotosTab({
               ...prev,
               done: prev.done + 1,
               failed: prev.failed + (ok ? 0 : 1),
+              inProgress: Math.max(0, prev.inProgress - 1),
               doneBytes: prev.doneBytes + bytes,
               failedFilenames: ok ? prev.failedFilenames : [...prev.failedFilenames, filename],
             }
@@ -4336,6 +4367,7 @@ function PhotosTab({
         total: matched.length,
         done: 0,
         failed: 0,
+        inProgress: 0,
         totalBytes,
         doneBytes: 0,
         failedFilenames: [],
@@ -4347,6 +4379,8 @@ function PhotosTab({
       const queue = [...matched]
 
       const uploadOne = async ({ file, photo }: { file: File; photo: Photo }) => {
+        // UX#2 — отмечаем что началось network для этого файла
+        setOriginalsProgress(prev => prev ? { ...prev, inProgress: prev.inProgress + 1 } : prev)
         try {
           const urlRes = await api('/api/upload-url', {
             method: 'POST',
@@ -4389,6 +4423,7 @@ function PhotosTab({
           setOriginalsProgress(prev => prev ? {
             ...prev,
             done: prev.done + 1,
+            inProgress: Math.max(0, prev.inProgress - 1),
             doneBytes: prev.doneBytes + file.size,
           } : prev)
         } catch {
@@ -4396,6 +4431,7 @@ function PhotosTab({
             ...prev,
             done: prev.done + 1,
             failed: prev.failed + 1,
+            inProgress: Math.max(0, prev.inProgress - 1),
             doneBytes: prev.doneBytes + file.size,
             failedFilenames: [...prev.failedFilenames, file.name],
           } : prev)
@@ -4525,7 +4561,13 @@ function PhotosTab({
                         Загружаем оригиналы для печати
                       </p>
                       <p className="text-xs text-blue-700 mt-1">
-                        Не закрывайте вкладку до завершения — оригиналы нужны для качества печати в типографии.
+                        {originalsProgress.inProgress > 0 ? (
+                          <>⏳ В работе сейчас: {originalsProgress.inProgress}. Не закрывайте вкладку.</>
+                        ) : originalsProgress.done === 0 ? (
+                          <>Подготовка к загрузке оригиналов… Не закрывайте вкладку.</>
+                        ) : (
+                          <>Не закрывайте вкладку до завершения — оригиналы нужны для качества печати в типографии.</>
+                        )}
                       </p>
                     </>
                   ) : originalsProgress.failed > 0 ? (
