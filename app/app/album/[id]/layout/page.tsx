@@ -18,6 +18,7 @@ import type {
 } from '@/lib/album-builder/types'
 import PhotoPalette from '../../../_components/PhotoPalette'
 import SpreadOrderStrip from '../../../_components/SpreadOrderStrip'
+import TemplatePickerModal from '../../../_components/TemplatePickerModal'
 import SaveIndicator from '../../../_components/SaveIndicator'
 import PhotoContextMenu from '../../../_components/PhotoContextMenu'
 
@@ -681,6 +682,63 @@ function LayoutEditorPageInner({
     })
   }
 
+  // М.2 — удалить разворот по индексу. Защиты:
+  //   - confirm для подтверждения
+  //   - не позволяем удалить последний разворот (нужно хотя бы один)
+  //   - если удалили активный — переключаемся на предыдущий
+  //   - реномерация spread_index у оставшихся
+  function handleDeleteSpread(idx: number) {
+    if (!layout || layout.spreads.length <= 1) return
+    const template = templates.find((t) => t.id === layout.spreads[idx]?.template_id)
+    const label = template?.name ?? `Разворот ${idx + 1}`
+    if (!confirm(`Удалить разворот «${label}»?\n\nЕго содержимое (фото и текст) будет потеряно — это действие можно отменить через Ctrl+Z.`)) {
+      return
+    }
+    const newSpreads = layout.spreads
+      .filter((_, i) => i !== idx)
+      .map((s, i) => ({ ...s, spread_index: i }))
+    setLayout({ ...layout, spreads: newSpreads })
+    // Активный разворот сдвигается если удалили его или предшествующий
+    if (currentIdx >= newSpreads.length) {
+      setCurrentIdx(Math.max(0, newSpreads.length - 1))
+    } else if (currentIdx > idx) {
+      setCurrentIdx(currentIdx - 1)
+    }
+  }
+
+  // М.2 — открытие picker'а для добавления нового разворота.
+  // insertAfterIdx запоминается чтобы после выбора шаблона знать куда
+  // вставить (после текущего активного на момент клика).
+  const [addAfterIdx, setAddAfterIdx] = useState<number | null>(null)
+
+  function handleAddRequest(insertAfterIdx: number) {
+    setAddAfterIdx(insertAfterIdx)
+  }
+
+  function handleAddSpread(template: SpreadTemplate) {
+    if (!layout || addAfterIdx === null) {
+      setAddAfterIdx(null)
+      return
+    }
+    // Новый spread с пустыми данными — placeholder'ы будут пустые,
+    // партнёр заполнит drag'ом из палитры или редактированием текста.
+    const newSpread: SpreadInstance = {
+      spread_index: 0,  // будет переписан ниже
+      template_id: template.id,
+      template_name: template.name,
+      data: {},
+    }
+    const before = layout.spreads.slice(0, addAfterIdx + 1)
+    const after = layout.spreads.slice(addAfterIdx + 1)
+    const merged = [...before, newSpread, ...after].map((s, i) => ({
+      ...s,
+      spread_index: i,
+    }))
+    setLayout({ ...layout, spreads: merged })
+    setCurrentIdx(addAfterIdx + 1)  // переходим на только что добавленный
+    setAddAfterIdx(null)
+  }
+
   // Замена оригинала фото без смены WebP. WebP в макете не меняется,
   // PDF-экспорт при следующем рендере возьмёт новый оригинал.
   // Реиспользует action rebind_retouched из К.3 (фаза К workflow).
@@ -1114,7 +1172,8 @@ function LayoutEditorPageInner({
       </div>
 
       {/* М.1 — strip миниатюр с drag-to-reorder.
-          В read-only режиме доступна только клик-навигация. */}
+          В read-only режиме доступна только клик-навигация.
+          М.2 — кнопки удаления (✕ при hover) и добавления (➕ в конце). */}
       {layout && (
         <SpreadOrderStrip
           spreads={spreads}
@@ -1122,7 +1181,20 @@ function LayoutEditorPageInner({
           currentIdx={currentIdx}
           onSelect={setCurrentIdx}
           onReorder={handleReorderSpreads}
+          onDelete={isReadOnly ? undefined : handleDeleteSpread}
+          onAddRequest={isReadOnly ? undefined : handleAddRequest}
           readOnly={isReadOnly}
+        />
+      )}
+
+      {/* М.2 — модал выбора шаблона при добавлении нового разворота */}
+      {addAfterIdx !== null && (
+        <TemplatePickerModal
+          templates={templates}
+          title="Добавить разворот"
+          description={`Новый разворот будет вставлен после позиции ${addAfterIdx + 1}. Выберите шаблон.`}
+          onSelect={handleAddSpread}
+          onClose={() => setAddAfterIdx(null)}
         />
       )}
 
