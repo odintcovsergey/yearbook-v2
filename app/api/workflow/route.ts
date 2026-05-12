@@ -249,6 +249,67 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ album: data })
   }
 
+  // ── unsubmit — откат workflow назад ───────────────────────────────────────
+  //
+  // Использование: партнёр случайно передал альбом или нашёл ошибку
+  // после передачи. OkeyBook откатывает альбом который ошибочно взял
+  // в работу.
+  //
+  // Переходы:
+  //   submitted (передан, OkeyBook ещё не взял) → ready
+  //     — может партнёр (owner альбома) ИЛИ OkeyBook
+  //   in_production (OkeyBook верстает) → submitted
+  //     — только OkeyBook/superadmin (партнёр звонит)
+  //   delivered → in_production — НЕ через эту action, только SQL
+  //     (нужны редкие исключения, и риск что файлы уже в типографии)
+  //
+  // Очищаем соответствующие timestamp'ы чтобы не было «мусорных»
+  // меток при следующем submit.
+  if (action === 'unsubmit') {
+    if (album.workflow_status === 'submitted') {
+      // submitted → ready. Доступно партнёру и OkeyBook.
+      const { data } = await supabaseAdmin.from('albums')
+        .update({
+          workflow_status: 'ready',
+          workflow_submitted_at: null,
+        })
+        .eq('id', album_id).select().single()
+
+      await logAction(auth, 'workflow.unsubmit', 'album', album_id, {
+        from: 'submitted',
+        to: 'ready',
+      })
+      return NextResponse.json({ album: data })
+    }
+
+    if (album.workflow_status === 'in_production') {
+      // in_production → submitted. Только OkeyBook/superadmin —
+      // партнёр не должен сам прерывать вёрстку, должен звонить.
+      if (!isSuperOrOkeybook) {
+        return NextResponse.json({
+          error: 'Альбом уже взят в работу. Свяжитесь с OkeyBook для отмены.',
+        }, { status: 403 })
+      }
+      const { data } = await supabaseAdmin.from('albums')
+        .update({
+          workflow_status: 'submitted',
+          workflow_taken_at: null,
+          workflow_assigned_to: null,
+        })
+        .eq('id', album_id).select().single()
+
+      await logAction(auth, 'workflow.unsubmit', 'album', album_id, {
+        from: 'in_production',
+        to: 'submitted',
+      })
+      return NextResponse.json({ album: data })
+    }
+
+    return NextResponse.json({
+      error: `Нельзя откатить статус "${album.workflow_status}". Доступно только для submitted и in_production.`,
+    }, { status: 400 })
+  }
+
   // ── update_notes — заметки (только superadmin) ────────────────────────────
   if (action === 'update_notes') {
     if (!isSuperOrOkeybook) return NextResponse.json({ error: 'forbidden' }, { status: 403 })

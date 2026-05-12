@@ -7050,6 +7050,26 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
     }
   }
 
+  const handleUnsubmit = async () => {
+    const isFromInProduction = status === 'in_production'
+    const confirmText = isFromInProduction
+      ? 'Снять альбом с работы и вернуть в статус "Передан"?\n\nВНИМАНИЕ: вёрстка уже могла начаться. Действие изменит статус, но не отменит проделанную работу.'
+      : 'Отменить передачу альбома в OkeyBook и вернуть в работу?\n\nЭтого делать обычно не нужно — но если передали по ошибке или нашли неточность в данных, можно вернуть.'
+    if (!confirm(confirmText)) return
+
+    const res = await post({ action: 'unsubmit', album_id: (album as any).id })
+    if (res.album) {
+      onWorkflowUpdate(res.album)
+      onNotify(
+        isFromInProduction
+          ? 'Альбом снят с работы. Статус: Передан в OkeyBook.'
+          : 'Передача отменена. Альбом снова в работе.',
+      )
+    } else {
+      onError(res.error ?? 'Не удалось снять с работы')
+    }
+  }
+
   const handleUploadOriginals = async (files: FileList) => {
     const arr = Array.from(files)
     setUploadingOriginals(true)
@@ -7411,8 +7431,34 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
               {submitting ? 'Передаём...' : '🚀 Передать в OkeyBook'}
             </button>
           )}
+          {/* unsubmit: submitted → ready (партнёр + superadmin) */}
+          {status === 'submitted' && canEdit && (
+            <button
+              className="text-sm px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+              onClick={handleUnsubmit}
+            >
+              ↩ Отменить передачу
+            </button>
+          )}
+          {/* unsubmit: in_production → submitted (только superadmin) */}
+          {status === 'in_production' && isSuperAdmin && (
+            <button
+              className="text-sm px-3 py-1.5 rounded-lg border border-orange-300 bg-orange-50 hover:bg-orange-100 text-orange-700"
+              onClick={handleUnsubmit}
+              title="Только для superadmin — отзывает альбом из вёрстки обратно в submitted"
+            >
+              ↩ Снять с работы
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Подсказка для партнёра когда альбом уже в работе */}
+      {status === 'in_production' && canEdit && !isSuperAdmin && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+          ℹ️ Альбом уже взят в работу. Если нужно отменить — свяжитесь с OkeyBook.
+        </div>
+      )}
 
       {/* Заметки от OkeyBook */}
       {workflow?.workflow_notes && (
