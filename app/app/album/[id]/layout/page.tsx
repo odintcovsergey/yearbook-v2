@@ -146,6 +146,20 @@ export default function LayoutEditorPage({
   const [lastSavedSpreads, setLastSavedSpreads] = useState<SpreadInstance[] | null>(null)
   const saveCounterRef = useRef(0)
 
+  // ─── Фаза Л.3 — Undo/Redo history ────────────────────────────────────
+  // Храним past + future стэки snapshot'ов spreads. Лимит 50 шагов
+  // (старые забываются). История сбрасывается при загрузке layout'а.
+  //
+  // skipNextHistoryRef = true чтобы изменения через undo/redo не
+  // попадали в past заново (иначе одно нажатие Ctrl+Z создавало бы
+  // новую entry и Ctrl+Shift+Z не работал).
+  const [history, setHistory] = useState<{
+    past: SpreadInstance[][]
+    future: SpreadInstance[][]
+  }>({ past: [], future: [] })
+  const skipNextHistoryRef = useRef(false)
+  const prevSpreadsRef = useRef<SpreadInstance[] | null>(null)
+
   useEffect(() => {
     const update = () => setViewport({
       width: window.innerWidth,
@@ -284,6 +298,118 @@ export default function LayoutEditorPage({
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [saveStatus])
+
+  // ─── Фаза Л.3 — History tracking ──────────────────────────────────────
+  //
+  // Push в past каждый раз когда layout.spreads меняется через пользовательское
+  // действие (drag, text edit, clear). При undo/redo мы ставим
+  // skipNextHistoryRef = true чтобы их собственные setLayout вызовы НЕ
+  // создавали новые entries в past.
+  useEffect(() => {
+    if (!layout) return
+    const current = layout.spreads
+    const prev = prevSpreadsRef.current
+    if (prev && prev !== current) {
+      if (skipNextHistoryRef.current) {
+        skipNextHistoryRef.current = false
+      } else {
+        // Игнорируем no-op изменения (deep equal через JSON.stringify
+        // достаточно — spreads — простая структура).
+        const prevStr = JSON.stringify(prev)
+        const currStr = JSON.stringify(current)
+        if (prevStr !== currStr) {
+          setHistory(h => ({
+            past: [...h.past.slice(-49), prev],  // лимит 50
+            future: [],  // любое новое действие сбрасывает future
+          }))
+        }
+      }
+    }
+    prevSpreadsRef.current = current
+  }, [layout?.spreads])
+
+  // При успешной первичной загрузке layout инициализируем prevSpreadsRef
+  // и очищаем history (на случай если редактор открывали раньше в этой
+  // же сессии — но это не должно случаться, page mount = новый layout).
+  useEffect(() => {
+    if (layout && !prevSpreadsRef.current) {
+      prevSpreadsRef.current = layout.spreads
+      setHistory({ past: [], future: [] })
+    }
+  }, [layout])
+
+  function handleUndo() {
+    setEditingTextLabel(null)  // если редактируется текст — закрываем
+    setPhotoContextMenu(null)  // и контекстное меню
+    setHistory(h => {
+      if (h.past.length === 0) return h
+      const last = h.past[h.past.length - 1]
+      if (!layout) return h
+      const currentSpreads = layout.spreads
+      skipNextHistoryRef.current = true
+      setLayout({ ...layout, spreads: last })
+      return {
+        past: h.past.slice(0, -1),
+        future: [currentSpreads, ...h.future].slice(0, 50),
+      }
+    })
+  }
+
+  function handleRedo() {
+    setEditingTextLabel(null)
+    setPhotoContextMenu(null)
+    setHistory(h => {
+      if (h.future.length === 0) return h
+      const next = h.future[0]
+      if (!layout) return h
+      const currentSpreads = layout.spreads
+      skipNextHistoryRef.current = true
+      setLayout({ ...layout, spreads: next })
+      return {
+        past: [...h.past.slice(-49), currentSpreads],
+        future: h.future.slice(1),
+      }
+    })
+  }
+
+  // Force-save немедленно (обходит debounce). Используется через Ctrl+S.
+  function handleForceSave() {
+    if (!layout) return
+    const isUnchanged =
+      lastSavedSpreads !== null &&
+      JSON.stringify(layout.spreads) === JSON.stringify(lastSavedSpreads)
+    if (isUnchanged) return  // нечего сохранять
+    void saveLayout(layout.spreads)
+  }
+
+  // Global keyboard handlers: Ctrl+Z / Cmd+Z / Ctrl+Shift+Z / Ctrl+S
+  // Игнорируется когда фокус в INPUT/TEXTAREA — там работает нативный
+  // undo браузера (важно для inline text editor'a).
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return
+      }
+      const ctrlOrCmd = e.ctrlKey || e.metaKey
+      if (!ctrlOrCmd) return
+
+      if (e.key === 'z' || e.key === 'Z' || e.key === 'я' || e.key === 'Я') {
+        e.preventDefault()
+        if (e.shiftKey) {
+          handleRedo()
+        } else {
+          handleUndo()
+        }
+      } else if (e.key === 's' || e.key === 'S' || e.key === 'ы' || e.key === 'Ы') {
+        e.preventDefault()
+        handleForceSave()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history, layout, lastSavedSpreads])
 
   function handleDragStart(event: DragStartEvent) {
     const sourceData = event.active.data.current as
@@ -557,7 +683,45 @@ export default function LayoutEditorPage({
           </h1>
           <span className="text-xs text-gray-400">— Layout редактор</span>
         </div>
-        <SaveIndicator status={saveStatus} />
+        <div className="flex items-center gap-3">
+          {/* Л.3 — кнопки Undo/Redo. Показываем счётчики past/future
+              чтобы партнёр видел сколько шагов в истории. */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={history.past.length === 0}
+              className="px-2.5 py-1 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title={
+                typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
+                  ? 'Отменить (⌘Z)'
+                  : 'Отменить (Ctrl+Z)'
+              }
+            >
+              ↶ Отменить
+              {history.past.length > 0 && (
+                <span className="ml-1 text-xs text-gray-400">({history.past.length})</span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleRedo}
+              disabled={history.future.length === 0}
+              className="px-2.5 py-1 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title={
+                typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
+                  ? 'Повторить (⌘⇧Z)'
+                  : 'Повторить (Ctrl+Shift+Z)'
+              }
+            >
+              ↷ Повторить
+              {history.future.length > 0 && (
+                <span className="ml-1 text-xs text-gray-400">({history.future.length})</span>
+              )}
+            </button>
+          </div>
+          <SaveIndicator status={saveStatus} />
+        </div>
       </header>
 
       {/* ═══ Main: левая колонка (canvas) + правая (палитра) ═══ */}
