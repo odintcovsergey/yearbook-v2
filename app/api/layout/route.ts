@@ -212,6 +212,110 @@ export async function GET(req: NextRequest) {
     })
   }
 
+  // ============================================================
+  // ?action=load_album_layout&album_id=<uuid> — фаза Л.1
+  //
+  // Возвращает всё что нужно редактору макета:
+  //   - album_layout (включая edited_at/edited_by/rebuild_warnings)
+  //   - template_set + полный список spread_templates (как в _detail)
+  //
+  // Один запрос вместо двух (load_album_layout + template_set_detail)
+  // экономит сетевой round-trip и упрощает клиент.
+  //
+  // Видимость:
+  //   - superadmin — любой альбом
+  //   - owner/manager/viewer — только из своего tenant'а
+  //   - viewer — может смотреть редактор (read-only, в Л.4 будут
+  //     блокировки сохранения)
+  // ============================================================
+  if (action === 'load_album_layout') {
+    const albumId = req.nextUrl.searchParams.get('album_id')
+    if (!albumId || !UUID_REGEX.test(albumId)) {
+      return NextResponse.json({ error: 'valid album_id required' }, { status: 400 })
+    }
+
+    // view_as поддержка для сотрудников OkeyBook (паттерн из /api/tenant)
+    const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+    const { data: currentTenantData } = viewAsTenantId
+      ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+      : { data: null }
+    const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
+    const effectiveTid = canViewAs && viewAsTenantId ? viewAsTenantId : auth.tenantId
+
+    // Проверка доступа к альбому
+    if (!(await assertAlbumAccessLocal(auth, albumId, effectiveTid))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    // Достаём album_layout. Может не быть (если buildAlbum ещё не запускался)
+    // — возвращаем 404 с подсказкой.
+    const { data: layout, error: layoutErr } = await supabaseAdmin
+      .from('album_layouts')
+      .select('id, album_id, template_set_id, config_type, print_type, spreads, status, edited_at, edited_by, rebuild_warnings, created_at, updated_at')
+      .eq('album_id', albumId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (layoutErr) {
+      return NextResponse.json({ error: layoutErr.message }, { status: 500 })
+    }
+    if (!layout) {
+      return NextResponse.json(
+        {
+          error: 'Макет не собран',
+          hint: 'Соберите макет в обзоре альбома (кнопка «Собрать макет») перед открытием редактора.',
+        },
+        { status: 404 }
+      )
+    }
+
+    // Достаём template_set и его spread_templates параллельно
+    const [tsRes, stRes] = await Promise.all([
+      supabaseAdmin
+        .from('template_sets')
+        .select(TEMPLATE_SET_FIELDS)
+        .eq('id', layout.template_set_id)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('spread_templates')
+        .select(SPREAD_TEMPLATE_FIELDS)
+        .eq('template_set_id', layout.template_set_id)
+        .order('sort_order', { ascending: true }),
+    ])
+
+    if (tsRes.error) {
+      return NextResponse.json({ error: tsRes.error.message }, { status: 500 })
+    }
+    if (!tsRes.data) {
+      return NextResponse.json(
+        { error: 'Template set для этого макета не найден', hint: 'Возможно template_set был удалён. Пересоберите макет.' },
+        { status: 500 }
+      )
+    }
+    if (stRes.error) {
+      return NextResponse.json({ error: stRes.error.message }, { status: 500 })
+    }
+
+    // Если был edited_by — подтянем имя/email редактора для UI
+    let editorInfo: { id: string; email: string | null } | null = null
+    if (layout.edited_by) {
+      const { data: u } = await supabaseAdmin
+        .from('users')
+        .select('id, email')
+        .eq('id', layout.edited_by)
+        .maybeSingle()
+      editorInfo = u ? { id: u.id, email: u.email } : null
+    }
+
+    return NextResponse.json({
+      album_layout: layout,
+      template_set: tsRes.data,
+      spread_templates: stRes.data ?? [],
+      editor_info: editorInfo,
+    })
+  }
+
   return NextResponse.json({ error: 'unknown action' }, { status: 400 })
 }
 
