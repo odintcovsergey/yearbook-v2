@@ -182,6 +182,42 @@ export default function AppPage() {
   const [isMainTenant, setIsMainTenant] = useState(false)
   const currentUserId = auth?.user?.id ?? null
 
+  // Техдолг#4 — Lift originalsProgress в AppPage чтобы:
+  // 1. beforeunload protection работал когда модал альбома закрыт
+  //    (раньше state жил в PhotosTab → unmount при закрытии модала
+  //    → useEffect cleanup → handler удалён → потеря защиты)
+  // 2. Глобальный индикатор «📤 Грузим N» виден везде в кабинете
+  //    (а не только когда открыта вкладка Фото)
+  //
+  // PhotosTab получает state и setter через props, использует тот же
+  // tracking что раньше.
+  const [originalsProgress, setOriginalsProgress] = useState<
+    | null
+    | {
+        total: number
+        done: number
+        failed: number
+        totalBytes: number
+        doneBytes: number
+        failedFilenames: string[]
+        completed: boolean
+      }
+  >(null)
+
+  // beforeunload protection живёт на уровне AppPage — пока вкладка
+  // открыта и есть pending оригиналы, partнёр получит предупреждение
+  // независимо от того открыт ли модал альбома или закрыт.
+  useEffect(() => {
+    if (!originalsProgress || originalsProgress.completed) return
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue =
+        'Идёт загрузка оригиналов для печати. Если закрыть сейчас — фотографии не будут в высоком качестве в PDF.'
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [originalsProgress])
+
   // --- Проверка авторизации ---
   useEffect(() => {
     api('/api/auth')
@@ -267,6 +303,65 @@ export default function AppPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Техдолг#4 — глобальный индикатор фоновой загрузки оригиналов.
+                Виден везде в кабинете (даже когда модал альбома закрыт),
+                клик не нужен — только информирующий бейдж. Цвет зависит
+                от состояния: blue=идёт, green=всё ок, amber=есть упавшие. */}
+            {originalsProgress && (
+              <div
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium ${
+                  !originalsProgress.completed
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                    : originalsProgress.failed > 0
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                      : 'bg-green-50 text-green-700 border border-green-200'
+                }`}
+                title={
+                  !originalsProgress.completed
+                    ? 'Идёт загрузка оригиналов для печати. Не закрывайте вкладку.'
+                    : originalsProgress.failed > 0
+                      ? `${originalsProgress.failed} оригиналов не загрузились — можно догрузить вручную через карточку фото`
+                      : 'Все оригиналы успешно загружены'
+                }
+              >
+                {!originalsProgress.completed ? (
+                  <>
+                    <span className="animate-pulse">📤</span>
+                    <span>
+                      Оригиналы: {originalsProgress.done}/{originalsProgress.total}
+                    </span>
+                  </>
+                ) : originalsProgress.failed > 0 ? (
+                  <>
+                    <span>⚠</span>
+                    <span>
+                      Оригиналы: {originalsProgress.done - originalsProgress.failed}/{originalsProgress.total}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setOriginalsProgress(null)}
+                      className="ml-1 text-amber-600 hover:text-amber-800"
+                      title="Скрыть"
+                    >
+                      ✕
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span>✓</span>
+                    <span>Оригиналы загружены</span>
+                    <button
+                      type="button"
+                      onClick={() => setOriginalsProgress(null)}
+                      className="ml-1 text-green-600 hover:text-green-800"
+                      title="Скрыть"
+                    >
+                      ✕
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             <button onClick={handleLogout} className="btn-secondary">Выйти</button>
           </div>
         </div>
@@ -448,6 +543,8 @@ export default function AppPage() {
           }}
           onNotify={(msg) => notify(msg, 'ok')}
           onError={(msg) => notify(msg, 'err')}
+          originalsProgress={originalsProgress}
+          setOriginalsProgress={setOriginalsProgress}
         />
       )}
 
@@ -539,6 +636,8 @@ export default function AppPage() {
           onClose={() => setShowPartners(false)}
           onNotify={(t) => notify(t)}
           onError={(t) => notify(t, 'err')}
+          originalsProgress={originalsProgress}
+          setOriginalsProgress={setOriginalsProgress}
         />
       )}
     </div>
@@ -1000,6 +1099,11 @@ function AlbumDetailModal({
   onNotify,
   onError,
   viewAsTenantId,
+  // Техдолг#4 — state поднят в AppPage. Пробрасываем через модал
+  // в PhotosTab. Если модал закроется во время загрузки —
+  // beforeunload и индикатор останутся живы в AppPage.
+  originalsProgress,
+  setOriginalsProgress,
 }: {
   album: Album
   canEdit: boolean
@@ -1007,6 +1111,8 @@ function AlbumDetailModal({
   onNotify: (msg: string) => void
   onError: (msg: string) => void
   viewAsTenantId?: string
+  originalsProgress: React.ComponentProps<typeof PhotosTab>['originalsProgress']
+  setOriginalsProgress: React.ComponentProps<typeof PhotosTab>['setOriginalsProgress']
 }) {
   // Хелпер для запросов с поддержкой view_as (просмотр альбомов партнёра)
   const apiVA = (url: string, opts?: RequestInit) => {
@@ -1850,6 +1956,8 @@ function AlbumDetailModal({
                   children={children}
                   onNotify={onNotify}
                   onError={onError}
+                  originalsProgress={originalsProgress}
+                  setOriginalsProgress={setOriginalsProgress}
                 />
               )}
 
@@ -3911,6 +4019,10 @@ function PhotosTab({
   children: childList,
   onNotify,
   onError,
+  // Техдолг#4 — state поднят в AppPage чтобы beforeunload работал
+  // независимо от модала альбома, и для глобального индикатора в header.
+  originalsProgress,
+  setOriginalsProgress,
 }: {
   albumId: string
   archived: boolean
@@ -3918,17 +4030,7 @@ function PhotosTab({
   children: Child[]
   onNotify: (msg: string) => void
   onError: (msg: string) => void
-}) {
-  const [activeKind, setActiveKind] = useState<PhotoKind>('portrait')
-  const [photos, setPhotos] = useState<Photo[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showImportTags, setShowImportTags] = useState(false)
-
-  // П.1 — агрегированный прогресс фоновой загрузки оригиналов.
-  // Один state на всех — даже если партнёр запустил upload в нескольких
-  // категориях подряд, прогресс-бар показывает суммарный статус.
-  // null = ничего не грузится / последняя сессия завершена и сброшена.
-  const [originalsProgress, setOriginalsProgress] = useState<
+  originalsProgress:
     | null
     | {
         total: number
@@ -3937,26 +4039,31 @@ function PhotosTab({
         totalBytes: number
         doneBytes: number
         failedFilenames: string[]
-        completed: boolean  // все upload'ы закончились (включая failed)
+        completed: boolean
       }
-  >(null)
+  setOriginalsProgress: React.Dispatch<
+    React.SetStateAction<
+      | null
+      | {
+          total: number
+          done: number
+          failed: number
+          totalBytes: number
+          doneBytes: number
+          failedFilenames: string[]
+          completed: boolean
+        }
+    >
+  >
+}) {
+  const [activeKind, setActiveKind] = useState<PhotoKind>('portrait')
+  const [photos, setPhotos] = useState<Photo[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showImportTags, setShowImportTags] = useState(false)
 
-  // П.2 — beforeunload protection пока есть pending оригиналы.
-  // Партнёр получит модальное предупреждение браузера при попытке
-  // закрыть вкладку или перейти на другой URL.
-  useEffect(() => {
-    if (!originalsProgress || originalsProgress.completed) return
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
-      // В современных браузерах текст ниже игнорируется и показывается
-      // дефолтное «Сайт хочет закрыть вкладку, есть несохранённые изменения».
-      // Не идеально, но это всё что можно сделать кроссбраузерно.
-      e.returnValue =
-        'Идёт загрузка оригиналов для печати. Если закрыть сейчас — фотографии не будут в высоком качестве в PDF.'
-    }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [originalsProgress])
+  // П.1 / Техдолг#4 — state originalsProgress теперь в AppPage,
+  // PhotosTab получает его через props. beforeunload protection
+  // также живёт в AppPage.
 
   // состояние загрузки по каждому типу
   const [upload, setUpload] = useState<
@@ -7824,10 +7931,12 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
 // ПАРТНЁРСКИЙ ДАШБОРД — полноценный просмотр кабинета партнёра
 // ============================================================
 
-function PartnersDashboardModal({ onClose, onNotify, onError }: {
+function PartnersDashboardModal({ onClose, onNotify, onError, originalsProgress, setOriginalsProgress }: {
   onClose: () => void
   onNotify: (msg: string) => void
   onError: (msg: string) => void
+  originalsProgress: React.ComponentProps<typeof AlbumDetailModal>['originalsProgress']
+  setOriginalsProgress: React.ComponentProps<typeof AlbumDetailModal>['setOriginalsProgress']
 }) {
   const [tenants, setTenants] = useState<any[]>([])
   const [selectedTenant, setSelectedTenant] = useState<any | null>(null)
@@ -7963,6 +8072,8 @@ function PartnersDashboardModal({ onClose, onNotify, onError }: {
           onNotify={onNotify}
           onError={onError}
           viewAsTenantId={selectedTenant.id}
+          originalsProgress={originalsProgress}
+          setOriginalsProgress={setOriginalsProgress}
         />
       )}
 
