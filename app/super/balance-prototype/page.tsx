@@ -72,9 +72,9 @@ export default function BalancePrototypePage() {
           throw new Error(`template_sets HTTP ${listRes.status}`)
         }
         const listData = await listRes.json()
-        const testSet = (listData.template_sets ?? []).find(
-          (s: any) => s.slug === TEST_TEMPLATE_SET_SLUG,
-        )
+        // Endpoint возвращает массив напрямую (не объект с полем template_sets)
+        const sets: any[] = Array.isArray(listData) ? listData : (listData.template_sets ?? [])
+        const testSet = sets.find((s: any) => s.slug === TEST_TEMPLATE_SET_SLUG)
         if (!testSet) {
           throw new Error(
             `Тестовый template_set '${TEST_TEMPLATE_SET_SLUG}' не найден. Примените test-balance-template.sql в Supabase.`,
