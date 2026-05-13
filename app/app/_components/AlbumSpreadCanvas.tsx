@@ -59,6 +59,11 @@ type Props = {
   // Л.2 — контекстное меню на photo placeholder (правый клик).
   // Parent получает label, текущий url, и координаты клика для позиционирования popover.
   onPhotoContextMenu?: (label: string, url: string | null, clientX: number, clientY: number) => void
+  // Прототип балансировки — переопределение координат и видимости placeholder'ов.
+  // Если placeholder есть в этой map с hidden=true — не рендерится вообще.
+  // Если есть с x_mm/y_mm — рендерится по новым координатам.
+  // Размеры (width_mm/height_mm) НЕ меняются.
+  placeholderOverrides?: Record<string, { hidden?: boolean; x_mm?: number; y_mm?: number }>
 }
 
 // ─── Хелпер: загрузка HTMLImageElement из URL ────────────────────────────
@@ -504,10 +509,30 @@ export default function AlbumSpreadCanvas({
   onTextSubmit,
   onTextCancel,
   onPhotoContextMenu,
+  placeholderOverrides,
 }: Props) {
   const scale = containerWidth / template.width_mm
   const stageWidth = template.width_mm * scale
   const stageHeight = template.height_mm * scale
+
+  // Применяем placeholderOverrides — фильтруем hidden, переписываем координаты
+  // у видимых. Делаем неглубокий клон template чтобы не мутировать оригинал.
+  const effectiveTemplate = placeholderOverrides
+    ? {
+        ...template,
+        placeholders: template.placeholders
+          .filter((p) => !placeholderOverrides[p.label]?.hidden)
+          .map((p) => {
+            const ov = placeholderOverrides[p.label]
+            if (!ov) return p
+            return {
+              ...p,
+              x_mm: ov.x_mm ?? p.x_mm,
+              y_mm: ov.y_mm ?? p.y_mm,
+            }
+          }),
+      }
+    : template
 
   return (
     <div
@@ -534,7 +559,7 @@ export default function AlbumSpreadCanvas({
           />
 
           {/* Контент из instance.data */}
-          {template.placeholders.map((p: Placeholder, i) => {
+          {effectiveTemplate.placeholders.map((p: Placeholder, i) => {
             const value = instance.data[p.label] ?? null
             const key = `${p.label}-${i}`
             if (p.type === 'photo') {
@@ -557,7 +582,7 @@ export default function AlbumSpreadCanvas({
       {/* DOM-overlay с drop-target'ами и text-edit overlay'ами (только в edit-режиме) */}
       {mode === 'edit' && (
         <div className="absolute inset-0 pointer-events-none">
-          {template.placeholders.map((p) => {
+          {effectiveTemplate.placeholders.map((p) => {
             if (p.type === 'photo') {
               return (
                 <DropZone
