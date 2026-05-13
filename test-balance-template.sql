@@ -12,6 +12,11 @@
 -- Размер разворота: 420×297 мм (как в ТЗ заглушке)
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- ─── 0. Cleanup на случай повторного применения ────────────────────────
+-- Удаляем старый тестовый template_set если он уже создан раньше.
+-- ON DELETE CASCADE удалит spread_templates автоматически.
+DELETE FROM template_sets WHERE id = '00000000-0000-0000-0000-000000000999';
+
 -- ─── 1. template_set ───────────────────────────────────────────────────
 INSERT INTO template_sets (
   id, tenant_id, name, slug, print_type, page_width_mm, page_height_mm,
@@ -21,16 +26,14 @@ INSERT INTO template_sets (
   NULL,
   'TEST — Балансировка regular grid',
   'test-balance-grid',
-  'flat',
+  'layflat',
   210, 297,
   420, 297,
   3,
   true,
   true,
-  'left_to_right'
-) ON CONFLICT (id) DO UPDATE SET
-  name = EXCLUDED.name,
-  slug = EXCLUDED.slug;
+  'LeftToRight'
+);
 
 -- ─── 2. Мастер: T-TEST-Grid-9 (классрук + групповое + сетка 3×3) ──────
 --
@@ -68,7 +71,7 @@ INSERT INTO spread_templates (
 ) VALUES (
   '00000000-0000-0000-0000-000000000999',
   'T-TEST-Grid-9',
-  'spread',
+  'subjects',
   true,
   420, 297,
   '[
