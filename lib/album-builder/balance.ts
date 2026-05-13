@@ -213,17 +213,47 @@ export function balanceRegularGrid(
     }
   }
   if (remainder > 0) {
-    // Последний (неполный) ряд — берём координаты Y из ряда `fullRows`
-    // и центрируем остаток.
+    // Последний (неполный) ряд — центрируем остаток.
+    //
+    // ВАЖНО: «истинное центрирование» — не просто взять `remainder` ячеек
+    // подряд из центра ряда (это даст несимметричный результат для чётного
+    // remainder при нечётном cols). Вместо этого рассчитываем новые
+    // координаты X для каждой из `remainder` ячеек так, чтобы они были
+    // равноудалены от центра ряда.
+    //
+    // Алгоритм:
+    //   - rowY: Y-координата ряда (из первой ячейки)
+    //   - rowStartX: X-координата самой левой ячейки в ряду
+    //   - rowEndX: X-координата самой правой ячейки в ряду + её ширина
+    //   - rowCenterX: середина по X
+    //   - cellWidth: ширина одной ячейки (от первой photo)
+    //   - step: шаг между центрами ячеек = (rowEndX - rowStartX) / (cols - 1)
+    //   - При remainder ячеек шаг между ними тот же step
+    //   - Группа из `remainder` ячеек шириной (remainder-1)*step
+    //   - Левая ячейка группы: rowCenterX - ((remainder-1)*step)/2 - cellWidth/2
     const rowIdx = fullRows
     if (rowIdx < matrix.length) {
       const rowCells = matrix[rowIdx]
-      // Берём `remainder` ячеек из центра ряда
-      const startCol = Math.floor((cols - remainder) / 2)
+      const firstPhoto = photoByIndex.get(rowCells[0])!
+      const lastPhoto = photoByIndex.get(rowCells[rowCells.length - 1])!
+      const cellWidth = firstPhoto.width_mm
+      // Шаг между центрами соседних ячеек ряда
+      const step = rowCells.length > 1
+        ? (lastPhoto.x_mm - firstPhoto.x_mm) / (rowCells.length - 1)
+        : 0
+      // Центр ряда (по X центров крайних ячеек + cellWidth/2)
+      const rowCenterX = (firstPhoto.x_mm + lastPhoto.x_mm) / 2 + cellWidth / 2
+      const rowY = firstPhoto.y_mm
+
+      // Левая граница группы из `remainder` ячеек
+      const groupWidth = (remainder - 1) * step + cellWidth
+      const groupStartX = rowCenterX - groupWidth / 2
+
       for (let i = 0; i < remainder; i++) {
-        const cellIdx = rowCells[startCol + i]
-        const photo = photoByIndex.get(cellIdx)!
-        targetPositions.push({ x_mm: photo.x_mm, y_mm: photo.y_mm })
+        targetPositions.push({
+          x_mm: groupStartX + i * step,
+          y_mm: rowY,
+        })
       }
     }
   }
