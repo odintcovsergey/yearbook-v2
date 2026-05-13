@@ -57,38 +57,79 @@ export function balanceRegularGrid(
 ): BalanceResult {
   const overrides: Record<string, PlaceholderOverride> = {}
 
-  // Шаг 1: найти все «ячейки» — группы placeholder'ов с одинаковым
-  // trailing-индексом N в label, при условии что один из них — основное
-  // photo с base = indexedGroup.
-  const cellsByIndex = new Map<number, Placeholder[]>()
-  const otherPlaceholders: Placeholder[] = []
-
+  // Шаг 1: найти photo-якоря — placeholder'ы вида `<indexedGroup>_<N>`
+  // с типом photo. Это основа ячеек.
+  const photoByIndex = new Map<number, Placeholder>()
   for (const ph of placeholders) {
-    const match = ph.label.match(/^(.+)_(\d+)$/)
-    if (!match) {
-      otherPlaceholders.push(ph)
-      continue
-    }
-    const baseLabel = match[1]
-    const idx = parseInt(match[2], 10)
-    // Учитываем как «принадлежит ячейке N» любой placeholder с trailing _N,
-    // независимо от base — это позволит включить teachername_1, teachersubject_1
-    // в ту же ячейку что teacherphoto_1. Фильтр по indexedGroup идёт
-    // на уровне основного photo (определяет какие ячейки вообще существуют).
-    if (!cellsByIndex.has(idx)) cellsByIndex.set(idx, [])
-    cellsByIndex.get(idx)!.push(ph)
-    void baseLabel  // для будущего расширения если потребуется
+    if (ph.type !== 'photo') continue
+    const expectedPrefix = `${indexedGroup}_`
+    if (!ph.label.startsWith(expectedPrefix)) continue
+    const suffix = ph.label.slice(expectedPrefix.length)
+    const idx = parseInt(suffix, 10)
+    if (Number.isNaN(idx) || String(idx) !== suffix) continue
+    photoByIndex.set(idx, ph)
   }
 
-  // Берём только те индексы где есть photo с label indexedGroup_N
-  // (другие индексы — это другие группы, например studentphoto_N
-  //  в общем мастере если их несколько типов).
-  const validIndices = Array.from(cellsByIndex.keys()).filter((idx) => {
-    const cell = cellsByIndex.get(idx)!
-    return cell.some(
-      (ph) => ph.type === 'photo' && ph.label === `${indexedGroup}_${idx}`,
-    )
-  }).sort((a, b) => a - b)
+  if (photoByIndex.size === 0) {
+    return {
+      overrides: {},
+      detectedGrid: null,
+      strategy: `no photo anchors found for ${indexedGroup}_N`,
+    }
+  }
+
+  // Шаг 2: для каждого photo-якоря найти связанные placeholder'ы.
+  // Связанные = пространственно расположены в bounding-box ячейки
+  // (расширенном вниз для подписей под фото) И имеют trailing-индекс
+  // равный индексу якоря.
+  //
+  // Bounding-box ячейки: тот же x_mm/width_mm что у фото, но высота
+  // расширена вниз на CELL_LABELS_BELOW мм (для подписей).
+  const CELL_LABELS_BELOW = 30  // зона для name/subject под фото
+  const CELL_LABELS_ABOVE = 5   // небольшой допуск сверху
+
+  const cellsByIndex = new Map<number, Placeholder[]>()
+  for (const idx of Array.from(photoByIndex.keys())) {
+    const anchor = photoByIndex.get(idx)!
+    cellsByIndex.set(idx, [anchor])
+  }
+
+  for (const ph of placeholders) {
+    // Skip самих якорей (уже добавлены)
+    const isAnchor = Array.from(photoByIndex.values()).includes(ph)
+    if (isAnchor) continue
+
+    // Проверяем trailing-индекс
+    const match = ph.label.match(/_(\d+)$/)
+    if (!match) continue
+    const idx = parseInt(match[1], 10)
+
+    // Если такого якоря нет — пропускаем
+    const anchor = photoByIndex.get(idx)
+    if (!anchor) continue
+
+    // Проверяем пространственную близость: placeholder должен находиться
+    // в расширенной зоне ячейки якоря.
+    const cellLeft = anchor.x_mm
+    const cellRight = anchor.x_mm + anchor.width_mm
+    const cellTop = anchor.y_mm - CELL_LABELS_ABOVE
+    const cellBottom = anchor.y_mm + anchor.height_mm + CELL_LABELS_BELOW
+
+    const phCenterX = ph.x_mm + ph.width_mm / 2
+    const phCenterY = ph.y_mm + ph.height_mm / 2
+
+    const insideX = phCenterX >= cellLeft && phCenterX <= cellRight
+    const insideY = phCenterY >= cellTop && phCenterY <= cellBottom
+
+    if (insideX && insideY) {
+      cellsByIndex.get(idx)!.push(ph)
+    }
+    // Иначе — placeholder с тем же индексом но НЕ в этой ячейке.
+    // Например `groupphoto_1` на левой странице — не относится к
+    // teacher-ячейке 1, остаётся вне cellsByIndex (не двигается).
+  }
+
+  const validIndices = Array.from(photoByIndex.keys()).sort((a, b) => a - b)
 
   if (validIndices.length === 0) {
     return {
@@ -98,17 +139,9 @@ export function balanceRegularGrid(
     }
   }
 
-  // Шаг 2: определить regular grid по photo-placeholder'ам.
-  // Сортируем photo по (y, x) и определяем уникальные строки/колонки.
-  const photoByIndex = new Map<number, Placeholder>()
-  for (const idx of validIndices) {
-    const cell = cellsByIndex.get(idx)!
-    const photo = cell.find(
-      (ph) => ph.type === 'photo' && ph.label === `${indexedGroup}_${idx}`,
-    )
-    if (photo) photoByIndex.set(idx, photo)
-  }
-
+  // Шаг 3: определить regular grid по photo-placeholder'ам.
+  // photoByIndex уже создан выше при поиске якорей.
+  //
   // Группировка по y (ряды): photo с близкими y в одном ряду.
   // Близкость = разница <= 5мм (произвольный порог для устранения
   // floating-point ошибок и микро-отступов).
@@ -286,8 +319,9 @@ export function balanceRegularGrid(
     }
   }
 
-  // _head, групповое и другие placeholder'ы без _N — не трогаем
-  void otherPlaceholders
+  // _head, групповое и другие placeholder'ы без _N или с _N но вне
+  // пространственной зоны ячейки — не упомянуты в overrides, остаются
+  // с исходными координатами и видимыми.
 
   return {
     overrides,
