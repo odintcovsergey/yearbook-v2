@@ -175,15 +175,77 @@ export function balanceRegularGrid(
   const totalCells = validIndices.length
   const rows = matrix.length
   const cols = Math.max(...matrix.map((r) => r.length))
-  const isRegular = matrix.every((r) => r.length === cols)
+  const allRowsFull = matrix.every((r) => r.length === cols)
+
+  // Дополнительная проверка regular grid: все photo-якоря должны иметь
+  // одинаковые размеры (width_mm, height_mm). В шахматных/художественных
+  // композициях обычно фото разного размера → точно irregular.
+  const SIZE_TOLERANCE = 2  // мм
+  const firstPhoto = Array.from(photoByIndex.values())[0]
+  const allSameSize = Array.from(photoByIndex.values()).every((p) =>
+    Math.abs(p.width_mm - firstPhoto.width_mm) <= SIZE_TOLERANCE &&
+    Math.abs(p.height_mm - firstPhoto.height_mm) <= SIZE_TOLERANCE,
+  )
+
+  // Дополнительная проверка: в каждом ряду все ячейки должны иметь
+  // одинаковую X-позицию относительно ряда (одинаковый шаг между cols).
+  // Если в одном ряду 3 ячейки с координатами X=[225, 285, 345] (шаг 60)
+  // а в другом X=[235, 295, 355] (шаг 60 но сдвиг на 10мм) — это
+  // шахматный дизайн, не regular.
+  let colsAligned = true
+  if (allRowsFull && rows >= 2) {
+    const firstRow = matrix[0]
+    const firstRowXs = firstRow.map((idx) => photoByIndex.get(idx)!.x_mm)
+    for (let r = 1; r < matrix.length; r++) {
+      const rowXs = matrix[r].map((idx) => photoByIndex.get(idx)!.x_mm)
+      for (let c = 0; c < cols; c++) {
+        if (Math.abs(rowXs[c] - firstRowXs[c]) > SIZE_TOLERANCE) {
+          colsAligned = false
+          break
+        }
+      }
+      if (!colsAligned) break
+    }
+  }
+
+  const isRegular = allRowsFull && allSameSize && colsAligned
 
   const detectedGrid = { rows, cols, totalCells }
 
   if (!isRegular) {
+    // Irregular grid (шахматные, фигурные, художественные композиции).
+    // Алгоритм симметричного центрирования здесь не применим — он
+    // переразмещает ячейки в regular сетку, что ломает художественный
+    // замысел дизайнера.
+    //
+    // Применяем «порядковую балансировку»: скрываем последние
+    // (totalCells - usedCount) ячеек в порядке их индекса в IDML.
+    // Дизайнер располагает placeholder'ы в IDML в нужном порядке
+    // (обычно по «значимости» — главные в начале, декоративные в конце).
+    //
+    // Координаты оставшихся placeholder'ов НЕ меняются — они остаются
+    // на исходных местах. Это даёт «дырки» в композиции, но они
+    // сгруппированы в одном месте (в хвосте), не разбросаны хаотично.
+    if (usedCount >= totalCells) {
+      return {
+        overrides: {},
+        detectedGrid,
+        strategy: `irregular: full fill (${usedCount}/${totalCells})`,
+      }
+    }
+    for (let i = 0; i < validIndices.length; i++) {
+      const idx = validIndices[i]
+      const cell = cellsByIndex.get(idx)!
+      if (i >= usedCount) {
+        for (const ph of cell) {
+          overrides[ph.label] = { hidden: true }
+        }
+      }
+    }
     return {
-      overrides: {},
+      overrides,
       detectedGrid,
-      strategy: 'irregular grid — balancing not applied',
+      strategy: `irregular: hide last ${totalCells - usedCount} of ${totalCells}`,
     }
   }
 
