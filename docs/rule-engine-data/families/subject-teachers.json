@@ -1,0 +1,9 @@
+{
+  "id": "subject-teachers",
+  "display_name": "Страница с учителями-предметниками",
+  "aliases": [],
+  "deprecated": false,
+  "version": "1.0",
+  "tenant_id": null,
+  "params": {}
+}

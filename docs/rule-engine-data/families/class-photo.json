@@ -1,0 +1,9 @@
+{
+  "id": "class-photo",
+  "display_name": "Страница с групповыми фото",
+  "aliases": [],
+  "deprecated": false,
+  "version": "1.0",
+  "tenant_id": null,
+  "params": {}
+}

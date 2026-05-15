@@ -1,0 +1,21 @@
+{
+  "id": "maximum",
+  "display_name": "Максимум",
+  "print_type": "layflat",
+  "pages_per_spread": 2,
+  "version": "1.0",
+  "tenant_id": null,
+  "sections": [
+    { "family_id": "head-teacher" },
+    {
+      "family_id": "student-section",
+      "params": {
+        "density": "maximum",
+        "has_quote": true,
+        "has_friend_photos": true,
+        "friend_photos_max": 4
+      }
+    },
+    { "family_id": "common-section" }
+  ]
+}

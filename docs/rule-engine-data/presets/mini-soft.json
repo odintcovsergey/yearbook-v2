@@ -1,0 +1,18 @@
+{
+  "id": "mini-soft",
+  "display_name": "Мини",
+  "print_type": "soft",
+  "pages_per_spread": 2,
+  "version": "1.0",
+  "tenant_id": null,
+  "sections": [
+    { "family_id": "intro" },
+    { "family_id": "head-teacher" },
+    {
+      "family_id": "student-section",
+      "params": { "density": "mini" }
+    },
+    { "family_id": "common-section" },
+    { "family_id": "final" }
+  ]
+}

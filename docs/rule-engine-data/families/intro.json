@@ -1,0 +1,9 @@
+{
+  "id": "intro",
+  "display_name": "Заглавный лист (только soft)",
+  "aliases": [],
+  "deprecated": false,
+  "version": "1.0",
+  "tenant_id": null,
+  "params": {}
+}

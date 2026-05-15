@@ -1,0 +1,9 @@
+{
+  "id": "common-section",
+  "display_name": "Общий раздел (фото поездок, мероприятий)",
+  "aliases": [],
+  "deprecated": false,
+  "version": "1.0",
+  "tenant_id": null,
+  "params": {}
+}

@@ -1,0 +1,9 @@
+{
+  "id": "head-teacher",
+  "display_name": "Учительская страница с классруком",
+  "aliases": [],
+  "deprecated": false,
+  "version": "1.0",
+  "tenant_id": null,
+  "params": {}
+}

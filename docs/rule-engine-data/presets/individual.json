@@ -1,0 +1,29 @@
+{
+  "id": "individual",
+  "display_name": "Индивидуальный",
+  "print_type": "layflat",
+  "pages_per_spread": 2,
+  "version": "1.0",
+  "tenant_id": null,
+  "sections": [
+    { "family_id": "head-teacher" },
+    {
+      "family_id": "student-section",
+      "display_name": "Основной раздел (по развороту на ученика)",
+      "params": {
+        "density": "maximum",
+        "has_quote": true,
+        "has_friend_photos": true,
+        "friend_photos_max": 4
+      }
+    },
+    {
+      "family_id": "student-section",
+      "display_name": "Виньетка (все ученики мелко в сетке)",
+      "params": {
+        "density": "mini"
+      }
+    },
+    { "family_id": "common-section" }
+  ]
+}

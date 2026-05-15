@@ -1,0 +1,46 @@
+{
+  "id": "student-section",
+  "display_name": "Личный раздел учеников",
+  "aliases": [],
+  "deprecated": false,
+  "version": "1.0",
+  "tenant_id": null,
+  "params": {
+    "density": {
+      "type": "enum",
+      "values": ["maximum", "universal", "standard", "medium", "light", "mini"],
+      "default": "standard",
+      "required": true,
+      "description": "Плотность портретов на странице. maximum=1, universal=1, standard=1, medium=4, light=6, mini=12 (на сторону)."
+    },
+    "has_quote": {
+      "type": "boolean",
+      "default": true,
+      "description": "Выводить ли цитату ученика. Допустимо для density max/universal/standard. См. §4.4 spec'а."
+    },
+    "has_friend_photos": {
+      "type": "boolean",
+      "default": false,
+      "description": "Выводить ли фото с друзьями. Допустимо для density max/universal. См. §4.4 spec'а."
+    },
+    "friend_photos_max": {
+      "type": "number",
+      "default": 4,
+      "values": [2, 3, 4],
+      "description": "Максимум фото с друзьями (когда has_friend_photos=true)."
+    },
+    "portrait_source": {
+      "type": "string",
+      "default": "default",
+      "description": "Источник портрета. В MVP всегда 'default'. Заложено для будущей виньетки с детскими фото из садика — 'secondary_1', 'secondary_2'."
+    }
+  },
+  "density_config": {
+    "maximum":   { "capacity_per_side": 1,  "capacity_per_spread": 1 },
+    "universal": { "capacity_per_side": 1,  "capacity_per_spread": 2 },
+    "standard":  { "capacity_per_side": 1,  "capacity_per_spread": 2 },
+    "medium":    { "capacity_per_side": 4,  "capacity_per_spread": 8 },
+    "light":     { "capacity_per_side": 6,  "capacity_per_spread": 12 },
+    "mini":      { "capacity_per_side": 12, "capacity_per_spread": 24 }
+  }
+}
