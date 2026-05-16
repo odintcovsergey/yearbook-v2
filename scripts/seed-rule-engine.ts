@@ -4,11 +4,13 @@
  *
  * Режимы:
  *   - без флагов → read-only валидация (как было в РЭ.3)
- *   - --write   → UPSERT семейств в template_families (РЭ.3.5)
+ *   - --write   → UPSERT семейств + правил + пресетов (РЭ.3.5 + РЭ.8)
  *
- * Пресеты в --write режиме НЕ записываются — для них пока нет правил,
- * писать без правил незачем. UPSERT пресетов добавлю в РЭ.8 когда
- * наберётся критическая масса правил.
+ * Порядок записи в --write режиме:
+ *   1. template_families — сначала, потому что rules ссылается через FK
+ *   2. rules               — после семейств (family_id FK satisfied)
+ *   3. presets             — последними (parent_preset_id self-ref FK,
+ *                            sections.family_id — логическая ссылка, не FK)
  *
  * Запуск:
  *   npx tsx scripts/seed-rule-engine.ts              # валидация
@@ -72,7 +74,7 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('Reading rule engine data from:', DATA_ROOT);
   // eslint-disable-next-line no-console
-  console.log(`Mode: ${writeMode ? 'WRITE (UPSERT families to Supabase)' : 'read-only validation'}`);
+  console.log(`Mode: ${writeMode ? 'WRITE (UPSERT families + rules + presets to Supabase)' : 'read-only validation'}`);
 
   let hasErrors = false;
 
@@ -134,6 +136,15 @@ async function main(): Promise<void> {
     valid: 0,
     errors: 0,
   };
+  const validRuleData: Array<{
+    id: string;
+    family_id: string;
+    family_version: string;
+    priority: number;
+    rule_json: unknown;
+    tenant_id: string | null;
+    enabled: boolean;
+  }> = [];
 
   // eslint-disable-next-line no-console
   console.log(`\nRules: ${ruleFiles.length} files`);
@@ -158,6 +169,18 @@ async function main(): Promise<void> {
       );
     } else {
       ruleStats.valid += 1;
+      validRuleData.push({
+        id: result.data.id,
+        family_id: result.data.family_id,
+        family_version: result.data.family_version,
+        priority: result.data.priority,
+        // rule_json — весь объект правила целиком (так buildFromRules
+        // работает с одним полем, не склеивая колонки и JSON).
+        // Подробности — комментарий в rule-engine-migration.sql §rules.
+        rule_json: result.data,
+        tenant_id: null, // все правила в репо — глобальные
+        enabled: result.data.enabled ?? true,
+      });
       // eslint-disable-next-line no-console
       console.log(
         `  OK  ${filename} -> ${result.data.id} (family=${result.data.family_id})`
@@ -174,6 +197,17 @@ async function main(): Promise<void> {
     valid: 0,
     errors: 0,
   };
+  const validPresetData: Array<{
+    id: string;
+    display_name: string;
+    sections: unknown;
+    print_type: string;
+    pages_per_spread: number;
+    tenant_id: string | null;
+    version: string;
+    parent_preset_id: string | null;
+    enabled: boolean;
+  }> = [];
 
   // eslint-disable-next-line no-console
   console.log(`\nPresets: ${presetFiles.length} files`);
@@ -215,6 +249,17 @@ async function main(): Promise<void> {
       presetStats.errors += 1;
     } else {
       presetStats.valid += 1;
+      validPresetData.push({
+        id: result.data.id,
+        display_name: result.data.display_name,
+        sections: result.data.sections,
+        print_type: result.data.print_type,
+        pages_per_spread: result.data.pages_per_spread,
+        tenant_id: result.data.tenant_id,
+        version: result.data.version,
+        parent_preset_id: result.data.parent_preset_id ?? null,
+        enabled: result.data.enabled ?? true,
+      });
       // eslint-disable-next-line no-console
       console.log(
         `  OK  ${filename} -> ${result.data.id} (${result.data.sections.length} sections, print=${result.data.print_type})`
@@ -247,35 +292,65 @@ async function main(): Promise<void> {
   }
 
   // ---------------------------------------------------------------------------
-  // 4. WRITE-режим: UPSERT семейств в Supabase
+  // 4. WRITE-режим: UPSERT семейств → правил → пресетов в Supabase
   // ---------------------------------------------------------------------------
   if (!writeMode) {
     // eslint-disable-next-line no-console
     console.log('\nOK: all data valid (read-only mode, no DB writes).');
     // eslint-disable-next-line no-console
-    console.log('   Run with --write to UPSERT families into Supabase.');
+    console.log('   Run with --write to UPSERT families + rules + presets into Supabase.');
     return;
   }
 
   // eslint-disable-next-line no-console
-  console.log('\nWriting families to Supabase…');
+  console.log('\nWriting to Supabase…');
   // Динамический import — supabase.ts кидает Error при отсутствии env,
   // в read-only режиме нам это не нужно.
   const { supabaseAdmin } = await import('../lib/supabase');
 
+  // 4a. UPSERT семейств (rules.family_id ссылается через FK — пишем первыми).
   // UPSERT по PRIMARY KEY id (TEXT). Если строки нет — вставит, если есть — обновит.
-  const { error: upsertError, count } = await supabaseAdmin
+  const { error: familiesError, count: familiesCount } = await supabaseAdmin
     .from('template_families')
     .upsert(validFamilyData, { onConflict: 'id', count: 'exact' });
 
-  if (upsertError) {
+  if (familiesError) {
     // eslint-disable-next-line no-console
-    console.error(`Failed to UPSERT template_families: ${upsertError.message}`);
+    console.error(`Failed to UPSERT template_families: ${familiesError.message}`);
     process.exit(1);
   }
 
   // eslint-disable-next-line no-console
-  console.log(`  UPSERTed ${count ?? validFamilyData.length} rows to template_families`);
+  console.log(`  UPSERTed ${familiesCount ?? validFamilyData.length} rows to template_families`);
+
+  // 4b. UPSERT правил (зависят от семейств, поэтому после них).
+  const { error: rulesError, count: rulesCount } = await supabaseAdmin
+    .from('rules')
+    .upsert(validRuleData, { onConflict: 'id', count: 'exact' });
+
+  if (rulesError) {
+    // eslint-disable-next-line no-console
+    console.error(`Failed to UPSERT rules: ${rulesError.message}`);
+    process.exit(1);
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(`  UPSERTed ${rulesCount ?? validRuleData.length} rows to rules`);
+
+  // 4c. UPSERT пресетов (FK parent_preset_id ссылается на сами presets,
+  // в текущих данных таких ссылок нет — порядок внутри upsert неважен).
+  const { error: presetsError, count: presetsCount } = await supabaseAdmin
+    .from('presets')
+    .upsert(validPresetData, { onConflict: 'id', count: 'exact' });
+
+  if (presetsError) {
+    // eslint-disable-next-line no-console
+    console.error(`Failed to UPSERT presets: ${presetsError.message}`);
+    process.exit(1);
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(`  UPSERTed ${presetsCount ?? validPresetData.length} rows to presets`);
 
   // eslint-disable-next-line no-console
   console.log('\nDone.');
