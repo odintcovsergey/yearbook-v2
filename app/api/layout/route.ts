@@ -22,6 +22,7 @@ import type {
   RulesHeadTeacherInput,
 } from '@/lib/album-builder'
 import { adaptLegacyAlbumInput } from '@/lib/rule-engine/legacy-adapter'
+import { adaptAlbumLayoutToBuildResult } from '@/lib/rule-engine/layout-to-buildresult'
 import { buildAlbumInput, type SmartFillWarning } from '@/lib/smart-fill'
 import {
   exportAlbumPdf,
@@ -852,6 +853,158 @@ async function handlePreviewRulesEngine(
 // через ?view_as=<tenant_id>, superadmin без ограничений.
 // ============================================================
 
+// ============================================================
+// РЭ.16.2 — Сборка альбома через rule engine
+// ============================================================
+// Альтернативный путь к handleBuildAlbum через buildFromRules. Вызывается
+// когда album.rules_preset_id IS NOT NULL. Smart-fill общий, отличается
+// только сборка и адаптация результата к BuildResult формату.
+//
+// Возвращает { ok: true, response } при успехе или { ok: false } при
+// сбое (тогда caller fallback'ает на legacy buildAlbum).
+//
+// album_layouts.spreads пишется в legacy формате SpreadInstance через
+// адаптер. Редактор фазы Л/М, экспорт, превью продолжают работать без
+// изменений. Это и есть смысл миграционного режима.
+// ============================================================
+
+type RulesBuildOk = {
+  ok: true
+  response: NextResponse
+}
+
+type RulesBuildSkip = {
+  ok: false
+  reason: string
+}
+
+async function tryBuildViaRules(
+  supabase: typeof supabaseAdmin,
+  albumId: string,
+  rulesPresetId: string,
+  tenantId: string,
+  auth: AuthContext,
+): Promise<RulesBuildOk | RulesBuildSkip> {
+  // 1. Smart-fill реальных данных альбома (та же функция что у legacy).
+  let smartFillResult: { input: AlbumInput; warnings: SmartFillWarning[] }
+  try {
+    smartFillResult = await buildAlbumInput(supabase, albumId)
+  } catch (e) {
+    return { ok: false, reason: `smart-fill failed: ${(e as Error).message}` }
+  }
+
+  // 2. Адаптируем legacy AlbumInput → RulesAlbumInput.
+  const rulesInput = adaptLegacyAlbumInput(smartFillResult.input)
+
+  // 3. Загружаем bundle для rule engine (правила + семейства + пресет +
+  // template_set + masters). tenant_id=tid → подтягиваются партнёрские
+  // правила/пресеты + глобальные.
+  let bundle
+  try {
+    bundle = await loadBundle(supabase, rulesPresetId, tenantId, 'okeybook-default')
+  } catch (e) {
+    return {
+      ok: false,
+      reason: `loadBundle('${rulesPresetId}') failed: ${(e as Error).message}`,
+    }
+  }
+
+  // 4. Прогон через buildFromRules. Не бросает, status в результате.
+  const layout = buildFromRules(rulesInput, bundle)
+
+  if (layout.status === 'failed') {
+    // Серьёзная проблема rule engine — fallback на legacy лучше чем
+    // отдать партнёру битый layout.
+    return {
+      ok: false,
+      reason: `rule engine status=failed: ${layout.warnings.join('; ') || 'no warnings'}`,
+    }
+  }
+
+  // 5. Адаптация AlbumLayout → BuildResult (формат legacy).
+  // adaptAlbumLayoutToBuildResult бросает только на status='failed',
+  // который уже отсеян выше. Но на всякий случай try/catch.
+  let adapted
+  try {
+    adapted = adaptAlbumLayoutToBuildResult(layout)
+  } catch (e) {
+    return {
+      ok: false,
+      reason: `layout adapter failed: ${(e as Error).message}`,
+    }
+  }
+
+  // 6. Enrichment warnings (как у legacy build_album).
+  const enrichedWarnings: EnrichedWarning[] = [
+    ...adapted.result.warnings.map((w) => enrichWarning(w, 'builder')),
+    ...smartFillResult.warnings.map((w) => enrichWarning(w, 'smart_fill')),
+  ]
+
+  const warningsByLevel = {
+    blocking: enrichedWarnings.filter((w) => w.level === 'blocking').length,
+    degraded: enrichedWarnings.filter((w) => w.level === 'degraded').length,
+    info: enrichedWarnings.filter((w) => w.level === 'info').length,
+  }
+
+  // 7. Upsert в album_layouts. config_preset_id оставляем NULL —
+  // rule engine path не использует config_presets. Колонка nullable.
+  const { data: layoutRow, error: upsertErr } = await supabase
+    .from('album_layouts')
+    .upsert(
+      {
+        album_id: albumId,
+        template_set_id: bundle.templateSet.id,
+        config_preset_id: null,
+        spreads: adapted.result.spreads,
+        warnings: enrichedWarnings,
+        has_user_edits: false,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'album_id' },
+    )
+    .select('id')
+    .single()
+
+  if (upsertErr || !layoutRow) {
+    return {
+      ok: false,
+      reason: `album_layouts upsert failed: ${upsertErr?.message ?? 'no row'}`,
+    }
+  }
+
+  // 8. Audit log.
+  await logAction(auth, 'album_layout.build', 'album', albumId, {
+    engine: 'rules',
+    template_set_id: bundle.templateSet.id,
+    rules_preset_id: rulesPresetId,
+    rules_version: layout.rules_version,
+    rules_status: layout.status,
+    total_spreads: adapted.result.spreads.length,
+    total_warnings: enrichedWarnings.length,
+    warnings_by_level: warningsByLevel,
+    mixed_pages_count: adapted.rules_meta.mixed_pages_indices.length,
+  })
+
+  return {
+    ok: true,
+    response: NextResponse.json({
+      engine: 'rules',
+      spreads: adapted.result.spreads,
+      warnings: enrichedWarnings,
+      layout_id: layoutRow.id,
+      template_set_id: bundle.templateSet.id,
+      rules_meta: adapted.rules_meta,
+      summary: {
+        total_spreads: adapted.result.spreads.length,
+        total_warnings: enrichedWarnings.length,
+        warnings_by_level: warningsByLevel,
+        preset_slug: bundle.preset.id,
+        preset_name: bundle.preset.display_name,
+      },
+    }),
+  }
+}
+
 async function handleBuildAlbum(
   req: NextRequest,
   auth: AuthContext,
@@ -887,12 +1040,38 @@ async function handleBuildAlbum(
 
   const { data: album, error: albumErr } = await supabaseAdmin
     .from('albums')
-    .select('id, config_preset_id, template_set_id, vignettes_enabled')
+    .select('id, config_preset_id, rules_preset_id, template_set_id, vignettes_enabled')
     .eq('id', albumId)
     .single()
 
   if (albumErr || !album) {
     return NextResponse.json({ error: 'album not found' }, { status: 404 })
+  }
+
+  // ─── РЭ.16.2: развилка legacy vs rule engine ─────────────────────
+  // Если у альбома задан rules_preset_id — собираем через buildFromRules.
+  // Иначе legacy buildAlbum по config_preset_id (как было).
+  //
+  // Smart-fill общий для обоих путей (читает реальные данные из БД).
+  // Адаптация к rule engine — через legacy-adapter.
+  // На случай неожиданного сбоя rule engine (например пресет не найден)
+  // — auto-fallback на legacy, чтобы партнёр не остался без layout'а.
+  //
+  // album_layouts.config_preset_id остаётся текущим (legacy пресет
+  // альбома) — поле nullable, можно оставить как-было даже при rule
+  // engine пути, чтобы существующие SELECT'ы из админки продолжали
+  // работать. Информация о rule engine пишется в audit_log.
+
+  if (album.rules_preset_id) {
+    const rulesResult = await tryBuildViaRules(
+      supabaseAdmin,
+      albumId,
+      album.rules_preset_id,
+      tid,
+      auth,
+    )
+    if (rulesResult.ok) return rulesResult.response
+    // fallthrough на legacy при сбое rule engine
   }
 
   if (!album.config_preset_id) {
