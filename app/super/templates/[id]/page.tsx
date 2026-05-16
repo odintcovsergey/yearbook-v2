@@ -25,6 +25,43 @@ type BuildAlbumResult = {
   }
 }
 
+type RulesBuildResult = {
+  engine: 'rules'
+  status: 'ok' | 'partial' | 'failed'
+  spreads: Array<{
+    spread_index: number
+    left?: { master_id: string; bindings: Record<string, unknown> }
+    right?: { master_id: string; bindings: Record<string, unknown> }
+    is_spread?: boolean
+    mixed_pages?: boolean
+  }>
+  decision_trace: Array<{
+    spread_index: number
+    section_index: number
+    family_id: string
+    rule_id: string
+    variant_id?: string
+    mixed_pages?: { left_rule_id: string; right_rule_id: string }
+    inputs: Record<string, unknown>
+    balanced?: boolean
+  }>
+  warnings: string[]
+  rules_version: string
+  summary: {
+    total_spreads: number
+    total_warnings: number
+    total_decisions: number
+    preset_id: string
+    preset_name: string
+    students_count: number
+    subjects_count: number
+    template_set_slug: string
+  }
+}
+
+const RULES_PRESET_IDS = ['standard', 'universal', 'maximum', 'individual', 'medium', 'light', 'mini-soft'] as const
+type RulesPresetId = typeof RULES_PRESET_IDS[number]
+
 const CONFIG_TYPES: ConfigType[] = [
   'standard', 'universal', 'maximum', 'medium',
   'light', 'mini', 'individual',
@@ -79,6 +116,19 @@ export default function TemplateDetailPage() {
   const [bHalf, setBHalf] = useState(0)
   const [bFriendsPerStudent, setBFriendsPerStudent] = useState(0)
 
+  // ─── Rule Engine Build Test state (РЭ.13.2) ───────────────────
+  const [rBuildOpen, setRBuildOpen] = useState(false)
+  const [rBuildLoading, setRBuildLoading] = useState(false)
+  const [rBuildResult, setRBuildResult] = useState<RulesBuildResult | null>(null)
+  const [rBuildError, setRBuildError] = useState<string | null>(null)
+  const [rPresetId, setRPresetId] = useState<RulesPresetId>('standard')
+  const [rStudentsCount, setRStudentsCount] = useState(5)
+  const [rSubjectsCount, setRSubjectsCount] = useState(0)
+  const [rWithHeadTeacher, setRWithHeadTeacher] = useState(false)
+  const [rFullClass, setRFullClass] = useState(0)
+  const [rHalfClass, setRHalfClass] = useState(0)
+  const [rFriendsPerStudent, setRFriendsPerStudent] = useState(0)
+
   const runBuildTest = useCallback(async () => {
     setBuildLoading(true)
     setBuildError(null)
@@ -117,6 +167,42 @@ export default function TemplateDetailPage() {
       setBuildLoading(false)
     }
   }, [bConfigType, bPrintType, bStudentsCount, bSubjectsCount, bWithHeadTeacher, bFullClass, bHalf, bFriendsPerStudent])
+
+  const runRulesBuildTest = useCallback(async () => {
+    setRBuildLoading(true)
+    setRBuildError(null)
+    setRBuildResult(null)
+    try {
+      const friendPhotos =
+        rFriendsPerStudent > 0
+          ? Array.from({ length: rStudentsCount }, () => rFriendsPerStudent)
+          : []
+      const r = await fetch('/api/layout?action=build_album_test_rules', {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          preset_id: rPresetId,
+          students_count: rStudentsCount,
+          subjects_count: rSubjectsCount,
+          with_head_teacher: rWithHeadTeacher,
+          common_photos: { full_class: rFullClass, half_class: rHalfClass },
+          friend_photos_per_student: friendPhotos,
+        }),
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: 'unknown error' }))
+        setRBuildError(err.error ?? `HTTP ${r.status}`)
+        return
+      }
+      setRBuildResult((await r.json()) as RulesBuildResult)
+    } catch (e) {
+      setRBuildError(e instanceof Error ? e.message : 'network error')
+    } finally {
+      setRBuildLoading(false)
+    }
+  }, [rPresetId, rStudentsCount, rSubjectsCount, rWithHeadTeacher, rFullClass, rHalfClass, rFriendsPerStudent])
 
   useEffect(() => {
     api('/api/auth')
@@ -374,6 +460,216 @@ export default function TemplateDetailPage() {
                               )}
                             </div>
                           ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Rule Engine Build Test (РЭ.13.2) */}
+                <button
+                  onClick={() => setRBuildOpen((v) => !v)}
+                  className="mt-3 px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700"
+                >
+                  {rBuildOpen ? '▲ Скрыть Build Test (Rule Engine)' : '▼ Build Test (Rule Engine)'}
+                </button>
+
+                {rBuildOpen && (
+                  <div className="mt-3 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                    <h3 className="font-bold mb-3">
+                      Build Test через Rule Engine
+                      <span className="ml-2 text-xs font-normal text-purple-700">
+                        (новый buildFromRules, РЭ.9 / loaders + 36 правил)
+                      </span>
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <label className="flex items-center gap-2">
+                        preset_id:
+                        <select
+                          value={rPresetId}
+                          onChange={(e) => setRPresetId(e.target.value as RulesPresetId)}
+                          className="ml-auto px-2 py-1 border rounded"
+                        >
+                          {RULES_PRESET_IDS.map((p) => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        Учеников (0-100):
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={rStudentsCount}
+                          onChange={(e) => setRStudentsCount(Number(e.target.value))}
+                          className="ml-auto px-2 py-1 border rounded w-24"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2">
+                        Предметников (0-30):
+                        <input
+                          type="number"
+                          min={0}
+                          max={30}
+                          value={rSubjectsCount}
+                          onChange={(e) => setRSubjectsCount(Number(e.target.value))}
+                          className="ml-auto px-2 py-1 border rounded w-24"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={rWithHeadTeacher}
+                          onChange={(e) => setRWithHeadTeacher(e.target.checked)}
+                        />
+                        head_teacher
+                      </label>
+                      <label className="flex items-center gap-2">
+                        friend_photos на ученика (0-4):
+                        <input
+                          type="number"
+                          min={0}
+                          max={4}
+                          value={rFriendsPerStudent}
+                          onChange={(e) => setRFriendsPerStudent(Number(e.target.value))}
+                          className="ml-auto px-2 py-1 border rounded w-20"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2">
+                        full_class фото:
+                        <input
+                          type="number"
+                          min={0}
+                          max={5}
+                          value={rFullClass}
+                          onChange={(e) => setRFullClass(Number(e.target.value))}
+                          className="ml-auto px-2 py-1 border rounded w-20"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2">
+                        half_class фото:
+                        <input
+                          type="number"
+                          min={0}
+                          max={5}
+                          value={rHalfClass}
+                          onChange={(e) => setRHalfClass(Number(e.target.value))}
+                          className="ml-auto px-2 py-1 border rounded w-20"
+                        />
+                      </label>
+                    </div>
+
+                    <button
+                      onClick={runRulesBuildTest}
+                      disabled={rBuildLoading}
+                      className="mt-4 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+                    >
+                      {rBuildLoading ? 'Building…' : 'Build (Rule Engine)'}
+                    </button>
+
+                    {rBuildError && (
+                      <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                        Ошибка: {rBuildError}
+                      </div>
+                    )}
+
+                    {rBuildResult && (
+                      <div className="mt-4 space-y-3">
+                        <div className="p-3 bg-white border border-purple-200 rounded text-sm">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="font-bold">Сводка:</div>
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs font-mono ${
+                                rBuildResult.status === 'ok'
+                                  ? 'bg-green-100 text-green-800'
+                                  : rBuildResult.status === 'partial'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-red-100 text-red-800'
+                              }`}
+                            >
+                              status: {rBuildResult.status}
+                            </span>
+                          </div>
+                          <div>spreads: {rBuildResult.summary.total_spreads}</div>
+                          <div>decisions: {rBuildResult.summary.total_decisions}</div>
+                          <div>warnings: {rBuildResult.summary.total_warnings}</div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            preset: {rBuildResult.summary.preset_id}{' '}
+                            <span className="text-gray-400">({rBuildResult.summary.preset_name})</span>
+                            {' · '}
+                            students={rBuildResult.summary.students_count}
+                            {' · '}
+                            subjects={rBuildResult.summary.subjects_count}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1 font-mono">
+                            rules_version: {rBuildResult.rules_version}
+                          </div>
+                        </div>
+
+                        {rBuildResult.warnings.length > 0 && (
+                          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded text-sm">
+                            <div className="font-bold mb-2">Warnings:</div>
+                            {rBuildResult.warnings.map((w, i) => (
+                              <div key={i} className="text-xs mb-1 font-mono text-yellow-800">
+                                {w}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="p-3 bg-white border border-purple-200 rounded">
+                          <div className="font-bold mb-2">Decision trace (какое правило когда сработало):</div>
+                          {rBuildResult.decision_trace.length === 0 && (
+                            <div className="text-xs text-gray-500">Пусто</div>
+                          )}
+                          {rBuildResult.decision_trace.map((d, i) => (
+                            <div key={i} className="border-b border-gray-100 py-1.5 text-xs last:border-b-0">
+                              <span className="font-mono text-gray-500">[#{d.spread_index}.{d.section_index}]</span>{' '}
+                              <span className="font-mono text-purple-700">{d.family_id}</span>{' → '}
+                              <span className="font-mono font-bold">{d.rule_id}</span>
+                              {d.mixed_pages && (
+                                <span className="ml-2 px-1 bg-orange-100 text-orange-800 rounded text-xs">mixed</span>
+                              )}
+                              {d.balanced && (
+                                <span className="ml-2 px-1 bg-blue-100 text-blue-800 rounded text-xs">balanced</span>
+                              )}
+                              <span className="ml-2 text-gray-500">
+                                remaining={String(d.inputs.students_remaining ?? '?')}
+                                {' · '}idx={String(d.inputs.current_student_index ?? '?')}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="p-3 bg-white border border-purple-200 rounded">
+                          <div className="font-bold mb-2">Spreads:</div>
+                          {rBuildResult.spreads.length === 0 && (
+                            <div className="text-xs text-gray-500">Пусто</div>
+                          )}
+                          {rBuildResult.spreads.map((s) => {
+                            const leftName = (s.left?.bindings as Record<string, unknown> | undefined)?.__master_name__
+                            const rightName = (s.right?.bindings as Record<string, unknown> | undefined)?.__master_name__
+                            return (
+                              <div key={s.spread_index} className="border-b border-gray-100 py-2 text-sm last:border-b-0">
+                                <div>
+                                  <span className="font-mono text-gray-500">[{s.spread_index}]</span>{' '}
+                                  <span className="font-bold">{String(leftName ?? '—')}</span>
+                                  <span className="text-gray-400 mx-2">|</span>
+                                  <span className="font-bold">{String(rightName ?? '—')}</span>
+                                  {s.mixed_pages && (
+                                    <span className="ml-2 px-1 bg-orange-100 text-orange-800 rounded text-xs">mixed</span>
+                                  )}
+                                </div>
+                                <details className="mt-1 text-xs text-gray-600">
+                                  <summary className="cursor-pointer">bindings</summary>
+                                  <pre className="mt-1 p-2 bg-gray-50 rounded overflow-auto max-h-60">
+                                    {JSON.stringify({ left: s.left?.bindings, right: s.right?.bindings }, null, 2)}
+                                  </pre>
+                                </details>
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
                     )}
