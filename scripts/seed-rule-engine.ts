@@ -2,11 +2,18 @@
  * Сидер для rule engine — читает JSON из docs/rule-engine-data/,
  * валидирует Zod-схемами, проверяет ссылочную целостность.
  *
- * В РЭ.3 (этот коммит): только read-only валидация.
- * UPSERT в Supabase будет добавлен в РЭ.8 когда наберётся
- * критическая масса правил.
+ * Режимы:
+ *   - без флагов → read-only валидация (как было в РЭ.3)
+ *   - --write   → UPSERT семейств в template_families (РЭ.3.5)
  *
- * Запуск: npx tsx scripts/seed-rule-engine.ts
+ * Пресеты в --write режиме НЕ записываются — для них пока нет правил,
+ * писать без правил незачем. UPSERT пресетов добавлю в РЭ.8 когда
+ * наберётся критическая масса правил.
+ *
+ * Запуск:
+ *   npx tsx scripts/seed-rule-engine.ts              # валидация
+ *   npx tsx --env-file=.env.local \
+ *     scripts/seed-rule-engine.ts --write            # запись в БД
  */
 
 import { readdirSync, readFileSync, existsSync } from 'fs';
@@ -42,9 +49,13 @@ interface ValidationStats {
   errors: number;
 }
 
-function main(): void {
+async function main(): Promise<void> {
+  const writeMode = process.argv.includes('--write');
+
   // eslint-disable-next-line no-console
   console.log('Reading rule engine data from:', DATA_ROOT);
+  // eslint-disable-next-line no-console
+  console.log(`Mode: ${writeMode ? 'WRITE (UPSERT families to Supabase)' : 'read-only validation'}`);
 
   let hasErrors = false;
 
@@ -58,6 +69,16 @@ function main(): void {
     errors: 0,
   };
   const validFamilies: string[] = [];
+  const validFamilyData: Array<{
+    id: string;
+    display_name: string;
+    aliases: string[];
+    deprecated: boolean;
+    version: string;
+    tenant_id: string | null;
+    params: Record<string, unknown>;
+    density_config: Record<string, unknown> | null;
+  }> = [];
 
   // eslint-disable-next-line no-console
   console.log(`\nFamilies: ${familyFiles.length} files`);
@@ -66,6 +87,16 @@ function main(): void {
     const result = TemplateFamilySchema.safeParse(data);
     if (result.success) {
       validFamilies.push(result.data.id);
+      validFamilyData.push({
+        id: result.data.id,
+        display_name: result.data.display_name,
+        aliases: result.data.aliases,
+        deprecated: result.data.deprecated,
+        version: result.data.version,
+        tenant_id: result.data.tenant_id,
+        params: result.data.params,
+        density_config: result.data.density_config ?? null,
+      });
       familyStats.valid += 1;
       // eslint-disable-next-line no-console
       console.log(`  OK  ${filename} -> ${result.data.id}`);
@@ -175,10 +206,10 @@ function main(): void {
   }
 
   // ---------------------------------------------------------------------------
-  // Итог
+  // Итог валидации
   // ---------------------------------------------------------------------------
   // eslint-disable-next-line no-console
-  console.log('\nSummary:');
+  console.log('\nValidation summary:');
   // eslint-disable-next-line no-console
   console.log(
     `  families: ${familyStats.valid}/${familyStats.total} valid (${familyStats.errors} errors)`
@@ -194,12 +225,47 @@ function main(): void {
 
   if (hasErrors) {
     // eslint-disable-next-line no-console
-    console.error('\nFAILED: validation errors found.');
+    console.error('\nFAILED: validation errors found, aborting (no DB writes).');
+    process.exit(1);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 4. WRITE-режим: UPSERT семейств в Supabase
+  // ---------------------------------------------------------------------------
+  if (!writeMode) {
+    // eslint-disable-next-line no-console
+    console.log('\nOK: all data valid (read-only mode, no DB writes).');
+    // eslint-disable-next-line no-console
+    console.log('   Run with --write to UPSERT families into Supabase.');
+    return;
+  }
+
+  // eslint-disable-next-line no-console
+  console.log('\nWriting families to Supabase…');
+  // Динамический import — supabase.ts кидает Error при отсутствии env,
+  // в read-only режиме нам это не нужно.
+  const { supabaseAdmin } = await import('../lib/supabase');
+
+  // UPSERT по PRIMARY KEY id (TEXT). Если строки нет — вставит, если есть — обновит.
+  const { error: upsertError, count } = await supabaseAdmin
+    .from('template_families')
+    .upsert(validFamilyData, { onConflict: 'id', count: 'exact' });
+
+  if (upsertError) {
+    // eslint-disable-next-line no-console
+    console.error(`Failed to UPSERT template_families: ${upsertError.message}`);
     process.exit(1);
   }
 
   // eslint-disable-next-line no-console
-  console.log('\nOK: all data valid (read-only mode, no DB writes yet).');
+  console.log(`  UPSERTed ${count ?? validFamilyData.length} rows to template_families`);
+
+  // eslint-disable-next-line no-console
+  console.log('\nDone.');
 }
 
-main();
+main().catch((e) => {
+  // eslint-disable-next-line no-console
+  console.error(e);
+  process.exit(1);
+});
