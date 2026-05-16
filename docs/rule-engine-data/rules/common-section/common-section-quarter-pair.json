@@ -3,23 +3,23 @@
   "family_id": "common-section",
   "family_version": "1.0",
   "priority": 180,
-  "display_name": "Общий раздел: разворот с фото 1/4 класса (J-Quarter + J-Quarter, по 2 фото на странице)",
-  "description": "Разворот общего раздела с четырьмя фотографиями 1/4 класса (по 2 на странице). Симметричный мастер J-Quarter на обе стороны. Срабатывает пока есть >=4 фото quarter И лимит не достигнут. Приоритет 180 — после full_class и half_class. Bind использует ключи left_master/right_master (мастера одинаковые).",
+  "display_name": "Общий раздел: разворот с фото 1/4 класса (J-Quarter-Left + J-Quarter-Right)",
+  "description": "Разворот общего раздела с фотографиями 1/4 класса. Левый мастер J-Quarter-Left, правый J-Quarter-Right (есть зеркало). Срабатывает пока есть >=4 фото quarter И лимит не достигнут (по 2 фото на странице). Приоритет 180 — после full_class и half_class. Бind использует имена мастеров (sameName=false), placeholders quarterphoto_1, quarterphoto_2 на каждой странице.",
   "when": {
     "common_photos.quarter.count": { "gte": 4 },
     "common_section.spreads_remaining": { "neq": 0 }
   },
   "produces": {
     "type": "spread",
-    "left_master": "J-Quarter",
-    "right_master": "J-Quarter"
+    "left_master": "J-Quarter-Left",
+    "right_master": "J-Quarter-Right"
   },
   "bind": {
-    "left_master": {
+    "J-Quarter-Left": {
       "quarterphoto_1": "input.common_photos.quarter[$consumed_quarter]",
       "quarterphoto_2": "input.common_photos.quarter[$consumed_quarter + 1]"
     },
-    "right_master": {
+    "J-Quarter-Right": {
       "quarterphoto_1": "input.common_photos.quarter[$consumed_quarter + 2]",
       "quarterphoto_2": "input.common_photos.quarter[$consumed_quarter + 3]"
     }

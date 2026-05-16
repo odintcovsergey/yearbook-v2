@@ -3,16 +3,16 @@
   "family_id": "common-section",
   "family_version": "1.0",
   "priority": 170,
-  "display_name": "Общий раздел: разворот коллажа (J-Collage + J-Collage, по 6 фото на странице)",
-  "description": "Разворот общего раздела с коллажем из 12 фотографий (по 6 на странице). Симметричный мастер J-Collage на обе стороны. Срабатывает пока есть >=12 фото sixth И лимит не достигнут. Приоритет 170 — последняя категория. ВНИМАНИЕ: в legacy slot_capacity у J-Collage хранится как 'photos_collage' (исторически), а в RulesCommonPhotosInput поле называется 'sixth' — это согласовано. Bind использует ключи left_master/right_master.",
+  "display_name": "Общий раздел: разворот коллажа (J-Collage-6 + J-Collage-6, по 6 фото на странице)",
+  "description": "Разворот общего раздела с коллажем из 12 фотографий категории sixth (по 6 на странице). Симметричный мастер J-Collage-6 на обе стороны. Срабатывает пока есть >=12 фото sixth И лимит не достигнут. Приоритет 170 — последняя категория. Bind использует ключи left_master/right_master (мастера одинаковые).",
   "when": {
     "common_photos.sixth.count": { "gte": 12 },
     "common_section.spreads_remaining": { "neq": 0 }
   },
   "produces": {
     "type": "spread",
-    "left_master": "J-Collage",
-    "right_master": "J-Collage"
+    "left_master": "J-Collage-6",
+    "right_master": "J-Collage-6"
   },
   "bind": {
     "left_master": {
