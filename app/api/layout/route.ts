@@ -14,6 +14,13 @@ import type {
   Preset,
   TemplateSet,
 } from '@/lib/album-builder'
+import { buildFromRules, loadBundle } from '@/lib/album-builder'
+import type {
+  RulesAlbumInput,
+  RulesStudentInput,
+  RulesSubjectInput,
+  RulesHeadTeacherInput,
+} from '@/lib/album-builder'
 import { buildAlbumInput, type SmartFillWarning } from '@/lib/smart-fill'
 import {
   exportAlbumPdf,
@@ -262,6 +269,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 })
     }
     return handleBuildAlbumTest(req)
+  }
+
+  if (action === 'build_album_test_rules') {
+    if (auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
+    return handleBuildAlbumTestRules(req)
   }
 
   if (action === 'import_idml') {
@@ -531,13 +545,152 @@ async function handleBuildAlbumTest(req: NextRequest): Promise<NextResponse> {
 }
 
 // ============================================================
-// POST /api/layout?action=build_album
+// POST /api/layout?action=build_album_test_rules
 // ============================================================
-// Smart-fill endpoint: читает реальный альбом из БД, прогоняет через
-// builder, сохраняет результат в album_layouts (upsert), возвращает
-// spreads + классифицированные warnings.
+// Только superadmin. Параллельный endpoint к build_album_test, но
+// использует НОВЫЙ rule engine (buildFromRules из РЭ.9) вместо legacy
+// buildAlbum. Без фолбэка — если rule engine упал, возвращаем ошибку
+// (для тестирования сам факт сбоя ценнее тихого фолбэка).
 //
-// Body: { album_id: string }
+// Body:
+//   preset_id          — id из таблицы `presets` (например 'standard',
+//                        'individual', 'mini-soft', 'maximum')
+//   students_count, subjects_count, with_head_teacher,
+//   common_photos, friend_photos_per_student — те же что в test (legacy).
+//
+// Возвращает:
+//   spreads        — AlbumLayout.spreads (left/right + bindings + mixed_pages)
+//   decision_trace — какие правила применились + inputs snapshot
+//   warnings       — массив warnings (включая partial-сигналы)
+//   status         — 'ok' | 'partial' | 'failed'
+//   rules_version  — детерминированный хэш конфигурации правил
+//   summary        — total_spreads / total_warnings / preset_id / counts
+// ============================================================
+
+async function handleBuildAlbumTestRules(req: NextRequest): Promise<NextResponse> {
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
+  }
+
+  if (typeof body !== 'object' || body === null) {
+    return NextResponse.json({ error: 'body must be object' }, { status: 400 })
+  }
+  const b = body as Record<string, unknown>
+
+  const presetId = b.preset_id
+  if (typeof presetId !== 'string' || presetId.length === 0) {
+    return NextResponse.json(
+      { error: 'preset_id is required (e.g. "standard", "individual", "mini-soft")' },
+      { status: 400 },
+    )
+  }
+
+  const studentsCount = b.students_count
+  if (typeof studentsCount !== 'number' || studentsCount < 0 || studentsCount > 100) {
+    return NextResponse.json({ error: 'students_count must be number 0-100' }, { status: 400 })
+  }
+
+  const subjectsCount = b.subjects_count
+  if (typeof subjectsCount !== 'number' || subjectsCount < 0 || subjectsCount > 30) {
+    return NextResponse.json({ error: 'subjects_count must be number 0-30' }, { status: 400 })
+  }
+
+  const withHeadTeacher = b.with_head_teacher === true
+  const commonPhotosInput = (b.common_photos ?? {}) as Record<string, unknown>
+  const friendPhotosPerStudent = (b.friend_photos_per_student ?? []) as unknown[]
+
+  // Синтетический RulesAlbumInput (отличается от legacy AlbumInput структурой —
+  // students/subjects/head_teacher на верхнем уровне, не вложены в template_set).
+  const students: RulesStudentInput[] = []
+  for (let i = 0; i < studentsCount; i++) {
+    const friendCount =
+      typeof friendPhotosPerStudent[i] === 'number'
+        ? Math.min(4, Math.max(0, friendPhotosPerStudent[i] as number))
+        : 0
+    students.push({
+      full_name: `Ученик ${i + 1}`,
+      quote: `Цитата ${i + 1}`,
+      portrait: `https://fake/student-${i + 1}.jpg`,
+      friend_photos: Array.from(
+        { length: friendCount },
+        (_, j) => `https://fake/student-${i + 1}-friend-${j + 1}.jpg`,
+      ),
+    })
+  }
+
+  const subjects: RulesSubjectInput[] = Array.from({ length: subjectsCount }, (_, i) => ({
+    name: `Предметник ${i + 1}`,
+    role: 'учитель',
+    photo: `https://fake/subject-${i + 1}.jpg`,
+  }))
+
+  // Rule engine ожидает head_teacher всегда (RulesHeadTeacherInput, не nullable),
+  // но если with_head_teacher=false — поля пустые, правила head-teacher не
+  // сматчат и секция просто пропустится.
+  const headTeacher: RulesHeadTeacherInput = withHeadTeacher
+    ? {
+        name: 'Иванова Мария Петровна',
+        role: 'классный руководитель',
+        photo: 'https://fake/head.jpg',
+        text: 'Дорогие выпускники, желаю вам успехов.',
+      }
+    : { name: '', role: '', photo: null, text: '' }
+
+  const makeUrls = (n: number, prefix: string): string[] =>
+    Array.from({ length: n }, (_, i) => `https://fake/${prefix}-${i + 1}.jpg`)
+
+  const input: RulesAlbumInput = {
+    students,
+    subjects,
+    head_teacher: headTeacher,
+    common_photos: {
+      full_class: makeUrls(Number(commonPhotosInput.full_class ?? 0), 'class'),
+      half_class: makeUrls(Number(commonPhotosInput.half_class ?? commonPhotosInput.half ?? 0), 'half'),
+      spread: makeUrls(Number(commonPhotosInput.spread ?? 0), 'spread'),
+      quarter: makeUrls(Number(commonPhotosInput.quarter ?? 0), 'quarter'),
+      sixth: makeUrls(Number(commonPhotosInput.sixth ?? 0), 'sixth'),
+    },
+  }
+
+  // Загружаем bundle (preset + rules + families + template_set + masters).
+  // tenant_id=null → только глобальные правила/пресеты.
+  let bundle
+  try {
+    bundle = await loadBundle(supabaseAdmin, presetId, null, 'okeybook-default')
+  } catch (e) {
+    return NextResponse.json(
+      { error: `failed to load bundle for preset '${presetId}': ${(e as Error).message}` },
+      { status: 400 },
+    )
+  }
+
+  // Сборка через rule engine. buildFromRules не бросает — fatal в warnings.
+  const layout = buildFromRules(input, bundle)
+
+  return NextResponse.json({
+    engine: 'rules',
+    status: layout.status,
+    spreads: layout.spreads,
+    decision_trace: layout.decision_trace,
+    warnings: layout.warnings,
+    rules_version: layout.rules_version,
+    summary: {
+      total_spreads: layout.spreads.length,
+      total_warnings: layout.warnings.length,
+      total_decisions: layout.decision_trace.length,
+      preset_id: bundle.preset.id,
+      preset_name: bundle.preset.display_name,
+      students_count: studentsCount,
+      subjects_count: subjectsCount,
+      template_set_slug: bundle.templateSet.slug,
+    },
+  })
+}
+
+
 //
 // Доступ: owner/manager/viewer тенанта-владельца альбома, OkeyBook staff
 // через ?view_as=<tenant_id>, superadmin без ограничений.
