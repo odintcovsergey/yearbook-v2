@@ -128,6 +128,60 @@ export async function renderAllSpreads(
 }
 
 /**
+ * БТ.1.2 — Применяет служебные ключи __hidden__<label> / __pos__<label>
+ * из instance.data к списку placeholder'ов. Это та же конвенция что в
+ * AlbumSpreadCanvas (БТ.1.1) — единый источник правды.
+ *
+ * - __hidden__<label> != '0'/'false' → placeholder исключается из вывода
+ * - __pos__<label> = 'x_mm,y_mm' → placeholder получает новые координаты
+ *   (width/height не меняются — это согласовано с balance.ts из РЭ.9)
+ *
+ * Регрессия: если в data нет таких ключей — возвращает список как есть.
+ */
+function applyBalanceOverrides(
+  placeholders: Placeholder[],
+  data: Record<string, string | null>,
+): Placeholder[] {
+  // Build overrides map
+  const overrides: Record<string, { hidden?: boolean; x_mm?: number; y_mm?: number }> = {};
+  let hasAny = false;
+  for (const [k, v] of Object.entries(data)) {
+    if (typeof v !== 'string') continue;
+    if (k.startsWith('__hidden__')) {
+      const label = k.slice('__hidden__'.length);
+      if (v && v !== '0' && v !== 'false') {
+        if (!overrides[label]) overrides[label] = {};
+        overrides[label].hidden = true;
+        hasAny = true;
+      }
+    } else if (k.startsWith('__pos__')) {
+      const label = k.slice('__pos__'.length);
+      const parts = v.split(',').map((s) => Number(s.trim()));
+      if (parts.length === 2 && parts.every(Number.isFinite)) {
+        if (!overrides[label]) overrides[label] = {};
+        overrides[label].x_mm = parts[0];
+        overrides[label].y_mm = parts[1];
+        hasAny = true;
+      }
+    }
+  }
+  if (!hasAny) return placeholders;
+
+  return placeholders
+    .filter((p) => !overrides[p.label]?.hidden)
+    .map((p) => {
+      const ov = overrides[p.label];
+      if (!ov) return p;
+      if (ov.x_mm === undefined && ov.y_mm === undefined) return p;
+      return {
+        ...p,
+        x_mm: ov.x_mm ?? p.x_mm,
+        y_mm: ov.y_mm ?? p.y_mm,
+      };
+    });
+}
+
+/**
  * Рендер одного SpreadInstance в PDFDocument.
  *
  * Если template.is_spread=false → одна страница (все placeholders как есть).
@@ -144,15 +198,22 @@ async function renderSpread(
   instance: SpreadInstance,
   template: SpreadTemplate
 ): Promise<number> {
+  // БТ.1.2: применяем балансировку (hidden + pos) до любого деления
+  // на страницы. Дальше работаем с effectivePlaceholders.
+  const effectivePlaceholders = applyBalanceOverrides(
+    template.placeholders,
+    instance.data,
+  );
+
   if (!template.is_spread) {
-    await renderPage(ctx, instance, template, template.placeholders, 'single');
+    await renderPage(ctx, instance, template, effectivePlaceholders, 'single');
     return 1;
   }
 
   // Двухстраничный мастер. Два режима:
   if (ctx.profile.spread_export) {
     // Spread mode: одна широкая PDF-страница на весь разворот
-    await renderPage(ctx, instance, template, template.placeholders, 'spread');
+    await renderPage(ctx, instance, template, effectivePlaceholders, 'spread');
     return 1;
   }
 
@@ -162,7 +223,7 @@ async function renderSpread(
   const page_w_mm = ctx.pageBoxes.trim_width_mm;
   const leftPlaceholders: Placeholder[] = [];
   const rightPlaceholders: Placeholder[] = [];
-  for (const ph of template.placeholders) {
+  for (const ph of effectivePlaceholders) {
     if (ph.x_mm < page_w_mm) {
       leftPlaceholders.push(ph);
     } else {
