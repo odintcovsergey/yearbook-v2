@@ -1,0 +1,45 @@
+{
+  "id": "student-section-universal-pair",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 100,
+  "display_name": "Universal: пара учеников на разворот",
+  "description": "density=universal, capacity_per_spread=2. Каждая страница — отдельный ученик со своим портретом, ФИО, цитатой и до 2 фото с друзьями. Применяется когда students_remaining >= 2.",
+  "when": {
+    "section.density": "universal",
+    "students_remaining": { "gte": 2 }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "E-Universal-Left",
+    "right_master": "E-Universal-Right"
+  },
+  "bind": {
+    "E-Universal-Left": {
+      "studentportrait": "input.students[$current_student_index].portrait",
+      "studentname": "input.students[$current_student_index].full_name",
+      "studentquote": {
+        "expr": "section.has_quote ? input.students[$current_student_index].quote : null"
+      },
+      "studentphoto_{i}": {
+        "template": "input.students[$current_student_index].friend_photos[{i}-1]",
+        "params": { "i": { "range": [1, 2] } },
+        "skip_if": "!section.has_friend_photos"
+      }
+    },
+    "E-Universal-Right": {
+      "studentportrait": "input.students[$current_student_index + 1].portrait",
+      "studentname": "input.students[$current_student_index + 1].full_name",
+      "studentquote": {
+        "expr": "section.has_quote ? input.students[$current_student_index + 1].quote : null"
+      },
+      "studentphoto_{i}": {
+        "template": "input.students[$current_student_index + 1].friend_photos[{i}-1]",
+        "params": { "i": { "range": [1, 2] } },
+        "skip_if": "!section.has_friend_photos"
+      }
+    }
+  },
+  "consumes": { "students": 2 },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

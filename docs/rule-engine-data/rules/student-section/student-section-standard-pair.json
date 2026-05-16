@@ -1,0 +1,34 @@
+{
+  "id": "student-section-standard-pair",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 100,
+  "display_name": "Standard: пара учеников на разворот",
+  "description": "density=standard, capacity_per_spread=2. Классическая верстка: по одному ученику на страницу с портретом, ФИО и цитатой. Без фото с друзьями (нет места).",
+  "when": {
+    "section.density": "standard",
+    "students_remaining": { "gte": 2 }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "E-Standard-Left",
+    "right_master": "E-Standard-Right"
+  },
+  "bind": {
+    "E-Standard-Left": {
+      "studentportrait": "input.students[$current_student_index].portrait",
+      "studentname": "input.students[$current_student_index].full_name",
+      "studentquote": {
+        "expr": "section.has_quote ? input.students[$current_student_index].quote : null"
+      }
+    },
+    "E-Standard-Right": {
+      "studentportrait": "input.students[$current_student_index + 1].portrait",
+      "studentname": "input.students[$current_student_index + 1].full_name",
+      "studentquote": {
+        "expr": "section.has_quote ? input.students[$current_student_index + 1].quote : null"
+      }
+    }
+  },
+  "consumes": { "students": 2 }
+}

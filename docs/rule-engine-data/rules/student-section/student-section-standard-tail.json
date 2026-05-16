@@ -1,0 +1,27 @@
+{
+  "id": "student-section-standard-tail",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 50,
+  "display_name": "Standard: одинокий ученик (хвост)",
+  "description": "density=standard с остатком 1 ученика (нечётное число учеников). E-Standard-Left на левой странице, правая 'висит' — достанется следующей секции (обычно common-section: J-Half, J-Full и т.д.). Разворот со смешанными страницами.",
+  "when": {
+    "section.density": "standard",
+    "students_remaining": 1
+  },
+  "produces": {
+    "type": "page",
+    "side": "left",
+    "master": "E-Standard-Left"
+  },
+  "bind": {
+    "E-Standard-Left": {
+      "studentportrait": "input.students[$current_student_index].portrait",
+      "studentname": "input.students[$current_student_index].full_name",
+      "studentquote": {
+        "expr": "section.has_quote ? input.students[$current_student_index].quote : null"
+      }
+    }
+  },
+  "consumes": { "students": 1 }
+}

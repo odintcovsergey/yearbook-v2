@@ -1,0 +1,37 @@
+{
+  "id": "student-section-maximum",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 100,
+  "display_name": "Maximum: каждому ученику свой разворот",
+  "description": "density=maximum, capacity_per_spread=1. Каждому ученику — двухстраничный разворот: слева портрет + ФИО, справа цитата + до 4 фото с друзьями (с балансировкой если фото меньше).",
+  "when": {
+    "section.density": "maximum",
+    "students_remaining": { "gte": 1 }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "E-Max-Left",
+    "right_master": "E-Max-Right"
+  },
+  "bind": {
+    "E-Max-Left": {
+      "studentportrait": "input.students[$current_student_index].portrait",
+      "studentname": "input.students[$current_student_index].full_name"
+    },
+    "E-Max-Right": {
+      "studentquote": {
+        "expr": "section.has_quote ? input.students[$current_student_index].quote : null"
+      },
+      "studentphoto_{i}": {
+        "template": "input.students[$current_student_index].friend_photos[{i}-1]",
+        "params": {
+          "i": { "range": [1, "section.friend_photos_max"] }
+        },
+        "skip_if": "!section.has_friend_photos"
+      }
+    }
+  },
+  "consumes": { "students": 1 },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

@@ -1,0 +1,33 @@
+{
+  "id": "student-section-universal-tail",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 50,
+  "display_name": "Universal: одинокий ученик (хвост)",
+  "description": "density=universal с остатком 1 ученика. E-Universal-Left на левой странице, правая 'висит' — достанется следующей секции (разворот со смешанными страницами, обычно common-section).",
+  "when": {
+    "section.density": "universal",
+    "students_remaining": 1
+  },
+  "produces": {
+    "type": "page",
+    "side": "left",
+    "master": "E-Universal-Left"
+  },
+  "bind": {
+    "E-Universal-Left": {
+      "studentportrait": "input.students[$current_student_index].portrait",
+      "studentname": "input.students[$current_student_index].full_name",
+      "studentquote": {
+        "expr": "section.has_quote ? input.students[$current_student_index].quote : null"
+      },
+      "studentphoto_{i}": {
+        "template": "input.students[$current_student_index].friend_photos[{i}-1]",
+        "params": { "i": { "range": [1, 2] } },
+        "skip_if": "!section.has_friend_photos"
+      }
+    }
+  },
+  "consumes": { "students": 1 },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}
