@@ -210,6 +210,9 @@ function buildPage(
       const v = resolveValue(stripExprPrefix(raw), scope);
       if (typeof v === 'number' && Number.isFinite(v)) {
         cursorsWithSelector[k] = v;
+        // Также обновляем исходные master_selector_params, чтобы caller видел
+        // итоговое числовое значение (а не оригинальное выражение).
+        sel.master_selector_params[k] = v;
       } else if (typeof v === 'string') {
         // для grid_mode оставляем строкой, но в cursors класть нельзя — оставим в master_selector_params
         sel.master_selector_params[k] = v;
