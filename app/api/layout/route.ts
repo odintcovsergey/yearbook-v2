@@ -21,6 +21,7 @@ import type {
   RulesSubjectInput,
   RulesHeadTeacherInput,
 } from '@/lib/album-builder'
+import { adaptLegacyAlbumInput } from '@/lib/rule-engine/legacy-adapter'
 import { buildAlbumInput, type SmartFillWarning } from '@/lib/smart-fill'
 import {
   exportAlbumPdf,
@@ -276,6 +277,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 })
     }
     return handleBuildAlbumTestRules(req)
+  }
+
+  if (action === 'preview_rules_engine') {
+    // Доступ как у build_album (owner/manager/viewer/superadmin) + view_as
+    // для main-сотрудников. Никаких записей в БД — это read-only превью.
+    return handlePreviewRulesEngine(req, auth)
   }
 
   if (action === 'import_idml') {
@@ -690,6 +697,155 @@ async function handleBuildAlbumTestRules(req: NextRequest): Promise<NextResponse
   })
 }
 
+// ============================================================
+// POST /api/layout?action=preview_rules_engine
+// ============================================================
+// Read-only превью rule engine на РЕАЛЬНЫХ данных альбома. В отличие
+// от build_album_test_rules который работает на синтетических цифрах,
+// этот endpoint:
+//   - читает реальный альбом (учеников, фото, subjects, head_teacher)
+//     через buildAlbumInput (smart-fill, как boevoy build_album)
+//   - адаптирует legacy AlbumInput → RulesAlbumInput (см. legacy-adapter)
+//   - прогоняет через buildFromRules с переданным preset_id из таблицы
+//     `presets` (rule engine), tenant-aware для партнёров
+//   - возвращает spreads/decision_trace/warnings/status, НИЧЕГО не пишет
+//     в album_layouts
+//
+// Это инструмент для оценки «как rule engine собрал бы этот альбом
+// если бы его подключили» — без риска для текущего workflow.
+//
+// Доступ: owner/manager/viewer тенанта-владельца альбома + view_as для
+// main-сотрудников + superadmin. Те же правила что у build_album.
+//
+// Body:
+//   album_id  — uuid реального альбома
+//   preset_id — id из таблицы `presets` ('standard', 'individual', и т.п.)
+//
+// Response:
+//   {
+//     engine: 'rules',
+//     status: 'ok'|'partial'|'failed',
+//     spreads, decision_trace, warnings, rules_version,
+//     smart_fill_warnings,
+//     summary: { ... + album_id + students_count_actual + ... }
+//   }
+// ============================================================
+
+async function handlePreviewRulesEngine(
+  req: NextRequest,
+  auth: AuthContext,
+): Promise<NextResponse> {
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
+  }
+  if (typeof body !== 'object' || body === null) {
+    return NextResponse.json({ error: 'body must be object' }, { status: 400 })
+  }
+  const b = body as Record<string, unknown>
+
+  const albumId = b.album_id
+  if (typeof albumId !== 'string' || !UUID_REGEX.test(albumId)) {
+    return NextResponse.json({ error: 'album_id is required (uuid)' }, { status: 400 })
+  }
+  const presetId = b.preset_id
+  if (typeof presetId !== 'string' || presetId.length === 0) {
+    return NextResponse.json(
+      { error: 'preset_id is required (e.g. "standard", "individual", "mini-soft")' },
+      { status: 400 },
+    )
+  }
+
+  // view_as паттерн (как у handleBuildAlbum).
+  const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+  const { data: currentTenantData } = viewAsTenantId
+    ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+    : { data: null }
+  const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
+  const tid = (canViewAs && viewAsTenantId) ? viewAsTenantId : auth.tenantId
+
+  if (!(await assertAlbumAccessLocal(auth, albumId, tid))) {
+    return NextResponse.json({ error: 'access denied' }, { status: 403 })
+  }
+
+  // Smart-fill: реальные данные альбома → legacy AlbumInput.
+  let smartFillResult: { input: AlbumInput; warnings: SmartFillWarning[] }
+  try {
+    smartFillResult = await buildAlbumInput(supabaseAdmin, albumId)
+  } catch (e) {
+    return NextResponse.json(
+      { error: `smart-fill failed: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  // Адаптация структуры под rule engine.
+  const rulesInput = adaptLegacyAlbumInput(smartFillResult.input)
+
+  // Загружаем bundle. tenant_id=tid — чтобы пресеты партнёра тоже подцеплялись
+  // (правила глобальные + тенантские, см. loaders.ts).
+  let bundle
+  try {
+    bundle = await loadBundle(supabaseAdmin, presetId, tid, 'okeybook-default')
+  } catch (e) {
+    return NextResponse.json(
+      { error: `failed to load bundle for preset '${presetId}': ${(e as Error).message}` },
+      { status: 400 },
+    )
+  }
+
+  // Сборка через rule engine. Не бросает (status в результате).
+  const layout = buildFromRules(rulesInput, bundle)
+
+  // Логирование (как у build_album — для audit_log).
+  await logAction(
+    auth,
+    'layout.preview_rules_engine',
+    'album',
+    albumId,
+    {
+      preset_id: presetId,
+      status: layout.status,
+      total_spreads: layout.spreads.length,
+      total_warnings: layout.warnings.length,
+      total_decisions: layout.decision_trace.length,
+      students_count: rulesInput.students.length,
+      subjects_count: rulesInput.subjects.length,
+    },
+  )
+
+  return NextResponse.json({
+    engine: 'rules',
+    status: layout.status,
+    spreads: layout.spreads,
+    decision_trace: layout.decision_trace,
+    warnings: layout.warnings,
+    rules_version: layout.rules_version,
+    smart_fill_warnings: smartFillResult.warnings,
+    summary: {
+      album_id: albumId,
+      preset_id: bundle.preset.id,
+      preset_name: bundle.preset.display_name,
+      template_set_slug: bundle.templateSet.slug,
+      total_spreads: layout.spreads.length,
+      total_warnings: layout.warnings.length,
+      total_decisions: layout.decision_trace.length,
+      students_count: rulesInput.students.length,
+      subjects_count: rulesInput.subjects.length,
+      common_photos_counts: {
+        full_class: rulesInput.common_photos.full_class.length,
+        half_class: rulesInput.common_photos.half_class.length,
+        spread: rulesInput.common_photos.spread.length,
+        quarter: rulesInput.common_photos.quarter.length,
+        sixth: rulesInput.common_photos.sixth.length,
+      },
+      head_teacher_present:
+        !!rulesInput.head_teacher.name || !!rulesInput.head_teacher.photo,
+    },
+  })
+}
 
 //
 // Доступ: owner/manager/viewer тенанта-владельца альбома, OkeyBook staff
