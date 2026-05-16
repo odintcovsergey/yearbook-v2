@@ -1563,6 +1563,7 @@ export async function POST(req: NextRequest) {
       'template_set_id',
       'vignettes_enabled',  // А.3.4 — override виньеток (true/false/null)
       'common_section_max_spreads',  // А.4 — лимит разворотов общего раздела (number/null)
+      'rules_preset_id',  // РЭ.16 — если задан, build_album использует rule engine
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {

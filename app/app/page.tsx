@@ -51,6 +51,7 @@ type Album = {
   config_preset_name?: string | null
   vignettes_enabled?: boolean | null  // А.3.4: null=дефолт пресета, true/false=override
   common_section_max_spreads?: number | null  // А.4.3: null=без лимита, 0=отключён, >0=лимит
+  rules_preset_id?: string | null  // РЭ.16: если задан, build_album использует rule engine
   stats: { total: number; submitted: number; in_progress: number }
   teacher_token: string | null
   teachers: { total: number; done: number } | null
@@ -994,6 +995,93 @@ function VignettesControl({
   )
 }
 
+// РЭ.16.3 — Селектор rules_preset_id (rule engine).
+// Если задан → build_album пойдёт через buildFromRules (новый движок).
+// NULL = legacy buildAlbum (как было). Альбом можно переключать туда-сюда
+// и пересобирать — операция обратимая.
+function RulesPresetControl({
+  album,
+  apiVA,
+  onNotify,
+  onError,
+}: {
+  album: Album
+  apiVA: (url: string, opts?: RequestInit) => Promise<Response>
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [value, setValue] = useState<string | null>(album.rules_preset_id ?? null)
+  const [saving, setSaving] = useState(false)
+
+  const handleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const raw = e.target.value
+    const newValue: string | null = raw === '__legacy__' ? null : raw
+    const prev = value
+    setValue(newValue)
+    setSaving(true)
+    try {
+      const r = await apiVA('/api/tenant', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'update_album',
+          album_id: album.id,
+          rules_preset_id: newValue,
+        }),
+      })
+      if (r.ok) {
+        onNotify(
+          newValue
+            ? `Движок переключён на Rule Engine (${newValue}). Пересоберите альбом чтобы применить.`
+            : 'Движок переключён на legacy. Пересоберите альбом чтобы применить.',
+        )
+      } else {
+        setValue(prev)
+        const d = await r.json().catch(() => ({}))
+        onError(d.error ?? 'Не удалось сохранить движок')
+      }
+    } catch (err) {
+      setValue(prev)
+      onError(err instanceof Error ? err.message : 'Ошибка сети')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const RULES_PRESETS: { id: string; label: string }[] = [
+    { id: 'standard', label: 'standard' },
+    { id: 'universal', label: 'universal' },
+    { id: 'maximum', label: 'maximum' },
+    { id: 'individual', label: 'individual' },
+    { id: 'medium', label: 'medium' },
+    { id: 'light', label: 'light' },
+    { id: 'mini-soft', label: 'mini-soft' },
+  ]
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-3 flex-wrap">
+      <div className="text-xs text-purple-700 uppercase">🧪 Движок сборки</div>
+      <select
+        value={value ?? '__legacy__'}
+        onChange={handleChange}
+        disabled={saving}
+        className="text-sm px-2 py-1 border border-gray-300 rounded bg-white disabled:opacity-50"
+      >
+        <option value="__legacy__">Legacy (старый buildAlbum)</option>
+        {RULES_PRESETS.map((p) => (
+          <option key={p.id} value={p.id}>
+            Rule Engine: {p.label}
+          </option>
+        ))}
+      </select>
+      <div className="text-xs text-gray-400 flex-1 min-w-[200px]">
+        {value
+          ? `Альбом будет собираться через новый движок с пресетом «${value}». При сбое — авто-fallback на legacy.`
+          : 'Используется старый алгоритм buildAlbum по config_preset_id (как раньше).'}
+      </div>
+    </div>
+  )
+}
+
 // А.4.3 — Числовой инпут лимита разворотов в общем разделе альбома.
 // null = без ограничения (builder вставляет всё), 0 = раздел отключён,
 // >0 = жёсткий лимит. Применяется при следующей пересборке альбома.
@@ -1778,6 +1866,18 @@ function AlbumDetailModal({
                         выключены в остальных). true/false = принудительно. */}
                     {canEdit && album.config_preset_id && (
                       <VignettesControl
+                        album={album}
+                        apiVA={apiVA}
+                        onNotify={onNotify}
+                        onError={onError}
+                      />
+                    )}
+
+                    {/* РЭ.16.3 — Селектор движка сборки (legacy vs rule engine).
+                        Показываем всегда, даже без config_preset_id — rule engine
+                        работает по своему preset_id и не требует legacy config. */}
+                    {canEdit && (
+                      <RulesPresetControl
                         album={album}
                         apiVA={apiVA}
                         onNotify={onNotify}
