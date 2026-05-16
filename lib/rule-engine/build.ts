@@ -215,11 +215,18 @@ export function buildFromRules(
         // Сдвинуть курсоры по consumes
         advanceCursors(cursors, ruleToApply, ctx, input);
 
-        // Защита от бесконечного цикла (правило не потребило ничего)
+        // Защита от бесконечного цикла. Warning логичен только для
+        // итеративных семейств — там это сигнал что правило срабатывает
+        // но не двигает курсоры (потенциальный баг правила).
+        // Для singleton (head-teacher/intro/final) правило без consumes —
+        // нормальное явление (final-text-only, t-class-*-no-common). Не
+        // спамим warnings в UI.
         if (!cursorsChanged(cursorsBefore, cursors)) {
-          warnings.push(
-            `section[${sectionIndex}] ${section.family_id}: rule '${ruleToApply.id}' consumed nothing — stopping section`,
-          );
+          if (ITERATIVE_FAMILIES.has(section.family_id)) {
+            warnings.push(
+              `section[${sectionIndex}] ${section.family_id}: rule '${ruleToApply.id}' consumed nothing — stopping section`,
+            );
+          }
           break;
         }
 

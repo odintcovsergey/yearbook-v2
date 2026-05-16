@@ -230,8 +230,11 @@ describe('buildFromRules — cursors advance', () => {
 // =============================================================================
 
 describe('buildFromRules — защита от inf loop', () => {
-  it('Правило без consumes → секция завершается с warning', () => {
-    // Создаём кастомный bundle с правилом которое не потребляет ничего
+  it('Singleton-семейство без consumes: 1 разворот, БЕЗ warning (после РЭ.15.2)', () => {
+    // До РЭ.15.2 head-teacher без consumes давал warning 'consumed nothing'
+    // потому что общая защита от inf-loop срабатывала. После РЭ.15.2
+    // warning подавлен для singleton — это нормальное поведение
+    // правил вроде final-text-only / t-class-*-no-common.
     const stubRule: Rule = {
       id: 'stub-no-consume',
       family_id: 'head-teacher',
@@ -283,12 +286,74 @@ describe('buildFromRules — защита от inf loop', () => {
     };
     const layout = buildFromRules(makeInput({}), bundle);
 
-    // Цикл должен корректно завершиться (а не зависнуть)
-    expect(layout.status).toBe('partial');
-    expect(layout.warnings.some((w) => w.includes('consumed nothing'))).toBe(true);
-    // Только одно правило должно было применится (потом cursors не изменились → break)
+    // status='ok' — нет warnings вообще (после РЭ.15.2)
+    expect(layout.status).toBe('ok');
+    expect(layout.warnings.some((w) => w.includes('consumed nothing'))).toBe(false);
+    // Singleton всё равно сработал 1 раз
     const headTraces = layout.decision_trace.filter((t) => t.family_id === 'head-teacher');
     expect(headTraces.length).toBe(1);
+  });
+
+  it('Iterative-семейство без consumes: 1 разворот + warning (защита работает)', () => {
+    // Если итеративное правило ничего не потребляет — это потенциальный
+    // баг правила. Warning сохраняется как сигнал разработчику.
+    const stubRule: Rule = {
+      id: 'stub-iterative-no-consume',
+      family_id: 'student-section',
+      family_version: '1.0',
+      priority: 100,
+      when: {},
+      produces: { type: 'page', side: 'left', master: 'L-Grid-Page' },
+      bind: {},
+      // consumes отсутствует — обычно у student-section это баг
+    };
+    const stubPreset: Preset = {
+      id: 'stub-it',
+      display_name: 'Stub Iter',
+      print_type: 'layflat',
+      pages_per_spread: 2,
+      version: '1.0',
+      tenant_id: null,
+      sections: [{ family_id: 'student-section', params: { density: 'light' } }],
+    };
+    const stubFamily: TemplateFamily = {
+      id: 'student-section',
+      display_name: 'Student Section',
+      aliases: [],
+      deprecated: false,
+      version: '1.0',
+      tenant_id: null,
+      params: {},
+    };
+    const bundle: RuleEngineBundle = {
+      preset: stubPreset,
+      rules: [stubRule],
+      families: [stubFamily],
+      templateSet: {
+        id: 'ts',
+        tenant_id: null,
+        name: 'ts',
+        slug: 'okeybook-default',
+        print_type: 'layflat',
+        page_width_mm: 200,
+        page_height_mm: 280,
+        spread_width_mm: 400,
+        spread_height_mm: 280,
+        bleed_mm: 3,
+        facing_pages: true,
+        page_binding: 'LeftToRight',
+        spreads: TEST_MASTERS,
+      },
+      mastersByName: makeMastersByName(),
+    };
+    const layout = buildFromRules(makeInput({ students: 5 }), bundle);
+
+    // status='partial' — есть warning о подозрительном поведении
+    expect(layout.status).toBe('partial');
+    expect(layout.warnings.some((w) => w.includes('consumed nothing'))).toBe(true);
+    // Защита сработала — 1 итерация (не 200)
+    const traces = layout.decision_trace.filter((t) => t.family_id === 'student-section');
+    expect(traces.length).toBe(1);
   });
 });
 
