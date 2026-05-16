@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, Suspense } from 'react'
+import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import CRMModal from './CRMModal'
@@ -1098,6 +1098,262 @@ function CommonSectionLimitControl({
 }
 
 // ============================================================
+// 🧪 Rule Engine Preview Block (РЭ.14.2)
+// ============================================================
+// Read-only превью rule engine на реальном альбоме. Никаких записей
+// в album_layouts — это инструмент оценки «как rule engine собрал
+// бы этот альбом если бы его подключили».
+//
+// Доступ: superadmin + owner/manager/viewer тенанта (через стандартный
+// requireAuth в endpoint'е).
+// ============================================================
+
+const RULES_PRESET_IDS_PREVIEW = [
+  'standard',
+  'universal',
+  'maximum',
+  'individual',
+  'medium',
+  'light',
+  'mini-soft',
+] as const
+
+type RulesPresetIdPreview = typeof RULES_PRESET_IDS_PREVIEW[number]
+
+type RulesPreviewResponse = {
+  engine: 'rules'
+  status: 'ok' | 'partial' | 'failed'
+  spreads: Array<{
+    spread_index: number
+    left?: { master_id: string; bindings: Record<string, unknown> }
+    right?: { master_id: string; bindings: Record<string, unknown> }
+    mixed_pages?: boolean
+  }>
+  decision_trace: Array<{
+    spread_index: number
+    section_index: number
+    family_id: string
+    rule_id: string
+    mixed_pages?: { left_rule_id: string; right_rule_id: string }
+    inputs: Record<string, unknown>
+    balanced?: boolean
+  }>
+  warnings: string[]
+  rules_version: string
+  smart_fill_warnings: Array<{ code: string; detail: string }>
+  summary: {
+    album_id: string
+    preset_id: string
+    preset_name: string
+    template_set_slug: string
+    total_spreads: number
+    total_warnings: number
+    total_decisions: number
+    students_count: number
+    subjects_count: number
+    common_photos_counts: Record<string, number>
+    head_teacher_present: boolean
+  }
+}
+
+function RulesEnginePreviewBlock({
+  albumId,
+  viewAsTenantId,
+}: {
+  albumId: string
+  viewAsTenantId: string | null | undefined
+}) {
+  const [open, setOpen] = useState(false)
+  const [presetId, setPresetId] = useState<RulesPresetIdPreview>('standard')
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<RulesPreviewResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const run = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    setResult(null)
+    try {
+      const url = viewAsTenantId
+        ? `/api/layout?action=preview_rules_engine&view_as=${viewAsTenantId}`
+        : '/api/layout?action=preview_rules_engine'
+      const r = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ album_id: albumId, preset_id: presetId }),
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: 'unknown error' }))
+        setError(err.error ?? `HTTP ${r.status}`)
+        return
+      }
+      setResult((await r.json()) as RulesPreviewResponse)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'network error')
+    } finally {
+      setLoading(false)
+    }
+  }, [albumId, presetId, viewAsTenantId])
+
+  return (
+    <div className="mt-3 pt-3 border-t border-purple-200">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-sm font-medium text-purple-700 hover:text-purple-900"
+      >
+        {open ? '▲ Скрыть' : '🧪 Превью через Rule Engine'}
+      </button>
+      <span className="ml-2 text-xs text-gray-400">
+        (read-only: показывает как новый движок собрал бы этот альбом)
+      </span>
+
+      {open && (
+        <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+          <div className="flex items-center gap-3 flex-wrap text-sm">
+            <label className="flex items-center gap-2">
+              Пресет:
+              <select
+                value={presetId}
+                onChange={(e) => setPresetId(e.target.value as RulesPresetIdPreview)}
+                className="px-2 py-1 border rounded"
+              >
+                {RULES_PRESET_IDS_PREVIEW.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={run}
+              disabled={loading}
+              className="px-3 py-1.5 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+            >
+              {loading ? 'Прогон…' : 'Прогнать'}
+            </button>
+          </div>
+
+          {error && (
+            <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+              Ошибка: {error}
+            </div>
+          )}
+
+          {result && (
+            <div className="mt-3 space-y-3">
+              {/* Status + сводка */}
+              <div className="p-2 bg-white border border-purple-200 rounded text-xs">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold">Сводка</span>
+                  <span
+                    className={`px-2 py-0.5 rounded font-mono ${
+                      result.status === 'ok'
+                        ? 'bg-green-100 text-green-800'
+                        : result.status === 'partial'
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}
+                  >
+                    {result.status}
+                  </span>
+                </div>
+                <div>{result.summary.total_spreads} разворотов · {result.summary.total_decisions} решений · {result.summary.total_warnings} warnings</div>
+                <div className="text-gray-500 mt-1">
+                  preset: {result.summary.preset_id}{' '}
+                  <span className="text-gray-400">({result.summary.preset_name})</span>
+                </div>
+                <div className="text-gray-500">
+                  students={result.summary.students_count} · subjects={result.summary.subjects_count} · head_teacher={result.summary.head_teacher_present ? 'есть' : 'нет'}
+                </div>
+                <div className="text-gray-500">
+                  фото: full={result.summary.common_photos_counts.full_class} · half={result.summary.common_photos_counts.half_class} · spread={result.summary.common_photos_counts.spread} · quarter={result.summary.common_photos_counts.quarter} · sixth={result.summary.common_photos_counts.sixth}
+                </div>
+                <div className="text-gray-400 mt-1 font-mono">rules_version: {result.rules_version}</div>
+              </div>
+
+              {/* Smart-fill warnings */}
+              {result.smart_fill_warnings.length > 0 && (
+                <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs">
+                  <div className="font-semibold mb-1">Smart-fill warnings ({result.smart_fill_warnings.length}):</div>
+                  {result.smart_fill_warnings.map((w, i) => (
+                    <div key={i} className="font-mono">
+                      <span className="text-amber-700">{w.code}</span> — {w.detail}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Rule engine warnings */}
+              {result.warnings.length > 0 && (
+                <div className="p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
+                  <div className="font-semibold mb-1">Rule engine warnings ({result.warnings.length}):</div>
+                  {result.warnings.map((w, i) => (
+                    <div key={i} className="font-mono text-yellow-800">{w}</div>
+                  ))}
+                </div>
+              )}
+
+              {/* Decision trace */}
+              <div className="p-2 bg-white border border-purple-200 rounded text-xs">
+                <div className="font-semibold mb-1">Decision trace ({result.decision_trace.length}):</div>
+                {result.decision_trace.length === 0 && (
+                  <div className="text-gray-400">Пусто (ни одно правило не сработало)</div>
+                )}
+                <div className="max-h-60 overflow-auto">
+                  {result.decision_trace.map((d, i) => (
+                    <div key={i} className="border-b border-gray-100 py-1 last:border-b-0">
+                      <span className="font-mono text-gray-500">[#{d.spread_index}.{d.section_index}]</span>{' '}
+                      <span className="font-mono text-purple-700">{d.family_id}</span>{' → '}
+                      <span className="font-mono font-bold">{d.rule_id}</span>
+                      {d.mixed_pages && (
+                        <span className="ml-2 px-1 bg-orange-100 text-orange-800 rounded">mixed</span>
+                      )}
+                      {d.balanced && (
+                        <span className="ml-2 px-1 bg-blue-100 text-blue-800 rounded">balanced</span>
+                      )}
+                      <span className="ml-2 text-gray-500">
+                        rem={String(d.inputs.students_remaining ?? '?')} · idx={String(d.inputs.current_student_index ?? '?')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Spreads */}
+              <div className="p-2 bg-white border border-purple-200 rounded text-xs">
+                <div className="font-semibold mb-1">Spreads ({result.spreads.length}):</div>
+                {result.spreads.length === 0 && (
+                  <div className="text-gray-400">Пусто</div>
+                )}
+                <div className="max-h-60 overflow-auto">
+                  {result.spreads.map((s) => {
+                    const leftName = (s.left?.bindings as Record<string, unknown> | undefined)?.__master_name__
+                    const rightName = (s.right?.bindings as Record<string, unknown> | undefined)?.__master_name__
+                    return (
+                      <div key={s.spread_index} className="border-b border-gray-100 py-1 last:border-b-0 font-mono">
+                        <span className="text-gray-500">[{s.spread_index}]</span>{' '}
+                        <span className="font-bold">{String(leftName ?? '—')}</span>
+                        <span className="text-gray-400 mx-2">|</span>
+                        <span className="font-bold">{String(rightName ?? '—')}</span>
+                        {s.mixed_pages && (
+                          <span className="ml-2 px-1 bg-orange-100 text-orange-800 rounded">mixed</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================
 // МОДАЛКА ДЕТАЛЕЙ АЛЬБОМА (с управлением учениками)
 // ============================================================
 
@@ -1574,6 +1830,8 @@ function AlbumDetailModal({
                             warnings={layout.warnings.filter(w => w.level === 'info')}
                           />
                         </div>
+
+                        <RulesEnginePreviewBlock albumId={album.id} viewAsTenantId={viewAsTenantId} />
                       </div>
                     )}
                   </div>
