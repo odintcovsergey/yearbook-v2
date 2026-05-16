@@ -21,6 +21,8 @@ import SpreadOrderStrip from '../../../_components/SpreadOrderStrip'
 import TemplatePickerModal from '../../../_components/TemplatePickerModal'
 import SaveIndicator from '../../../_components/SaveIndicator'
 import PhotoContextMenu from '../../../_components/PhotoContextMenu'
+import PhotoTransformPanel from '../../../_components/PhotoTransformPanel'
+import { parseScale, parseOffset } from '@/lib/photo-transform'
 
 // Konva-компонент: SSR-incompatible (использует window.Image).
 const AlbumSpreadCanvas = dynamic(
@@ -163,6 +165,18 @@ function LayoutEditorPageInner({
   const [photoContextMenu, setPhotoContextMenu] = useState<
     | null
     | { label: string; url: string | null; clientX: number; clientY: number }
+  >(null)
+  // КЭ.5 — panel кадрирования фото (scale + offset).
+  // Открывается одинарным кликом на photo placeholder с фото.
+  // spreadIndex нужен для адресации в /api/layout?action=update_data.
+  const [photoTransformPanel, setPhotoTransformPanel] = useState<
+    | null
+    | {
+        spreadIndex: number
+        label: string
+        clientX: number
+        clientY: number
+      }
   >(null)
   // Идёт ли сейчас загрузка нового оригинала через replace_original.
   // Показывается toast в header'е чтобы партнёр видел что процесс идёт.
@@ -434,6 +448,7 @@ function LayoutEditorPageInner({
   function handleUndo() {
     setEditingTextLabel(null)  // если редактируется текст — закрываем
     setPhotoContextMenu(null)  // и контекстное меню
+    setPhotoTransformPanel(null)  // и панель кадрирования (КЭ.5)
     setHistory(h => {
       if (h.past.length === 0) return h
       const last = h.past[h.past.length - 1]
@@ -451,6 +466,7 @@ function LayoutEditorPageInner({
   function handleRedo() {
     setEditingTextLabel(null)
     setPhotoContextMenu(null)
+    setPhotoTransformPanel(null)
     setHistory(h => {
       if (h.future.length === 0) return h
       const next = h.future[0]
@@ -644,6 +660,7 @@ function LayoutEditorPageInner({
   useEffect(() => {
     setEditingTextLabel(null)
     setPhotoContextMenu(null)
+    setPhotoTransformPanel(null)  // КЭ.5 — закрываем кадрирование при смене разворота
   }, [currentIdx])
 
   // ─── Фаза Л.2: handlers для photo context menu ──────────────────────────
@@ -655,6 +672,79 @@ function LayoutEditorPageInner({
     clientY: number,
   ) {
     setPhotoContextMenu({ label, url, clientX, clientY })
+  }
+
+  // КЭ.5 — одинарный клик на фото открывает кадрирование (scale + offset).
+  // Срабатывает только если есть фото (DropZone проверяет url != null).
+  function handlePhotoClick(
+    label: string,
+    _url: string,
+    clientX: number,
+    clientY: number,
+  ) {
+    // Если уже открыта panel для этого же label — не дёргаем (избегаем
+    // случайного двойного клика). Иначе показываем для нового.
+    if (
+      photoTransformPanel &&
+      photoTransformPanel.label === label &&
+      photoTransformPanel.spreadIndex === currentIdx
+    ) {
+      return
+    }
+    setPhotoTransformPanel({
+      spreadIndex: currentIdx,
+      label,
+      clientX,
+      clientY,
+    })
+  }
+
+  // КЭ.5 — изменение transform из PhotoTransformPanel.
+  // Стратегия:
+  //   1. Optimistic update layout state (мгновенный rerender canvas)
+  //   2. saveStatus='pending' → существующий debounce-механизм save_album_layout
+  //      (Л.4) подхватит изменения. Использовать /api/layout?action=update_data
+  //      специально для transform — overkill; save_album_layout уже
+  //      реализован и отлажен. Этим путём:
+  //        - Один и тот же UI для пользователя ('Сохранено')
+  //        - Одна логика undo/redo
+  //        - Один rate-limit на debounce
+  //   3. При scale=1 и offset=(0,0) → ключи удаляются (null значение
+  //      в data). save_album_layout пишет весь spreads массив, так что
+  //      удаление работает natively.
+  //
+  // ПРИМЕЧАНИЕ: action=update_data из КЭ.3 в итоге может пригодиться для
+  // realtime collaboration (если/когда добавим), но в одинарном-юзер
+  // сценарии save_album_layout проще и dедупликует логику.
+  function handleTransformChange(updates: {
+    scale?: string | null
+    offset?: string | null
+  }) {
+    if (!photoTransformPanel) return
+    const { label, spreadIndex } = photoTransformPanel
+    setLayout((prev) => {
+      if (!prev) return prev
+      const newSpreads = prev.spreads.map((s, idx) => {
+        if (idx !== spreadIndex) return s
+        const newData = { ...s.data }
+        const scaleKey = `__scale__${label}`
+        const offsetKey = `__offset__${label}`
+        if (updates.scale !== undefined) {
+          if (updates.scale === null) delete newData[scaleKey]
+          else newData[scaleKey] = updates.scale
+        }
+        if (updates.offset !== undefined) {
+          if (updates.offset === null) delete newData[offsetKey]
+          else newData[offsetKey] = updates.offset
+        }
+        return { ...s, data: newData }
+      })
+      return { ...prev, spreads: newSpreads }
+    })
+  }
+
+  function handleTransformPanelClose() {
+    setPhotoTransformPanel(null)
   }
 
   function handleClearPhoto(label: string) {
@@ -1183,6 +1273,7 @@ function LayoutEditorPageInner({
                   onTextSubmit={isReadOnly ? undefined : handleTextSubmit}
                   onTextCancel={isReadOnly ? undefined : handleTextCancel}
                   onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
+                  onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
                 />
               </div>
 
@@ -1343,6 +1434,28 @@ function LayoutEditorPageInner({
           onClose={() => setPhotoContextMenu(null)}
         />
       )}
+
+      {/* ─── PhotoTransformPanel (КЭ.5) — кадрирование фото (scale + offset) ─── */}
+      {photoTransformPanel && (() => {
+        // Извлекаем текущие значения transform из layout state.
+        // Если ключей __scale__/__offset__ нет → defaults (1, 0, 0).
+        const spread = layout?.spreads[photoTransformPanel.spreadIndex]
+        const data = spread?.data ?? {}
+        const sc = parseScale(data[`__scale__${photoTransformPanel.label}`])
+        const [ox, oy] = parseOffset(data[`__offset__${photoTransformPanel.label}`])
+        return (
+          <PhotoTransformPanel
+            label={photoTransformPanel.label}
+            scale={sc}
+            offsetX={ox}
+            offsetY={oy}
+            clientX={photoTransformPanel.clientX}
+            clientY={photoTransformPanel.clientY}
+            onChange={handleTransformChange}
+            onClose={handleTransformPanelClose}
+          />
+        )
+      })()}
 
       {/* Toast «заменяем оригинал» — поверх редактора, blocking */}
       {replacingOriginal && (

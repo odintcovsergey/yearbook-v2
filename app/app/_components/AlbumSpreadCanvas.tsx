@@ -64,6 +64,12 @@ type Props = {
   // Л.2 — контекстное меню на photo placeholder (правый клик).
   // Parent получает label, текущий url, и координаты клика для позиционирования popover.
   onPhotoContextMenu?: (label: string, url: string | null, clientX: number, clientY: number) => void
+  // КЭ.5 — одинарный левый клик на photo placeholder. Открывает
+  // PhotoTransformPanel для кадрирования (scale + offset). dnd-kit
+  // отменяет click при движении мыши, так что drag не триггерит этот
+  // handler. Срабатывает только при url != null (нет смысла кадрировать
+  // пустой слот).
+  onPhotoClick?: (label: string, url: string, clientX: number, clientY: number) => void
   // Прототип балансировки — переопределение координат и видимости placeholder'ов.
   // Если placeholder есть в этой map с hidden=true — не рендерится вообще.
   // Если есть с x_mm/y_mm — рендерится по новым координатам.
@@ -424,6 +430,7 @@ function DropZone({
   scale,
   url,
   onContextMenu,
+  onClick,
 }: {
   placeholder: PhotoPlaceholder
   scale: number
@@ -432,6 +439,10 @@ function DropZone({
   // (Очистить / Заменить оригинал). Координаты клика передаются parent'у
   // чтобы он мог позиционировать popover.
   onContextMenu?: (label: string, url: string | null, clientX: number, clientY: number) => void
+  // КЭ.5 — одинарный левый клик. Срабатывает только при url != null.
+  // dnd-kit отменяет click при движении мыши с зажатой кнопкой, так что
+  // drag не триггерит этот handler.
+  onClick?: (label: string, url: string, clientX: number, clientY: number) => void
 }) {
   const hasValue = !!url
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -467,6 +478,14 @@ function DropZone({
         e.preventDefault()
         e.stopPropagation()
         onContextMenu(placeholder.label, url, e.clientX, e.clientY)
+      }}
+      onClick={(e) => {
+        // КЭ.5: одинарный клик → кадрирование. Только если есть фото
+        // (нечего кадрировать в пустом слоте). dnd-kit отменяет click
+        // если был drag, так что отдельный гард не нужен.
+        if (!onClick || !url) return
+        e.stopPropagation()
+        onClick(placeholder.label, url, e.clientX, e.clientY)
       }}
       className={`absolute pointer-events-auto transition-all ${
         isOver
@@ -521,6 +540,7 @@ export default function AlbumSpreadCanvas({
   onTextSubmit,
   onTextCancel,
   onPhotoContextMenu,
+  onPhotoClick,
   placeholderOverrides,
 }: Props) {
   const scale = containerWidth / template.width_mm
@@ -618,6 +638,7 @@ export default function AlbumSpreadCanvas({
                   scale={scale}
                   url={instance.data[p.label] ?? null}
                   onContextMenu={onPhotoContextMenu}
+                  onClick={onPhotoClick}
                 />
               )
             }
