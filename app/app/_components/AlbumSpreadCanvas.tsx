@@ -569,15 +569,49 @@ export default function AlbumSpreadCanvas({
   const stageWidth = template.width_mm * scale
   const stageHeight = template.height_mm * scale
 
-  // Применяем placeholderOverrides — фильтруем hidden, переписываем координаты
+  // БТ.1 — балансировка из rule engine через data служебные ключи.
+  // Если parent не передал placeholderOverrides — строим их из
+  // instance.data['__hidden__<label>'] и instance.data['__pos__<label>'].
+  // Это конвенция rule engine balance.ts (РЭ.9 / docs/rule-engine-spec.md §10).
+  //
+  // Если parent передал placeholderOverrides (например /super прототипы) —
+  // используем как есть, для совместимости.
+  const effectiveOverrides: Record<
+    string,
+    { hidden?: boolean; x_mm?: number; y_mm?: number }
+  > | undefined = placeholderOverrides ?? (() => {
+    const ov: Record<string, { hidden?: boolean; x_mm?: number; y_mm?: number }> = {}
+    for (const [k, v] of Object.entries(instance.data)) {
+      if (typeof v !== 'string') continue
+      if (k.startsWith('__hidden__')) {
+        const label = k.slice('__hidden__'.length)
+        if (!ov[label]) ov[label] = {}
+        // Значение '1', 'true', и т.п. → hidden=true. Любое
+        // непустое значение трактуем как hidden=true.
+        if (v && v !== '0' && v !== 'false') ov[label].hidden = true
+      } else if (k.startsWith('__pos__')) {
+        const label = k.slice('__pos__'.length)
+        // Формат '<x_mm>,<y_mm>' (decimal mm).
+        const parts = v.split(',').map((s) => Number(s.trim()))
+        if (parts.length === 2 && parts.every(Number.isFinite)) {
+          if (!ov[label]) ov[label] = {}
+          ov[label].x_mm = parts[0]
+          ov[label].y_mm = parts[1]
+        }
+      }
+    }
+    return Object.keys(ov).length > 0 ? ov : undefined
+  })()
+
+  // Применяем effectiveOverrides — фильтруем hidden, переписываем координаты
   // у видимых. Делаем неглубокий клон template чтобы не мутировать оригинал.
-  const effectiveTemplate = placeholderOverrides
+  const effectiveTemplate = effectiveOverrides
     ? {
         ...template,
         placeholders: template.placeholders
-          .filter((p) => !placeholderOverrides[p.label]?.hidden)
+          .filter((p) => !effectiveOverrides[p.label]?.hidden)
           .map((p) => {
-            const ov = placeholderOverrides[p.label]
+            const ov = effectiveOverrides[p.label]
             if (!ov) return p
             return {
               ...p,
