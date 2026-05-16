@@ -262,6 +262,13 @@ export async function POST(req: NextRequest) {
     return handleSaveAlbumLayout(req, auth)
   }
 
+  if (action === 'update_data') {
+    // КЭ.3 — точечный PATCH ключей data одного spread'а. Используется
+    // PhotoTransformPanel для записи __scale__<label> / __offset__<label>
+    // при движении слайдера/touchpad'а (с debounce 300мс).
+    return handleUpdateData(req, auth)
+  }
+
   if (action === 'export') {
     return handleExportPdf(req, auth)
   }
@@ -1322,6 +1329,228 @@ async function handleSaveAlbumLayout(
   return NextResponse.json({
     success: true,
     layout_id: layoutRow.id,
+  })
+}
+
+// ============================================================
+// POST /api/layout?action=update_data
+// ============================================================
+// КЭ.3 — точечный PATCH одного spread'а в album_layouts.spreads.
+//
+// Используется PhotoTransformPanel UI (КЭ.4-КЭ.5) для записи
+// __scale__<label> / __offset__<label> при движении слайдера/touchpad'а.
+// Также может использоваться для любых других точечных правок data
+// (текстовые значения, замена URL фото, и т.д.) — endpoint generic.
+//
+// В отличие от save_album_layout который записывает ВЕСЬ spreads array,
+// этот endpoint:
+//   - Загружает текущий spreads из БД
+//   - Находит spread по spread_index
+//   - Применяет data_updates (null = delete key, иначе set)
+//   - Сохраняет обновлённый spreads назад
+//
+// Это безопаснее race-conditions: если параллельно делается другая
+// правка другого spread'а, она не теряется.
+//
+// Request body:
+//   {
+//     album_id: string (uuid),
+//     spread_index: number,
+//     data_updates: Record<string, string | null>,  // null = remove key
+//   }
+//
+// Response:
+//   { success: true, spread: SpreadInstance } — обновлённый spread
+//
+// Доступ: тот же что save_album_layout (owner/manager на своём тенанте,
+// no view_as save, no save для submitted/in_production/delivered).
+// ============================================================
+
+async function handleUpdateData(
+  req: NextRequest,
+  auth: AuthContext,
+): Promise<NextResponse> {
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
+  }
+
+  if (typeof body !== 'object' || body === null) {
+    return NextResponse.json({ error: 'body must be object' }, { status: 400 })
+  }
+
+  const albumId = (body as Record<string, unknown>).album_id
+  if (typeof albumId !== 'string' || !UUID_REGEX.test(albumId)) {
+    return NextResponse.json(
+      { error: 'album_id is required (uuid)' },
+      { status: 400 },
+    )
+  }
+
+  const spreadIndex = (body as Record<string, unknown>).spread_index
+  if (typeof spreadIndex !== 'number' || !Number.isInteger(spreadIndex) || spreadIndex < 0) {
+    return NextResponse.json(
+      { error: 'spread_index is required (non-negative integer)' },
+      { status: 400 },
+    )
+  }
+
+  const dataUpdates = (body as Record<string, unknown>).data_updates
+  if (typeof dataUpdates !== 'object' || dataUpdates === null || Array.isArray(dataUpdates)) {
+    return NextResponse.json(
+      { error: 'data_updates is required (object)' },
+      { status: 400 },
+    )
+  }
+
+  // Валидация ключей и значений в data_updates.
+  // Whitelist префиксов: __scale__, __offset__, __hidden__, __pos__ + plain.
+  // Plain ключи (label) — snake_case, начинается с буквы.
+  // Значения — string up to 4096 chars или null.
+  const KEY_RE = /^(__scale__|__offset__|__hidden__|__pos__)?[a-z][a-z0-9_]*$/
+  for (const [k, v] of Object.entries(dataUpdates)) {
+    if (!KEY_RE.test(k)) {
+      return NextResponse.json(
+        { error: `invalid data key: '${k}' (allowed: snake_case label with optional __scale__/__offset__/__hidden__/__pos__ prefix)` },
+        { status: 400 },
+      )
+    }
+    if (v !== null && (typeof v !== 'string' || v.length > 4096)) {
+      return NextResponse.json(
+        { error: `invalid data value for '${k}': must be string ≤4096 chars or null` },
+        { status: 400 },
+      )
+    }
+  }
+
+  // view_as: тот же паттерн что у handleSaveAlbumLayout.
+  const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+  const { data: currentTenantData } = viewAsTenantId
+    ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+    : { data: null }
+  const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
+  const tid = (canViewAs && viewAsTenantId) ? viewAsTenantId : auth.tenantId
+
+  if (!(await assertAlbumAccessLocal(auth, albumId, tid))) {
+    return NextResponse.json({ error: 'access denied' }, { status: 403 })
+  }
+
+  // Read-only защита — те же правила что save_album_layout.
+  if (auth.role !== 'superadmin') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json(
+        { error: 'Viewer не может редактировать макет' },
+        { status: 403 },
+      )
+    }
+    if (canViewAs && viewAsTenantId) {
+      return NextResponse.json(
+        { error: 'Сохранение от имени партнёра запрещено — только просмотр' },
+        { status: 403 },
+      )
+    }
+    const { data: albumRow } = await supabaseAdmin
+      .from('albums')
+      .select('workflow_status')
+      .eq('id', albumId)
+      .maybeSingle()
+    const ws = albumRow?.workflow_status as string | undefined
+    if (ws && ['submitted', 'in_production', 'delivered'].includes(ws)) {
+      return NextResponse.json(
+        {
+          error:
+            'Альбом передан в работу — редактирование заблокировано. Обратитесь к OkeyBook если нужны изменения.',
+        },
+        { status: 403 },
+      )
+    }
+  }
+
+  // ─── Загрузить текущий spreads ─────────────────────────────────────
+  const { data: layoutRow, error: loadError } = await supabaseAdmin
+    .from('album_layouts')
+    .select('id, spreads')
+    .eq('album_id', albumId)
+    .maybeSingle()
+
+  if (loadError) {
+    return NextResponse.json(
+      { error: `load failed: ${loadError.message}` },
+      { status: 500 },
+    )
+  }
+
+  if (!layoutRow) {
+    return NextResponse.json(
+      { error: 'layout not found for this album, run build_album first' },
+      { status: 404 },
+    )
+  }
+
+  const spreads = layoutRow.spreads as Array<{
+    spread_index: number
+    data: Record<string, string | null>
+    [k: string]: unknown
+  }>
+
+  if (!Array.isArray(spreads)) {
+    return NextResponse.json(
+      { error: 'invalid spreads in DB (not an array)' },
+      { status: 500 },
+    )
+  }
+
+  // ─── Найти spread и применить data_updates ─────────────────────────
+  const spreadIdx = spreads.findIndex((s) => s.spread_index === spreadIndex)
+  if (spreadIdx === -1) {
+    return NextResponse.json(
+      { error: `spread_index ${spreadIndex} not found in layout` },
+      { status: 404 },
+    )
+  }
+
+  const target = spreads[spreadIdx]
+  const newData = { ...(target.data ?? {}) }
+  for (const [k, v] of Object.entries(dataUpdates as Record<string, string | null>)) {
+    if (v === null) {
+      delete newData[k]
+    } else {
+      newData[k] = v
+    }
+  }
+  const updatedSpread = { ...target, data: newData }
+  const newSpreads = [...spreads]
+  newSpreads[spreadIdx] = updatedSpread
+
+  // ─── Сохранить ─────────────────────────────────────────────────────
+  const { error: updateError } = await supabaseAdmin
+    .from('album_layouts')
+    .update({
+      spreads: newSpreads,
+      has_user_edits: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', layoutRow.id)
+
+  if (updateError) {
+    return NextResponse.json(
+      { error: `update failed: ${updateError.message}` },
+      { status: 500 },
+    )
+  }
+
+  // Audit log. Фиксируем какие именно ключи менялись (без значений —
+  // чтобы лог не разрастался на каждое движение слайдера).
+  await logAction(auth, 'album_layout.update_data', 'album', albumId, {
+    spread_index: spreadIndex,
+    keys: Object.keys(dataUpdates),
+  })
+
+  return NextResponse.json({
+    success: true,
+    spread: updatedSpread,
   })
 }
 
