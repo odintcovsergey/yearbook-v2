@@ -14,6 +14,7 @@ import {
   computeCrop,
   parseScale,
   parseOffset,
+  hasCustomTransform,
 } from '@/lib/photo-transform'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -431,6 +432,7 @@ function DropZone({
   url,
   onContextMenu,
   onClick,
+  hasCustomTransform: hasCustomTransformProp = false,
 }: {
   placeholder: PhotoPlaceholder
   scale: number
@@ -443,6 +445,10 @@ function DropZone({
   // dnd-kit отменяет click при движении мыши с зажатой кнопкой, так что
   // drag не триггерит этот handler.
   onClick?: (label: string, url: string, clientX: number, clientY: number) => void
+  // КЭ.6 — true если у фото в этом слоте есть кастомный crop
+  // (data[__scale__<label>] или data[__offset__<label>] не default).
+  // Отображается маленький бейдж '⚙' в углу.
+  hasCustomTransform?: boolean
 }) {
   const hasValue = !!url
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -522,6 +528,22 @@ function DropZone({
             className="w-full h-full object-cover rounded border-2 border-blue-500 shadow-xl"
             style={{ opacity: 0.9, display: 'block' }}
           />
+        </div>
+      )}
+
+      {/* КЭ.6 — индикатор «Кадрирован вручную».
+          Маленький значок ⚙ в правом верхнем углу photo placeholder'а.
+          Видим только если data содержит non-default __scale__ или __offset__
+          для этого label. Помогает партнёру отличить автоматический crop
+          (default cover) от рукотворного — особенно после переключений
+          разворотов где не сразу видно где он подкручивал. */}
+      {hasCustomTransformProp && hasValue && !isDragging && (
+        <div
+          className="absolute top-1 right-1 bg-blue-600 text-white text-[10px] leading-none rounded-full w-4 h-4 flex items-center justify-center shadow pointer-events-none"
+          title="Это фото кадрировано вручную (изменён масштаб или позиция)"
+          aria-label="Кадрировано вручную"
+        >
+          ⚙
         </div>
       )}
     </div>
@@ -631,6 +653,12 @@ export default function AlbumSpreadCanvas({
         <div className="absolute inset-0 pointer-events-none">
           {effectiveTemplate.placeholders.map((p) => {
             if (p.type === 'photo') {
+              // КЭ.6 — детект non-default transform для бейджа.
+              // parseScale/parseOffset возвращают (1, 0, 0) если ключи
+              // отсутствуют → hasCustomTransform == false.
+              const sc = parseScale(instance.data[`__scale__${p.label}`])
+              const [ox, oy] = parseOffset(instance.data[`__offset__${p.label}`])
+              const hasCustom = hasCustomTransform(sc, ox, oy)
               return (
                 <DropZone
                   key={`photo-${p.label}`}
@@ -639,6 +667,7 @@ export default function AlbumSpreadCanvas({
                   url={instance.data[p.label] ?? null}
                   onContextMenu={onPhotoContextMenu}
                   onClick={onPhotoClick}
+                  hasCustomTransform={hasCustom}
                 />
               )
             }
