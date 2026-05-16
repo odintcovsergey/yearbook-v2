@@ -227,6 +227,22 @@ const J_FULL = makeMaster('J-Full', [photoSlot('classphotoframe', 30, 60)]);
 
 const J_COLLAGE_6 = makeMaster('J-Collage-6', [...gridSlots('collagephoto', 6, 3)]);
 
+// РЭ.18 — мастера для полноценного общего раздела
+const J_CLASS_PHOTO = makeMaster('J-ClassPhoto', [
+  photoSlot('classphotoframe', 30, 60),
+]);
+
+const J_CLASS_PHOTO_RIGHT = makeMaster('J-ClassPhoto-Right', [
+  photoSlot('classphotoframe', 30, 60),
+]);
+
+const J_QUARTER = makeMaster('J-Quarter', [
+  photoSlot('quarterphoto_1', 30, 30),
+  photoSlot('quarterphoto_2', 30, 150),
+]);
+
+const J_COLLAGE = makeMaster('J-Collage', [...gridSlots('collagephoto', 6, 3)]);
+
 // =============================================================================
 // Soft intro/final
 // =============================================================================
@@ -266,6 +282,10 @@ export const TEST_MASTERS: SpreadTemplate[] = [
   J_HALF,
   J_FULL,
   J_COLLAGE_6,
+  J_CLASS_PHOTO,
+  J_CLASS_PHOTO_RIGHT,
+  J_QUARTER,
+  J_COLLAGE,
   S_INTRO,
   S_FINAL_SOFT_L,
 ];

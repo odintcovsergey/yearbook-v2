@@ -1,0 +1,34 @@
+{
+  "id": "common-section-sixth-pair",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 170,
+  "display_name": "Общий раздел: разворот коллажа (J-Collage + J-Collage, по 6 фото на странице)",
+  "description": "Разворот общего раздела с коллажем из 12 фотографий (по 6 на странице). Симметричный мастер J-Collage на обе стороны. Срабатывает пока есть >=12 фото sixth И лимит не достигнут. Приоритет 170 — последняя категория. ВНИМАНИЕ: в legacy slot_capacity у J-Collage хранится как 'photos_collage' (исторически), а в RulesCommonPhotosInput поле называется 'sixth' — это согласовано. Bind использует ключи left_master/right_master.",
+  "when": {
+    "common_photos.sixth.count": { "gte": 12 },
+    "common_section.spreads_remaining": { "neq": 0 }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "J-Collage",
+    "right_master": "J-Collage"
+  },
+  "bind": {
+    "left_master": {
+      "collagephoto_{i}": {
+        "template": "input.common_photos.sixth[$consumed_sixth + {i} - 1]",
+        "params": { "i": { "range": [1, 6] } }
+      }
+    },
+    "right_master": {
+      "collagephoto_{i}": {
+        "template": "input.common_photos.sixth[$consumed_sixth + 6 + {i} - 1]",
+        "params": { "i": { "range": [1, 6] } }
+      }
+    }
+  },
+  "consumes": {
+    "common_photos": { "sixth": 12 }
+  }
+}

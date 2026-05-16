@@ -1,0 +1,28 @@
+{
+  "id": "common-section-full-class-pair",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 200,
+  "display_name": "Общий раздел: разворот с фото полного класса (J-ClassPhoto + J-ClassPhoto-Right)",
+  "description": "Разворот общего раздела с двумя фотографиями полного класса. Левый мастер J-ClassPhoto, правый J-ClassPhoto-Right (зеркальный). Срабатывает пока есть >=2 фото full_class И не достигнут лимит common_section_max_spreads. Если меньше 2 фото — последний разворот может остаться с одной (попадёт под fill-hanging-page-full).",
+  "when": {
+    "common_photos.full_class.count": { "gte": 2 },
+    "common_section.spreads_remaining": { "neq": 0 }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "J-ClassPhoto",
+    "right_master": "J-ClassPhoto-Right"
+  },
+  "bind": {
+    "J-ClassPhoto": {
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+    },
+    "J-ClassPhoto-Right": {
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class + 1]"
+    }
+  },
+  "consumes": {
+    "common_photos": { "full_class": 2 }
+  }
+}
