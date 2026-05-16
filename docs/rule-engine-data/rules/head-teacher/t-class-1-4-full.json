@@ -1,0 +1,45 @@
+{
+  "id": "t-class-1-4-full",
+  "family_id": "head-teacher",
+  "family_version": "1.0",
+  "priority": 90,
+  "display_name": "Классрук + до 4 предметников, общее фото справа",
+  "description": "subjects=1..4: F-Head-SmallGrid слева, есть общее фото класса — G-FullClass справа. Лишние слоты сетки предметников балансируются.",
+  "when": {
+    "subjects_count": { "between": [1, 4] },
+    "common_photos.full_class.count": { "gte": 1 },
+    "print_type": "layflat"
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "F-Head-SmallGrid",
+    "right_master": "G-FullClass"
+  },
+  "bind": {
+    "F-Head-SmallGrid": {
+      "headteacherphoto": "input.head_teacher.photo",
+      "headteachername": "input.head_teacher.name",
+      "headteacherrole": "input.head_teacher.role",
+      "headtextframe": "input.head_teacher.text",
+      "teacherphoto_{i}": {
+        "template": "input.subjects[{i}-1].photo",
+        "params": { "i": { "range": [1, "subjects_count"] } }
+      },
+      "teachername_{i}": {
+        "template": "input.subjects[{i}-1].name",
+        "params": { "i": { "range": [1, "subjects_count"] } }
+      },
+      "teacherrole_{i}": {
+        "template": "input.subjects[{i}-1].role",
+        "params": { "i": { "range": [1, "subjects_count"] } }
+      }
+    },
+    "G-FullClass": {
+      "classphotoframe": "input.common_photos.full_class[0]"
+    }
+  },
+  "consumes": {
+    "common_photos": { "full_class": 1 }
+  },
+  "balance": { "placeholder_centering": true }
+}

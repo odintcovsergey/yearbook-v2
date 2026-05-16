@@ -1,0 +1,25 @@
+{
+  "id": "t-class-0-no-common",
+  "family_id": "head-teacher",
+  "family_version": "1.0",
+  "priority": 50,
+  "display_name": "Классрук без сетки, правая страница уходит дальше",
+  "description": "При 0 предметниках и без общих фото — F-Head-WithPhoto на левой странице. Правая страница 'висит' и достанется следующей секции (разворот со смешанными страницами).",
+  "when": {
+    "subjects_count": 0,
+    "print_type": "layflat"
+  },
+  "produces": {
+    "type": "page",
+    "side": "left",
+    "master": "F-Head-WithPhoto"
+  },
+  "bind": {
+    "F-Head-WithPhoto": {
+      "headteacherphoto": "input.head_teacher.photo",
+      "headteachername": "input.head_teacher.name",
+      "headteacherrole": "input.head_teacher.role",
+      "headtextframe": "input.head_teacher.text"
+    }
+  }
+}

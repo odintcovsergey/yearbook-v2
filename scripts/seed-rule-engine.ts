@@ -32,15 +32,32 @@ interface LoadedFile {
   data: unknown;
 }
 
+/**
+ * Загружает все *.json из subdir, рекурсивно обходит подкаталоги.
+ * Для families/ и presets/ это не нужно (плоская структура), но в rules/
+ * мы группируем по семействам: rules/head-teacher/*.json, rules/student-section/*.json
+ * Возвращаемый filename — относительный путь от subdir (например 'head-teacher/t-class-0-base.json').
+ */
 function loadJsonDir(subdir: string): LoadedFile[] {
-  const dirPath = join(DATA_ROOT, subdir);
-  if (!existsSync(dirPath)) return [];
+  const rootPath = join(DATA_ROOT, subdir);
+  if (!existsSync(rootPath)) return [];
 
-  const files = readdirSync(dirPath).filter((f) => f.endsWith('.json'));
-  return files.map((filename) => {
-    const content = readFileSync(join(dirPath, filename), 'utf-8');
-    return { filename, data: JSON.parse(content) };
-  });
+  const out: LoadedFile[] = [];
+  function walk(dir: string, relPrefix: string): void {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        walk(full, rel);
+      } else if (entry.isFile() && entry.name.endsWith('.json')) {
+        const content = readFileSync(full, 'utf-8');
+        out.push({ filename: rel, data: JSON.parse(content) });
+      }
+    }
+  }
+  walk(rootPath, '');
+  return out;
 }
 
 interface ValidationStats {

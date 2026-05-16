@@ -1,0 +1,46 @@
+{
+  "id": "t-class-1-4-half",
+  "family_id": "head-teacher",
+  "family_version": "1.0",
+  "priority": 100,
+  "display_name": "Классрук + до 4 предметников, полкласса справа",
+  "description": "subjects=1..4: F-Head-SmallGrid слева, при наличии 2 полкласса — G-HalfClass справа. Лишние слоты сетки предметников балансируются (скрываются).",
+  "when": {
+    "subjects_count": { "between": [1, 4] },
+    "common_photos.half_class.count": { "gte": 2 },
+    "print_type": "layflat"
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "F-Head-SmallGrid",
+    "right_master": "G-HalfClass"
+  },
+  "bind": {
+    "F-Head-SmallGrid": {
+      "headteacherphoto": "input.head_teacher.photo",
+      "headteachername": "input.head_teacher.name",
+      "headteacherrole": "input.head_teacher.role",
+      "headtextframe": "input.head_teacher.text",
+      "teacherphoto_{i}": {
+        "template": "input.subjects[{i}-1].photo",
+        "params": { "i": { "range": [1, "subjects_count"] } }
+      },
+      "teachername_{i}": {
+        "template": "input.subjects[{i}-1].name",
+        "params": { "i": { "range": [1, "subjects_count"] } }
+      },
+      "teacherrole_{i}": {
+        "template": "input.subjects[{i}-1].role",
+        "params": { "i": { "range": [1, "subjects_count"] } }
+      }
+    },
+    "G-HalfClass": {
+      "halfphoto_1": "input.common_photos.half_class[0]",
+      "halfphoto_2": "input.common_photos.half_class[1]"
+    }
+  },
+  "consumes": {
+    "common_photos": { "half_class": 2 }
+  },
+  "balance": { "placeholder_centering": true }
+}

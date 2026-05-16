@@ -1,0 +1,35 @@
+{
+  "id": "t-class-0-classphoto-and-halfs",
+  "family_id": "head-teacher",
+  "family_version": "1.0",
+  "priority": 110,
+  "display_name": "Классрук с общим фото внизу + полкласса справа",
+  "description": "При 0 предметниках, если есть И общее фото И минимум 2 полкласса — использовать F-Head-WithClassPhoto-L (общее фото вшито в левую страницу снизу) + G-HalfClass справа. Это специальная композиция для типового случая 'нет предметников, но есть оба вида общих фото'.",
+  "when": {
+    "subjects_count": 0,
+    "common_photos.full_class.count": { "gte": 1 },
+    "common_photos.half_class.count": { "gte": 2 },
+    "print_type": "layflat"
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "F-Head-WithClassPhoto-L",
+    "right_master": "G-HalfClass"
+  },
+  "bind": {
+    "F-Head-WithClassPhoto-L": {
+      "headteacherphoto": "input.head_teacher.photo",
+      "headteachername": "input.head_teacher.name",
+      "headteacherrole": "input.head_teacher.role",
+      "headtextframe": "input.head_teacher.text",
+      "classphotoframe": "input.common_photos.full_class[0]"
+    },
+    "G-HalfClass": {
+      "halfphoto_1": "input.common_photos.half_class[0]",
+      "halfphoto_2": "input.common_photos.half_class[1]"
+    }
+  },
+  "consumes": {
+    "common_photos": { "full_class": 1, "half_class": 2 }
+  }
+}

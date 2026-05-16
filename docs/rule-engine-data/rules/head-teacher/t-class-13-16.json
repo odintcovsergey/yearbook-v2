@@ -1,0 +1,40 @@
+{
+  "id": "t-class-13-16",
+  "family_id": "head-teacher",
+  "family_version": "1.0",
+  "priority": 100,
+  "display_name": "Классрук + 13-16 предметников (сетка 4×4)",
+  "description": "subjects=13..16: F-Head-WithPhoto слева, G-Teachers-4x4 справа (до 16 слотов, пустые балансируются). Общие фото переходят в common-section.",
+  "when": {
+    "subjects_count": { "between": [13, 16] },
+    "print_type": "layflat"
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "F-Head-WithPhoto",
+    "right_master": "G-Teachers-4x4"
+  },
+  "bind": {
+    "F-Head-WithPhoto": {
+      "headteacherphoto": "input.head_teacher.photo",
+      "headteachername": "input.head_teacher.name",
+      "headteacherrole": "input.head_teacher.role",
+      "headtextframe": "input.head_teacher.text"
+    },
+    "G-Teachers-4x4": {
+      "teacherphoto_{i}": {
+        "template": "input.subjects[{i}-1].photo",
+        "params": { "i": { "range": [1, "subjects_count"] } }
+      },
+      "teachername_{i}": {
+        "template": "input.subjects[{i}-1].name",
+        "params": { "i": { "range": [1, "subjects_count"] } }
+      },
+      "teacherrole_{i}": {
+        "template": "input.subjects[{i}-1].role",
+        "params": { "i": { "range": [1, "subjects_count"] } }
+      }
+    }
+  },
+  "balance": { "placeholder_centering": true }
+}

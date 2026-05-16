@@ -1,0 +1,38 @@
+{
+  "id": "t-class-1-4-no-common",
+  "family_id": "head-teacher",
+  "family_version": "1.0",
+  "priority": 50,
+  "display_name": "Классрук + до 4 предметников, правая страница уходит дальше",
+  "description": "subjects=1..4 без общих фото — F-Head-SmallGrid на левой странице. Правая 'висит' и достанется следующей секции.",
+  "when": {
+    "subjects_count": { "between": [1, 4] },
+    "print_type": "layflat"
+  },
+  "produces": {
+    "type": "page",
+    "side": "left",
+    "master": "F-Head-SmallGrid"
+  },
+  "bind": {
+    "F-Head-SmallGrid": {
+      "headteacherphoto": "input.head_teacher.photo",
+      "headteachername": "input.head_teacher.name",
+      "headteacherrole": "input.head_teacher.role",
+      "headtextframe": "input.head_teacher.text",
+      "teacherphoto_{i}": {
+        "template": "input.subjects[{i}-1].photo",
+        "params": { "i": { "range": [1, "subjects_count"] } }
+      },
+      "teachername_{i}": {
+        "template": "input.subjects[{i}-1].name",
+        "params": { "i": { "range": [1, "subjects_count"] } }
+      },
+      "teacherrole_{i}": {
+        "template": "input.subjects[{i}-1].role",
+        "params": { "i": { "range": [1, "subjects_count"] } }
+      }
+    }
+  },
+  "balance": { "placeholder_centering": true }
+}

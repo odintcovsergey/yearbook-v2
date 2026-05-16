@@ -1,0 +1,39 @@
+{
+  "id": "t-class-9",
+  "family_id": "head-teacher",
+  "family_version": "1.0",
+  "priority": 100,
+  "display_name": "Классрук + 9 предметников (сетка 3×3)",
+  "description": "subjects=9: F-Head-WithPhoto слева (без сетки), G-Teachers-3x3 справа (ровно 9 слотов). Общие фото на этот разворот НЕ кладутся — переходят в common-section.",
+  "when": {
+    "subjects_count": 9,
+    "print_type": "layflat"
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "F-Head-WithPhoto",
+    "right_master": "G-Teachers-3x3"
+  },
+  "bind": {
+    "F-Head-WithPhoto": {
+      "headteacherphoto": "input.head_teacher.photo",
+      "headteachername": "input.head_teacher.name",
+      "headteacherrole": "input.head_teacher.role",
+      "headtextframe": "input.head_teacher.text"
+    },
+    "G-Teachers-3x3": {
+      "teacherphoto_{i}": {
+        "template": "input.subjects[{i}-1].photo",
+        "params": { "i": { "range": [1, 9] } }
+      },
+      "teachername_{i}": {
+        "template": "input.subjects[{i}-1].name",
+        "params": { "i": { "range": [1, 9] } }
+      },
+      "teacherrole_{i}": {
+        "template": "input.subjects[{i}-1].role",
+        "params": { "i": { "range": [1, 9] } }
+      }
+    }
+  }
+}

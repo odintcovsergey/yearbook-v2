@@ -1,0 +1,32 @@
+{
+  "id": "t-class-0-full",
+  "family_id": "head-teacher",
+  "family_version": "1.0",
+  "priority": 90,
+  "display_name": "Классрук без сетки + общее фото справа",
+  "description": "При 0 предметниках, есть общее фото класса, но нет минимум 2 полкласса — F-Head-WithPhoto слева + G-FullClass справа.",
+  "when": {
+    "subjects_count": 0,
+    "common_photos.full_class.count": { "gte": 1 },
+    "print_type": "layflat"
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "F-Head-WithPhoto",
+    "right_master": "G-FullClass"
+  },
+  "bind": {
+    "F-Head-WithPhoto": {
+      "headteacherphoto": "input.head_teacher.photo",
+      "headteachername": "input.head_teacher.name",
+      "headteacherrole": "input.head_teacher.role",
+      "headtextframe": "input.head_teacher.text"
+    },
+    "G-FullClass": {
+      "classphotoframe": "input.common_photos.full_class[0]"
+    }
+  },
+  "consumes": {
+    "common_photos": { "full_class": 1 }
+  }
+}
