@@ -366,3 +366,103 @@ describe('buildFromRules — prev_spread.right_page_empty', () => {
     expect(jHalfMixed).toBeDefined();
   });
 });
+
+// =============================================================================
+// 10. Singleton-семейства (РЭ.15.1 bug fix)
+// =============================================================================
+// До РЭ.15.1 head-teacher / intro / final могли срабатывать многократно
+// в одной секции если их правила что-то потребляли (например half_class
+// фото). Защита cursorsChanged срабатывает только когда правило ничего
+// не потребляет. Это давало 19 учительских разворотов вместо одного для
+// реальных альбомов с фото полкласса/общими.
+
+describe('buildFromRules — singleton-семейства не повторяются', () => {
+  it('head-teacher применяется ОДИН раз даже если есть много фото half_class', () => {
+    // Реальный сценарий «тест 2026» Сергея: 8 учеников, 1 предметник,
+    // head_teacher, 10 общих, 9 половин. До фикса было 19 разворотов
+    // head-teacher (рекурсивно срабатывало t-class-1-4-half и -full).
+    const bundle = makeBundle('standard');
+    const input = makeInput({
+      students: 8,
+      subjects: 1,
+      fullClass: 10,
+      halfClass: 9,
+    });
+    const layout = buildFromRules(input, bundle);
+
+    expect(layout.status).not.toBe('failed');
+    const headTraces = layout.decision_trace.filter((t) => t.family_id === 'head-teacher');
+    expect(headTraces.length).toBe(1);
+  });
+
+  it('head-teacher применяется ОДИН раз для subjects=0 + общее + полкласса', () => {
+    // Этот сценарий триггерил t-class-0-classphoto-and-halfs (priority 110)
+    // — раньше тоже мог повторяться пока half_class есть.
+    const bundle = makeBundle('standard');
+    const input = makeInput({
+      students: 4,
+      subjects: 0,
+      fullClass: 5,
+      halfClass: 6,
+    });
+    const layout = buildFromRules(input, bundle);
+
+    const headTraces = layout.decision_trace.filter((t) => t.family_id === 'head-teacher');
+    expect(headTraces.length).toBe(1);
+    expect(headTraces[0].rule_id).toBe('t-class-0-classphoto-and-halfs');
+  });
+
+  it('intro применяется ОДИН раз в mini-soft пресете даже с обилием общих фото', () => {
+    const bundle = makeBundle('mini-soft');
+    const input = makeInput({ students: 5, fullClass: 8 });
+    const layout = buildFromRules(input, bundle);
+
+    const introTraces = layout.decision_trace.filter((t) => t.family_id === 'intro');
+    expect(introTraces.length).toBe(1);
+  });
+
+  it('final применяется ОДИН раз в mini-soft пресете', () => {
+    const bundle = makeBundle('mini-soft');
+    const input = makeInput({ students: 5, fullClass: 8 });
+    const layout = buildFromRules(input, bundle);
+
+    const finalTraces = layout.decision_trace.filter((t) => t.family_id === 'final');
+    expect(finalTraces.length).toBe(1);
+  });
+
+  it('student-section / common-section остаются итеративными', () => {
+    // Регрессионный тест: фикс не должен сломать итеративность.
+    const bundle = makeBundle('standard');
+    const input = makeInput({ students: 6, fullClass: 0, halfClass: 0 });
+    const layout = buildFromRules(input, bundle);
+
+    const studentTraces = layout.decision_trace.filter((t) => t.family_id === 'student-section');
+    // 6 учеников Standard = 3 spread (по 2 ученика) → 3 итерации правила
+    expect(studentTraces.length).toBe(3);
+  });
+
+  it('Сценарий "тест 2026": итоговая структура разумна', () => {
+    // 8 учеников, 1 предметник, есть head_teacher, 10 full + 9 half + 30 sixth
+    // Ожидаем:
+    //   - 1 разворот head-teacher (НЕ 19 как в баге)
+    //   - 4 разворота student-section-standard-pair (8/2 = 4)
+    //   - common-section не сматчит (правая страница не висит)
+    //   = всего 5 разворотов
+    const bundle = makeBundle('standard');
+    const input = makeInput({
+      students: 8,
+      subjects: 1,
+      fullClass: 10,
+      halfClass: 9,
+      sixth: 30,
+    });
+    const layout = buildFromRules(input, bundle);
+
+    expect(layout.status).not.toBe('failed');
+    expect(layout.spreads.length).toBe(5);
+
+    const families = layout.decision_trace.map((t) => t.family_id);
+    expect(families.filter((f) => f === 'head-teacher').length).toBe(1);
+    expect(families.filter((f) => f === 'student-section').length).toBe(4);
+  });
+});

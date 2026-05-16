@@ -45,6 +45,27 @@ import type { RuleEngineBundle } from './loaders';
 
 const HARD_LOOP_LIMIT = 200;
 
+/**
+ * Семейства, для которых правила могут срабатывать многократно в одной
+ * секции (итеративные): student-section потребляет по N учеников за раз,
+ * common-section потребляет фото пачками до исчерпания.
+ *
+ * Все остальные семейства (head-teacher, intro, final, subject-teachers,
+ * class-photo) — singleton: одно срабатывание на альбом. Без этой логики
+ * правило типа t-class-1-4-half потребляло бы по 2 фото half_class и
+ * срабатывало повторно пока фото полкласса не кончатся → получался бы
+ * альбом из 19 учительских разворотов вместо одного. Защита через
+ * cursorsChanged не помогает в этом случае, потому что правило ЧТО-ТО
+ * потребляет (фото), просто не относящееся к head-teacher.
+ *
+ * Решение через хардкод проще миграции БД с полем templateFamily.iterative,
+ * и список этих семейств меняется редко.
+ */
+const ITERATIVE_FAMILIES: ReadonlySet<string> = new Set([
+  'student-section',
+  'common-section',
+]);
+
 // =============================================================================
 // 1. Public API
 // =============================================================================
@@ -194,11 +215,20 @@ export function buildFromRules(
         // Сдвинуть курсоры по consumes
         advanceCursors(cursors, ruleToApply, ctx, input);
 
-        // Защита от бесконечного цикла
+        // Защита от бесконечного цикла (правило не потребило ничего)
         if (!cursorsChanged(cursorsBefore, cursors)) {
           warnings.push(
             `section[${sectionIndex}] ${section.family_id}: rule '${ruleToApply.id}' consumed nothing — stopping section`,
           );
+          break;
+        }
+
+        // Singleton-семейства: одно срабатывание на секцию.
+        // head-teacher / intro / final / subject-teachers / class-photo —
+        // концептуально однократные части альбома. Без этого выхода правило
+        // вроде t-class-1-4-half срабатывало бы повторно пока есть фото
+        // полкласса (cursorsChanged=true каждый раз, защита выше не сработает).
+        if (!ITERATIVE_FAMILIES.has(section.family_id)) {
           break;
         }
       }
