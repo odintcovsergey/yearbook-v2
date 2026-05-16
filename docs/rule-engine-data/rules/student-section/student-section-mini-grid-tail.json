@@ -3,11 +3,11 @@
   "family_id": "student-section",
   "family_version": "1.0",
   "priority": 90,
-  "display_name": "Mini: одностраничная Grid (5..12 учеников)",
-  "description": "density=mini, остаток 5..12: N-Grid-Page на левой странице. Правая 'висит' для следующей секции.",
+  "display_name": "Mini: одностраничная Grid (хвост 1..12)",
+  "description": "density=mini, остаток 1..12: N-Grid-Page на одной (левой) странице с балансировкой. Правая страница 'висит' для общего раздела (J-*). Срабатывает как для хвоста после overflow, так и для изначально маленьких классов.",
   "when": {
     "section.density": "mini",
-    "students_remaining": { "between": [5, 12] }
+    "students_remaining": { "between": [1, 12] }
   },
   "produces": {
     "type": "page",

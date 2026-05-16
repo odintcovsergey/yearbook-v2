@@ -1,0 +1,26 @@
+{
+  "id": "common-fill-hanging-page-half",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 100,
+  "display_name": "Заполнить висящую правую страницу: J-Half (полкласса)",
+  "description": "Если предыдущая секция оставила висящую правую страницу (правая страница без мастера) и у партнёра есть минимум 2 полкласса фото — поставить туда J-Half (две фотографии полкласса). Приоритет №1, как и на учительском развороте: половинки приоритетнее общего фото.",
+  "when": {
+    "prev_spread.right_page_empty": true,
+    "common_photos.half_class.count": { "gte": 2 }
+  },
+  "produces": {
+    "type": "page",
+    "side": "right",
+    "master": "J-Half"
+  },
+  "bind": {
+    "J-Half": {
+      "halfphoto_1": "input.common_photos.half_class[$consumed_half_class]",
+      "halfphoto_2": "input.common_photos.half_class[$consumed_half_class + 1]"
+    }
+  },
+  "consumes": {
+    "common_photos": { "half_class": 2 }
+  }
+}

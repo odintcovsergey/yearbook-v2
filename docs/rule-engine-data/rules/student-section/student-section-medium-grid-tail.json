@@ -3,11 +3,11 @@
   "family_id": "student-section",
   "family_version": "1.0",
   "priority": 90,
-  "display_name": "Medium: одностраничная Grid (3..4 учеников)",
-  "description": "density=medium, остаток 3..4: M-Grid-Page на левой странице. Правая 'висит' для следующей секции.",
+  "display_name": "Medium: одностраничная Grid (хвост 1..4)",
+  "description": "density=medium, остаток 1..4: M-Grid-Page на одной (левой) странице с балансировкой. Правая страница 'висит' для общего раздела (J-*). Срабатывает как для хвоста после overflow, так и для изначально маленьких классов.",
   "when": {
     "section.density": "medium",
-    "students_remaining": { "between": [3, 4] }
+    "students_remaining": { "between": [1, 4] }
   },
   "produces": {
     "type": "page",

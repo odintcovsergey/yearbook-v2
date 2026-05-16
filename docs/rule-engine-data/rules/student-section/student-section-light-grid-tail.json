@@ -3,11 +3,11 @@
   "family_id": "student-section",
   "family_version": "1.0",
   "priority": 90,
-  "display_name": "Light: одностраничная Grid (4..6 учеников)",
-  "description": "density=light, остаток 4..6: L-Grid-Page на одной (левой) странице. Это либо обычный кейс остатка от полного разворота 6+6, либо когда учеников было всего 4..6. Правая страница 'висит' для следующей секции (разворот со смешанными страницами с common-section).",
+  "display_name": "Light: одностраничная Grid (хвост 1..6)",
+  "description": "density=light, остаток 1..6: L-Grid-Page на одной (левой) странице с балансировкой. Правая страница 'висит' для следующей секции (общий раздел common-section заполнит J-Half/J-Full/J-Collage-6). Срабатывает как для хвоста после overflow (например 13 учеников → 6+6 + здесь 1), так и для изначально маленьких классов (1..6 без общего фото).",
   "when": {
     "section.density": "light",
-    "students_remaining": { "between": [4, 6] }
+    "students_remaining": { "between": [1, 6] }
   },
   "produces": {
     "type": "page",

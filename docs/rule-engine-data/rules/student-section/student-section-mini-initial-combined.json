@@ -1,13 +1,14 @@
 {
-  "id": "student-section-mini-combined-small",
+  "id": "student-section-mini-initial-combined",
   "family_id": "student-section",
   "family_version": "1.0",
-  "priority": 100,
-  "display_name": "Mini: маленький остаток + общее фото (Combined)",
-  "description": "density=mini, остаток 1..4 + есть общее фото: N-Combined-Page (до 4 портретов + 1 общее фото).",
+  "priority": 95,
+  "display_name": "Mini: изначально маленький класс + общее фото (Combined)",
+  "description": "density=mini, изначально 1..4 ученика + есть общее фото: N-Combined-Page (до 4 портретов + общее). НЕ для хвоста после overflow.",
   "when": {
     "section.density": "mini",
     "students_remaining": { "between": [1, 4] },
+    "current_student_index": 0,
     "common_photos.full_class.count": { "gte": 1 }
   },
   "produces": {
@@ -18,14 +19,14 @@
   "bind": {
     "N-Combined-Page": {
       "studentportrait_{i}": {
-        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "template": "input.students[{i} - 1].portrait",
         "params": { "i": { "range": [1, "students_remaining"] } }
       },
       "studentname_{i}": {
-        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "template": "input.students[{i} - 1].full_name",
         "params": { "i": { "range": [1, "students_remaining"] } }
       },
-      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+      "classphotoframe": "input.common_photos.full_class[0]"
     }
   },
   "consumes": {

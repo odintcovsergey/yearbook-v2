@@ -1,0 +1,25 @@
+{
+  "id": "common-fill-hanging-page-full",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 90,
+  "display_name": "Заполнить висящую правую страницу: J-Full (общее фото)",
+  "description": "Если есть висящая правая страница, нет 2 полкласса, но есть общее фото — поставить J-Full с одним общим фото на всю страницу. Приоритет №2.",
+  "when": {
+    "prev_spread.right_page_empty": true,
+    "common_photos.full_class.count": { "gte": 1 }
+  },
+  "produces": {
+    "type": "page",
+    "side": "right",
+    "master": "J-Full"
+  },
+  "bind": {
+    "J-Full": {
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+    }
+  },
+  "consumes": {
+    "common_photos": { "full_class": 1 }
+  }
+}

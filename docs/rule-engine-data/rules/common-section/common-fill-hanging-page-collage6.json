@@ -1,0 +1,28 @@
+{
+  "id": "common-fill-hanging-page-collage6",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 80,
+  "display_name": "Заполнить висящую правую страницу: J-Collage-6 (шесть фото 1/6)",
+  "description": "Если есть висящая правая страница, нет 2 полкласса и нет общего фото, но есть минимум 6 фото категории 'sixth' (шестая часть) — поставить J-Collage-6 (мозаика из 6 фото). Приоритет №3.",
+  "when": {
+    "prev_spread.right_page_empty": true,
+    "common_photos.sixth.count": { "gte": 6 }
+  },
+  "produces": {
+    "type": "page",
+    "side": "right",
+    "master": "J-Collage-6"
+  },
+  "bind": {
+    "J-Collage-6": {
+      "collagephoto_{i}": {
+        "template": "input.common_photos.sixth[$consumed_sixth + {i} - 1]",
+        "params": { "i": { "range": [1, 6] } }
+      }
+    }
+  },
+  "consumes": {
+    "common_photos": { "sixth": 6 }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "id": "final-text-only",
+  "family_id": "final",
+  "family_version": "1.0",
+  "priority": 50,
+  "display_name": "Финальный лист только с текстом (soft)",
+  "description": "Фолбэк: если общих фото не осталось — финальная страница S-Final-Soft-L с только прощальным текстом. Слот classphotoframe скрывается через балансировку.",
+  "when": {
+    "print_type": "soft"
+  },
+  "produces": {
+    "type": "page",
+    "side": "left",
+    "master": "S-Final-Soft-L"
+  },
+  "bind": {
+    "S-Final-Soft-L": {
+      "finaltext": "input.album.final_text"
+    }
+  },
+  "balance": { "hide_unfilled": true }
+}

@@ -1,0 +1,37 @@
+{
+  "id": "student-section-light-initial-combined",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 95,
+  "display_name": "Light: изначально маленький класс + общее фото (Combined)",
+  "description": "density=light, ИЗНАЧАЛЬНО (когда student-section ещё не начала потреблять) учеников 1..3 + есть общее фото класса: L-Combined-Page (до 3 портретов + общее фото). НЕ срабатывает для остатка после overflow — там grid-tail (priority 90) предпочтительнее, потому что Combined с 1 портретом после полного разворота смотрится одиноко. Условие $current_student_index == 0 гарантирует что это первая страница секции.",
+  "when": {
+    "section.density": "light",
+    "students_remaining": { "between": [1, 3] },
+    "current_student_index": 0,
+    "common_photos.full_class.count": { "gte": 1 }
+  },
+  "produces": {
+    "type": "page",
+    "side": "any",
+    "master": "L-Combined-Page"
+  },
+  "bind": {
+    "L-Combined-Page": {
+      "studentportrait_{i}": {
+        "template": "input.students[{i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[{i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "classphotoframe": "input.common_photos.full_class[0]"
+    }
+  },
+  "consumes": {
+    "students": "students_remaining",
+    "common_photos": { "full_class": 1 }
+  },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

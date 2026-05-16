@@ -1,13 +1,14 @@
 {
-  "id": "student-section-medium-combined-small",
+  "id": "student-section-medium-initial-combined",
   "family_id": "student-section",
   "family_version": "1.0",
-  "priority": 100,
-  "display_name": "Medium: маленький остаток + общее фото (Combined)",
-  "description": "density=medium, остаток 1..2 + есть общее фото: M-Combined-Page (до 2 портретов + 1 общее фото). Маленький остаток + общее фото — типовой случай для last page.",
+  "priority": 95,
+  "display_name": "Medium: изначально маленький класс + общее фото (Combined)",
+  "description": "density=medium, изначально 1..2 ученика + есть общее фото: M-Combined-Page (до 2 портретов + общее). НЕ для хвоста после overflow.",
   "when": {
     "section.density": "medium",
     "students_remaining": { "between": [1, 2] },
+    "current_student_index": 0,
     "common_photos.full_class.count": { "gte": 1 }
   },
   "produces": {
@@ -18,19 +19,19 @@
   "bind": {
     "M-Combined-Page": {
       "studentportrait_{i}": {
-        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "template": "input.students[{i} - 1].portrait",
         "params": { "i": { "range": [1, "students_remaining"] } }
       },
       "studentname_{i}": {
-        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "template": "input.students[{i} - 1].full_name",
         "params": { "i": { "range": [1, "students_remaining"] } }
       },
       "studentquote_{i}": {
-        "template": "input.students[$current_student_index + {i} - 1].quote",
+        "template": "input.students[{i} - 1].quote",
         "params": { "i": { "range": [1, "students_remaining"] } },
         "skip_if": "!section.has_quote"
       },
-      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+      "classphotoframe": "input.common_photos.full_class[0]"
     }
   },
   "consumes": {

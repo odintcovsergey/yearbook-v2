@@ -1,0 +1,25 @@
+{
+  "id": "intro-default",
+  "family_id": "intro",
+  "family_version": "1.0",
+  "priority": 100,
+  "display_name": "Заглавный лист (soft)",
+  "description": "Семейство intro применяется только в пресетах soft печати (mini-soft, и др. в будущем). Производит одну страницу S-Intro с общим фото класса как обложку. Это первая страница альбома в soft печати.",
+  "when": {
+    "print_type": "soft",
+    "common_photos.full_class.count": { "gte": 1 }
+  },
+  "produces": {
+    "type": "page",
+    "side": "right",
+    "master": "S-Intro"
+  },
+  "bind": {
+    "S-Intro": {
+      "classphotoframe": "input.common_photos.full_class[0]"
+    }
+  },
+  "consumes": {
+    "common_photos": { "full_class": 1 }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "id": "final-with-photo",
+  "family_id": "final",
+  "family_version": "1.0",
+  "priority": 100,
+  "display_name": "Финальный лист с общим фото (soft)",
+  "description": "Финальная страница S-Final-Soft-L в soft печати: общее фото класса + прощальный текст. Срабатывает если осталось хотя бы одно общее фото после всех остальных секций.",
+  "when": {
+    "print_type": "soft",
+    "common_photos.full_class.count": { "gte": 1 }
+  },
+  "produces": {
+    "type": "page",
+    "side": "left",
+    "master": "S-Final-Soft-L"
+  },
+  "bind": {
+    "S-Final-Soft-L": {
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]",
+      "finaltext": "input.album.final_text"
+    }
+  },
+  "consumes": {
+    "common_photos": { "full_class": 1 }
+  }
+}
