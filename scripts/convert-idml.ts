@@ -19,6 +19,7 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { getFamilyMapping } from '../lib/idml-converter/family-mapping';
 import { parseIdml } from '../lib/idml-converter/parse';
 import { uploadTemplateSetToSupabase } from '../lib/idml-converter/upload';
 import type { ParserWarning } from '../lib/idml-converter/types';
@@ -265,6 +266,39 @@ async function main(): Promise<void> {
     console.log(`  spreads:        ${parsed.spread_templates.length}`);
     console.log(`  placeholders:   ${totalPlaceholders} (total across all spreads)`);
     console.log(`  warnings:       ${parsed.warnings.length}`);
+
+    // ─── Rule engine coverage отчёт (РЭ.3.5) ────────────────────
+    const mappedRows: Array<{ name: string; family_id: string; page_type: string; density: string }> = [];
+    const unmappedNames: string[] = [];
+    for (const spread of parsed.spread_templates) {
+      const mapping = getFamilyMapping(spread.name);
+      if (mapping) {
+        mappedRows.push({
+          name: spread.name,
+          family_id: mapping.family_id,
+          page_type: mapping.page_type,
+          density: mapping.density ?? '-',
+        });
+      } else {
+        unmappedNames.push(spread.name);
+      }
+    }
+    console.log(
+      `[dry-run] Rule engine mapping: ${mappedRows.length} / ${parsed.spread_templates.length} masters mapped`,
+    );
+    if (mappedRows.length > 0) {
+      const colWidth = Math.max(...mappedRows.map((r) => r.name.length), 4);
+      for (const r of mappedRows) {
+        const padded = r.name.padEnd(colWidth);
+        console.log(`  ${padded}  family=${r.family_id}  page_type=${r.page_type}  density=${r.density}`);
+      }
+    }
+    if (unmappedNames.length > 0) {
+      console.warn(`[dry-run] ${unmappedNames.length} master(s) WITHOUT family mapping:`);
+      for (const n of unmappedNames) {
+        console.warn(`  - ${n}`);
+      }
+    }
 
     if (parsed.warnings.length > 0) {
       const shown = parsed.warnings.slice(0, 5);

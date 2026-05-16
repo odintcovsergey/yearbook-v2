@@ -29,6 +29,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getFamilyMapping } from './family-mapping';
 import type { ParsedTemplateSet } from './types';
 
 const SLUG_REGEX = /^[a-z0-9-]+$/;
@@ -181,18 +182,41 @@ export async function uploadTemplateSetToSupabase(
   console.log(`[upload] Inserted template_set ${templateSetId}`);
 
   // ─── 7. Batch INSERT spread_templates ────────────────────────────
-  const spreadRows = parsed.spread_templates.map((spread, index) => ({
-    template_set_id: templateSetId,
-    name: spread.name,
-    type: spread.type,
-    is_spread: spread.is_spread,
-    width_mm: spread.width_mm,
-    height_mm: spread.height_mm,
-    placeholders: spread.placeholders,
-    rules: spread.rules ?? null,
-    sort_order: index,
-    background_url: null,
-  }));
+  // Поля family_id / page_type / density / params проставляются
+  // через family-mapping.ts (РЭ.3.5). Если имя мастера неизвестно —
+  // эти поля остаются NULL/{}, мастер всё равно загрузится, но не
+  // попадёт в правила rule engine пока админ не проставит вручную.
+  const unmappedMasters: string[] = [];
+  const spreadRows = parsed.spread_templates.map((spread, index) => {
+    const mapping = getFamilyMapping(spread.name);
+    if (!mapping) {
+      unmappedMasters.push(spread.name);
+    }
+    return {
+      template_set_id: templateSetId,
+      name: spread.name,
+      type: spread.type,
+      is_spread: spread.is_spread,
+      width_mm: spread.width_mm,
+      height_mm: spread.height_mm,
+      placeholders: spread.placeholders,
+      rules: spread.rules ?? null,
+      sort_order: index,
+      background_url: null,
+      // ─── Rule engine метаданные (могут быть null если mapping отсутствует) ──
+      family_id: mapping?.family_id ?? null,
+      page_type: mapping?.page_type ?? 'page-any',
+      density: mapping?.density ?? null,
+      params: mapping?.params ?? {},
+    };
+  });
+
+  if (unmappedMasters.length > 0) {
+    console.warn(
+      `[upload] Warning: ${unmappedMasters.length} master(s) have no family mapping ` +
+        `(family_id will be NULL, won't be used by rule engine): ${unmappedMasters.join(', ')}`,
+    );
+  }
 
   const { error: insertSpreadsError } = await supabaseAdmin
     .from('spread_templates')
