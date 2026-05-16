@@ -45,6 +45,7 @@ import {
   endPath,
 } from 'pdf-lib';
 import { mmToPixels, placeholderToPdfBox } from './units';
+import { computeCrop } from '@/lib/photo-transform';
 import type {
   AlbumExportInput,
   OriginalPhoto,
@@ -91,7 +92,13 @@ export async function embedPhotoOnPage(
   page: PDFPage,
   ph: PhotoPlaceholder,
   photoUrl: string | null,
-  spread_index: number
+  spread_index: number,
+  // КЭ.7 — transform параметры из служебных ключей data.
+  // Default (1, 0, 0) → старое поведение fit:'cover' (regression-safe,
+  // байт-в-байт идентичен PDF до КЭ).
+  scale: number = 1,
+  offsetX: number = 0,
+  offsetY: number = 0,
 ): Promise<void> {
   const box = placeholderToPdfBox(
     ph.x_mm,
@@ -124,19 +131,77 @@ export async function embedPhotoOnPage(
   const targetW_px = mmToPixels(ph.width_mm, ctx.profile.dpi);
   const targetH_px = mmToPixels(ph.height_mm, ctx.profile.dpi);
 
+  // КЭ.7 — определяем custom transform.
+  // hasCustom=false → используем старую fast-path sharp.resize fit:'cover'
+  //                   (regression-safe для всех существующих PDF)
+  // hasCustom=true  → вычисляем CropParams через computeCrop, применяем
+  //                   через sharp.extract + sharp.resize fit:'fill'
+  const hasCustom = scale !== 1 || offsetX !== 0 || offsetY !== 0;
+
   let resampled: Buffer;
   try {
-    resampled = await sharp(photoSource.buffer)
-      .rotate() // авто-ориентация по EXIF
-      .resize(targetW_px, targetH_px, {
-        fit: 'cover',
-        position: 'centre',
-      })
-      .jpeg({
-        quality: ctx.profile.jpeg_quality,
-        mozjpeg: true,
-      })
-      .toBuffer();
+    if (!hasCustom) {
+      // FAST PATH: исходное поведение для default crop. Байт-в-байт
+      // идентично PDF до КЭ — никаких сюрпризов для уже-экспортированных
+      // альбомов.
+      resampled = await sharp(photoSource.buffer)
+        .rotate() // авто-ориентация по EXIF
+        .resize(targetW_px, targetH_px, {
+          fit: 'cover',
+          position: 'centre',
+        })
+        .jpeg({
+          quality: ctx.profile.jpeg_quality,
+          mozjpeg: true,
+        })
+        .toBuffer();
+    } else {
+      // CUSTOM PATH: применяем computeCrop для извлечения пользовательского
+      // crop, потом resize до целевого pixel-разрешения.
+      //
+      // Алгоритм:
+      //   1. sharp().rotate() — авто-ориентация по EXIF (важно! делать ДО
+      //      metadata чтобы получить ориентированные размеры)
+      //   2. metadata() — натуральные width/height после EXIF rotate
+      //   3. computeCrop(natW, natH, targetRatio, scale, offsetX, offsetY)
+      //   4. sharp().extract({ left, top, width, height }) — округление
+      //      до целых px (sharp требование). На практике незаметно при
+      //      300dpi, но фиксируем как известный compromise (см. ТЗ КЭ.4).
+      //   5. resize fit:'fill' — мы УЖЕ извлекли крошку, остаётся
+      //      просто отресемплить до targetW_px × targetH_px.
+      const rotated = sharp(photoSource.buffer).rotate();
+      const meta = await rotated.metadata();
+      const natW = meta.width ?? 0;
+      const natH = meta.height ?? 0;
+      if (natW <= 0 || natH <= 0) {
+        throw new Error(`invalid image dimensions: ${natW}x${natH}`);
+      }
+      const targetRatio = ph.width_mm / ph.height_mm;
+      const crop = computeCrop(natW, natH, targetRatio, scale, offsetX, offsetY);
+      // Округление до целых px (требование sharp.extract).
+      const extLeft = Math.max(0, Math.round(crop.cropX));
+      const extTop = Math.max(0, Math.round(crop.cropY));
+      const extW = Math.max(1, Math.round(crop.cropW));
+      const extH = Math.max(1, Math.round(crop.cropH));
+      // Защита от выхода за границы (округление вверх могло прибавить):
+      const safeW = Math.min(extW, natW - extLeft);
+      const safeH = Math.min(extH, natH - extTop);
+      resampled = await rotated
+        .extract({
+          left: extLeft,
+          top: extTop,
+          width: safeW,
+          height: safeH,
+        })
+        .resize(targetW_px, targetH_px, {
+          fit: 'fill',
+        })
+        .jpeg({
+          quality: ctx.profile.jpeg_quality,
+          mozjpeg: true,
+        })
+        .toBuffer();
+    }
   } catch (e) {
     ctx.warnings.push({
       code: 'image_decode_failed',

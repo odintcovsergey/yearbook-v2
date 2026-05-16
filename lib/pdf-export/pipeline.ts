@@ -34,6 +34,7 @@ import { computePageBoxes, mmToPt } from './units';
 import type { FontRegistry } from './font-loader';
 import { embedPhotoOnPage, type PhotoEmbedContext } from './photo-embed';
 import { drawTextShaped } from './text-shaping';
+import { parseScale, parseOffset } from '@/lib/photo-transform';
 import type {
   AlbumExportInput,
   PageBoxes,
@@ -287,7 +288,22 @@ async function drawPhoto(
   instance: SpreadInstance
 ): Promise<void> {
   const photoUrl = instance.data[ph.label];
-  await embedPhotoOnPage(ctx.photoCtx, page, ph, photoUrl, instance.spread_index);
+  // КЭ.7 — пробрасываем scale + offset из служебных ключей data.
+  // parseScale/parseOffset возвращают (1, 0, 0) если ключи отсутствуют →
+  // встроенная обратная совместимость: без transform-ключей crop как
+  // раньше (sharp fit:'cover' для baseline).
+  const scale = parseScale(instance.data[`__scale__${ph.label}`]);
+  const [offsetX, offsetY] = parseOffset(instance.data[`__offset__${ph.label}`]);
+  await embedPhotoOnPage(
+    ctx.photoCtx,
+    page,
+    ph,
+    photoUrl,
+    instance.spread_index,
+    scale,
+    offsetX,
+    offsetY,
+  );
 }
 
 /**
