@@ -94,6 +94,10 @@ export function buildFromRules(
     consumed_spread: 0,
     consumed_quarter: 0,
     consumed_sixth: 0,
+    // РЭ.18: счётчик разворотов в общем разделе (для соблюдения
+    // input.common_section_max_spreads). advanceCursors инкрементит на 1
+    // когда family_id === 'common-section' и правило произвело spread.
+    common_section_spreads_created: 0,
   };
   let pendingRightPageSpreadIndex: number | null = null;
   let nextSpreadIndex = 0;
@@ -214,6 +218,17 @@ export function buildFromRules(
 
         // Сдвинуть курсоры по consumes
         advanceCursors(cursors, ruleToApply, ctx, input);
+
+        // РЭ.18: счётчик разворотов общего раздела.
+        // Считаем уникальный rule-engine spread (placement.spreadIndex),
+        // потому что fill-hanging правила могут заполнять ЧАСТЬ
+        // существующего разворота (правую страницу), а common-section-*-pair
+        // создают новые. И то и другое = +1 к счётчику разворотов в разделе
+        // (legacy так же считает). Сюда не попадают пропуски (continue
+        // выше) и failed applications.
+        if (section.family_id === 'common-section' && (produced.left || produced.right)) {
+          cursors.common_section_spreads_created += 1;
+        }
 
         // Защита от бесконечного цикла. Warning логичен только для
         // итеративных семейств — там это сигнал что правило срабатывает
@@ -337,6 +352,19 @@ function buildContext(
     prev_spread: {
       right_page_empty: hasPendingRightPage,
     },
+    common_section: (() => {
+      const max = input.common_section_max_spreads;
+      const created = cursors.common_section_spreads_created;
+      const remaining =
+        max === undefined || max === null
+          ? null
+          : Math.max(0, max - created);
+      return {
+        spreads_created: created,
+        max_spreads: max ?? null,
+        spreads_remaining: remaining,
+      };
+    })(),
     friend_photos_count: friendPhotosCount,
   };
 }

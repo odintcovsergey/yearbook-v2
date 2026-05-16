@@ -38,6 +38,7 @@ function makeCtx(overrides?: Partial<RuleContext>): RuleContext {
     print_type: 'layflat',
     section: { position: 'middle', density: 'standard', has_quote: true, has_friend_photos: false },
     prev_spread: { right_page_empty: false },
+    common_section: { spreads_created: 0, max_spreads: null, spreads_remaining: null },
     friend_photos_count: 0,
   };
   return { ...base, ...overrides };

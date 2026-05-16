@@ -253,6 +253,17 @@ export interface RulesAlbumInput {
   subjects: RulesSubjectInput[];
   head_teacher: RulesHeadTeacherInput;
   common_photos: RulesCommonPhotosInput;
+  /**
+   * Лимит разворотов в общем разделе. РЭ.18.
+   *   - undefined/null = без ограничения (builder вставляет все фото)
+   *   - 0 = общий раздел полностью отключён
+   *   - >0 = жёсткий лимит количества разворотов
+   *
+   * Передаётся в ctx как `common_section.max_spreads` и `common_section.spreads_remaining`.
+   * Правила common-section-*-pair используют эти поля в when'ах.
+   * Значение из albums.common_section_max_spreads через legacy-adapter.
+   */
+  common_section_max_spreads?: number | null;
 }
 
 // =============================================================================
@@ -338,6 +349,25 @@ export interface RuleContext {
   };
   prev_spread: {
     right_page_empty: boolean;
+  };
+  /**
+   * Состояние общего раздела (РЭ.18). Используется правилами
+   * common-section-* для соблюдения лимита из
+   * albums.common_section_max_spreads.
+   *
+   *   spreads_created      — сколько разворотов уже добавил builder в раздел
+   *   max_spreads          — лимит из input (null/undefined = без лимита)
+   *   spreads_remaining    — сколько ещё можно добавить
+   *                           (null = unlimited, >=0 если есть лимит)
+   *
+   * В when'ах правил пишется как
+   *   "common_section.spreads_remaining": { "gte": 1 }
+   * либо просто "common_section.max_spreads": { "neq": 0 } (не отключён).
+   */
+  common_section: {
+    spreads_created: number;
+    max_spreads: number | null;
+    spreads_remaining: number | null;
   };
   friend_photos_count?: number;
 }

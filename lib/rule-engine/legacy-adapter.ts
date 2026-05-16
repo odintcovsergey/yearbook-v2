@@ -17,9 +17,12 @@
  * Поле template_set_id из legacy AlbumInput выбрасывается — rule engine
  * получает template_set через RuleEngineBundle отдельно.
  *
- * common_section_max_spreads из legacy НЕ переносится — это legacy-only
- * концепция. В rule engine лимит общего раздела управляется через
- * правила common-section (priorities).
+ * РЭ.18: common_section_max_spreads ИЗ legacy переносится в rules
+ * (до РЭ.18 выбрасывалось как legacy-only). Используется правилами
+ * common-section-*-pair для ограничения количества разворотов раздела.
+ * Поле albums.common_section_max_spreads читается smart-fill'ом и попадает
+ * в AlbumInput. null/undefined = без лимита, 0 = раздел отключён,
+ * >0 = жёсткий лимит. Соответствует legacy поведению buildCommonSection.
  */
 
 import type {
@@ -62,5 +65,11 @@ export function adaptLegacyAlbumInput(legacy: AlbumInput): RulesAlbumInput {
     sixth: legacy.common_photos.sixth,
   };
 
-  return { students, subjects, head_teacher, common_photos };
+  return {
+    students,
+    subjects,
+    head_teacher,
+    common_photos,
+    common_section_max_spreads: legacy.common_section_max_spreads,
+  };
 }
