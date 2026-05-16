@@ -10,6 +10,11 @@ import type {
   PhotoPlaceholder,
   TextPlaceholder,
 } from '@/lib/album-builder/types'
+import {
+  computeCrop,
+  parseScale,
+  parseOffset,
+} from '@/lib/photo-transform'
 
 // ─────────────────────────────────────────────────────────────────────────
 // AlbumSpreadCanvas — Konva-рендер одного SpreadInstance.
@@ -88,28 +93,6 @@ function useImage(url: string | null): HTMLImageElement | null {
   return img
 }
 
-// ─── Хелпер: cover crop (object-fit: cover в терминах Konva crop) ────────
-function getCoverCrop(img: HTMLImageElement, targetW: number, targetH: number) {
-  const targetRatio = targetW / targetH
-  const imageRatio = img.naturalWidth / img.naturalHeight
-  if (imageRatio > targetRatio) {
-    const cropW = img.naturalHeight * targetRatio
-    return {
-      x: (img.naturalWidth - cropW) / 2,
-      y: 0,
-      width: cropW,
-      height: img.naturalHeight,
-    }
-  }
-  const cropH = img.naturalWidth / targetRatio
-  return {
-    x: 0,
-    y: (img.naturalHeight - cropH) / 2,
-    width: img.naturalWidth,
-    height: cropH,
-  }
-}
-
 // ─── Хелпер: проверка яркости цвета ──────────────────────────────────────
 //
 // Возвращает true если цвет слишком светлый (luminance > 0.7) или
@@ -135,9 +118,19 @@ function isTooLight(hex: string | null | undefined): boolean {
 function PhotoSlot({
   placeholder,
   url,
+  scale = 1,
+  offsetX = 0,
+  offsetY = 0,
 }: {
   placeholder: PhotoPlaceholder
   url: string | null
+  // КЭ.2 — transform параметры из __scale__<label> / __offset__<label>.
+  // Default = 1.0 / 0,0 → текущее cover-crop поведение (полная обратная
+  // совместимость). См. lib/photo-transform/index.ts и
+  // docs/phase-content-edit-spec.md.
+  scale?: number
+  offsetX?: number
+  offsetY?: number
 }) {
   const img = useImage(url)
 
@@ -158,7 +151,26 @@ function PhotoSlot({
     )
   }
 
-  const crop = getCoverCrop(img, placeholder.width_mm, placeholder.height_mm)
+  // КЭ.2: используем computeCrop с scale/offset вместо getCoverCrop.
+  // При scale=1, offset=(0,0) результат идентичен getCoverCrop (regression
+  // safe). computeCrop возвращает CropParams в натуральных пикселях
+  // исходного изображения — что и ожидает Konva crop prop.
+  const targetRatio = placeholder.width_mm / placeholder.height_mm
+  const cropParams = computeCrop(
+    img.naturalWidth,
+    img.naturalHeight,
+    targetRatio,
+    scale,
+    offsetX,
+    offsetY,
+  )
+  // Konva crop format: { x, y, width, height } в координатах источника
+  const crop = {
+    x: cropParams.cropX,
+    y: cropParams.cropY,
+    width: cropParams.cropW,
+    height: cropParams.cropH,
+  }
 
   // Круглые портреты (учительские) → клиппинг по эллипсу
   if (placeholder.is_circle) {
@@ -566,7 +578,22 @@ export default function AlbumSpreadCanvas({
               // Скрываем Konva-копию фото на время drag — preview
               // отрисовывается через DOM-overlay в DropZone (CSS transform)
               if (draggingLabel === p.label) return null
-              return <PhotoSlot key={key} placeholder={p} url={value} />
+              // КЭ.2: служебные ключи __scale__<label> / __offset__<label>
+              // из instance.data. Default (отсутствие ключей) →
+              // scale=1, offset=(0,0) → текущее cover-crop поведение.
+              // См. docs/phase-content-edit-spec.md и lib/photo-transform.
+              const sc = parseScale(instance.data[`__scale__${p.label}`])
+              const [ox, oy] = parseOffset(instance.data[`__offset__${p.label}`])
+              return (
+                <PhotoSlot
+                  key={key}
+                  placeholder={p}
+                  url={value}
+                  scale={sc}
+                  offsetX={ox}
+                  offsetY={oy}
+                />
+              )
             }
             if (p.type === 'text') {
               // Скрываем Konva TextSlot когда этот label сейчас редактируется
