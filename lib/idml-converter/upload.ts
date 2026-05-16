@@ -116,10 +116,24 @@ export async function uploadTemplateSetToSupabase(
     );
   }
 
-  // ─── 5. existing && force → двухшаговый delete с логированием ────
-  // CASCADE на spread_templates.template_set_id убрал бы spreads сам,
-  // но явный delete нужен чтобы залогировать count.
+  // ─── 5. existing && force → UPDATE template_set + DELETE+INSERT spreads ──
+  // Старая логика delete+insert падала с FK violation, если на template_set
+  // ссылались album_layouts. Новый подход (РЭ.3.5):
+  //   - переиспользуем существующий template_sets.id
+  //   - UPDATE его полей (name, print_type, размеры, …)
+  //   - DELETE+INSERT всех spread_templates (старые мы уже бэкапить не пытаемся)
+  // Так album_layouts.template_set_id остаётся валидным.
+  //
+  // ВНИМАНИЕ: если у тенанта были альбомы со старыми spread_templates_id —
+  // в album_layouts.spreads они могли ссылаться на конкретные spread_template_id,
+  // которые сейчас исчезнут. Это не break compatibility прямо сейчас (FK
+  // только на template_set_id, не на spread_template_id), но при попытке
+  // ре-рендерить старый альбом он не найдёт нужный мастер по id.
+  // В rule engine MVP это не критично — старые альбомы либо пересобираются,
+  // либо помечаются needs_rebuild.
+  let reusedTemplateSetId: string | null = null;
   if (existing && force) {
+    // Подсчёт + DELETE существующих spread_templates
     const { count: existingSpreadsCount, error: countError } = await supabaseAdmin
       .from('spread_templates')
       .select('id', { count: 'exact', head: true })
@@ -141,45 +155,66 @@ export async function uploadTemplateSetToSupabase(
       `[upload] Deleted ${existingSpreadsCount ?? 0} existing spread_templates for force overwrite`,
     );
 
-    const { error: deleteSetError } = await supabaseAdmin
+    // UPDATE template_sets (вместо DELETE — чтобы не сломать FK из album_layouts)
+    const { error: updateSetError } = await supabaseAdmin
       .from('template_sets')
-      .delete()
+      .update({
+        name: meta.name,
+        tenant_id: meta.tenantId,
+        print_type: meta.printType,
+        page_width_mm: parsed.page_width_mm,
+        page_height_mm: parsed.page_height_mm,
+        spread_width_mm: parsed.spread_width_mm,
+        spread_height_mm: parsed.spread_height_mm,
+        bleed_mm: parsed.bleed_mm,
+        facing_pages: parsed.facing_pages,
+        page_binding: parsed.page_binding,
+        is_global: isGlobal,
+        description: meta.description ?? null,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', existing.id);
-    if (deleteSetError) {
-      throw new Error(`Failed to delete existing template_set: ${deleteSetError.message}`);
+    if (updateSetError) {
+      throw new Error(`Failed to update existing template_set: ${updateSetError.message}`);
     }
-    console.log(`[upload] Deleted existing template_set ${existing.id} for force overwrite`);
+    console.log(`[upload] Updated existing template_set ${existing.id} for force overwrite`);
+    reusedTemplateSetId = existing.id;
   }
 
-  // ─── 6. INSERT template_sets ──────────────────────────────────────
-  const { data: insertedSet, error: insertSetError } = await supabaseAdmin
-    .from('template_sets')
-    .insert({
-      name: meta.name,
-      slug: meta.slug,
-      tenant_id: meta.tenantId,
-      print_type: meta.printType,
-      page_width_mm: parsed.page_width_mm,
-      page_height_mm: parsed.page_height_mm,
-      spread_width_mm: parsed.spread_width_mm,
-      spread_height_mm: parsed.spread_height_mm,
-      bleed_mm: parsed.bleed_mm,
-      facing_pages: parsed.facing_pages,
-      page_binding: parsed.page_binding,
-      is_global: isGlobal,
-      description: meta.description ?? null,
-      cover_preview_url: null,
-    })
-    .select('id')
-    .single<{ id: string }>();
+  // ─── 6. INSERT template_sets (только если не reuse) ──────────────────
+  let templateSetId: string;
+  if (reusedTemplateSetId !== null) {
+    templateSetId = reusedTemplateSetId;
+  } else {
+    const { data: insertedSet, error: insertSetError } = await supabaseAdmin
+      .from('template_sets')
+      .insert({
+        name: meta.name,
+        slug: meta.slug,
+        tenant_id: meta.tenantId,
+        print_type: meta.printType,
+        page_width_mm: parsed.page_width_mm,
+        page_height_mm: parsed.page_height_mm,
+        spread_width_mm: parsed.spread_width_mm,
+        spread_height_mm: parsed.spread_height_mm,
+        bleed_mm: parsed.bleed_mm,
+        facing_pages: parsed.facing_pages,
+        page_binding: parsed.page_binding,
+        is_global: isGlobal,
+        description: meta.description ?? null,
+        cover_preview_url: null,
+      })
+      .select('id')
+      .single<{ id: string }>();
 
-  if (insertSetError || !insertedSet) {
-    throw new Error(
-      `Failed to insert template_set: ${insertSetError?.message ?? 'no row returned'}`,
-    );
+    if (insertSetError || !insertedSet) {
+      throw new Error(
+        `Failed to insert template_set: ${insertSetError?.message ?? 'no row returned'}`,
+      );
+    }
+    templateSetId = insertedSet.id;
+    console.log(`[upload] Inserted template_set ${templateSetId}`);
   }
-  const templateSetId = insertedSet.id;
-  console.log(`[upload] Inserted template_set ${templateSetId}`);
 
   // ─── 7. Batch INSERT spread_templates ────────────────────────────
   // Поля family_id / page_type / density / params проставляются
@@ -223,10 +258,23 @@ export async function uploadTemplateSetToSupabase(
     .insert(spreadRows);
 
   // ─── 8. Best-effort откат при сбое batch insert ──────────────────
+  // Откат удаляет template_set ТОЛЬКО если он был только что создан (не reuse).
+  // При reuse откат невозможен — старые spreads уже удалены, а сам template_set
+  // мог ссылаться на album_layouts (FK violation). В этом случае состояние
+  // остаётся неконсистентным (template_set без spreads), требуется ручное
+  // вмешательство или повтор upload.
   if (insertSpreadsError) {
+    if (reusedTemplateSetId !== null) {
+      console.error(
+        `[upload] Failed to insert spread_templates: ${insertSpreadsError.message}. ` +
+          `template_set ${templateSetId} was reused, NOT rolled back. ` +
+          `BD now has template_set without spreads. Re-run upload to recover.`,
+      );
+      throw new Error(`Failed to insert spread_templates: ${insertSpreadsError.message}`);
+    }
     console.error(
       `[upload] Failed to insert spread_templates: ${insertSpreadsError.message}. ` +
-        `Rolling back template_set ${templateSetId}…`,
+        `Rolling back newly created template_set ${templateSetId}…`,
     );
     const { error: rollbackError } = await supabaseAdmin
       .from('template_sets')
