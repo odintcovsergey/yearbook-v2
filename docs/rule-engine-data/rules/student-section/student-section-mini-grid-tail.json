@@ -1,0 +1,31 @@
+{
+  "id": "student-section-mini-grid-tail",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 90,
+  "display_name": "Mini: одностраничная Grid (5..12 учеников)",
+  "description": "density=mini, остаток 5..12: N-Grid-Page на левой странице. Правая 'висит' для следующей секции.",
+  "when": {
+    "section.density": "mini",
+    "students_remaining": { "between": [5, 12] }
+  },
+  "produces": {
+    "type": "page",
+    "side": "left",
+    "master": "N-Grid-Page"
+  },
+  "bind": {
+    "N-Grid-Page": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      }
+    }
+  },
+  "consumes": { "students": "students_remaining" },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

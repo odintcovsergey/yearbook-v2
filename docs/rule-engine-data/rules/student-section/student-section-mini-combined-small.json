@@ -1,0 +1,36 @@
+{
+  "id": "student-section-mini-combined-small",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 100,
+  "display_name": "Mini: маленький остаток + общее фото (Combined)",
+  "description": "density=mini, остаток 1..4 + есть общее фото: N-Combined-Page (до 4 портретов + 1 общее фото).",
+  "when": {
+    "section.density": "mini",
+    "students_remaining": { "between": [1, 4] },
+    "common_photos.full_class.count": { "gte": 1 }
+  },
+  "produces": {
+    "type": "page",
+    "side": "any",
+    "master": "N-Combined-Page"
+  },
+  "bind": {
+    "N-Combined-Page": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+    }
+  },
+  "consumes": {
+    "students": "students_remaining",
+    "common_photos": { "full_class": 1 }
+  },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

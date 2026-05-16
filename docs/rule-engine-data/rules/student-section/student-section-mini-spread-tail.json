@@ -1,0 +1,41 @@
+{
+  "id": "student-section-mini-spread-tail",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 150,
+  "display_name": "Mini: разворот 12+N (хвост 13..24)",
+  "description": "density=mini, остаток 13..24: левая N-Grid-Page (12 портретов), правая N-Grid-Page с балансировкой на оставшиеся 1..12. Потребляет всех оставшихся.",
+  "when": {
+    "section.density": "mini",
+    "students_remaining": { "between": [13, 24] }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "N-Grid-Page",
+    "right_master": "N-Grid-Page"
+  },
+  "bind": {
+    "left_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, 12] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, 12] } }
+      }
+    },
+    "right_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + 12 + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining - 12"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + 12 + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining - 12"] } }
+      }
+    }
+  },
+  "consumes": { "students": "students_remaining" },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

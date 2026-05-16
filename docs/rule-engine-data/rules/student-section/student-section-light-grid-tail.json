@@ -1,0 +1,31 @@
+{
+  "id": "student-section-light-grid-tail",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 90,
+  "display_name": "Light: одностраничная Grid (4..6 учеников)",
+  "description": "density=light, остаток 4..6: L-Grid-Page на одной (левой) странице. Это либо обычный кейс остатка от полного разворота 6+6, либо когда учеников было всего 4..6. Правая страница 'висит' для следующей секции (разворот со смешанными страницами с common-section).",
+  "when": {
+    "section.density": "light",
+    "students_remaining": { "between": [4, 6] }
+  },
+  "produces": {
+    "type": "page",
+    "side": "left",
+    "master": "L-Grid-Page"
+  },
+  "bind": {
+    "L-Grid-Page": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      }
+    }
+  },
+  "consumes": { "students": "students_remaining" },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

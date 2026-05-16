@@ -1,0 +1,40 @@
+{
+  "id": "student-section-mini-overflow",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 200,
+  "display_name": "Mini: полный разворот 12+12 (overflow)",
+  "description": "density=mini, остаток >= 25: разворот N-Grid-Page слева (12 портретов) + N-Grid-Page справа (следующие 12). Потребляет 24.",
+  "when": {
+    "section.density": "mini",
+    "students_remaining": { "gte": 25 }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "N-Grid-Page",
+    "right_master": "N-Grid-Page"
+  },
+  "bind": {
+    "left_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, 12] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, 12] } }
+      }
+    },
+    "right_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + 12 + {i} - 1].portrait",
+        "params": { "i": { "range": [1, 12] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + 12 + {i} - 1].full_name",
+        "params": { "i": { "range": [1, 12] } }
+      }
+    }
+  },
+  "consumes": { "students": 24 }
+}

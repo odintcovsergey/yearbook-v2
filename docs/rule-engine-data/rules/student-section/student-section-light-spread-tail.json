@@ -1,0 +1,41 @@
+{
+  "id": "student-section-light-spread-tail",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 150,
+  "display_name": "Light: разворот 6+N (хвост 7..12)",
+  "description": "density=light, остаток 7..12: левая страница полная L-Grid-Page (6 портретов), правая L-Grid-Page с балансировкой на оставшиеся 1..6 портретов. Потребляет всех оставшихся.",
+  "when": {
+    "section.density": "light",
+    "students_remaining": { "between": [7, 12] }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "L-Grid-Page",
+    "right_master": "L-Grid-Page"
+  },
+  "bind": {
+    "left_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, 6] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, 6] } }
+      }
+    },
+    "right_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + 6 + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining - 6"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + 6 + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining - 6"] } }
+      }
+    }
+  },
+  "consumes": { "students": "students_remaining" },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

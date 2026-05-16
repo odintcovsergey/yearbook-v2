@@ -1,0 +1,51 @@
+{
+  "id": "student-section-medium-spread-tail",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 150,
+  "display_name": "Medium: разворот 4+N (хвост 5..8)",
+  "description": "density=medium, остаток 5..8: левая M-Grid-Page (4 портрета), правая M-Grid-Page с балансировкой на оставшиеся 1..4. Потребляет всех оставшихся.",
+  "when": {
+    "section.density": "medium",
+    "students_remaining": { "between": [5, 8] }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "M-Grid-Page",
+    "right_master": "M-Grid-Page"
+  },
+  "bind": {
+    "left_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, 4] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, 4] } }
+      },
+      "studentquote_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].quote",
+        "params": { "i": { "range": [1, 4] } },
+        "skip_if": "!section.has_quote"
+      }
+    },
+    "right_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + 4 + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining - 4"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + 4 + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining - 4"] } }
+      },
+      "studentquote_{i}": {
+        "template": "input.students[$current_student_index + 4 + {i} - 1].quote",
+        "params": { "i": { "range": [1, "students_remaining - 4"] } },
+        "skip_if": "!section.has_quote"
+      }
+    }
+  },
+  "consumes": { "students": "students_remaining" },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

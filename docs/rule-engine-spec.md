@@ -663,14 +663,27 @@ type MasterSelector = {
 
 ### 7.4. Оператор `bind`
 
+`bind` — это словарь верхнего уровня внутри правила: ключ → объект placeholder-привязок для одного мастера.
+
 ```typescript
-type Bind = { [placeholder_label: string]: BindExpression };
+// Внутри правила:
+type Rule = {
+  ...,
+  bind: { [master_key: string]: PlaceholderBindings }
+};
+
+type PlaceholderBindings = { [placeholder_label: string]: BindExpression };
 
 type BindExpression =
   | string                                     // путь: 'input.head_teacher.photo'
   | { template: string; params: Record<string, BindExpression> }
   | { expr: string };                          // вычисляемое выражение
 ```
+
+**Ключи `master_key` в bind**:
+- Когда `produces.type='page'` или мастера в `produces.type='spread'` имеют **разные имена** — ключом служит **имя мастера** (например `"F-Head-WithPhoto"`).
+- Когда `produces.type='spread'` использует **один и тот же мастер** для обеих страниц (например L-Grid-Page слева и L-Grid-Page справа) — обязательно использовать псевдо-ключи `"left_master"` и `"right_master"` чтобы различить привязки на странице слева и справа.
+- В type=sequence — ключи имён мастеров; если в sequence несколько шагов с одним мастером — использовать псевдо-ключи `"step_0"`, `"step_1"`, ... (зарезервировано на будущее, в MVP не встречается).
 
 Примеры путей:
 - `input.head_teacher.photo`

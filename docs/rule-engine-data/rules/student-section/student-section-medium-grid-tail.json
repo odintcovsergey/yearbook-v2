@@ -1,0 +1,36 @@
+{
+  "id": "student-section-medium-grid-tail",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 90,
+  "display_name": "Medium: одностраничная Grid (3..4 учеников)",
+  "description": "density=medium, остаток 3..4: M-Grid-Page на левой странице. Правая 'висит' для следующей секции.",
+  "when": {
+    "section.density": "medium",
+    "students_remaining": { "between": [3, 4] }
+  },
+  "produces": {
+    "type": "page",
+    "side": "left",
+    "master": "M-Grid-Page"
+  },
+  "bind": {
+    "M-Grid-Page": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "studentquote_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].quote",
+        "params": { "i": { "range": [1, "students_remaining"] } },
+        "skip_if": "!section.has_quote"
+      }
+    }
+  },
+  "consumes": { "students": "students_remaining" },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

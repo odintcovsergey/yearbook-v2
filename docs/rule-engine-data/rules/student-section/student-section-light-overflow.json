@@ -1,0 +1,40 @@
+{
+  "id": "student-section-light-overflow",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 200,
+  "display_name": "Light: полный разворот 6+6 (overflow)",
+  "description": "density=light, остаток >= 13: разворот из L-Grid-Page слева (6 портретов) + L-Grid-Page справа (следующие 6). Потребляет 12 учеников. Остаток обработается следующим правилом.",
+  "when": {
+    "section.density": "light",
+    "students_remaining": { "gte": 13 }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "L-Grid-Page",
+    "right_master": "L-Grid-Page"
+  },
+  "bind": {
+    "left_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, 6] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, 6] } }
+      }
+    },
+    "right_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + 6 + {i} - 1].portrait",
+        "params": { "i": { "range": [1, 6] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + 6 + {i} - 1].full_name",
+        "params": { "i": { "range": [1, 6] } }
+      }
+    }
+  },
+  "consumes": { "students": 12 }
+}
