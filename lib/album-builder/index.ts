@@ -123,8 +123,8 @@ export interface BuildAlbumOrFallbackOptions {
   rulesInput?: RulesEngineInput;
   /** tenant_id для tenant-aware правил/пресетов (null = только глобальные). */
   tenantId: string | null;
-  /** slug template_set'а для rule engine (по умолчанию 'okeybook-default'). */
-  templateSetSlug?: string;
+  // РЭ.21.6.2: templateSetSlug удалён — slug теперь хранится в preset.template_set_id
+  // и резолвится внутри loadBundle (с фолбэком на 'okeybook-default').
 
   /** Legacy ветка: всегда нужна как фолбэк. */
   legacyInput: LegacyAlbumInput;
@@ -164,7 +164,6 @@ export async function buildAlbumOrFallback(
       opts.supabase,
       opts.rulesPresetId,
       opts.tenantId,
-      opts.templateSetSlug ?? 'okeybook-default',
     );
     const layout = ruleBuildFromRules(opts.rulesInput, bundle);
 

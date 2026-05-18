@@ -294,15 +294,19 @@ export interface Preset {
   enabled?: boolean;
 
   /**
-   * РЭ.20: фиксированное число страниц альбома данной комплектации.
+   * РЭ.21.6: ссылка на template_set (дизайн / набор IDML-мастеров),
+   * который надо использовать при сборке альбома по этому пресету.
    *
-   * Источник правды для алгоритма планирования общего раздела:
-   *   common_section_pages = total_pages
-   *                        - student_section_pages
-   *                        - head_teacher_pages
-   *                        - intro_pages (1 для soft, 0 для hard)
-   *                        - final_pages (1 для soft, 0 для hard)
+   * NULL означает «партнёр не выбрал дизайн» — loadBundle применяет
+   * фолбэк на глобальный `okeybook-default`. Все 9 текущих пресетов
+   * после миграции РЭ.21.6.1 имеют NULL.
    *
+   * UUID (template_sets.id), а не slug — потому что slug уникален
+   * только в (tenant_id, slug). См. miграцию 2026-05-18-presets-
+   * template-set-id.sql.
+   */
+  template_set_id?: string | null;
+
   /**
    * РЭ.21.5: диапазон страниц альбома для этой комплектации.
    *

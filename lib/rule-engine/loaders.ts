@@ -34,13 +34,16 @@ export interface RuleEngineBundle {
  * @param supabase — клиент с правами SELECT на presets, rules, template_families, spread_templates
  * @param presetId — id пресета (из таблицы `presets`, не `config_presets`)
  * @param tenantId — id арендатора (для tenant-aware rules) или null для только-глобальных
- * @param templateSetSlug — slug template_set'а (по умолчанию 'okeybook-default')
+ *
+ * РЭ.21.6.2: template_set теперь берётся ИЗ ПРЕСЕТА (preset.template_set_id).
+ * Если в пресете NULL → фолбэк на глобальный 'okeybook-default'. 4-й
+ * аргумент templateSetSlug удалён намеренно: иначе template_set_id из
+ * пресета молча игнорировался бы.
  */
 export async function loadBundle(
   supabase: SupabaseClient,
   presetId: string,
   tenantId: string | null,
-  templateSetSlug = 'okeybook-default',
 ): Promise<RuleEngineBundle> {
   // 1) Preset
   const { data: presetRow, error: presetErr } = await supabase
@@ -80,7 +83,32 @@ export async function loadBundle(
   }
   const rules: Rule[] = ruleRows.map(ruleRowToRule);
 
-  // 4) Template set + masters
+  // 4) Template set: slug из пресета, либо фолбэк на 'okeybook-default'.
+  // РЭ.21.6.2: один дополнительный SELECT для разрешения uuid → slug.
+  // Стоимость незначительна (1 строка по PK), зато slug остаётся
+  // человеко-читаемым identifier-ом в loadTemplateSet.
+  let templateSetSlug = 'okeybook-default';
+  if (preset.template_set_id) {
+    const { data: tsRow, error: tsErr } = await supabase
+      .from('template_sets')
+      .select('slug')
+      .eq('id', preset.template_set_id)
+      .single();
+    if (tsErr || !tsRow?.slug) {
+      // Не падаем — fallback на okeybook-default. Это может произойти если
+      // template_set был удалён (ON DELETE SET NULL не сработал из-за
+      // отложенного коммита) или если slug у него NULL (фаза 0 артефакт).
+      // Логируем для диагностики.
+      console.warn(
+        `[loadBundle] preset '${presetId}' references template_set_id=` +
+        `${preset.template_set_id} but slug not resolved (${tsErr?.message ?? 'no slug'}); ` +
+        `falling back to 'okeybook-default'`
+      );
+    } else {
+      templateSetSlug = String(tsRow.slug);
+    }
+  }
+
   const templateSet = await loadTemplateSet(supabase, templateSetSlug);
   const mastersByName = new Map<string, SpreadTemplate>();
   for (const m of templateSet.spreads) {
@@ -108,6 +136,12 @@ function presetRowToPreset(row: Record<string, unknown>): Preset {
         : String(row.parent_preset_id),
     tenant_id: row.tenant_id === null || row.tenant_id === undefined ? null : String(row.tenant_id),
     enabled: row.enabled === false ? false : true,
+    // РЭ.21.6: ссылка на template_set. null = фолбэк на okeybook-default
+    // в loadBundle.
+    template_set_id:
+      row.template_set_id === null || row.template_set_id === undefined
+        ? null
+        : String(row.template_set_id),
     // РЭ.21.5.3: диапазон страниц. total_pages удалена из БД.
     min_pages:
       row.min_pages === null || row.min_pages === undefined

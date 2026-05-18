@@ -445,7 +445,7 @@ export async function GET(req: NextRequest) {
   if (action === 'rule_presets_list') {
     const { data, error } = await supabaseAdmin
       .from('presets')
-      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, section_structure, tenant_id, version')
+      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, template_set_id, section_structure, tenant_id, version')
       .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
       .order('display_name')
 
@@ -1472,6 +1472,48 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // РЭ.21.6: template_set_id опциональный. Если передан — валидируем
+    // что (а) это uuid, (б) тенанту реально доступен этот template_set
+    // (глобальный или его собственный). Без проверки партнёр мог бы
+    // сослаться на чужой template_set.
+    let templateSetId: string | null = null
+    if (body.template_set_id != null && body.template_set_id !== '') {
+      const tsid = String(body.template_set_id)
+      // Базовая sanity-проверка формата uuid (без жёсткого regex —
+      // PostgreSQL отвергнет невалидное на этапе INSERT с ясной ошибкой).
+      if (tsid.length < 32) {
+        return NextResponse.json(
+          { error: 'template_set_id должен быть uuid' },
+          { status: 400 }
+        )
+      }
+      const { data: tsRow, error: tsErr } = await supabaseAdmin
+        .from('template_sets')
+        .select('id, tenant_id, is_global')
+        .eq('id', tsid)
+        .maybeSingle()
+      if (tsErr) {
+        return NextResponse.json({ error: tsErr.message }, { status: 500 })
+      }
+      if (!tsRow) {
+        return NextResponse.json(
+          { error: 'Дизайн не найден' },
+          { status: 400 }
+        )
+      }
+      const accessible =
+        tsRow.is_global === true ||
+        tsRow.tenant_id === null ||
+        tsRow.tenant_id === auth.tenantId
+      if (!accessible) {
+        return NextResponse.json(
+          { error: 'Этот дизайн недоступен' },
+          { status: 403 }
+        )
+      }
+      templateSetId = tsid
+    }
+
     // ID = slug + случайный суффикс (presets.id — text, не uuid).
     // Slug делаем латинскими — кириллица в id выглядит коряво в URL/логах.
     const randomSuffix = Math.random().toString(36).slice(2, 10)
@@ -1512,6 +1554,7 @@ export async function POST(req: NextRequest) {
         sheet_type: sheetType,
         section_structure: defaultSectionStructure,
         sections: defaultSections,
+        template_set_id: templateSetId,
         tenant_id: auth.tenantId,
         parent_preset_id: null,
       })

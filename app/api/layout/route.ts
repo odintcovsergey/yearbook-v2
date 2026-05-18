@@ -674,7 +674,7 @@ async function handleBuildAlbumTestRules(req: NextRequest): Promise<NextResponse
   // tenant_id=null → только глобальные правила/пресеты.
   let bundle
   try {
-    bundle = await loadBundle(supabaseAdmin, presetId, null, 'okeybook-default')
+    bundle = await loadBundle(supabaseAdmin, presetId, null)
   } catch (e) {
     return NextResponse.json(
       { error: `failed to load bundle for preset '${presetId}': ${(e as Error).message}` },
@@ -796,7 +796,7 @@ async function handlePreviewRulesEngine(
   // (правила глобальные + тенантские, см. loaders.ts).
   let bundle
   try {
-    bundle = await loadBundle(supabaseAdmin, presetId, tid, 'okeybook-default')
+    bundle = await loadBundle(supabaseAdmin, presetId, tid)
   } catch (e) {
     return NextResponse.json(
       { error: `failed to load bundle for preset '${presetId}': ${(e as Error).message}` },
@@ -908,7 +908,7 @@ async function tryBuildViaRules(
   // правила/пресеты + глобальные.
   let bundle
   try {
-    bundle = await loadBundle(supabase, rulesPresetId, tenantId, 'okeybook-default')
+    bundle = await loadBundle(supabase, rulesPresetId, tenantId)
   } catch (e) {
     return {
       ok: false,
