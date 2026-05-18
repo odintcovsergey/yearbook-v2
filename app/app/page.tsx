@@ -9098,6 +9098,23 @@ const SLOT_LABELS: Record<string, string> = {
 }
 const SLOT_TYPE_ORDER: string[] = ['H', 'Q', 'FULL', 'flex_A', 'flex_B', 'flex_C']
 
+// РЭ.21.7.5.2: справочник density (плотности портретов).
+// Whitelist синхронизирован с серверным валидатором validateDensity
+// в app/api/tenant/route.ts и с PresetDensity в lib/rule-engine/types.ts.
+// null = «по умолчанию» — означает «не задано», build engine упадёт на
+// фолбэк (sub-density выбирается алгоритмом или используется без него).
+type PresetDensityValue = 'standard' | 'universal' | 'medium' | 'light' | 'mini'
+const DENSITY_LABELS: Record<PresetDensityValue, string> = {
+  standard: 'Стандарт',
+  universal: 'Универсал',
+  medium: 'Медиум',
+  light: 'Лайт',
+  mini: 'Мини',
+}
+const DENSITY_ORDER: PresetDensityValue[] = [
+  'standard', 'universal', 'medium', 'light', 'mini',
+]
+
 // Создание новой секции по типу. Для common — пустой массив слотов
 // (партнёр добавляет слоты в редакторе 21.7.4).
 function makeSection(type: SectionStructureEntry['type']): SectionStructureEntry {
@@ -9109,13 +9126,24 @@ function makeSection(type: SectionStructureEntry['type']): SectionStructureEntry
 // PresetForm в обоих режимах (create и edit). Снаружи получает sections +
 // onChange — родитель хранит state и шлёт в submit. Редактирование слотов
 // внутри common будет в РЭ.21.7.4 (сейчас слоты read-only с подсказкой).
+//
+// РЭ.21.7.5.2: density + onDensityChange — параметр секции students.
+// На уровне БД density атрибут пресета, но UX подаёт его как параметр
+// секции (см. комментарий в server-side validateDensity). При наличии
+// нескольких секций students все они показывают одно значение density
+// и любая из них может его менять.
 function SectionEditor({
   sections,
   onChange,
+  density,
+  onDensityChange,
   disabled,
 }: {
   sections: SectionStructureEntry[]
   onChange: (next: SectionStructureEntry[]) => void
+  /** Текущая плотность пресета. null = «по умолчанию» (не задано). */
+  density: PresetDensityValue | null
+  onDensityChange: (next: PresetDensityValue | null) => void
   disabled?: boolean
 }) {
   // DnD id'ы стабильны на время сессии — не используем sections[i].type
@@ -9185,6 +9213,10 @@ function SectionEditor({
                           )
                       : undefined
                   }
+                  density={section.type === 'students' ? density : undefined}
+                  onDensityChange={
+                    section.type === 'students' ? onDensityChange : undefined
+                  }
                   disabled={disabled}
                 />
               ))}
@@ -9207,6 +9239,8 @@ function SortableSectionItem({
   section,
   onRemove,
   onSlotsChange,
+  density,
+  onDensityChange,
   disabled,
 }: {
   id: string
@@ -9215,6 +9249,10 @@ function SortableSectionItem({
   onRemove: () => void
   /** Только для common-секций. Игнорируется для остальных. */
   onSlotsChange?: (next: string[]) => void
+  /** Только для students-секций. Текущая плотность пресета. */
+  density?: PresetDensityValue | null
+  /** Только для students-секций. Изменяет density пресета. */
+  onDensityChange?: (next: PresetDensityValue | null) => void
   disabled?: boolean
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -9260,6 +9298,18 @@ function SortableSectionItem({
             disabled={disabled}
           />
         )}
+        {section.type === 'students' && onDensityChange && (
+          // РЭ.21.7.5.2: параметр density показан внутри карточки секции
+          // students. Хранится физически в preset.density (одно значение на
+          // пресет, см. validateDensity на сервере). Если в structure есть
+          // несколько секций students — все они показывают одно значение
+          // и любая может его менять.
+          <DensityPicker
+            density={density ?? null}
+            onChange={onDensityChange}
+            disabled={disabled}
+          />
+        )}
       </div>
       {!disabled && (
         <button
@@ -9272,6 +9322,42 @@ function SortableSectionItem({
         </button>
       )}
     </li>
+  )
+}
+
+// РЭ.21.7.5.2: компактный dropdown плотности портретов внутри секции
+// students. Шесть опций: «По умолчанию» (null) + 5 значений из
+// PresetDensityValue.
+function DensityPicker({
+  density,
+  onChange,
+  disabled,
+}: {
+  density: PresetDensityValue | null
+  onChange: (next: PresetDensityValue | null) => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="mt-2 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-md px-2 py-1.5">
+      <span className="text-xs text-gray-600 shrink-0">Плотность</span>
+      <select
+        value={density ?? ''}
+        onChange={(e) => {
+          const v = e.target.value
+          onChange(v === '' ? null : (v as PresetDensityValue))
+        }}
+        disabled={disabled}
+        className="text-xs px-2 py-1 border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+        aria-label="Плотность портретов"
+      >
+        <option value="">по умолчанию</option>
+        {DENSITY_ORDER.map((d) => (
+          <option key={d} value={d}>
+            {DENSITY_LABELS[d]}
+          </option>
+        ))}
+      </select>
+    </div>
   )
 }
 
@@ -9657,6 +9743,17 @@ function PresetForm({
       { type: 'soft_final' },
     ]
   })
+  // РЭ.21.7.5.2: density — параметр секции students в UI, физически
+  // preset.density. Нормализуем existing.density через whitelist — если
+  // в БД лежит мусорное значение (например, старый 'maximum' до РЭ.20.5),
+  // показываем «по умолчанию» вместо падения.
+  const [density, setDensity] = useState<PresetDensityValue | null>(() => {
+    const v = existing?.density
+    if (v && DENSITY_ORDER.includes(v as PresetDensityValue)) {
+      return v as PresetDensityValue
+    }
+    return null
+  })
   const [busy, setBusy] = useState(false)
 
   const rangeError =
@@ -9691,6 +9788,7 @@ function PresetForm({
             max_pages: maxPages,
             template_set_id: templateSetId || null,
             section_structure: sections,
+            density: density,
           }
         : {
             action: 'rule_preset_update',
@@ -9701,6 +9799,7 @@ function PresetForm({
             max_pages: maxPages,
             template_set_id: templateSetId || null,
             section_structure: sections,
+            density: density,
           }
     const r = await api('/api/tenant', {
       method: 'POST',
@@ -9831,6 +9930,8 @@ function PresetForm({
         <SectionEditor
           sections={sections}
           onChange={setSections}
+          density={density}
+          onDensityChange={setDensity}
           disabled={busy}
         />
 
