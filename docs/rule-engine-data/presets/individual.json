@@ -2,11 +2,16 @@
   "id": "individual",
   "display_name": "Индивидуальный",
   "print_type": "layflat",
+  "density": null,
+  "sheet_type": "hard",
   "pages_per_spread": 2,
+  "total_pages": 24,
   "version": "1.0",
   "tenant_id": null,
   "sections": [
-    { "family_id": "head-teacher" },
+    {
+      "family_id": "head-teacher"
+    },
     {
       "family_id": "student-section",
       "display_name": "Основной раздел (по развороту на ученика)",
@@ -24,6 +29,8 @@
         "density": "mini"
       }
     },
-    { "family_id": "common-section" }
+    {
+      "family_id": "common-section"
+    }
   ]
 }

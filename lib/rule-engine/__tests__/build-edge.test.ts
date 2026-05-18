@@ -676,3 +676,67 @@ describe('buildFromRules — общий раздел (РЭ.18)', () => {
     expect(fillHang).toBeDefined();
   });
 });
+
+// =============================================================================
+// РЭ.20.6.2: первое mandatory-правило из дизайнерской матрицы
+// =============================================================================
+
+describe('buildFromRules — РЭ.20.6.2: mandatory-правило из матрицы', () => {
+  it('mini-soft + half_class >= 4 → common-mandatory-mini-soft-page-0-half-pair применяется', () => {
+    // Setup: пресет mini-soft (density='mini', sheet_type='soft'), достаточно
+    // half_class фото. Новое правило common-mandatory-mini-soft-page-0-half-pair
+    // (priority 230) должно перебить legacy common-section-half-class-pair
+    // (priority 190), потому что when'у matches mandatory_section.current_index === 0.
+    const bundle = makeBundle('mini-soft');
+    const input = makeInput({ students: 4, halfClass: 8 });
+    const layout = buildFromRules(input, bundle);
+
+    expect(layout.status).not.toBe('failed');
+
+    // Применилось новое mandatory-правило?
+    const mandatoryTrace = layout.decision_trace.find(
+      (t) => t.rule_id === 'common-mandatory-mini-soft-page-0-half-pair',
+    );
+    expect(mandatoryTrace).toBeDefined();
+    // Снимок контекста на момент применения: mandatory_section.current_index === 0.
+    expect(mandatoryTrace?.inputs).toBeDefined();
+  });
+
+  it('после применения mandatory-правила курсор current_mandatory_page_index сдвигается', () => {
+    // Сильнее: подаём фото на ДВА разворота half_class (8 фото = 2×4), но новое
+    // правило mandatory срабатывает только когда current_index===0.
+    // На второй итерации current_index уже === 1, и mandatory НЕ применяется
+    // повторно (когда-то его место займёт common-mandatory-mini-soft-page-1-*,
+    // которое появится в РЭ.20.6.3). Сейчас вместо него срабатывает legacy
+    // common-section-half-class-pair (priority 190).
+    const bundle = makeBundle('mini-soft');
+    const input = makeInput({ students: 4, halfClass: 8 });
+    const layout = buildFromRules(input, bundle);
+
+    const mandatoryCount = layout.decision_trace.filter(
+      (t) => t.rule_id === 'common-mandatory-mini-soft-page-0-half-pair',
+    ).length;
+    // Правило-эталон срабатывает ровно один раз (mandatory_section.current_index === 0).
+    expect(mandatoryCount).toBe(1);
+
+    // Дальнейшие развороты идут на legacy common-section-half-class-pair —
+    // оно работает для любых пресетов и не привязано к mandatory_section.
+    const legacyHalfCount = layout.decision_trace.filter(
+      (t) => t.rule_id === 'common-section-half-class-pair',
+    ).length;
+    expect(legacyHalfCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('mandatory-правило НЕ срабатывает на пресете standard (preset_density mismatch)', () => {
+    // Standard имеет density='standard', а правило ждёт preset_density === 'mini'.
+    // Не должно сработать даже при наличии half_class фото — fallback на legacy.
+    const bundle = makeBundle('standard');
+    const input = makeInput({ students: 4, halfClass: 4 });
+    const layout = buildFromRules(input, bundle);
+
+    const mandatoryTrace = layout.decision_trace.find(
+      (t) => t.rule_id === 'common-mandatory-mini-soft-page-0-half-pair',
+    );
+    expect(mandatoryTrace).toBeUndefined();
+  });
+});

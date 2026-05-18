@@ -2,11 +2,16 @@
   "id": "standard",
   "display_name": "Стандарт",
   "print_type": "layflat",
+  "density": "standard",
+  "sheet_type": "hard",
   "pages_per_spread": 2,
+  "total_pages": 24,
   "version": "1.0",
   "tenant_id": null,
   "sections": [
-    { "family_id": "head-teacher" },
+    {
+      "family_id": "head-teacher"
+    },
     {
       "family_id": "student-section",
       "params": {
@@ -14,6 +19,8 @@
         "has_quote": true
       }
     },
-    { "family_id": "common-section" }
+    {
+      "family_id": "common-section"
+    }
   ]
 }

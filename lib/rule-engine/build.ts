@@ -355,6 +355,8 @@ function buildContext(
       sixth: { count: sixthRemaining, has_any: sixthRemaining > 0 },
     },
     print_type: preset.print_type,
+    preset_density: preset.density ?? null,
+    preset_sheet_type: preset.sheet_type ?? null,
     section: {
       position: 'middle',
       density: section.params?.density as Density | undefined,

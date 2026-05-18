@@ -461,6 +461,28 @@ export interface RuleContext {
     sixth: { count: number; has_any?: boolean };
   };
   print_type: PrintType;
+  /**
+   * РЭ.20.6.2: плотность из пресета (preset.density).
+   *
+   * Видна в WHEN'е любого правила независимо от семейства (в отличие
+   * от `section.density`, которая задаётся только в student-section
+   * секции). Нужна правилам общего раздела чтобы выбирать структуру
+   * по матрице (mini × hard vs light × hard и т.д.).
+   *
+   * `null` для пресетов где density не задан (Maximum/Individual) —
+   * такие пресеты не используют новые mandatory-правила.
+   */
+  preset_density?: PresetDensity | null;
+  /**
+   * РЭ.20.6.2: тип листов из пресета (preset.sheet_type).
+   *
+   * ⚠️ Временный путь. В РЭ.12 (UI редактор) sheet_type переедет на
+   * уровень альбома (albums.sheet_type), и `preset_sheet_type` будет
+   * заменён на `sheet_type` (читается из альбома). Сейчас читаем из
+   * пресета, потому что правилу нужно дифференцировать hard/soft
+   * на этапе построения.
+   */
+  preset_sheet_type?: SheetType | null;
   section: {
     position: 'first' | 'middle' | 'last';
     density?: Density;
