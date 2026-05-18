@@ -9096,6 +9096,7 @@ const SLOT_LABELS: Record<string, string> = {
   flex_B: 'flex_B (всё попробовать)',
   flex_C: 'flex_C (правая нечётная)',
 }
+const SLOT_TYPE_ORDER: string[] = ['H', 'Q', 'FULL', 'flex_A', 'flex_B', 'flex_C']
 
 // Создание новой секции по типу. Для common — пустой массив слотов
 // (партнёр добавляет слоты в редакторе 21.7.4).
@@ -9174,6 +9175,16 @@ function SectionEditor({
                   index={i}
                   section={section}
                   onRemove={() => removeAt(i)}
+                  onSlotsChange={
+                    section.type === 'common'
+                      ? (nextSlots) =>
+                          onChange(
+                            sections.map((s, j) =>
+                              j === i ? { type: 'common', slots: nextSlots } : s,
+                            ),
+                          )
+                      : undefined
+                  }
                   disabled={disabled}
                 />
               ))}
@@ -9183,8 +9194,8 @@ function SectionEditor({
       )}
 
       <div className="text-xs text-gray-500 italic mt-2">
-        Перетаскивайте секции для изменения порядка. Слоты внутри «Общего
-        раздела» можно будет редактировать в следующем обновлении.
+        Перетаскивайте секции для изменения порядка. Внутри «Общего раздела»
+        можно так же редактировать слоты.
       </div>
     </div>
   )
@@ -9195,12 +9206,15 @@ function SortableSectionItem({
   index,
   section,
   onRemove,
+  onSlotsChange,
   disabled,
 }: {
   id: string
   index: number
   section: SectionStructureEntry
   onRemove: () => void
+  /** Только для common-секций. Игнорируется для остальных. */
+  onSlotsChange?: (next: string[]) => void
   disabled?: boolean
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -9236,11 +9250,15 @@ function SortableSectionItem({
       <div className="min-w-0 flex-1">
         <div className="font-medium text-sm">{label}</div>
         {section.type === 'common' && (
-          <div className="text-xs text-gray-500 mt-0.5">
-            {section.slots.length === 0
-              ? 'Слотов пока нет'
-              : section.slots.map((s) => SLOT_LABELS[s] ?? s).join(' · ')}
-          </div>
+          // РЭ.21.7.4: вложенный редактор слотов с собственным DndContext.
+          // Внешний DndContext (секций) и внутренний (слотов) работают
+          // независимо — события привязаны к ближайшему контексту через
+          // React Context @dnd-kit.
+          <SlotEditor
+            slots={section.slots}
+            onChange={(next) => onSlotsChange?.(next)}
+            disabled={disabled}
+          />
         )}
       </div>
       {!disabled && (
@@ -9254,6 +9272,174 @@ function SortableSectionItem({
         </button>
       )}
     </li>
+  )
+}
+
+// РЭ.21.7.4: редактор слотов внутри common-секции. DnD-список с
+// поддержкой добавления/удаления.
+function SlotEditor({
+  slots,
+  onChange,
+  disabled,
+}: {
+  slots: string[]
+  onChange: (next: string[]) => void
+  disabled?: boolean
+}) {
+  const items = slots.map((_, i) => `slot-${i}`)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  )
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const oldIdx = items.indexOf(String(active.id))
+    const newIdx = items.indexOf(String(over.id))
+    if (oldIdx < 0 || newIdx < 0) return
+    onChange(arrayMove(slots, oldIdx, newIdx))
+  }
+
+  const removeAt = (i: number) => {
+    onChange(slots.filter((_, idx) => idx !== i))
+  }
+  const addSlot = (slot: string) => {
+    onChange([...slots, slot])
+  }
+
+  return (
+    <div className="mt-1.5">
+      {slots.length === 0 ? (
+        <div className="text-xs text-gray-400 italic mb-1.5">
+          Слотов пока нет — общий раздел не будет генерироваться.
+        </div>
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={items} strategy={verticalListSortingStrategy}>
+            <ol className="space-y-1">
+              {slots.map((slot, i) => (
+                <SortableSlotItem
+                  key={items[i]}
+                  id={items[i]}
+                  slot={slot}
+                  onRemove={() => removeAt(i)}
+                  disabled={disabled}
+                />
+              ))}
+            </ol>
+          </SortableContext>
+        </DndContext>
+      )}
+      {!disabled && (
+        <div className="mt-1.5">
+          <AddSlotButton onPick={addSlot} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SortableSlotItem({
+  id,
+  slot,
+  onRemove,
+  disabled,
+}: {
+  id: string
+  slot: string
+  onRemove: () => void
+  disabled?: boolean
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id, disabled })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded px-1.5 py-1"
+    >
+      <button
+        type="button"
+        className="text-gray-400 hover:text-gray-700 cursor-grab active:cursor-grabbing select-none text-xs"
+        aria-label="Перетащить слот"
+        {...attributes}
+        {...listeners}
+      >
+        ⋮
+      </button>
+      <span className="text-xs text-gray-700 flex-1">
+        {SLOT_LABELS[slot] ?? slot}
+      </span>
+      {!disabled && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-gray-400 hover:text-red-600 text-xs shrink-0 px-1"
+          aria-label="Удалить слот"
+        >
+          ×
+        </button>
+      )}
+    </li>
+  )
+}
+
+function AddSlotButton({
+  onPick,
+}: {
+  onPick: (slot: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-xs px-2 py-0.5 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+      >
+        + Слот
+      </button>
+      {open && (
+        <div className="absolute left-0 mt-1 z-10 bg-white border border-gray-200 rounded-md shadow-md py-1 min-w-[220px]">
+          {SLOT_TYPE_ORDER.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                onPick(s)
+                setOpen(false)
+              }}
+              className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100"
+            >
+              {SLOT_LABELS[s] ?? s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
