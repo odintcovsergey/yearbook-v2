@@ -110,6 +110,18 @@ function presetRowToPreset(row: Record<string, unknown>): Preset {
     enabled: row.enabled === false ? false : true,
     // РЭ.20: новые поля. БД-колонка NOT NULL DEFAULT 24 → fallback 24.
     total_pages: Number(row.total_pages ?? 24),
+    // РЭ.21.5: диапазон страниц. nullable до явного заполнения партнёром.
+    // Числовое приведение пишем через тернарник чтобы 0 не превращался
+    // в null случайно (хотя 0 страниц это нонсенс, но строгая семантика
+    // лучше чем неявная).
+    min_pages:
+      row.min_pages === null || row.min_pages === undefined
+        ? null
+        : Number(row.min_pages),
+    max_pages:
+      row.max_pages === null || row.max_pages === undefined
+        ? null
+        : Number(row.max_pages),
     density:
       row.density === null || row.density === undefined
         ? null

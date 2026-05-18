@@ -9036,6 +9036,8 @@ type RulePresetRow = {
   density: string | null
   sheet_type: string | null
   total_pages: number | null
+  min_pages: number | null
+  max_pages: number | null
   section_structure: SectionStructureEntry[] | null
   tenant_id: string | null
   version: string | null
@@ -9158,13 +9160,25 @@ function PresetCreateForm({
 }) {
   const [displayName, setDisplayName] = useState('')
   const [printType, setPrintType] = useState<'layflat' | 'soft'>('layflat')
-  const [totalPages, setTotalPages] = useState(24)
+  const [minPages, setMinPages] = useState(24)
+  const [maxPages, setMaxPages] = useState(24)
   const [busy, setBusy] = useState(false)
+
+  const rangeError =
+    minPages < 1 || maxPages < 1 || minPages > 200 || maxPages > 200
+      ? 'Страницы от 1 до 200'
+      : minPages > maxPages
+        ? 'Минимум не может быть больше максимума'
+        : null
 
   const submit = async () => {
     const name = displayName.trim()
     if (!name) {
       onError('Введите название')
+      return
+    }
+    if (rangeError) {
+      onError(rangeError)
       return
     }
     setBusy(true)
@@ -9175,7 +9189,8 @@ function PresetCreateForm({
         action: 'rule_preset_create',
         display_name: name,
         print_type: printType,
-        total_pages: totalPages,
+        min_pages: minPages,
+        max_pages: maxPages,
       }),
     })
     setBusy(false)
@@ -9239,17 +9254,38 @@ function PresetCreateForm({
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Число страниц
+            Диапазон страниц
           </label>
-          <input
-            type="number"
-            min={1}
-            max={200}
-            value={totalPages}
-            onChange={(e) => setTotalPages(Number(e.target.value) || 24)}
-            className="w-32 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-            disabled={busy}
-          />
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={minPages}
+              onChange={(e) => setMinPages(Number(e.target.value) || 0)}
+              className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              disabled={busy}
+              aria-label="Минимум страниц"
+            />
+            <span className="text-gray-400">–</span>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={maxPages}
+              onChange={(e) => setMaxPages(Number(e.target.value) || 0)}
+              className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              disabled={busy}
+              aria-label="Максимум страниц"
+            />
+            <span className="text-sm text-gray-500">страниц</span>
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            Если число страниц фиксировано (например, Мини всегда 6) — поставьте одинаковые значения.
+          </div>
+          {rangeError && (
+            <div className="text-xs text-red-600 mt-1">{rangeError}</div>
+          )}
         </div>
 
         <div className="text-xs text-gray-500 italic">
@@ -9261,7 +9297,7 @@ function PresetCreateForm({
           <button
             type="button"
             onClick={submit}
-            disabled={busy || !displayName.trim()}
+            disabled={busy || !displayName.trim() || !!rangeError}
             className="btn-primary text-sm disabled:opacity-50"
           >
             {busy ? 'Создание…' : 'Создать пресет'}
@@ -9284,7 +9320,21 @@ function PresetCard({ preset }: { preset: RulePresetRow }) {
   const isGlobal = preset.tenant_id === null
   const sheetLabel = preset.sheet_type === 'soft' ? 'мягкие листы' : preset.sheet_type === 'hard' ? 'плотные листы' : '—'
   const densityLabel = preset.density ?? '—'
-  const pagesLabel = preset.total_pages ?? '—'
+
+  // РЭ.21.5: показываем диапазон min..max. Фолбэк на total_pages если
+  // min/max ещё не заполнены (так выглядят 7 встроенных пресетов сразу
+  // после миграции 21.5.1, пока Сергей не проставил конкретные диапазоны).
+  const pagesLabel = (() => {
+    const min = preset.min_pages
+    const max = preset.max_pages
+    if (min != null && max != null) {
+      return min === max ? `${min} стр.` : `${min}–${max} стр.`
+    }
+    if (preset.total_pages != null) {
+      return `${preset.total_pages} стр.`
+    }
+    return '— стр.'
+  })()
 
   return (
     <div className="border rounded-xl p-4 hover:border-gray-300 transition-colors">
@@ -9303,7 +9353,7 @@ function PresetCard({ preset }: { preset: RulePresetRow }) {
             )}
           </div>
           <div className="text-sm text-gray-500 mt-1">
-            {sheetLabel} · плотность <span className="font-mono text-xs">{densityLabel}</span> · {pagesLabel} стр.
+            {sheetLabel} · плотность <span className="font-mono text-xs">{densityLabel}</span> · {pagesLabel}
             {preset.print_type && (
               <>
                 {' · '}
