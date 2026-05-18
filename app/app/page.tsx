@@ -9149,10 +9149,11 @@ function PresetsModal({
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
           {showCreate && (
-            <PresetCreateForm
+            <PresetForm
+              mode="create"
               templateSets={templateSets}
               onCancel={() => setShowCreate(false)}
-              onCreated={async () => {
+              onSaved={async () => {
                 setShowCreate(false)
                 await load()
               }}
@@ -9166,7 +9167,13 @@ function PresetsModal({
           ) : (
             <div className="space-y-4">
               {presets.map((p) => (
-                <PresetCard key={p.id} preset={p} templateSets={templateSets} />
+                <PresetCard
+                  key={p.id}
+                  preset={p}
+                  templateSets={templateSets}
+                  onSaved={load}
+                  onError={onError}
+                />
               ))}
             </div>
           )}
@@ -9176,24 +9183,34 @@ function PresetsModal({
   )
 }
 
-function PresetCreateForm({
+// РЭ.21.7.2: обобщённая форма пресета. mode='create' — пустые поля,
+// POST rule_preset_create. mode='edit' — предзаполнение из existing,
+// POST rule_preset_update с partial-патчем.
+function PresetForm({
+  mode,
+  existing,
   templateSets,
   onCancel,
-  onCreated,
+  onSaved,
   onError,
 }: {
+  mode: 'create' | 'edit'
+  /** В режиме edit — пресет для редактирования. В create — undefined. */
+  existing?: RulePresetRow
   templateSets: TemplateSetRow[]
   onCancel: () => void
-  onCreated: () => void | Promise<void>
+  onSaved: () => void | Promise<void>
   onError: (msg: string) => void
 }) {
-  const [displayName, setDisplayName] = useState('')
-  const [printType, setPrintType] = useState<'layflat' | 'soft'>('layflat')
-  const [minPages, setMinPages] = useState(24)
-  const [maxPages, setMaxPages] = useState(24)
+  const [displayName, setDisplayName] = useState(existing?.display_name ?? '')
+  const [printType, setPrintType] = useState<'layflat' | 'soft'>(
+    existing?.print_type === 'soft' ? 'soft' : 'layflat',
+  )
+  const [minPages, setMinPages] = useState(existing?.min_pages ?? 24)
+  const [maxPages, setMaxPages] = useState(existing?.max_pages ?? 24)
   // РЭ.21.6.3: '' = «По умолчанию (okeybook-default)», отправляем null.
   // uuid = конкретный template_set из списка.
-  const [templateSetId, setTemplateSetId] = useState<string>('')
+  const [templateSetId, setTemplateSetId] = useState<string>(existing?.template_set_id ?? '')
   const [busy, setBusy] = useState(false)
 
   const rangeError =
@@ -9214,30 +9231,48 @@ function PresetCreateForm({
       return
     }
     setBusy(true)
+    // В режиме edit отправляем все поля (server-side patch отфильтрует
+    // через partial-логику — undefined-поля не обновляются). Так проще,
+    // чем диффить — а для UI это всё равно одна форма, все поля
+    // потенциально изменены.
+    const body =
+      mode === 'create'
+        ? {
+            action: 'rule_preset_create',
+            display_name: name,
+            print_type: printType,
+            min_pages: minPages,
+            max_pages: maxPages,
+            template_set_id: templateSetId || null,
+          }
+        : {
+            action: 'rule_preset_update',
+            preset_id: existing!.id,
+            display_name: name,
+            print_type: printType,
+            min_pages: minPages,
+            max_pages: maxPages,
+            template_set_id: templateSetId || null,
+          }
     const r = await api('/api/tenant', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        action: 'rule_preset_create',
-        display_name: name,
-        print_type: printType,
-        min_pages: minPages,
-        max_pages: maxPages,
-        template_set_id: templateSetId || null,
-      }),
+      body: JSON.stringify(body),
     })
     setBusy(false)
     if (!r.ok) {
       const d = await r.json().catch(() => ({}))
-      onError(d?.error ?? 'Не удалось создать пресет')
+      onError(d?.error ?? (mode === 'create' ? 'Не удалось создать пресет' : 'Не удалось сохранить'))
       return
     }
-    await onCreated()
+    await onSaved()
   }
 
   return (
     <div className="mb-6 border-2 border-blue-200 rounded-xl p-5 bg-blue-50/40">
-      <h3 className="text-base font-semibold mb-4">Новый пресет</h3>
+      <h3 className="text-base font-semibold mb-4">
+        {mode === 'create' ? 'Новый пресет' : 'Редактирование пресета'}
+      </h3>
 
       <div className="space-y-4">
         <div>
@@ -9345,10 +9380,17 @@ function PresetCreateForm({
           )}
         </div>
 
-        <div className="text-xs text-gray-500 italic">
-          Структура секций будет создана со стартовым набором по умолчанию.
-          Редактирование секций появится в следующих обновлениях.
-        </div>
+        {mode === 'create' && (
+          <div className="text-xs text-gray-500 italic">
+            Структура секций будет создана со стартовым набором по умолчанию.
+            Редактирование секций появится в следующих обновлениях.
+          </div>
+        )}
+        {mode === 'edit' && (
+          <div className="text-xs text-gray-500 italic">
+            Структура секций редактируется отдельно (появится в следующих обновлениях).
+          </div>
+        )}
 
         <div className="flex gap-2 pt-2">
           <button
@@ -9357,7 +9399,9 @@ function PresetCreateForm({
             disabled={busy || !displayName.trim() || !!rangeError}
             className="btn-primary text-sm disabled:opacity-50"
           >
-            {busy ? 'Создание…' : 'Создать пресет'}
+            {busy
+              ? mode === 'create' ? 'Создание…' : 'Сохранение…'
+              : mode === 'create' ? 'Создать пресет' : 'Сохранить'}
           </button>
           <button
             type="button"
@@ -9376,10 +9420,15 @@ function PresetCreateForm({
 function PresetCard({
   preset,
   templateSets,
+  onSaved,
+  onError,
 }: {
   preset: RulePresetRow
   templateSets: TemplateSetRow[]
+  onSaved: () => void | Promise<void>
+  onError: (msg: string) => void
 }) {
+  const [editing, setEditing] = useState(false)
   const isGlobal = preset.tenant_id === null
   const sheetLabel = preset.sheet_type === 'soft' ? 'мягкие листы' : preset.sheet_type === 'hard' ? 'плотные листы' : '—'
   const densityLabel = preset.density ?? '—'
@@ -9406,6 +9455,26 @@ function PresetCard({
     if (!ts) return preset.template_set_id.slice(0, 8) + '…'
     return ts.name
   })()
+
+  // РЭ.21.7.2: режим редактирования. Карточка раскрывается, рендерим
+  // ту же форму что для создания, но с mode='edit' и existing=preset.
+  if (editing) {
+    return (
+      <div className="border rounded-xl">
+        <PresetForm
+          mode="edit"
+          existing={preset}
+          templateSets={templateSets}
+          onCancel={() => setEditing(false)}
+          onSaved={async () => {
+            setEditing(false)
+            await onSaved()
+          }}
+          onError={onError}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="border rounded-xl p-4 hover:border-gray-300 transition-colors">
@@ -9436,6 +9505,18 @@ function PresetCard({
             Дизайн: <span className="text-gray-700">{templateSetLabel}</span>
           </div>
         </div>
+        {/* РЭ.21.7.2: кнопка «Редактировать» — только для своих пресетов.
+            Глобальные сейчас редактируется только суперадмином (UI в
+            /super планируется отдельно). */}
+        {!isGlobal && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-sm text-blue-600 hover:text-blue-800 hover:underline shrink-0"
+          >
+            Редактировать
+          </button>
+        )}
       </div>
 
       <div className="mt-3">
