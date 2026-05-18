@@ -32,7 +32,7 @@ export type LayoutStatus = 'ok' | 'partial' | 'failed';
  *  - `soft` (мягкие) — первая страница S-Intro, последняя S-Final.
  *
  * Логика правил для hard и soft одинаковая — отличается только
- * `Preset.total_pages` и наличие двух краевых intro/final-страниц.
+ * `Preset.max_pages` и наличие двух краевых intro/final-страниц.
  */
 export type SheetType = 'hard' | 'soft';
 
@@ -208,11 +208,11 @@ export interface ConsumesClause {
     sixth?: number;
   };
   /**
-   * РЭ.20.6: бюджет страниц альбома (preset.total_pages).
+   * РЭ.20.6: бюджет страниц альбома (preset.max_pages).
    * Сколько страниц данное правило «тратит» из общего лимита.
    *
    * Используется правилами общего раздела чтобы соблюсти
-   * preset.total_pages. Декрементирует cursor.current_consumed_pages,
+   * preset.max_pages. Декрементирует cursor.current_consumed_pages,
    * соответственно ctx.pages_remaining уменьшается на каждом цикле.
    *
    * Типичные значения: 1 для одиночной страницы (intro, final),
@@ -303,29 +303,23 @@ export interface Preset {
    *                        - intro_pages (1 для soft, 0 для hard)
    *                        - final_pages (1 для soft, 0 для hard)
    *
-   * Партнёр настраивает в UI пресета (фаза РЭ.12). В БД NOT NULL
-   * DEFAULT 24 — заглушка до проставления реальных значений в РЭ.20.5.
-   *
-   * @deprecated РЭ.21.5: будет удалено в РЭ.21.5.3 в пользу
-   * `min_pages` / `max_pages`. Сейчас используется как фолбэк для
-   * сборки и для отображения когда min/max ещё не заполнены.
-   */
-  total_pages: number;
-
   /**
-   * РЭ.21.5: нижняя граница диапазона страниц альбома для этой
-   * комплектации. `null` означает «партнёр ещё не задал диапазон» —
-   * в этом случае код должен использовать `total_pages` как фолбэк
-   * (одно значение для min и max).
+   * РЭ.21.5: диапазон страниц альбома для этой комплектации.
    *
-   * Примеры: Мини: min=max=6 (фиксированно). Стандарт: 20..50.
+   * `min_pages` — нижняя граница. Фиксированные комплектации
+   * (Мини: 6) имеют min = max. Расширяемые (Стандарт: 20..50) —
+   * разные значения.
+   *
+   * `max_pages` — верхняя граница. Должна быть `>= min_pages`.
+   *
+   * Источник правды для алгоритма планирования общего раздела
+   * (бюджет страниц = max_pages, либо выбранное на уровне альбома
+   * значение в диапазоне min..max — это будет в РЭ.21.8).
+   *
+   * Nullable в TS на случай старых записей (нашёлся `custom-vrfxcuqi`
+   * с NULL после РЭ.21.5.3). Build engine применяет фолбэк 24.
    */
   min_pages?: number | null;
-
-  /**
-   * РЭ.21.5: верхняя граница диапазона страниц альбома. Должна быть
-   * `>= min_pages`. Фолбэк аналогично — `total_pages`.
-   */
   max_pages?: number | null;
 
   /**
@@ -398,7 +392,7 @@ export interface RulesAlbumInput {
    * Значение из albums.common_section_max_spreads через legacy-adapter.
    *
    * @deprecated РЭ.20: с реализацией матрицы (РЭ.20.6) число разворотов
-   * общего раздела вычисляется автоматически из Preset.total_pages
+   * общего раздела вычисляется автоматически из Preset.max_pages
    * (`common_section_pages = total_pages - student_section - head_teacher
    *  - intro - final`). Поле остаётся для обратной совместимости пока
    * РЭ.20.6 не закончен — после этого удалим из типов И из БД-колонки
@@ -538,7 +532,7 @@ export interface RuleContext {
    * РЭ.20: сколько страниц альбома осталось «свободно» после планирования
    * student-section, головного учительского и intro/final.
    *
-   *   pages_remaining = preset.total_pages - already_consumed_pages
+   *   pages_remaining = preset.max_pages - already_consumed_pages
    *
    * Используется правилами общего раздела (priority 230/210) чтобы решить
    * добавлять ещё страницу или нет. Заполняется в buildContext (РЭ.20.4).

@@ -104,7 +104,7 @@ export function buildFromRules(
     // когда family_id === 'common-section' и правило произвело spread.
     common_section_spreads_created: 0,
     // РЭ.20.6: бюджет страниц альбома и продвижение по mandatory_section.
-    // current_consumed_pages    — сколько страниц preset.total_pages уже потрачено
+    // current_consumed_pages    — сколько страниц preset.max_pages уже потрачено
     //                              (декремент через consumes.pages).
     // current_mandatory_page_index — позиция в mandatory_section.pages_pattern,
     //                              обработанная текущим build'ом (декремент
@@ -392,7 +392,7 @@ function buildContext(
 
 /**
  * РЭ.20.4: вычисляет `pages_remaining` и `mandatory_section` для RuleContext
- * на основе preset.total_pages/density/sheet_type и строки матрицы.
+ * на основе preset.max_pages/density/sheet_type и строки матрицы.
  *
  * Возвращает пустой объект (без mandatory_section) если:
  *   - preset.density или preset.sheet_type не заданы (legacy preset до РЭ.20.5)
@@ -401,17 +401,22 @@ function buildContext(
  * В обоих случаях build engine продолжает работать на legacy-правилах
  * (priority 230 common-section-*-pair из РЭ.18). Это нужно для плавной
  * миграции: между РЭ.20.4 (типы + утилиты) и РЭ.20.6 (правила mandatory-*).
+ *
+ * РЭ.21.5.3: max_pages пришёл на замену удалённой total_pages. Фолбэк 24
+ * для редких легаси-записей с NULL (custom-vrfxcuqi). Реальный выбор
+ * страниц в диапазоне min..max будет в РЭ.21.8.
  */
 function buildMatrixContext(
   preset: Preset,
   studentsCount: number,
   cursors: Record<string, number>,
 ): Pick<RuleContext, 'pages_remaining' | 'mandatory_section'> {
-  // pages_remaining всегда инициализируем как total_pages - уже потреблённое.
+  // pages_remaining всегда инициализируем как max_pages - уже потреблённое.
   // Курсор current_consumed_pages в РЭ.20.4 не декрементируется (нет правил),
-  // поэтому фактически = total_pages. РЭ.20.6 добавит реальный декремент.
+  // поэтому фактически = max_pages. РЭ.20.6 добавит реальный декремент.
   const consumedPages = cursors.current_consumed_pages ?? 0;
-  const pagesRemaining = Math.max(0, preset.total_pages - consumedPages);
+  const budget = preset.max_pages ?? 24;
+  const pagesRemaining = Math.max(0, budget - consumedPages);
 
   if (!preset.density || !preset.sheet_type) {
     return { pages_remaining: pagesRemaining };

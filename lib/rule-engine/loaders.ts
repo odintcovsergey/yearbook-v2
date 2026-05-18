@@ -108,12 +108,7 @@ function presetRowToPreset(row: Record<string, unknown>): Preset {
         : String(row.parent_preset_id),
     tenant_id: row.tenant_id === null || row.tenant_id === undefined ? null : String(row.tenant_id),
     enabled: row.enabled === false ? false : true,
-    // РЭ.20: новые поля. БД-колонка NOT NULL DEFAULT 24 → fallback 24.
-    total_pages: Number(row.total_pages ?? 24),
-    // РЭ.21.5: диапазон страниц. nullable до явного заполнения партнёром.
-    // Числовое приведение пишем через тернарник чтобы 0 не превращался
-    // в null случайно (хотя 0 страниц это нонсенс, но строгая семантика
-    // лучше чем неявная).
+    // РЭ.21.5.3: диапазон страниц. total_pages удалена из БД.
     min_pages:
       row.min_pages === null || row.min_pages === undefined
         ? null

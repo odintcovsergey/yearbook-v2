@@ -445,7 +445,7 @@ export async function GET(req: NextRequest) {
   if (action === 'rule_presets_list') {
     const { data, error } = await supabaseAdmin
       .from('presets')
-      .select('id, display_name, print_type, density, sheet_type, total_pages, min_pages, max_pages, section_structure, tenant_id, version')
+      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, section_structure, tenant_id, version')
       .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
       .order('display_name')
 
@@ -1432,11 +1432,7 @@ export async function POST(req: NextRequest) {
   // Партнёр в форме указывает display_name + print_type + диапазон страниц
   // (min_pages..max_pages). Остальные поля получают разумные дефолты.
   //
-  // РЭ.21.5: фронтенд передаёт min_pages и max_pages. Legacy-колонку
-  // total_pages мы пока обязаны заполнить (NOT NULL в БД) — пишем туда
-  // max_pages, чтобы у legacy сборщика был просторный budget. Удалим
-  // total_pages в РЭ.21.5.3 когда убедимся что весь код ходит через
-  // min/max.
+  // РЭ.21.5.3: total_pages удалён из БД, пишем только min_pages/max_pages.
   // ----------------------------------------------------------
   if (body.action === 'rule_preset_create') {
     if (auth.role === 'viewer') {
@@ -1510,9 +1506,6 @@ export async function POST(req: NextRequest) {
         print_type: printType,
         pages_per_spread: 2,
         version: '1.0',
-        // total_pages — legacy колонка, удалим в РЭ.21.5.3. Пишем max_pages
-        // как worst-case бюджет, чтобы legacy сборщик не упёрся в лимит.
-        total_pages: maxPages,
         min_pages: minPages,
         max_pages: maxPages,
         density: null,

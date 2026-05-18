@@ -9035,7 +9035,6 @@ type RulePresetRow = {
   print_type: string | null
   density: string | null
   sheet_type: string | null
-  total_pages: number | null
   min_pages: number | null
   max_pages: number | null
   section_structure: SectionStructureEntry[] | null
@@ -9321,17 +9320,14 @@ function PresetCard({ preset }: { preset: RulePresetRow }) {
   const sheetLabel = preset.sheet_type === 'soft' ? 'мягкие листы' : preset.sheet_type === 'hard' ? 'плотные листы' : '—'
   const densityLabel = preset.density ?? '—'
 
-  // РЭ.21.5: показываем диапазон min..max. Фолбэк на total_pages если
-  // min/max ещё не заполнены (так выглядят 7 встроенных пресетов сразу
-  // после миграции 21.5.1, пока Сергей не проставил конкретные диапазоны).
+  // РЭ.21.5.3: показываем диапазон min..max. total_pages удалена из БД,
+  // фолбэка больше нет — но мы оставляем NULL-обработку для безопасности
+  // (например, custom-vrfxcuqi остался с NULL после РЭ.21.5.3 миграции).
   const pagesLabel = (() => {
     const min = preset.min_pages
     const max = preset.max_pages
     if (min != null && max != null) {
       return min === max ? `${min} стр.` : `${min}–${max} стр.`
-    }
-    if (preset.total_pages != null) {
-      return `${preset.total_pages} стр.`
     }
     return '— стр.'
   })()
