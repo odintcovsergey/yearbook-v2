@@ -29,6 +29,7 @@ import type {
   DecisionTraceEntry,
   Density,
   PageInstance,
+  PagePattern,
   Preset,
   Rule,
   RuleContext,
@@ -42,6 +43,10 @@ import { applyBalance } from './balance';
 import { evaluateWhen, resolveNumber, type EvalScope } from './evaluate';
 import { validateSectionParams, SectionSchema } from './schemas';
 import type { RuleEngineBundle } from './loaders';
+import {
+  findMatrixEntry,
+  mandatorySectionPatternsFor,
+} from './album-structure-matrix';
 
 const HARD_LOOP_LIMIT = 200;
 
@@ -366,6 +371,54 @@ function buildContext(
       };
     })(),
     friend_photos_count: friendPhotosCount,
+    // РЭ.20.4: pages_remaining + mandatory_section.
+    // Инициализируем initial state. Декремент cursor'ов
+    // (current_mandatory_page_index, consumed_pages) появится вместе с
+    // правилами common-section-mandatory-page-N-* в РЭ.20.6. До тех пор
+    // эти поля остаются read-only в правилах, не влияя на legacy.
+    ...buildMatrixContext(preset, studentsCount, cursors),
+  };
+}
+
+/**
+ * РЭ.20.4: вычисляет `pages_remaining` и `mandatory_section` для RuleContext
+ * на основе preset.total_pages/density/sheet_type и строки матрицы.
+ *
+ * Возвращает пустой объект (без mandatory_section) если:
+ *   - preset.density или preset.sheet_type не заданы (legacy preset до РЭ.20.5)
+ *   - в матрице нет записи для (density, sheet_type, students_count)
+ *
+ * В обоих случаях build engine продолжает работать на legacy-правилах
+ * (priority 230 common-section-*-pair из РЭ.18). Это нужно для плавной
+ * миграции: между РЭ.20.4 (типы + утилиты) и РЭ.20.6 (правила mandatory-*).
+ */
+function buildMatrixContext(
+  preset: Preset,
+  studentsCount: number,
+  cursors: Record<string, number>,
+): Pick<RuleContext, 'pages_remaining' | 'mandatory_section'> {
+  // pages_remaining всегда инициализируем как total_pages - уже потреблённое.
+  // Курсор current_consumed_pages в РЭ.20.4 не декрементируется (нет правил),
+  // поэтому фактически = total_pages. РЭ.20.6 добавит реальный декремент.
+  const consumedPages = cursors.current_consumed_pages ?? 0;
+  const pagesRemaining = Math.max(0, preset.total_pages - consumedPages);
+
+  if (!preset.density || !preset.sheet_type) {
+    return { pages_remaining: pagesRemaining };
+  }
+  const entry = findMatrixEntry(preset.density, preset.sheet_type, studentsCount);
+  if (!entry) {
+    return { pages_remaining: pagesRemaining };
+  }
+  const patterns: PagePattern[] = mandatorySectionPatternsFor(entry);
+  const currentIndex = cursors.current_mandatory_page_index ?? 0;
+  return {
+    pages_remaining: pagesRemaining,
+    mandatory_section: {
+      pages_pattern: patterns,
+      current_index: currentIndex,
+      pages_remaining: Math.max(0, patterns.length - currentIndex),
+    },
   };
 }
 
