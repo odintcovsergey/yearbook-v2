@@ -37,6 +37,44 @@ const ALLOWED_SECTION_TYPES = new Set([
 ])
 const ALLOWED_SLOT_TYPES = new Set(['H', 'Q', 'FULL', 'flex_A', 'flex_B', 'flex_C'])
 
+// ============================================================
+// РЭ.21.7.5.1: валидатор density.
+//
+// Whitelist синхронизирован с типом PresetDensity в
+// lib/rule-engine/types.ts и с CHECK constraint на колонке
+// `presets.density` (миграция РЭ.20.2).
+//
+// Семантика: density — параметр секции 'students' (плотность портретов).
+// На уровне БД сейчас хранится как preset.density (одно значение на пресет).
+// В UI представлен как параметр секции — это "B-стиль на старте": деферим
+// перенос в section.params.density на следующий шаг (когда понадобится
+// несколько разных плотностей в одном пресете).
+//
+// Возможные значения:
+//   - 'standard' | 'universal' | 'medium' | 'light' | 'mini' — конкретная плотность
+//   - null — не задана (build engine упадёт на фолбэк или будет работать без
+//     student-секции)
+// ============================================================
+const ALLOWED_DENSITY_VALUES = new Set([
+  'standard', 'universal', 'medium', 'light', 'mini',
+])
+
+function validateDensity(
+  raw: unknown,
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw === null) return { ok: true, value: null }
+  if (typeof raw !== 'string') {
+    return { ok: false, error: 'density должен быть строкой или null' }
+  }
+  if (!ALLOWED_DENSITY_VALUES.has(raw)) {
+    return {
+      ok: false,
+      error: `Недопустимое значение density: '${raw}'. Допустимы: ${Array.from(ALLOWED_DENSITY_VALUES).join(', ')}`,
+    }
+  }
+  return { ok: true, value: raw }
+}
+
 type ValidatedSection =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
   | { type: 'common'; slots: string[] }
@@ -1607,6 +1645,18 @@ export async function POST(req: NextRequest) {
       sectionStructure = v.value
     }
 
+    // РЭ.21.7.5.1: density (опциональный). Если не передан — пишем null
+    // (партнёр настроит позже через UI секции students). Если передан —
+    // валидируем по whitelist.
+    let density: string | null = null
+    if (body.density !== undefined) {
+      const v = validateDensity(body.density)
+      if (!v.ok) {
+        return NextResponse.json({ error: v.error }, { status: 400 })
+      }
+      density = v.value
+    }
+
     // sections — legacy поле для текущего rule engine. Используем минимальный
     // набор семейств (без params) — для legacy build это безопасный default.
     const defaultSections = [
@@ -1625,7 +1675,7 @@ export async function POST(req: NextRequest) {
         version: '1.0',
         min_pages: minPages,
         max_pages: maxPages,
-        density: null,
+        density: density,
         sheet_type: sheetType,
         section_structure: sectionStructure,
         sections: defaultSections,
@@ -1663,10 +1713,14 @@ export async function POST(req: NextRequest) {
   //   - section_structure: массив (РЭ.21.7.3). Валидируется через
   //     validateSectionStructure. Каждый элемент {type} либо
   //     {type:'common', slots:[]}.
+  //   - density (РЭ.21.7.5.1): 'standard'|'universal'|'medium'|'light'|'mini'
+  //     или null. Валидируется через validateDensity. В UI представлен
+  //     как параметр секции students (B-стиль на старте), но физически
+  //     хранится как preset.density.
   //
   // НЕ принимаем (намеренно):
   //   - id, tenant_id, parent_preset_id, sections — иммутабельны.
-  //   - density, version — заглушки от РЭ.20, отдельная задача.
+  //   - version — внутренняя версия пресета, отдельная задача.
   // ----------------------------------------------------------
   if (body.action === 'rule_preset_update') {
     if (auth.role === 'viewer') {
@@ -1812,6 +1866,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: v.error }, { status: 400 })
       }
       patch.section_structure = v.value
+    }
+
+    // РЭ.21.7.5.1: density (опциональный). Через undefined-чек поддерживаем
+    // явный сброс в null (когда партнёр выбрал "По умолчанию" в dropdown'е).
+    if (body.density !== undefined) {
+      const v = validateDensity(body.density)
+      if (!v.ok) {
+        return NextResponse.json({ error: v.error }, { status: 400 })
+      }
+      patch.density = v.value
     }
 
     // 4) Если ничего не пришло — отвечаем ok без UPDATE'а
