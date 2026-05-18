@@ -103,6 +103,14 @@ export function buildFromRules(
     // input.common_section_max_spreads). advanceCursors инкрементит на 1
     // когда family_id === 'common-section' и правило произвело spread.
     common_section_spreads_created: 0,
+    // РЭ.20.6: бюджет страниц альбома и продвижение по mandatory_section.
+    // current_consumed_pages    — сколько страниц preset.total_pages уже потрачено
+    //                              (декремент через consumes.pages).
+    // current_mandatory_page_index — позиция в mandatory_section.pages_pattern,
+    //                              обработанная текущим build'ом (декремент
+    //                              через consumes.mandatory_section.pages).
+    current_consumed_pages: 0,
+    current_mandatory_page_index: 0,
   };
   let pendingRightPageSpreadIndex: number | null = null;
   let nextSpreadIndex = 0;
@@ -573,6 +581,13 @@ function advanceCursors(
     if (c.spread) cursors.consumed_spread += c.spread;
     if (c.quarter) cursors.consumed_quarter += c.quarter;
     if (c.sixth) cursors.consumed_sixth += c.sixth;
+  }
+  // РЭ.20.6: бюджет страниц + продвижение по mandatory_section.
+  if (typeof consumes.pages === 'number' && consumes.pages > 0) {
+    cursors.current_consumed_pages += consumes.pages;
+  }
+  if (consumes.mandatory_section && typeof consumes.mandatory_section.pages === 'number') {
+    cursors.current_mandatory_page_index += consumes.mandatory_section.pages;
   }
 }
 

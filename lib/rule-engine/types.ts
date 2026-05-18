@@ -207,6 +207,34 @@ export interface ConsumesClause {
     quarter?: number;
     sixth?: number;
   };
+  /**
+   * РЭ.20.6: бюджет страниц альбома (preset.total_pages).
+   * Сколько страниц данное правило «тратит» из общего лимита.
+   *
+   * Используется правилами общего раздела чтобы соблюсти
+   * preset.total_pages. Декрементирует cursor.current_consumed_pages,
+   * соответственно ctx.pages_remaining уменьшается на каждом цикле.
+   *
+   * Типичные значения: 1 для одиночной страницы (intro, final),
+   * 2 для разворота (J-Half pair, J-Full pair, ...), 3 для трюмо.
+   */
+  pages?: number;
+  /**
+   * РЭ.20.6: продвижение по mandatory_section.pages_pattern.
+   *
+   * Когда правило обслуживает текущий паттерн mandatory_section
+   * (т.е. when'у matched по `mandatory_section.current_index`),
+   * оно потребляет `pages: 1` из mandatory_section — что инкрементирует
+   * cursor.current_mandatory_page_index. На следующей итерации
+   * ctx.mandatory_section.current_index указывает на следующую ячейку.
+   *
+   * Это позволяет линейно обходить массив паттернов матрицы:
+   * первое правило mandatory обрабатывает index=0, потом index=1,
+   * и т.д. до конца.
+   */
+  mandatory_section?: {
+    pages?: number;
+  };
 }
 
 export interface BalanceClause {

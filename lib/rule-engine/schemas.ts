@@ -136,6 +136,15 @@ export const ConsumesClauseSchema = z
       })
       .strict()
       .optional(),
+    // РЭ.20.6: бюджет страниц альбома (см. ConsumesClause.pages в types.ts).
+    pages: z.number().optional(),
+    // РЭ.20.6: продвижение по mandatory_section.pages_pattern.
+    mandatory_section: z
+      .object({
+        pages: z.number().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
