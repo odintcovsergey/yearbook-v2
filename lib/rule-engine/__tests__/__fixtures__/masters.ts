@@ -203,14 +203,17 @@ const M_COMBINED_PAGE = makeMaster('M-Combined-Page', [
 ]);
 
 const L_COMBINED_PAGE = makeMaster('L-Combined-Page', [
-  ...gridSlots('studentportrait', 3, 3),
-  ...gridSlots('studentname', 3, 3, 20, 50),
+  // Реальный мастер из БД: 3 портрета + classphotoframe = 4 photo placeholders
+  ...gridSlots('studentportrait', 3, 1),
+  ...gridSlots('studentname', 3, 1, 20, 50),
   photoSlot('classphotoframe', 30, 180),
 ]);
 
 const N_COMBINED_PAGE = makeMaster('N-Combined-Page', [
-  ...gridSlots('studentportrait', 4, 2),
-  ...gridSlots('studentname', 4, 2, 20, 50),
+  // Реальный мастер из БД: 5 портретов + classphotoframe = 6 placeholders
+  // (4 в ряд + 1 ещё; в test fixture упрощённо 5×1)
+  ...gridSlots('studentportrait', 5, 1),
+  ...gridSlots('studentname', 5, 1, 20, 50),
   photoSlot('classphotoframe', 30, 180),
 ]);
 

@@ -1,0 +1,46 @@
+{
+  "id": "student-section-mini-final-spread-with-combined",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 220,
+  "display_name": "Mini финал: 13-17 учеников + общее фото → N-Grid + N-Combined",
+  "description": "Последний разворот секции в Mini когда осталось 13-17 учеников И есть фото full_class. Левая = N-Grid-Page (12 портретов полная). Правая = N-Combined-Page (1-5 портретов + общее фото). Покрывает диапазон 13-17 потому что N-Combined вмещает 5 портретов. Для остатка ≥18 (18-24) срабатывает существующий mini-spread-tail (priority 150). РЭ.19 фикс — раньше для 13-24 mini-spread-tail клал 'N-Grid слева полный + N-Grid справа с балансировкой', общее фото шло на следующий разворот.",
+  "when": {
+    "section.density": "mini",
+    "students_remaining": { "between": [13, 17] },
+    "common_photos.full_class.count": { "gte": 1 }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "N-Grid-Page",
+    "right_master": "N-Combined-Page"
+  },
+  "bind": {
+    "left_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, 12] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, 12] } }
+      }
+    },
+    "right_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + 12 + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining - 12"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + 12 + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining - 12"] } }
+      },
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+    }
+  },
+  "consumes": {
+    "students": "students_remaining",
+    "common_photos": { "full_class": 1 }
+  },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

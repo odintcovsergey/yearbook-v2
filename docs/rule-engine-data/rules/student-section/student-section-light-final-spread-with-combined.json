@@ -1,0 +1,46 @@
+{
+  "id": "student-section-light-final-spread-with-combined",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 220,
+  "display_name": "Light финал: 7-12 учеников + общее фото → L-Grid + L-Combined",
+  "description": "Последний разворот секции в Light когда осталось 7-12 учеников И есть фото full_class. Левая = L-Grid-Page (6 портретов полная). Правая = L-Combined-Page (1-6 портретов + общее фото снизу). Балансировка скрывает лишние слоты studentportrait если остаток меньше 9 (3 + 6 = 9 максимум, 7-12 → 1-6 на L-Combined). Приоритет 220 > 150 (spread-tail) → перебивает существующий spread-tail. РЭ.19 фикс — раньше получалось 'L-Grid слева + L-Grid с балансировкой справа' без общего фото на развороте секции, теперь общее фото попадает на тот же разворот в Combined.",
+  "when": {
+    "section.density": "light",
+    "students_remaining": { "between": [7, 12] },
+    "common_photos.full_class.count": { "gte": 1 }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "L-Grid-Page",
+    "right_master": "L-Combined-Page"
+  },
+  "bind": {
+    "left_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, 6] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, 6] } }
+      }
+    },
+    "right_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + 6 + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining - 6"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + 6 + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining - 6"] } }
+      },
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+    }
+  },
+  "consumes": {
+    "students": "students_remaining",
+    "common_photos": { "full_class": 1 }
+  },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

@@ -1,0 +1,36 @@
+{
+  "id": "student-section-mini-final-combined-with-common",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 220,
+  "display_name": "Mini финал: 1-5 учеников + общее фото → N-Combined-Page",
+  "description": "Последний разворот секции в Mini когда осталось 1-5 учеников И есть фото full_class. Левая = N-Combined-Page (5 портретов + общее фото снизу, балансировка скроет лишние). Правая остаётся для fill-hanging-page common-section. Приоритет 220.",
+  "when": {
+    "section.density": "mini",
+    "students_remaining": { "between": [1, 5] },
+    "common_photos.full_class.count": { "gte": 1 }
+  },
+  "produces": {
+    "type": "page",
+    "side": "left",
+    "master": "N-Combined-Page"
+  },
+  "bind": {
+    "N-Combined-Page": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+    }
+  },
+  "consumes": {
+    "students": "students_remaining",
+    "common_photos": { "full_class": 1 }
+  },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

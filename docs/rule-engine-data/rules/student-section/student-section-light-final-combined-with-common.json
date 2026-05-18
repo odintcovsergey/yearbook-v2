@@ -1,0 +1,36 @@
+{
+  "id": "student-section-light-final-combined-with-common",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 220,
+  "display_name": "Light финал: 1-3 ученика + общее фото → L-Combined-Page",
+  "description": "Последний разворот секции в Light когда осталось 1-3 ученика И есть фото full_class. Левая страница = L-Combined-Page (3 портрета + общее фото снизу). Правая остаётся для висящих fill-hanging-page правил common-section (J-Full, J-Half, J-Collage-6 — что окажется применимым). Приоритет 220 > 200 (overflow) > 150 (spread-tail) → перебивает существующие правила. РЭ.19 фикс — закрывает baseline сценарий 'маленький класс + общее фото'.",
+  "when": {
+    "section.density": "light",
+    "students_remaining": { "between": [1, 3] },
+    "common_photos.full_class.count": { "gte": 1 }
+  },
+  "produces": {
+    "type": "page",
+    "side": "left",
+    "master": "L-Combined-Page"
+  },
+  "bind": {
+    "L-Combined-Page": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+    }
+  },
+  "consumes": {
+    "students": "students_remaining",
+    "common_photos": { "full_class": 1 }
+  },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

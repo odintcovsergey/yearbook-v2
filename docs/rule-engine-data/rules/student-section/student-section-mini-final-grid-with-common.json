@@ -1,0 +1,38 @@
+{
+  "id": "student-section-mini-final-grid-with-common",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 220,
+  "display_name": "Mini финал: 6-12 учеников + общее фото → N-Grid + J-Full",
+  "description": "Последний разворот секции в Mini когда осталось 6-12 учеников И есть фото full_class. Левая = N-Grid-Page (6-12 портретов с балансировкой). Правая = J-Full большое общее фото. Приоритет 220 перебивает spread-tail (150) и grid-tail (90).",
+  "when": {
+    "section.density": "mini",
+    "students_remaining": { "between": [6, 12] },
+    "common_photos.full_class.count": { "gte": 1 }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "N-Grid-Page",
+    "right_master": "J-Full"
+  },
+  "bind": {
+    "left_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      }
+    },
+    "right_master": {
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+    }
+  },
+  "consumes": {
+    "students": "students_remaining",
+    "common_photos": { "full_class": 1 }
+  },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}

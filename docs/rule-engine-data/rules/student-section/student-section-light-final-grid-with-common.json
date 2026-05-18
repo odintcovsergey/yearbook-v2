@@ -1,0 +1,38 @@
+{
+  "id": "student-section-light-final-grid-with-common",
+  "family_id": "student-section",
+  "family_version": "1.0",
+  "priority": 220,
+  "display_name": "Light финал: 4-6 учеников + общее фото → L-Grid + J-Full",
+  "description": "Последний разворот секции в Light когда осталось 4-6 учеников И есть фото full_class. Левая = L-Grid-Page (4-6 портретов, balance скроет 0-2 пустых слота). Правая = J-Full с одним общим фото на всю страницу. Приоритет 220 перебивает spread-tail (150) и grid-tail (90). РЭ.19 фикс — раньше при 4-6 учениках в Light получалось 'portraits в верхнем ряду + пустота снизу' (grid-tail с балансировкой top-aligned). Теперь — полная L-Grid слева + большое общее фото справа.",
+  "when": {
+    "section.density": "light",
+    "students_remaining": { "between": [4, 6] },
+    "common_photos.full_class.count": { "gte": 1 }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "L-Grid-Page",
+    "right_master": "J-Full"
+  },
+  "bind": {
+    "left_master": {
+      "studentportrait_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].portrait",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      },
+      "studentname_{i}": {
+        "template": "input.students[$current_student_index + {i} - 1].full_name",
+        "params": { "i": { "range": [1, "students_remaining"] } }
+      }
+    },
+    "right_master": {
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+    }
+  },
+  "consumes": {
+    "students": "students_remaining",
+    "common_photos": { "full_class": 1 }
+  },
+  "balance": { "placeholder_centering": true, "hide_unfilled": true }
+}
