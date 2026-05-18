@@ -434,6 +434,29 @@ export async function GET(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
+  // rule_presets_list (РЭ.21.3) — пресеты rule engine (новая таблица
+  // presets). Возвращает глобальные (tenant_id IS NULL) + те что
+  // принадлежат текущему тенанту. Используется в модале «Пресеты»
+  // в /app — просмотр структуры альбома для каждого пресета.
+  //
+  // ВАЖНО: это РАЗНЫЕ таблицы. `config_presets` — legacy движок,
+  // `presets` — rule engine + section_structure (РЭ.21).
+  // ----------------------------------------------------------
+  if (action === 'rule_presets_list') {
+    const { data, error } = await supabaseAdmin
+      .from('presets')
+      .select('id, display_name, print_type, density, sheet_type, total_pages, section_structure, tenant_id, version')
+      .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+      .order('display_name')
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ presets: data ?? [] })
+  }
+
+  // ----------------------------------------------------------
   // teachers — список учителей альбома
   // ----------------------------------------------------------
   if (action === 'teachers' && albumId) {

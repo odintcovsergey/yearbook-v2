@@ -172,6 +172,7 @@ export default function AppPage() {
   const [showSettings, setShowSettings] = useState(false)
   const [showCRM, setShowCRM] = useState(false)
   const [showPartners, setShowPartners] = useState(false)
+  const [showPresets, setShowPresets] = useState(false)
 
   const notify = (text: string, type: 'ok' | 'err' = 'ok') => {
     setMsg({ text, type })
@@ -462,6 +463,15 @@ export default function AppPage() {
             </button>
 
             <button
+              onClick={() => setShowPresets(true)}
+              className="btn-ghost text-sm"
+              type="button"
+              title="Пресеты — структура альбома"
+            >
+              Пресеты
+            </button>
+
+            <button
               onClick={() => setShowQuotes(true)}
               className="btn-ghost text-sm"
               type="button"
@@ -612,6 +622,13 @@ export default function AppPage() {
           canEdit={canEdit}
           onClose={() => setShowQuotes(false)}
           onNotify={(text) => notify(text, 'ok')}
+          onError={(text) => notify(text, 'err')}
+        />
+      )}
+
+      {showPresets && (
+        <PresetsModal
+          onClose={() => setShowPresets(false)}
           onError={(text) => notify(text, 'err')}
         />
       )}
@@ -8997,5 +9014,209 @@ function CreatePartnerModal({ onClose, onSuccess }: {
         </div>
       </div>
     </div>
+  )
+}
+
+// ============================================================
+// РЭ.21.3: PresetsModal — просмотр пресетов rule engine
+// ============================================================
+// Список пресетов из таблицы `presets` (новая, для rule engine).
+// Показывает структуру альбома в человеко-читаемом виде. Только просмотр —
+// редактирование добавим следующим шагом, когда поймём что хотим менять.
+//
+// ВАЖНО: в системе ДВЕ таблицы пресетов:
+//   - config_presets — legacy движок
+//   - presets — rule engine + section_structure (РЭ.21)
+// Этот модал показывает только `presets`.
+
+type RulePresetRow = {
+  id: string
+  display_name: string
+  print_type: string | null
+  density: string | null
+  sheet_type: string | null
+  total_pages: number | null
+  section_structure: SectionStructureEntry[] | null
+  tenant_id: string | null
+  version: string | null
+}
+
+type SectionStructureEntry =
+  | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
+  | { type: 'common'; slots: string[] }
+
+function PresetsModal({
+  onClose,
+  onError,
+}: {
+  onClose: () => void
+  onError: (msg: string) => void
+}) {
+  const [presets, setPresets] = useState<RulePresetRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [backdropStart, setBackdropStart] = useState(false)
+
+  const handleBackdropMouseDown = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) setBackdropStart(true)
+  }
+  const handleBackdropMouseUp = (e: React.MouseEvent) => {
+    if (backdropStart && e.target === e.currentTarget) onClose()
+    setBackdropStart(false)
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      const r = await api('/api/tenant?action=rule_presets_list')
+      if (cancelled) return
+      if (r.ok) {
+        const d = await r.json()
+        setPresets(Array.isArray(d.presets) ? d.presets : [])
+      } else {
+        onError('Не удалось загрузить пресеты')
+      }
+      setLoading(false)
+    }
+    load().catch(() => setLoading(false))
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+      onMouseDown={handleBackdropMouseDown}
+      onMouseUp={handleBackdropMouseUp}
+    >
+      <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="px-6 py-4 border-b flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">Пресеты вёрстки</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Структура альбома для нового движка сборки. Редактирование появится в следующих обновлениях.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+            type="button"
+            aria-label="Закрыть"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? (
+            <div className="text-gray-500 text-sm">Загрузка…</div>
+          ) : presets.length === 0 ? (
+            <div className="text-gray-500 text-sm">Пресетов пока нет.</div>
+          ) : (
+            <div className="space-y-4">
+              {presets.map((p) => (
+                <PresetCard key={p.id} preset={p} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PresetCard({ preset }: { preset: RulePresetRow }) {
+  const isGlobal = preset.tenant_id === null
+  const sheetLabel = preset.sheet_type === 'soft' ? 'мягкие листы' : preset.sheet_type === 'hard' ? 'плотные листы' : '—'
+  const densityLabel = preset.density ?? '—'
+  const pagesLabel = preset.total_pages ?? '—'
+
+  return (
+    <div className="border rounded-xl p-4 hover:border-gray-300 transition-colors">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-base font-medium">{preset.display_name}</h3>
+            {isGlobal ? (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                глобальный
+              </span>
+            ) : (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                мой
+              </span>
+            )}
+          </div>
+          <div className="text-sm text-gray-500 mt-1">
+            {sheetLabel} · плотность <span className="font-mono text-xs">{densityLabel}</span> · {pagesLabel} стр.
+            {preset.print_type && (
+              <>
+                {' · '}
+                <span className="font-mono text-xs">{preset.print_type}</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <SectionStructureDisplay structure={preset.section_structure} />
+      </div>
+    </div>
+  )
+}
+
+function SectionStructureDisplay({ structure }: { structure: SectionStructureEntry[] | null }) {
+  if (!structure || structure.length === 0) {
+    return (
+      <div className="text-xs text-gray-400 italic">
+        Структура не задана (используется legacy-логика rule engine).
+      </div>
+    )
+  }
+
+  const sectionLabel: Record<string, string> = {
+    soft_intro: 'Вступительная страница (мягкие)',
+    teachers: 'Учителя',
+    students: 'Портреты учеников',
+    common: 'Общий раздел',
+    vignette: 'Виньетка детских фото',
+    soft_final: 'Финальная страница (мягкие)',
+  }
+
+  const slotLabel: Record<string, string> = {
+    H: 'H (полкласса)',
+    Q: 'Q (четверть)',
+    FULL: 'FULL (общее фото)',
+    flex_A: 'flex_A (крупный приоритет)',
+    flex_B: 'flex_B (всё попробовать)',
+    flex_C: 'flex_C (правая нечётная)',
+  }
+
+  return (
+    <ol className="space-y-1.5 text-sm">
+      {structure.map((section, idx) => (
+        <li key={idx} className="flex gap-2">
+          <span className="text-gray-400 font-mono text-xs w-5 shrink-0 pt-0.5">
+            {idx + 1}.
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">
+              {sectionLabel[section.type] ?? section.type}
+            </div>
+            {section.type === 'common' && Array.isArray((section as { slots?: string[] }).slots) && (
+              <div className="text-xs text-gray-500 mt-0.5">
+                {(section as { slots: string[] }).slots
+                  .map((s) => slotLabel[s] ?? s)
+                  .join(' · ')}
+              </div>
+            )}
+          </div>
+        </li>
+      ))}
+    </ol>
   )
 }
