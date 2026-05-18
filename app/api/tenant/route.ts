@@ -1427,8 +1427,89 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
 
   // ----------------------------------------------------------
-  // create_album — создание нового альбома (с проверкой лимита)
+  // rule_preset_create (РЭ.21.4) — создание нового пресета rule engine.
+  // Доступно для owner/manager текущего тенанта. tenant_id=auth.tenantId.
+  // Партнёр в форме указывает display_name + print_type + total_pages.
+  // Остальные поля получают разумные дефолты.
   // ----------------------------------------------------------
+  if (body.action === 'rule_preset_create') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+
+    const displayName = String(body.display_name ?? '').trim()
+    const printType = String(body.print_type ?? '').trim()
+    const totalPages = Number(body.total_pages ?? 24)
+
+    if (!displayName) {
+      return NextResponse.json({ error: 'Название обязательно' }, { status: 400 })
+    }
+    if (printType !== 'layflat' && printType !== 'soft') {
+      return NextResponse.json(
+        { error: 'Тип печати должен быть layflat или soft' },
+        { status: 400 }
+      )
+    }
+    if (!Number.isFinite(totalPages) || totalPages < 1 || totalPages > 200) {
+      return NextResponse.json(
+        { error: 'Число страниц от 1 до 200' },
+        { status: 400 }
+      )
+    }
+
+    // ID = slug + случайный суффикс (presets.id — text, не uuid).
+    // Slug делаем латинскими — кириллица в id выглядит коряво в URL/логах.
+    const randomSuffix = Math.random().toString(36).slice(2, 10)
+    const id = `custom-${randomSuffix}`
+
+    // sheet_type выводим из print_type. Позже переедет на уровень альбома (см. РЭ.12).
+    const sheetType = printType === 'layflat' ? 'hard' : 'soft'
+
+    // Дефолтная структура — простая, стартовая. Партнёр будет редактировать
+    // в следующих обновлениях (drag-and-drop UI).
+    const defaultSectionStructure = [
+      { type: 'soft_intro' },
+      { type: 'teachers' },
+      { type: 'students' },
+      { type: 'common', slots: ['H', 'flex_A', 'flex_A', 'flex_B'] },
+      { type: 'soft_final' },
+    ]
+
+    // sections — legacy поле для текущего rule engine. Используем минимальный
+    // набор семейств (без params) — для legacy build это безопасный default.
+    const defaultSections = [
+      { family_id: 'head-teacher' },
+      { family_id: 'student-section' },
+      { family_id: 'common-section' },
+    ]
+
+    const { data: created, error } = await supabaseAdmin
+      .from('presets')
+      .insert({
+        id,
+        display_name: displayName,
+        print_type: printType,
+        pages_per_spread: 2,
+        version: '1.0',
+        total_pages: totalPages,
+        density: null,
+        sheet_type: sheetType,
+        section_structure: defaultSectionStructure,
+        sections: defaultSections,
+        tenant_id: auth.tenantId,
+        parent_preset_id: null,
+      })
+      .select('id, display_name')
+      .single()
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true, preset: created })
+  }
+
+
   if (body.action === 'create_album') {
     // Проверяем лимит по тарифу
     if (auth.role !== 'superadmin') {

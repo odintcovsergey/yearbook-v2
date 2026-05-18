@@ -9055,6 +9055,7 @@ function PresetsModal({
   const [presets, setPresets] = useState<RulePresetRow[]>([])
   const [loading, setLoading] = useState(true)
   const [backdropStart, setBackdropStart] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
 
   const handleBackdropMouseDown = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) setBackdropStart(true)
@@ -9064,23 +9065,20 @@ function PresetsModal({
     setBackdropStart(false)
   }
 
+  const load = async () => {
+    setLoading(true)
+    const r = await api('/api/tenant?action=rule_presets_list')
+    if (r.ok) {
+      const d = await r.json()
+      setPresets(Array.isArray(d.presets) ? d.presets : [])
+    } else {
+      onError('Не удалось загрузить пресеты')
+    }
+    setLoading(false)
+  }
+
   useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      const r = await api('/api/tenant?action=rule_presets_list')
-      if (cancelled) return
-      if (r.ok) {
-        const d = await r.json()
-        setPresets(Array.isArray(d.presets) ? d.presets : [])
-      } else {
-        onError('Не удалось загрузить пресеты')
-      }
-      setLoading(false)
-    }
     load().catch(() => setLoading(false))
-    return () => {
-      cancelled = true
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -9096,21 +9094,42 @@ function PresetsModal({
           <div>
             <h2 className="text-xl font-semibold">Пресеты вёрстки</h2>
             <p className="text-sm text-gray-500 mt-0.5">
-              Структура альбома для нового движка сборки. Редактирование появится в следующих обновлениях.
+              Структура альбома для нового движка сборки. Редактирование структуры появится в следующих обновлениях.
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
-            type="button"
-            aria-label="Закрыть"
-          >
-            ×
-          </button>
+          <div className="flex items-center gap-2">
+            {!showCreate && (
+              <button
+                onClick={() => setShowCreate(true)}
+                className="btn-primary text-sm"
+                type="button"
+              >
+                + Новый пресет
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+              type="button"
+              aria-label="Закрыть"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
+          {showCreate && (
+            <PresetCreateForm
+              onCancel={() => setShowCreate(false)}
+              onCreated={async () => {
+                setShowCreate(false)
+                await load()
+              }}
+              onError={onError}
+            />
+          )}
           {loading ? (
             <div className="text-gray-500 text-sm">Загрузка…</div>
           ) : presets.length === 0 ? (
@@ -9122,6 +9141,139 @@ function PresetsModal({
               ))}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PresetCreateForm({
+  onCancel,
+  onCreated,
+  onError,
+}: {
+  onCancel: () => void
+  onCreated: () => void | Promise<void>
+  onError: (msg: string) => void
+}) {
+  const [displayName, setDisplayName] = useState('')
+  const [printType, setPrintType] = useState<'layflat' | 'soft'>('layflat')
+  const [totalPages, setTotalPages] = useState(24)
+  const [busy, setBusy] = useState(false)
+
+  const submit = async () => {
+    const name = displayName.trim()
+    if (!name) {
+      onError('Введите название')
+      return
+    }
+    setBusy(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'rule_preset_create',
+        display_name: name,
+        print_type: printType,
+        total_pages: totalPages,
+      }),
+    })
+    setBusy(false)
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}))
+      onError(d?.error ?? 'Не удалось создать пресет')
+      return
+    }
+    await onCreated()
+  }
+
+  return (
+    <div className="mb-6 border-2 border-blue-200 rounded-xl p-5 bg-blue-50/40">
+      <h3 className="text-base font-semibold mb-4">Новый пресет</h3>
+
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Название
+          </label>
+          <input
+            type="text"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            placeholder="Например: Мой пресет для школ"
+            autoFocus
+            disabled={busy}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Тип печати
+          </label>
+          <div className="flex gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="print_type"
+                value="layflat"
+                checked={printType === 'layflat'}
+                onChange={() => setPrintType('layflat')}
+                disabled={busy}
+              />
+              <span className="text-sm">Layflat (плотные листы)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="print_type"
+                value="soft"
+                checked={printType === 'soft'}
+                onChange={() => setPrintType('soft')}
+                disabled={busy}
+              />
+              <span className="text-sm">Soft (мягкие листы)</span>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Число страниц
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={totalPages}
+            onChange={(e) => setTotalPages(Number(e.target.value) || 24)}
+            className="w-32 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            disabled={busy}
+          />
+        </div>
+
+        <div className="text-xs text-gray-500 italic">
+          Структура секций будет создана со стартовым набором по умолчанию.
+          Редактирование секций появится в следующих обновлениях.
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy || !displayName.trim()}
+            className="btn-primary text-sm disabled:opacity-50"
+          >
+            {busy ? 'Создание…' : 'Создать пресет'}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="btn-ghost text-sm"
+          >
+            Отмена
+          </button>
         </div>
       </div>
     </div>
