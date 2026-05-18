@@ -1568,6 +1568,187 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, preset: created })
   }
 
+  // ----------------------------------------------------------
+  // rule_preset_update (РЭ.21.7.1) — частичное обновление пресета.
+  //
+  // Доступ:
+  //   - Глобальные пресеты (tenant_id IS NULL): только superadmin.
+  //     Сейчас superadmin сюда не ходит — это задел на будущее
+  //     (UI редактирования глобалов в /super планируется отдельно).
+  //   - Tenant-овские пресеты: owner/manager этого тенанта.
+  //     viewer → 403. Чужой тенант → 404 (не раскрываем существование).
+  //
+  // Принимаемые поля (все опциональные — partial update):
+  //   - display_name: trim, не пусто.
+  //   - print_type: 'layflat' | 'soft'. При смене обновляем sheet_type
+  //     (hard/soft соответственно) — consistent с rule_preset_create.
+  //   - min_pages, max_pages: 1..200, min <= max. Если передан только
+  //     один — валидируем относительно второго В БД (а не в body).
+  //   - template_set_id: uuid или null. Валидируем доступ.
+  //
+  // НЕ принимаем (намеренно):
+  //   - id, tenant_id, parent_preset_id, sections — иммутабельны.
+  //   - section_structure — будет добавлено в РЭ.21.7.3/4 (drag-and-drop).
+  //   - density, version — заглушки от РЭ.20, отдельная задача.
+  // ----------------------------------------------------------
+  if (body.action === 'rule_preset_update') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+
+    const presetId = String(body.preset_id ?? '').trim()
+    if (!presetId) {
+      return NextResponse.json({ error: 'preset_id обязателен' }, { status: 400 })
+    }
+
+    // 1) Загружаем существующий пресет для проверки прав и для
+    // cross-валидации min/max (если передано только одно поле).
+    const { data: existing, error: loadErr } = await supabaseAdmin
+      .from('presets')
+      .select('id, tenant_id, min_pages, max_pages, print_type')
+      .eq('id', presetId)
+      .maybeSingle()
+    if (loadErr) {
+      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+    }
+    if (!existing) {
+      return NextResponse.json({ error: 'Пресет не найден' }, { status: 404 })
+    }
+
+    // 2) Проверка владения. Глобальные (tenant_id=NULL) → 403.
+    // Чужие тенант'овские → 404 (скрываем существование).
+    const isGlobalPreset = existing.tenant_id === null
+    if (isGlobalPreset) {
+      return NextResponse.json(
+        { error: 'Глобальные пресеты редактируются только суперадмином' },
+        { status: 403 }
+      )
+    }
+    if (existing.tenant_id !== auth.tenantId) {
+      return NextResponse.json({ error: 'Пресет не найден' }, { status: 404 })
+    }
+
+    // 3) Собираем patch из присутствующих полей.
+    const patch: Record<string, unknown> = {}
+
+    if (body.display_name !== undefined) {
+      const name = String(body.display_name).trim()
+      if (!name) {
+        return NextResponse.json({ error: 'Название не может быть пустым' }, { status: 400 })
+      }
+      patch.display_name = name
+    }
+
+    if (body.print_type !== undefined) {
+      const pt = String(body.print_type)
+      if (pt !== 'layflat' && pt !== 'soft') {
+        return NextResponse.json(
+          { error: 'Тип печати должен быть layflat или soft' },
+          { status: 400 }
+        )
+      }
+      patch.print_type = pt
+      // sheet_type выводим из print_type (тот же контракт что в _create).
+      patch.sheet_type = pt === 'layflat' ? 'hard' : 'soft'
+    }
+
+    // min/max — обрабатываем вместе, потому что они должны быть валидны
+    // относительно друг друга (после применения патча).
+    const newMin =
+      body.min_pages !== undefined ? Number(body.min_pages) : existing.min_pages
+    const newMax =
+      body.max_pages !== undefined ? Number(body.max_pages) : existing.max_pages
+    if (body.min_pages !== undefined || body.max_pages !== undefined) {
+      if (body.min_pages !== undefined) {
+        if (!Number.isFinite(newMin) || newMin < 1 || newMin > 200) {
+          return NextResponse.json(
+            { error: 'Минимум страниц от 1 до 200' },
+            { status: 400 }
+          )
+        }
+        patch.min_pages = newMin
+      }
+      if (body.max_pages !== undefined) {
+        if (!Number.isFinite(newMax) || newMax < 1 || newMax > 200) {
+          return NextResponse.json(
+            { error: 'Максимум страниц от 1 до 200' },
+            { status: 400 }
+          )
+        }
+        patch.max_pages = newMax
+      }
+      // Cross-валидация только если оба значения известны
+      // (newMin/newMax могут быть null если в БД и в body не задано —
+      // тогда пропускаем, NULL семантически не нарушает порядок).
+      if (
+        typeof newMin === 'number' &&
+        typeof newMax === 'number' &&
+        Number.isFinite(newMin) &&
+        Number.isFinite(newMax) &&
+        newMin > newMax
+      ) {
+        return NextResponse.json(
+          { error: 'Минимум страниц не может быть больше максимума' },
+          { status: 400 }
+        )
+      }
+    }
+
+    if (body.template_set_id !== undefined) {
+      // null или '' = сбросить на фолбэк okeybook-default.
+      if (body.template_set_id === null || body.template_set_id === '') {
+        patch.template_set_id = null
+      } else {
+        const tsid = String(body.template_set_id)
+        if (tsid.length < 32) {
+          return NextResponse.json(
+            { error: 'template_set_id должен быть uuid' },
+            { status: 400 }
+          )
+        }
+        const { data: tsRow, error: tsErr } = await supabaseAdmin
+          .from('template_sets')
+          .select('id, tenant_id, is_global')
+          .eq('id', tsid)
+          .maybeSingle()
+        if (tsErr) {
+          return NextResponse.json({ error: tsErr.message }, { status: 500 })
+        }
+        if (!tsRow) {
+          return NextResponse.json({ error: 'Дизайн не найден' }, { status: 400 })
+        }
+        const accessible =
+          tsRow.is_global === true ||
+          tsRow.tenant_id === null ||
+          tsRow.tenant_id === auth.tenantId
+        if (!accessible) {
+          return NextResponse.json({ error: 'Этот дизайн недоступен' }, { status: 403 })
+        }
+        patch.template_set_id = tsid
+      }
+    }
+
+    // 4) Если ничего не пришло — отвечаем ok без UPDATE'а
+    // (избегаем лишнего round-trip к БД).
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ ok: true, preset: { id: presetId }, updated: false })
+    }
+
+    // 5) UPDATE с фильтром по id + tenant_id (защита от гонки —
+    // если за это время кто-то сменил владельца, не апдейтим чужое).
+    const { data: updated, error: updateErr } = await supabaseAdmin
+      .from('presets')
+      .update(patch)
+      .eq('id', presetId)
+      .eq('tenant_id', auth.tenantId)
+      .select('id, display_name')
+      .single()
+    if (updateErr) {
+      return NextResponse.json({ error: updateErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true, preset: updated, updated: true })
+  }
 
   if (body.action === 'create_album') {
     // Проверяем лимит по тарифу
