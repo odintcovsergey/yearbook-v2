@@ -265,16 +265,19 @@ describe('buildFromSectionStructure: заглушки секций', () => {
     const result = buildFromSectionStructure(bundle, makeInput({}));
     expect(result.status).toBe('partial');
     expect(result.spreads).toEqual([]);
-    expect(result.warnings).toEqual([
-      'section_soft_intro_not_implemented',
-      'section_teachers_not_implemented',
-      'section_students_not_implemented',
-      'section_vignette_not_implemented',
-      'section_soft_final_not_implemented',
-    ]);
+    // teachers реализован в РЭ.21.8.4a — но без F-Head-* мастеров в bundle
+    // он выдаст teachers_master_not_found. Проверяем что в warnings есть
+    // ровно 4 not_implemented и хотя бы один teachers_master_not_found.
+    expect(result.warnings).toContain('section_soft_intro_not_implemented');
+    expect(result.warnings).toContain('section_students_not_implemented');
+    expect(result.warnings).toContain('section_vignette_not_implemented');
+    expect(result.warnings).toContain('section_soft_final_not_implemented');
+    expect(
+      result.warnings.some((w) => w.startsWith('teachers_master_not_found')),
+    ).toBe(true);
   });
 
-  it('teachers + common(H) → один разворот из 1 страницы (left), плюс warning', () => {
+  it('teachers + common(H), F-Head-* отсутствуют → teachers_master_not_found + 1 страница H', () => {
     const bundle = makeBundle({
       preset: makePreset({
         id: 'p8',
@@ -283,13 +286,16 @@ describe('buildFromSectionStructure: заглушки секций', () => {
           { type: 'common', slots: ['H'] },
         ],
       }),
+      // J-* мастера есть (по умолчанию), F-Head-* — нет
     });
     const result = buildFromSectionStructure(
       bundle,
       makeInput({ half_class: 2 }),
     );
     expect(result.status).toBe('partial');
-    expect(result.warnings).toContain('section_teachers_not_implemented');
+    expect(
+      result.warnings.some((w) => w.includes('teachers_master_not_found')),
+    ).toBe(true);
     expect(result.spreads).toHaveLength(1);
     expect(result.spreads[0].left?.master_id).toBe('id-J-Half');
   });
