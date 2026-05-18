@@ -255,6 +255,7 @@ describe('buildFromRules — защита от inf loop', () => {
       pages_per_spread: 2,
       version: '1.0',
       tenant_id: null,
+      total_pages: 24,
       sections: [{ family_id: 'head-teacher' }],
     };
     const stubFamily: TemplateFamily = {
@@ -317,6 +318,7 @@ describe('buildFromRules — защита от inf loop', () => {
       pages_per_spread: 2,
       version: '1.0',
       tenant_id: null,
+      total_pages: 24,
       sections: [{ family_id: 'student-section', params: { density: 'light' } }],
     };
     const stubFamily: TemplateFamily = {
@@ -374,6 +376,7 @@ describe('buildFromRules — enabled_when секции', () => {
       pages_per_spread: 2,
       version: '1.0',
       tenant_id: null,
+      total_pages: 24,
       sections: [
         { family_id: 'head-teacher' },
         { family_id: 'student-section', params: { density: 'standard', has_quote: true } },
@@ -402,6 +405,7 @@ describe('buildFromRules — validateSectionParams §4.4', () => {
       pages_per_spread: 2,
       version: '1.0',
       tenant_id: null,
+      total_pages: 24,
       sections: [
         { family_id: 'student-section', params: { density: 'mini', has_quote: true } },
       ],

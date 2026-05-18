@@ -108,6 +108,16 @@ function presetRowToPreset(row: Record<string, unknown>): Preset {
         : String(row.parent_preset_id),
     tenant_id: row.tenant_id === null || row.tenant_id === undefined ? null : String(row.tenant_id),
     enabled: row.enabled === false ? false : true,
+    // РЭ.20: новые поля. БД-колонка NOT NULL DEFAULT 24 → fallback 24.
+    total_pages: Number(row.total_pages ?? 24),
+    density:
+      row.density === null || row.density === undefined
+        ? null
+        : (row.density as Preset['density']),
+    sheet_type:
+      row.sheet_type === null || row.sheet_type === undefined
+        ? null
+        : (row.sheet_type as Preset['sheet_type']),
   };
 }
 

@@ -23,6 +23,59 @@ export type PrintType = 'layflat' | 'soft' | 'tryumo';
 
 export type LayoutStatus = 'ok' | 'partial' | 'failed';
 
+/**
+ * РЭ.20: тип листов альбома.
+ *
+ * Влияет на структуру альбома:
+ *  - `hard` (плотные) — нет S-Intro/S-Final, общий раздел начинается сразу
+ *    после головного учительского.
+ *  - `soft` (мягкие) — первая страница S-Intro, последняя S-Final.
+ *
+ * Логика правил для hard и soft одинаковая — отличается только
+ * `Preset.total_pages` и наличие двух краевых intro/final-страниц.
+ */
+export type SheetType = 'hard' | 'soft';
+
+/**
+ * РЭ.20: плотность портретов student-section для пресета.
+ *
+ * Соответствует CHECK-constraint'у на колонке `presets.density`
+ * (миграция 2026-05-18-presets-total-pages-density-sheet-type.sql).
+ *
+ * Отличается от существующего `Density` отсутствием `'maximum'`:
+ * комплектация Максимум не покрывается дизайнерской матрицей
+ * (`docs/templates/album-structure-matrix.json`) и пока обрабатывается
+ * отдельной логикой (density=NULL или standard по решению РЭ.20.5).
+ */
+export type PresetDensity =
+  | 'standard'
+  | 'universal'
+  | 'medium'
+  | 'light'
+  | 'mini';
+
+/**
+ * РЭ.20: паттерн страницы общего раздела из дизайнерской матрицы.
+ *
+ * Каждая ячейка matrix.mandatory_section_pages /
+ * matrix.additional_section_pages → один из этих паттернов.
+ * Алгоритм планирования (РЭ.20.4) обходит массив паттернов и подставляет
+ * соответствующего мастера из template_families.
+ *
+ * Случай `alternative` означает «либо X, либо Y, либо Z» — выбор
+ * по наличию фотоматериала (см. phase-Р20-spec.md §2.3):
+ *   1. ≥6 sixth → sixth_six
+ *   2. ≥2 half_class → half_pair
+ *   3. ≥1 full_class → full_one
+ *   4. иначе skip (пустой слот, партнёр заполнит в редакторе)
+ */
+export type PagePattern =
+  | { type: 'quarter_pair' } // «2 по 1/4 класса»
+  | { type: 'half_pair' } // «2 по 1/2 класса»
+  | { type: 'full_one' } // «1 общая»
+  | { type: 'sixth_six' } // «6 фото 1/6»
+  | { type: 'alternative'; options: PagePattern[] }; // «либо X, либо Y, либо Z»
+
 // =============================================================================
 // 2. Семейства мастеров (template_families)
 // =============================================================================
@@ -211,6 +264,39 @@ export interface Preset {
   parent_preset_id?: string;
   tenant_id: string | null;
   enabled?: boolean;
+
+  /**
+   * РЭ.20: фиксированное число страниц альбома данной комплектации.
+   *
+   * Источник правды для алгоритма планирования общего раздела:
+   *   common_section_pages = total_pages
+   *                        - student_section_pages
+   *                        - head_teacher_pages
+   *                        - intro_pages (1 для soft, 0 для hard)
+   *                        - final_pages (1 для soft, 0 для hard)
+   *
+   * Партнёр настраивает в UI пресета (фаза РЭ.12). В БД NOT NULL
+   * DEFAULT 24 — заглушка до проставления реальных значений в РЭ.20.5.
+   */
+  total_pages: number;
+
+  /**
+   * РЭ.20: плотность портретов student-section.
+   *
+   * Используется генератором правил (РЭ.20.6) для выбора правильной
+   * строки матрицы. NULL допустим между РЭ.20.2 и РЭ.20.5, далее
+   * проставляется явно. См. также {@link PresetDensity}.
+   */
+  density?: PresetDensity | null;
+
+  /**
+   * РЭ.20: тип листов (hard/soft).
+   *
+   * Влияет только на total_pages и наличие S-Intro/S-Final, логика
+   * правил одинаковая. NULL допустим между РЭ.20.2 и РЭ.20.5.
+   * См. также {@link SheetType}.
+   */
+  sheet_type?: SheetType | null;
 }
 
 // =============================================================================
@@ -262,6 +348,13 @@ export interface RulesAlbumInput {
    * Передаётся в ctx как `common_section.max_spreads` и `common_section.spreads_remaining`.
    * Правила common-section-*-pair используют эти поля в when'ах.
    * Значение из albums.common_section_max_spreads через legacy-adapter.
+   *
+   * @deprecated РЭ.20: с реализацией матрицы (РЭ.20.6) число разворотов
+   * общего раздела вычисляется автоматически из Preset.total_pages
+   * (`common_section_pages = total_pages - student_section - head_teacher
+   *  - intro - final`). Поле остаётся для обратной совместимости пока
+   * РЭ.20.6 не закончен — после этого удалим из типов И из БД-колонки
+   * albums.common_section_max_spreads отдельной миграцией.
    */
   common_section_max_spreads?: number | null;
 }
@@ -370,4 +463,38 @@ export interface RuleContext {
     spreads_remaining: number | null;
   };
   friend_photos_count?: number;
+
+  /**
+   * РЭ.20: сколько страниц альбома осталось «свободно» после планирования
+   * student-section, головного учительского и intro/final.
+   *
+   *   pages_remaining = preset.total_pages - already_consumed_pages
+   *
+   * Используется правилами общего раздела (priority 230/210) чтобы решить
+   * добавлять ещё страницу или нет. Заполняется в buildContext (РЭ.20.4).
+   * До РЭ.20.4 — undefined, существующие правила его не читают.
+   */
+  pages_remaining?: number;
+
+  /**
+   * РЭ.20: состояние «обязательного» общего раздела (mandatory_section_pages
+   * из матрицы). Заполняется в buildContext (РЭ.20.4) на основе строки
+   * матрицы для текущего (density, sheet_type, students_count).
+   *
+   *   pages_pattern    — массив паттернов страниц из ячейки матрицы
+   *                      (см. {@link PagePattern}).
+   *   current_index    — индекс паттерна, который сейчас обрабатываем.
+   *   pages_remaining  — сколько ещё страниц обязательного раздела
+   *                      осталось добавить (= pages_pattern.length - current_index).
+   *
+   * Правила common-section-mandatory-page-N-* читают current_index в when'ах,
+   * чтобы каждой странице соответствовало своё правило.
+   *
+   * undefined в существующих правилах = поле не используется (РЭ.18 fallback).
+   */
+  mandatory_section?: {
+    pages_pattern: PagePattern[];
+    current_index: number;
+    pages_remaining: number;
+  };
 }
