@@ -265,15 +265,19 @@ describe('buildFromSectionStructure: заглушки секций', () => {
     const result = buildFromSectionStructure(bundle, makeInput({}));
     expect(result.status).toBe('partial');
     expect(result.spreads).toEqual([]);
-    // teachers реализован в РЭ.21.8.4a — но без F-Head-* мастеров в bundle
-    // он выдаст teachers_master_not_found. Проверяем что в warnings есть
-    // ровно 4 not_implemented и хотя бы один teachers_master_not_found.
+    // teachers подключен в 21.8.4a — без F-* выдаёт teachers_master_not_found.
+    // students подключен в 21.8.4b — без preset.density выдаёт students_density_not_supported.
+    // Заглушки остаются: soft_intro, vignette, soft_final.
     expect(result.warnings).toContain('section_soft_intro_not_implemented');
-    expect(result.warnings).toContain('section_students_not_implemented');
     expect(result.warnings).toContain('section_vignette_not_implemented');
     expect(result.warnings).toContain('section_soft_final_not_implemented');
     expect(
       result.warnings.some((w) => w.startsWith('teachers_master_not_found')),
+    ).toBe(true);
+    expect(
+      result.warnings.some((w) =>
+        w.startsWith('students_density_not_supported'),
+      ),
     ).toBe(true);
   });
 

@@ -55,7 +55,12 @@ import type {
 } from './types';
 import type { RuleEngineBundle } from './loaders';
 import type { CommonPhotoCounts } from './slot-chains';
-import { fillCommonSection, fillTeachersSection } from './sections';
+import type { SpreadTemplate } from '@/lib/album-builder/types';
+import {
+  fillCommonSection,
+  fillStudentsSection,
+  fillTeachersSection,
+} from './sections';
 import type { SectionFillContext } from './sections';
 
 export function buildFromSectionStructure(
@@ -114,10 +119,12 @@ export function buildFromSectionStructure(
       case 'teachers':
         fillTeachersSection(ctx);
         break;
-      // Заглушки до РЭ.21.8.4b / РЭ.21.8.5 — секция игнорируется,
+      case 'students':
+        fillStudentsSection(ctx);
+        break;
+      // Заглушки до РЭ.21.8.5 — секция игнорируется,
       // ничего не добавляется в pageInstances.
       case 'soft_intro':
-      case 'students':
       case 'vignette':
       case 'soft_final':
         warnings.push(`section_${section.type}_not_implemented`);
@@ -126,12 +133,29 @@ export function buildFromSectionStructure(
   }
 
   // 6. Группировка страниц в SpreadInstance.
+  // Для is_spread мастеров (двухстраничных, например E-Student-Standard или
+  // J-Spread) section-функция кладёт ДВЕ записи pageInstances с одинаковым
+  // master_id. Здесь мы детектируем такие пары через master.is_spread флаг
+  // и помечаем SpreadInstance.is_spread=true, чтобы adapter
+  // layout-to-buildresult сделал 1 legacy SpreadInstance вместо 2.
+  // Для остальных случаев — обычная попарная группировка.
+  const mastersById = new Map<string, SpreadTemplate>();
+  bundle.mastersByName.forEach((m) => mastersById.set(m.id, m));
+
   const spreads: SpreadInstance[] = [];
   for (let i = 0; i < pageInstances.length; i += 2) {
+    const left = pageInstances[i];
+    const right = i + 1 < pageInstances.length ? pageInstances[i + 1] : undefined;
+    let isSpread = false;
+    if (right && left.master_id === right.master_id) {
+      const master = mastersById.get(left.master_id);
+      if (master && master.is_spread === true) isSpread = true;
+    }
     spreads.push({
       spread_index: Math.floor(i / 2),
-      left: pageInstances[i],
-      right: i + 1 < pageInstances.length ? pageInstances[i + 1] : undefined,
+      left,
+      right,
+      ...(isSpread ? { is_spread: true } : {}),
     });
   }
 
