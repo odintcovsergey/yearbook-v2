@@ -9974,7 +9974,6 @@ function PresetCard({
   const [editing, setEditing] = useState(false)
   const isGlobal = preset.tenant_id === null
   const sheetLabel = preset.sheet_type === 'soft' ? 'мягкие листы' : preset.sheet_type === 'hard' ? 'плотные листы' : '—'
-  const densityLabel = preset.density ?? '—'
 
   // РЭ.21.5.3: показываем диапазон min..max. total_pages удалена из БД,
   // фолбэка больше нет — но мы оставляем NULL-обработку для безопасности
@@ -10036,7 +10035,7 @@ function PresetCard({
             )}
           </div>
           <div className="text-sm text-gray-500 mt-1">
-            {sheetLabel} · плотность <span className="font-mono text-xs">{densityLabel}</span> · {pagesLabel}
+            {sheetLabel} · {pagesLabel}
             {preset.print_type && (
               <>
                 {' · '}
@@ -10063,13 +10062,27 @@ function PresetCard({
       </div>
 
       <div className="mt-3">
-        <SectionStructureDisplay structure={preset.section_structure} />
+        <SectionStructureDisplay
+          structure={preset.section_structure}
+          density={preset.density}
+        />
       </div>
     </div>
   )
 }
 
-function SectionStructureDisplay({ structure }: { structure: SectionStructureEntry[] | null }) {
+function SectionStructureDisplay({
+  structure,
+  density,
+}: {
+  structure: SectionStructureEntry[] | null
+  /**
+   * РЭ.21.7.5.3: density показываем как параметр секции students,
+   * а не отдельной строкой meta пресета. null = «по умолчанию».
+   * Мусорные значения (вне whitelist) трактуем как «по умолчанию».
+   */
+  density: string | null
+}) {
   if (!structure || structure.length === 0) {
     return (
       <div className="text-xs text-gray-400 italic">
@@ -10096,6 +10109,15 @@ function SectionStructureDisplay({ structure }: { structure: SectionStructureEnt
     flex_C: 'flex_C (правая нечётная)',
   }
 
+  // РЭ.21.7.5.3: красивое имя плотности из whitelist. null/мусор → null.
+  const densityLabel = (() => {
+    if (!density) return null
+    if (DENSITY_ORDER.includes(density as PresetDensityValue)) {
+      return DENSITY_LABELS[density as PresetDensityValue]
+    }
+    return null
+  })()
+
   return (
     <ol className="space-y-1.5 text-sm">
       {structure.map((section, idx) => (
@@ -10112,6 +10134,11 @@ function SectionStructureDisplay({ structure }: { structure: SectionStructureEnt
                 {(section as { slots: string[] }).slots
                   .map((s) => slotLabel[s] ?? s)
                   .join(' · ')}
+              </div>
+            )}
+            {section.type === 'students' && (
+              <div className="text-xs text-gray-500 mt-0.5">
+                Плотность: {densityLabel ?? 'по умолчанию'}
               </div>
             )}
           </div>
