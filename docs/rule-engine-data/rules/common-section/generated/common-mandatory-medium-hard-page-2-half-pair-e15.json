@@ -1,0 +1,46 @@
+{
+  "id": "common-mandatory-medium-hard-page-2-half-pair-e15",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 232,
+  "display_name": "Общий раздел (обязательный): Медиум плотные, страница 2 — пара 1/2 класса",
+  "description": "Авто-сгенерировано из docs/templates/album-structure-matrix.json entry #15 (РЭ.20.6.3). Матрица: medium × hard, students [{\"min\":9,\"max\":10},{\"min\":17,\"max\":18},{\"min\":25,\"max\":26}]. mandatory_section_pages[2] = half_pair.",
+  "when": {
+    "preset_density": "medium",
+    "preset_sheet_type": "hard",
+    "students_count": {
+      "between": [
+        9,
+        26
+      ]
+    },
+    "mandatory_section.current_index": 2,
+    "common_photos.half_class.count": {
+      "gte": 4
+    }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "J-Half",
+    "right_master": "J-Half"
+  },
+  "bind": {
+    "left_master": {
+      "halfphoto_1": "input.common_photos.half_class[$consumed_half_class]",
+      "halfphoto_2": "input.common_photos.half_class[$consumed_half_class + 1]"
+    },
+    "right_master": {
+      "halfphoto_1": "input.common_photos.half_class[$consumed_half_class + 2]",
+      "halfphoto_2": "input.common_photos.half_class[$consumed_half_class + 3]"
+    }
+  },
+  "consumes": {
+    "common_photos": {
+      "half_class": 4
+    },
+    "pages": 2,
+    "mandatory_section": {
+      "pages": 1
+    }
+  }
+}

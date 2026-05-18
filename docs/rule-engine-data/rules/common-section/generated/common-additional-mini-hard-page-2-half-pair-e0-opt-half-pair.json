@@ -1,0 +1,42 @@
+{
+  "id": "common-additional-mini-hard-page-2-half-pair-e0-opt-half-pair",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 212,
+  "display_name": "Общий раздел (дополнительный): Мини плотные, страница 2 — пара 1/2 класса (опция half-pair)",
+  "description": "Авто-сгенерировано из docs/templates/album-structure-matrix.json entry #0 (РЭ.20.6.3). Матрица: mini × hard, students [{\"min\":1,\"max\":24}]. additional_section_pages[2] = half_pair. Эта опция выбрана из alternative по приоритету наличия фотоматериала.",
+  "when": {
+    "preset_density": "mini",
+    "preset_sheet_type": "hard",
+    "students_count": {
+      "between": [
+        1,
+        24
+      ]
+    },
+    "common_photos.half_class.count": {
+      "gte": 4
+    }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "J-Half",
+    "right_master": "J-Half"
+  },
+  "bind": {
+    "left_master": {
+      "halfphoto_1": "input.common_photos.half_class[$consumed_half_class]",
+      "halfphoto_2": "input.common_photos.half_class[$consumed_half_class + 1]"
+    },
+    "right_master": {
+      "halfphoto_1": "input.common_photos.half_class[$consumed_half_class + 2]",
+      "halfphoto_2": "input.common_photos.half_class[$consumed_half_class + 3]"
+    }
+  },
+  "consumes": {
+    "common_photos": {
+      "half_class": 4
+    },
+    "pages": 2
+  }
+}

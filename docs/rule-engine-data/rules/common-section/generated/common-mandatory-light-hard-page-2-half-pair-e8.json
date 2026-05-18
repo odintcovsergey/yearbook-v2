@@ -1,0 +1,46 @@
+{
+  "id": "common-mandatory-light-hard-page-2-half-pair-e8",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 232,
+  "display_name": "Общий раздел (обязательный): Лайт плотные, страница 2 — пара 1/2 класса",
+  "description": "Авто-сгенерировано из docs/templates/album-structure-matrix.json entry #8 (РЭ.20.6.3). Матрица: light × hard, students [{\"min\":16,\"max\":18}]. mandatory_section_pages[2] = half_pair.",
+  "when": {
+    "preset_density": "light",
+    "preset_sheet_type": "hard",
+    "students_count": {
+      "between": [
+        16,
+        18
+      ]
+    },
+    "mandatory_section.current_index": 2,
+    "common_photos.half_class.count": {
+      "gte": 4
+    }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "J-Half",
+    "right_master": "J-Half"
+  },
+  "bind": {
+    "left_master": {
+      "halfphoto_1": "input.common_photos.half_class[$consumed_half_class]",
+      "halfphoto_2": "input.common_photos.half_class[$consumed_half_class + 1]"
+    },
+    "right_master": {
+      "halfphoto_1": "input.common_photos.half_class[$consumed_half_class + 2]",
+      "halfphoto_2": "input.common_photos.half_class[$consumed_half_class + 3]"
+    }
+  },
+  "consumes": {
+    "common_photos": {
+      "half_class": 4
+    },
+    "pages": 2,
+    "mandatory_section": {
+      "pages": 1
+    }
+  }
+}

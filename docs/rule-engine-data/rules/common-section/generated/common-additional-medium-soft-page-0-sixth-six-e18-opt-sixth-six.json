@@ -1,0 +1,60 @@
+{
+  "id": "common-additional-medium-soft-page-0-sixth-six-e18-opt-sixth-six",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 213,
+  "display_name": "Общий раздел (дополнительный): Медиум мягкие, страница 0 — коллаж 12 фото 1/6 (опция sixth-six)",
+  "description": "Авто-сгенерировано из docs/templates/album-structure-matrix.json entry #18 (РЭ.20.6.3). Матрица: medium × soft, students [{\"min\":7,\"max\":8},{\"min\":15,\"max\":16},{\"min\":23,\"max\":24},{\"min\":31,\"max\":32}]. additional_section_pages[0] = sixth_six. Эта опция выбрана из alternative по приоритету наличия фотоматериала.",
+  "when": {
+    "preset_density": "medium",
+    "preset_sheet_type": "soft",
+    "students_count": {
+      "between": [
+        7,
+        32
+      ]
+    },
+    "common_photos.sixth.count": {
+      "gte": 12
+    }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "J-Collage-6",
+    "right_master": "J-Collage-6"
+  },
+  "bind": {
+    "left_master": {
+      "collagephoto_{i}": {
+        "template": "input.common_photos.sixth[$consumed_sixth + {i} - 1]",
+        "params": {
+          "i": {
+            "range": [
+              1,
+              6
+            ]
+          }
+        }
+      }
+    },
+    "right_master": {
+      "collagephoto_{i}": {
+        "template": "input.common_photos.sixth[$consumed_sixth + 6 + {i} - 1]",
+        "params": {
+          "i": {
+            "range": [
+              1,
+              6
+            ]
+          }
+        }
+      }
+    }
+  },
+  "consumes": {
+    "common_photos": {
+      "sixth": 12
+    },
+    "pages": 2
+  }
+}

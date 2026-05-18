@@ -1,0 +1,40 @@
+{
+  "id": "common-additional-light-soft-page-0-full-one-e10-opt-full-one",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 211,
+  "display_name": "Общий раздел (дополнительный): Лайт мягкие, страница 0 — 2 общих фото класса (опция full-one)",
+  "description": "Авто-сгенерировано из docs/templates/album-structure-matrix.json entry #10 (РЭ.20.6.3). Матрица: light × soft, students [{\"min\":1,\"max\":12},{\"min\":22,\"max\":24}]. additional_section_pages[0] = full_one. Эта опция выбрана из alternative по приоритету наличия фотоматериала.",
+  "when": {
+    "preset_density": "light",
+    "preset_sheet_type": "soft",
+    "students_count": {
+      "between": [
+        1,
+        24
+      ]
+    },
+    "common_photos.full_class.count": {
+      "gte": 2
+    }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "J-Full",
+    "right_master": "J-Full"
+  },
+  "bind": {
+    "left_master": {
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+    },
+    "right_master": {
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class + 1]"
+    }
+  },
+  "consumes": {
+    "common_photos": {
+      "full_class": 2
+    },
+    "pages": 2
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "id": "common-additional-mini-hard-page-1-full-one-e0-opt-full-one",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 211,
+  "display_name": "Общий раздел (дополнительный): Мини плотные, страница 1 — 2 общих фото класса (опция full-one)",
+  "description": "Авто-сгенерировано из docs/templates/album-structure-matrix.json entry #0 (РЭ.20.6.3). Матрица: mini × hard, students [{\"min\":1,\"max\":24}]. additional_section_pages[1] = full_one. Эта опция выбрана из alternative по приоритету наличия фотоматериала.",
+  "when": {
+    "preset_density": "mini",
+    "preset_sheet_type": "hard",
+    "students_count": {
+      "between": [
+        1,
+        24
+      ]
+    },
+    "common_photos.full_class.count": {
+      "gte": 2
+    }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "J-Full",
+    "right_master": "J-Full"
+  },
+  "bind": {
+    "left_master": {
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+    },
+    "right_master": {
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class + 1]"
+    }
+  },
+  "consumes": {
+    "common_photos": {
+      "full_class": 2
+    },
+    "pages": 2
+  }
+}

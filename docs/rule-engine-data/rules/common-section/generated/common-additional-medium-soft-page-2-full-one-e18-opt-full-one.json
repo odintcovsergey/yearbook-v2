@@ -1,0 +1,40 @@
+{
+  "id": "common-additional-medium-soft-page-2-full-one-e18-opt-full-one",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 211,
+  "display_name": "Общий раздел (дополнительный): Медиум мягкие, страница 2 — 2 общих фото класса (опция full-one)",
+  "description": "Авто-сгенерировано из docs/templates/album-structure-matrix.json entry #18 (РЭ.20.6.3). Матрица: medium × soft, students [{\"min\":7,\"max\":8},{\"min\":15,\"max\":16},{\"min\":23,\"max\":24},{\"min\":31,\"max\":32}]. additional_section_pages[2] = full_one. Эта опция выбрана из alternative по приоритету наличия фотоматериала.",
+  "when": {
+    "preset_density": "medium",
+    "preset_sheet_type": "soft",
+    "students_count": {
+      "between": [
+        7,
+        32
+      ]
+    },
+    "common_photos.full_class.count": {
+      "gte": 2
+    }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "J-Full",
+    "right_master": "J-Full"
+  },
+  "bind": {
+    "left_master": {
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class]"
+    },
+    "right_master": {
+      "classphotoframe": "input.common_photos.full_class[$consumed_full_class + 1]"
+    }
+  },
+  "consumes": {
+    "common_photos": {
+      "full_class": 2
+    },
+    "pages": 2
+  }
+}

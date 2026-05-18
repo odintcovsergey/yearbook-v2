@@ -1,0 +1,64 @@
+{
+  "id": "common-mandatory-light-soft-page-3-sixth-six-e10-opt-sixth-six",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 233,
+  "display_name": "Общий раздел (обязательный): Лайт мягкие, страница 3 — коллаж 12 фото 1/6 (опция sixth-six)",
+  "description": "Авто-сгенерировано из docs/templates/album-structure-matrix.json entry #10 (РЭ.20.6.3). Матрица: light × soft, students [{\"min\":1,\"max\":12},{\"min\":22,\"max\":24}]. mandatory_section_pages[3] = sixth_six. Эта опция выбрана из alternative по приоритету наличия фотоматериала.",
+  "when": {
+    "preset_density": "light",
+    "preset_sheet_type": "soft",
+    "students_count": {
+      "between": [
+        1,
+        24
+      ]
+    },
+    "mandatory_section.current_index": 3,
+    "common_photos.sixth.count": {
+      "gte": 12
+    }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "J-Collage-6",
+    "right_master": "J-Collage-6"
+  },
+  "bind": {
+    "left_master": {
+      "collagephoto_{i}": {
+        "template": "input.common_photos.sixth[$consumed_sixth + {i} - 1]",
+        "params": {
+          "i": {
+            "range": [
+              1,
+              6
+            ]
+          }
+        }
+      }
+    },
+    "right_master": {
+      "collagephoto_{i}": {
+        "template": "input.common_photos.sixth[$consumed_sixth + 6 + {i} - 1]",
+        "params": {
+          "i": {
+            "range": [
+              1,
+              6
+            ]
+          }
+        }
+      }
+    }
+  },
+  "consumes": {
+    "common_photos": {
+      "sixth": 12
+    },
+    "pages": 2,
+    "mandatory_section": {
+      "pages": 1
+    }
+  }
+}

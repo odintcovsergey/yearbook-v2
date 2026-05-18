@@ -1,0 +1,46 @@
+{
+  "id": "common-mandatory-medium-soft-page-0-quarter-pair-e21",
+  "family_id": "common-section",
+  "family_version": "1.0",
+  "priority": 230,
+  "display_name": "Общий раздел (обязательный): Медиум мягкие, страница 0 — пара 1/4 класса",
+  "description": "Авто-сгенерировано из docs/templates/album-structure-matrix.json entry #21 (РЭ.20.6.3). Матрица: medium × soft, students [{\"min\":13,\"max\":14},{\"min\":21,\"max\":22},{\"min\":29,\"max\":30}]. mandatory_section_pages[0] = quarter_pair.",
+  "when": {
+    "preset_density": "medium",
+    "preset_sheet_type": "soft",
+    "students_count": {
+      "between": [
+        13,
+        30
+      ]
+    },
+    "mandatory_section.current_index": 0,
+    "common_photos.quarter.count": {
+      "gte": 4
+    }
+  },
+  "produces": {
+    "type": "spread",
+    "left_master": "J-Quarter",
+    "right_master": "J-Quarter"
+  },
+  "bind": {
+    "left_master": {
+      "quarterphoto_1": "input.common_photos.quarter[$consumed_quarter]",
+      "quarterphoto_2": "input.common_photos.quarter[$consumed_quarter + 1]"
+    },
+    "right_master": {
+      "quarterphoto_1": "input.common_photos.quarter[$consumed_quarter + 2]",
+      "quarterphoto_2": "input.common_photos.quarter[$consumed_quarter + 3]"
+    }
+  },
+  "consumes": {
+    "common_photos": {
+      "quarter": 4
+    },
+    "pages": 2,
+    "mandatory_section": {
+      "pages": 1
+    }
+  }
+}
