@@ -41,6 +41,7 @@ import type {
   RulesHeadTeacherInput,
   RulesSubjectInput,
 } from '../types';
+import type { CommonPhotoCounts } from '../slot-chains';
 import type { SectionFillContext } from './shared';
 
 interface LeftChoice {
@@ -111,13 +112,23 @@ export function fillTeachersSection(ctx: SectionFillContext): void {
     return;
   }
 
-  // Применяем consumes (вычитаем потреблённые фото).
+  // Bindings ДО consumes — внутри используется
+  // `used = arr.length - available[k]` как индекс «первого ещё
+  // неиспользованного фото». Если бы decrement шёл первым, used сдвинулся бы
+  // на consumes раньше срока и взяли бы фото за пределами незатронутого пула.
+  const rightBindings = bindRightPage(
+    rightMaster,
+    right,
+    ctx.input,
+    ctx.available,
+    subjects,
+  );
+
+  // Теперь применяем consumes к available.
   if (right.consumes.full_class)
     ctx.available.full_class -= right.consumes.full_class;
   if (right.consumes.half_class)
     ctx.available.half_class -= right.consumes.half_class;
-
-  const rightBindings = bindRightPage(rightMaster, right, ctx.input, subjects);
 
   const rightPageIndex = ctx.pageInstances.length;
   ctx.pageInstances.push({
@@ -294,10 +305,16 @@ function bindLeftPage(
  * Bindings для правой страницы.
  *
  * Поведение зависит от выбранного G-* мастера:
- *  - G-HalfClass: `halfphoto_1`, `halfphoto_2` → первые 2 фото half_class
- *  - G-FullClass: `classphotoframe` → первое фото full_class
+ *  - G-HalfClass: `halfphoto_1`, `halfphoto_2` → первые ещё неиспользованные
+ *    2 фото half_class (учитываем что какие-то могли быть потреблены раньше)
+ *  - G-FullClass: `classphotoframe` → первое ещё неиспользованное фото full_class
  *  - G-Teachers-*: `teacherphoto_N` / `teachername_N` / `teacherrole_N`
  *    → subjects[offset + N - 1] (учитываем subjectsOffset для 17+)
+ *
+ * Индекс ещё неиспользованного фото в категории `k` определяется через
+ * `arr.length - available[k]` — это число уже потреблённых фото. Так combined
+ * pages и common-section далее в альбоме не возьмут то же самое фото
+ * (см. РЭ.21.8.4c).
  *
  * Чтобы не плодить ветвление по masterName, идём placeholder-driven —
  * для каждого label мастера решаем что положить. Если у G-HalfClass
@@ -308,6 +325,7 @@ function bindRightPage(
   master: SpreadTemplate,
   choice: RightChoice,
   input: RulesAlbumInput,
+  available: CommonPhotoCounts,
   allSubjects: RulesSubjectInput[],
 ): Record<string, unknown> {
   const bindings: Record<string, unknown> = {};
@@ -316,15 +334,21 @@ function bindRightPage(
     choice.subjectsOffset + choice.subjectsCount,
   );
 
+  // Индексы «первого ещё неиспользованного фото» в каждой категории.
+  // = всего − осталось доступно
+  const fullClassUsed =
+    input.common_photos.full_class.length - available.full_class;
+  const halfClassUsed =
+    input.common_photos.half_class.length - available.half_class;
+
   for (let i = 0; i < master.placeholders.length; i++) {
     const ph = master.placeholders[i];
     const label = ph.label.toLowerCase();
 
     // ─ Общее фото класса (G-FullClass) ─
     if (label === 'classphotoframe') {
-      if (input.common_photos.full_class.length > 0) {
-        bindings[ph.label] = input.common_photos.full_class[0];
-      }
+      const photo = input.common_photos.full_class[fullClassUsed];
+      if (photo) bindings[ph.label] = photo;
       continue;
     }
 
@@ -332,7 +356,7 @@ function bindRightPage(
     const halfMatch = label.match(/^halfphoto_(\d+)$/);
     if (halfMatch) {
       const n = parseInt(halfMatch[1], 10);
-      const photo = input.common_photos.half_class[n - 1];
+      const photo = input.common_photos.half_class[halfClassUsed + n - 1];
       if (photo) bindings[ph.label] = photo;
       continue;
     }

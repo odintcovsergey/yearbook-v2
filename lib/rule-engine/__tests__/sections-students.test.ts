@@ -217,39 +217,42 @@ describe('students: неподдерживаемые density', () => {
     ).toBe(true);
   });
 
-  it("density='medium' → warning students_density_not_implemented_yet (21.8.4c)", () => {
+  it("density='medium' → реализовано в 21.8.4c, без мастеров → master_not_found", () => {
     const bundle = makeBundle({
       preset: makePreset({ id: 'p', density: 'medium' }),
     });
     const result = buildFromSectionStructure(bundle, makeInput({ students: 8 }));
     expect(result.spreads).toEqual([]);
     expect(
-      result.warnings.some((w) =>
-        w.startsWith('students_density_not_implemented_yet'),
+      result.warnings.some(
+        (w) =>
+          w.startsWith('students_master_not_found') && w.includes('M-Grid-Page'),
       ),
     ).toBe(true);
   });
 
-  it("density='light' → warning not_implemented_yet", () => {
+  it("density='light' → реализовано, без мастеров → master_not_found L-Grid-Page", () => {
     const bundle = makeBundle({
       preset: makePreset({ id: 'p', density: 'light' }),
     });
     const result = buildFromSectionStructure(bundle, makeInput({ students: 6 }));
     expect(
-      result.warnings.some((w) =>
-        w.startsWith('students_density_not_implemented_yet'),
+      result.warnings.some(
+        (w) =>
+          w.startsWith('students_master_not_found') && w.includes('L-Grid-Page'),
       ),
     ).toBe(true);
   });
 
-  it("density='mini' → warning not_implemented_yet", () => {
+  it("density='mini' → реализовано, без мастеров → master_not_found N-Grid-Page", () => {
     const bundle = makeBundle({
       preset: makePreset({ id: 'p', density: 'mini' }),
     });
     const result = buildFromSectionStructure(bundle, makeInput({ students: 12 }));
     expect(
-      result.warnings.some((w) =>
-        w.startsWith('students_density_not_implemented_yet'),
+      result.warnings.some(
+        (w) =>
+          w.startsWith('students_master_not_found') && w.includes('N-Grid-Page'),
       ),
     ).toBe(true);
   });
@@ -443,5 +446,276 @@ describe('students + common: позиция работает корректно'
     expect(result.spreads).toHaveLength(2);
     expect(result.spreads[1].left?.master_id).toBe('id-E-Universal-Left');
     expect(result.spreads[1].right?.master_id).toBe('id-J-ClassPhoto-Right');
+  });
+});
+
+// ─── 5. Grid режимы (Medium / Light / Mini) — РЭ.21.8.4c ──────────────────
+
+// Фикстуры grid-мастеров.
+function gridMaster(name: string, slots: number): SpreadTemplate {
+  const ph: Placeholder[] = [];
+  for (let i = 1; i <= slots; i++) {
+    ph.push(photoSlot(`studentportrait_${i}`));
+    ph.push(textSlot(`studentname_${i}`));
+    ph.push(textSlot(`studentquote_${i}`));
+  }
+  const m = makeMaster(name, ph);
+  m.slot_capacity = { students: slots };
+  return m;
+}
+
+function combinedMaster(name: string, slots: number): SpreadTemplate {
+  const ph: Placeholder[] = [];
+  for (let i = 1; i <= slots; i++) {
+    ph.push(photoSlot(`studentportrait_${i}`));
+    ph.push(textSlot(`studentname_${i}`));
+  }
+  ph.push(photoSlot('classphotoframe'));
+  const m = makeMaster(name, ph);
+  m.slot_capacity = { students: slots, photos_full: 1 };
+  return m;
+}
+
+const M_GRID = gridMaster('M-Grid-Page', 4);
+const M_COMBINED = combinedMaster('M-Combined-Page', 2);
+const L_GRID = gridMaster('L-Grid-Page', 6);
+const L_4 = gridMaster('L-4', 4);
+const L_3 = gridMaster('L-3', 3);
+const L_2 = gridMaster('L-2', 2);
+const L_COMBINED = combinedMaster('L-Combined-Page', 3);
+const N_GRID = gridMaster('N-Grid-Page', 12);
+const N_9 = gridMaster('N-9', 9);
+const N_6 = gridMaster('N-6', 6);
+const N_4 = gridMaster('N-4', 4);
+const N_COMBINED = combinedMaster('N-Combined-Page', 4);
+
+describe('students: density=medium (M-Grid-Page 4 слота)', () => {
+  it('8 учеников → 2 полные страницы M-Grid (1 разворот)', () => {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', density: 'medium' }),
+      masters: [M_GRID, M_COMBINED],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ students: 8 }));
+    expect(result.status).toBe('ok');
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-M-Grid-Page');
+    expect(result.spreads[0].right?.master_id).toBe('id-M-Grid-Page');
+  });
+
+  it('6 учеников + full=1 → 1 полная M-Grid + M-Combined (consume 1 full)', () => {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', density: 'medium' }),
+      masters: [M_GRID, M_COMBINED],
+    });
+    const input = {
+      ...makeInput({ students: 6 }),
+      common_photos: {
+        full_class: ['https://cdn/full_0.jpg'],
+        half_class: [],
+        spread: [],
+        quarter: [],
+        sixth: [],
+      },
+    };
+    const result = buildFromSectionStructure(bundle, input);
+    expect(result.status).toBe('ok');
+    // 6 учеников = 1 полный M-Grid (4) + 1 M-Combined (2) = 2 страницы = 1 разворот
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-M-Grid-Page');
+    expect(result.spreads[0].right?.master_id).toBe('id-M-Combined-Page');
+    expect(result.spreads[0].right?.bindings.classphotoframe).toBe(
+      'https://cdn/full_0.jpg',
+    );
+  });
+
+  it('6 учеников БЕЗ full_class → fallback: M-Grid с null-падингом + warning', () => {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', density: 'medium' }),
+      masters: [M_GRID, M_COMBINED],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ students: 6 }));
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].right?.master_id).toBe('id-M-Grid-Page'); // не Combined
+    expect(result.spreads[0].right?.bindings.studentportrait_1).toBe(
+      'https://cdn/portrait_5.jpg',
+    );
+    expect(result.spreads[0].right?.bindings.studentportrait_3).toBeNull();
+    expect(
+      result.warnings.some((w) => w.startsWith('students_grid_tail_padded')),
+    ).toBe(true);
+  });
+
+  it('M-Grid-Page отсутствует → warning students_master_not_found', () => {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', density: 'medium' }),
+      masters: [],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ students: 4 }));
+    expect(result.spreads).toEqual([]);
+    expect(
+      result.warnings.some(
+        (w) =>
+          w.startsWith('students_master_not_found') && w.includes('M-Grid-Page'),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('students: density=light (адаптивные сетки L-2/3/4)', () => {
+  it('12 учеников → 2 полные L-Grid страницы (1 разворот)', () => {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', density: 'light' }),
+      masters: [L_GRID, L_4, L_3, L_2, L_COMBINED],
+    });
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students: 12 }),
+    );
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-L-Grid-Page');
+    expect(result.spreads[0].right?.master_id).toBe('id-L-Grid-Page');
+  });
+
+  it('9 учеников → 1 полная L-Grid + L-3 (минимально достаточный)', () => {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', density: 'light' }),
+      masters: [L_GRID, L_4, L_3, L_2, L_COMBINED],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ students: 9 }));
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-L-Grid-Page');
+    expect(result.spreads[0].right?.master_id).toBe('id-L-3');
+  });
+
+  it('8 учеников → 1 полная L-Grid + L-2 (адаптивный)', () => {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', density: 'light' }),
+      masters: [L_GRID, L_4, L_3, L_2, L_COMBINED],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ students: 8 }));
+    expect(result.spreads[0].right?.master_id).toBe('id-L-2');
+  });
+
+  it('9 учеников + full=1 → Combined приоритет над адаптивным', () => {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', density: 'light' }),
+      masters: [L_GRID, L_3, L_COMBINED],
+    });
+    const input = {
+      ...makeInput({ students: 9 }),
+      common_photos: {
+        full_class: ['https://cdn/full_0.jpg'],
+        half_class: [],
+        spread: [],
+        quarter: [],
+        sixth: [],
+      },
+    };
+    const result = buildFromSectionStructure(bundle, input);
+    expect(result.spreads[0].right?.master_id).toBe('id-L-Combined-Page');
+    expect(result.spreads[0].right?.bindings.classphotoframe).toBe(
+      'https://cdn/full_0.jpg',
+    );
+  });
+
+  it('8 учеников без адаптивных L-2/3/4 → fallback на L-Grid с null-падингом', () => {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', density: 'light' }),
+      masters: [L_GRID], // только базовый
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ students: 8 }));
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].right?.master_id).toBe('id-L-Grid-Page');
+    expect(result.spreads[0].right?.bindings.studentportrait_3).toBeNull();
+    expect(
+      result.warnings.some((w) => w.startsWith('students_grid_tail_padded')),
+    ).toBe(true);
+  });
+});
+
+describe('students: density=mini (N-Grid 12 + адаптивные N-4/6/9)', () => {
+  it('24 ученика → 2 полные N-Grid страницы', () => {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', density: 'mini' }),
+      masters: [N_GRID, N_9, N_6, N_4, N_COMBINED],
+    });
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students: 24 }),
+    );
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-N-Grid-Page');
+    expect(result.spreads[0].right?.master_id).toBe('id-N-Grid-Page');
+  });
+
+  it('17 учеников → 1 N-Grid (12) + N-6 (минимум для 5)', () => {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', density: 'mini' }),
+      masters: [N_GRID, N_9, N_6, N_4, N_COMBINED],
+    });
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students: 17 }),
+    );
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-N-Grid-Page');
+    expect(result.spreads[0].right?.master_id).toBe('id-N-6');
+  });
+
+  it('Bindings grid: studentportrait_N + studentname_N + studentquote_N', () => {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', density: 'mini' }),
+      masters: [N_GRID, N_4, N_6, N_9, N_COMBINED],
+    });
+    const input = makeInput({ students: 4 });
+    const result = buildFromSectionStructure(bundle, input);
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-N-4');
+    const b = result.spreads[0].left!.bindings;
+    expect(b.studentportrait_1).toBe(input.students[0].portrait);
+    expect(b.studentname_1).toBe(input.students[0].full_name);
+    expect(b.studentquote_1).toBe(input.students[0].quote);
+    expect(b.studentportrait_4).toBe(input.students[3].portrait);
+  });
+});
+
+describe('students grid: интеграция с teachers (общее фото не дублируется)', () => {
+  it('teachers G-FullClass + students medium-combined → full_class[0] и [1]', () => {
+    // Создаём F-Head-WithPhoto и G-FullClass из стандартного набора teachers.
+    // Не подключаем G-HalfClass — будет fallback на G-FullClass.
+    const fHeadWithPhoto = makeMaster('F-Head-WithPhoto', [
+      photoSlot('headteacherphoto'),
+      textSlot('headteachername'),
+    ]);
+    const gFullClass = makeMaster('G-FullClass', [photoSlot('classphotoframe')]);
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        density: 'medium',
+        section_structure: [{ type: 'teachers' }, { type: 'students' }],
+      }),
+      masters: [fHeadWithPhoto, gFullClass, M_GRID, M_COMBINED],
+    });
+    const input = {
+      ...makeInput({ students: 6 }),
+      common_photos: {
+        full_class: ['https://cdn/full_0.jpg', 'https://cdn/full_1.jpg'],
+        half_class: [],
+        spread: [],
+        quarter: [],
+        sixth: [],
+      },
+    };
+    const result = buildFromSectionStructure(bundle, input);
+    // teachers взял full_class[0] на G-FullClass
+    expect(result.spreads[0].right?.master_id).toBe('id-G-FullClass');
+    expect(result.spreads[0].right?.bindings.classphotoframe).toBe(
+      'https://cdn/full_0.jpg',
+    );
+    // students medium: M-Grid (4) + M-Combined (2) — combined должен взять full_class[1]
+    expect(result.spreads[1].right?.master_id).toBe('id-M-Combined-Page');
+    expect(result.spreads[1].right?.bindings.classphotoframe).toBe(
+      'https://cdn/full_1.jpg',
+    );
   });
 });
