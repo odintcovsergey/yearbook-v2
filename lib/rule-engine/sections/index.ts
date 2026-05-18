@@ -5,19 +5,20 @@
  * Все функции мутируют SectionFillContext (см. shared.ts) — стандартный
  * builder-паттерн.
  *
- * Текущее покрытие (РЭ.21.8.4b):
- *  - common   — fillCommonSection
- *  - teachers — fillTeachersSection
- *  - students — fillStudentsSection (только Standard + Universal;
- *               Medium/Light/Mini → 21.8.4c)
+ * Текущее покрытие (РЭ.21.8.5):
+ *  - common     — fillCommonSection
+ *  - teachers   — fillTeachersSection
+ *  - students   — fillStudentsSection (все 5 density: standard/universal/medium/light/mini)
+ *  - soft_intro — fillSoftIntroSection (только для sheet_type='soft')
+ *  - soft_final — fillSoftFinalSection (только для sheet_type='soft')
  *
- * Заглушки до соответствующих коммитов:
- *  - soft_intro — РЭ.21.8.5 (S-Intro для sheet_type='soft')
- *  - soft_final — РЭ.21.8.5
- *  - vignette   — отложено
+ * Заглушки:
+ *  - vignette   — отложено (отдельная подсистема, виньетки из детских фото)
  */
 
 export { fillCommonSection } from './common';
 export { fillTeachersSection } from './teachers';
 export { fillStudentsSection } from './students';
+export { fillSoftIntroSection } from './soft-intro';
+export { fillSoftFinalSection } from './soft-final';
 export type { SectionFillContext } from './shared';

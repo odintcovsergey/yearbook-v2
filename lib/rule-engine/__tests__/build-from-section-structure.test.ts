@@ -265,12 +265,17 @@ describe('buildFromSectionStructure: заглушки секций', () => {
     const result = buildFromSectionStructure(bundle, makeInput({}));
     expect(result.status).toBe('partial');
     expect(result.spreads).toEqual([]);
-    // teachers подключен в 21.8.4a — без F-* выдаёт teachers_master_not_found.
-    // students подключен в 21.8.4b — без preset.density выдаёт students_density_not_supported.
-    // Заглушки остаются: soft_intro, vignette, soft_final.
-    expect(result.warnings).toContain('section_soft_intro_not_implemented');
+    // teachers подключен (21.8.4a), students (21.8.4b/c), soft_intro/final (21.8.5):
+    // без F-* — teachers_master_not_found; без density — students_density_not_supported;
+    // без sheet_type='soft' — soft_intro_skipped / soft_final_skipped.
+    // Заглушка остаётся только: vignette.
     expect(result.warnings).toContain('section_vignette_not_implemented');
-    expect(result.warnings).toContain('section_soft_final_not_implemented');
+    expect(
+      result.warnings.some((w) => w.startsWith('soft_intro_skipped')),
+    ).toBe(true);
+    expect(
+      result.warnings.some((w) => w.startsWith('soft_final_skipped')),
+    ).toBe(true);
     expect(
       result.warnings.some((w) => w.startsWith('teachers_master_not_found')),
     ).toBe(true);

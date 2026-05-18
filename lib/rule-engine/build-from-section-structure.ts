@@ -58,6 +58,8 @@ import type { CommonPhotoCounts } from './slot-chains';
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import {
   fillCommonSection,
+  fillSoftFinalSection,
+  fillSoftIntroSection,
   fillStudentsSection,
   fillTeachersSection,
 } from './sections';
@@ -122,14 +124,49 @@ export function buildFromSectionStructure(
       case 'students':
         fillStudentsSection(ctx);
         break;
-      // Заглушки до РЭ.21.8.5 — секция игнорируется,
-      // ничего не добавляется в pageInstances.
       case 'soft_intro':
-      case 'vignette':
+        fillSoftIntroSection(ctx);
+        break;
       case 'soft_final':
+        fillSoftFinalSection(ctx);
+        break;
+      // vignette — отложено (виньетки из детских фото = отдельная подсистема).
+      case 'vignette':
         warnings.push(`section_${section.type}_not_implemented`);
         break;
     }
+  }
+
+  // 5.5. Enforcement min_pages / max_pages из пресета.
+  // Применяется ПОСЛЕ всех секций, ДО группировки в spreads.
+  // - При переборе (страниц > max_pages) обрезаем хвост + warning.
+  //   Партнёр через редактор может посмотреть что обрезалось.
+  // - При недоборе (страниц < min_pages) — warning без auto-fill.
+  //   Партнёр явно добавит общие развороты через section_structure
+  //   или вручную через TemplatePickerModal.
+  const minPages = bundle.preset.min_pages;
+  const maxPages = bundle.preset.max_pages;
+  const totalPages = pageInstances.length;
+
+  if (typeof maxPages === 'number' && totalPages > maxPages) {
+    const dropped = totalPages - maxPages;
+    pageInstances.length = maxPages; // обрезаем in-place
+    warnings.push(
+      `pages_overflow_truncated: страниц ${totalPages} > max_pages ${maxPages}, обрезано ${dropped} (с конца)`,
+    );
+    // Чистим decision_trace для обрезанных страниц (spread_index >= maxPages/2).
+    // Делать не строго обязательно (trace всё равно отладочная инфа), но
+    // чище для UI: фильтр inline через splice по индексу.
+    const maxSpreadKept = Math.floor((maxPages - 1) / 2);
+    for (let i = decisionTrace.length - 1; i >= 0; i--) {
+      if (decisionTrace[i].spread_index > maxSpreadKept) {
+        decisionTrace.splice(i, 1);
+      }
+    }
+  } else if (typeof minPages === 'number' && totalPages < minPages) {
+    warnings.push(
+      `pages_underflow: страниц ${totalPages} < min_pages ${minPages} (партнёр добавит общие развороты вручную)`,
+    );
   }
 
   // 6. Группировка страниц в SpreadInstance.
