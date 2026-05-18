@@ -22,6 +22,72 @@ async function assertAlbumAccess(auth: AuthContext, albumId: string, tenantIdOve
 }
 
 // ============================================================
+// РЭ.21.7.3: валидация section_structure из body.
+//
+// Допустимая форма: массив объектов вида:
+//   { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
+//   { type: 'common', slots: ('H' | 'Q' | 'FULL' | 'flex_A' | 'flex_B' | 'flex_C')[] }
+//
+// Возвращает { ok: true, value } или { ok: false, error }.
+// Намеренно строгая валидация — мусор в jsonb-поле приведёт к падению
+// build engine'а на проде с непонятной ошибкой.
+// ============================================================
+const ALLOWED_SECTION_TYPES = new Set([
+  'soft_intro', 'teachers', 'students', 'common', 'vignette', 'soft_final',
+])
+const ALLOWED_SLOT_TYPES = new Set(['H', 'Q', 'FULL', 'flex_A', 'flex_B', 'flex_C'])
+
+type ValidatedSection =
+  | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
+  | { type: 'common'; slots: string[] }
+
+function validateSectionStructure(
+  raw: unknown,
+): { ok: true; value: ValidatedSection[] } | { ok: false; error: string } {
+  if (!Array.isArray(raw)) {
+    return { ok: false, error: 'section_structure должен быть массивом' }
+  }
+  if (raw.length > 50) {
+    return { ok: false, error: 'Слишком много секций (максимум 50)' }
+  }
+  const result: ValidatedSection[] = []
+  for (let i = 0; i < raw.length; i++) {
+    const s = raw[i]
+    if (!s || typeof s !== 'object') {
+      return { ok: false, error: `Секция #${i + 1}: ожидался объект` }
+    }
+    const type = (s as { type?: unknown }).type
+    if (typeof type !== 'string' || !ALLOWED_SECTION_TYPES.has(type)) {
+      return { ok: false, error: `Секция #${i + 1}: недопустимый тип '${String(type)}'` }
+    }
+    if (type === 'common') {
+      const slots = (s as { slots?: unknown }).slots
+      if (!Array.isArray(slots)) {
+        return { ok: false, error: `Секция #${i + 1} (common): отсутствует массив slots` }
+      }
+      if (slots.length > 50) {
+        return { ok: false, error: `Секция #${i + 1} (common): слишком много слотов` }
+      }
+      const validSlots: string[] = []
+      for (let j = 0; j < slots.length; j++) {
+        const slot = slots[j]
+        if (typeof slot !== 'string' || !ALLOWED_SLOT_TYPES.has(slot)) {
+          return {
+            ok: false,
+            error: `Секция #${i + 1}, слот #${j + 1}: недопустимое значение '${String(slot)}'`,
+          }
+        }
+        validSlots.push(slot)
+      }
+      result.push({ type: 'common', slots: validSlots })
+    } else {
+      result.push({ type: type as Exclude<ValidatedSection['type'], 'common'> })
+    }
+  }
+  return { ok: true, value: result }
+}
+
+// ============================================================
 // Хелпер: проверка, что ребёнок принадлежит альбому tenant'а
 // ============================================================
 async function assertChildAccess(auth: AuthContext, childId: string): Promise<boolean> {
@@ -1522,15 +1588,24 @@ export async function POST(req: NextRequest) {
     // sheet_type выводим из print_type. Позже переедет на уровень альбома (см. РЭ.12).
     const sheetType = printType === 'layflat' ? 'hard' : 'soft'
 
-    // Дефолтная структура — простая, стартовая. Партнёр будет редактировать
-    // в следующих обновлениях (drag-and-drop UI).
-    const defaultSectionStructure = [
+    // Дефолтная структура — простая, стартовая. Используется если клиент
+    // не передал section_structure в body. РЭ.21.7.3: партнёр может
+    // передать собственную структуру при создании.
+    const defaultSectionStructure: ValidatedSection[] = [
       { type: 'soft_intro' },
       { type: 'teachers' },
       { type: 'students' },
       { type: 'common', slots: ['H', 'flex_A', 'flex_A', 'flex_B'] },
       { type: 'soft_final' },
     ]
+    let sectionStructure: ValidatedSection[] = defaultSectionStructure
+    if (body.section_structure !== undefined) {
+      const v = validateSectionStructure(body.section_structure)
+      if (!v.ok) {
+        return NextResponse.json({ error: v.error }, { status: 400 })
+      }
+      sectionStructure = v.value
+    }
 
     // sections — legacy поле для текущего rule engine. Используем минимальный
     // набор семейств (без params) — для legacy build это безопасный default.
@@ -1552,7 +1627,7 @@ export async function POST(req: NextRequest) {
         max_pages: maxPages,
         density: null,
         sheet_type: sheetType,
-        section_structure: defaultSectionStructure,
+        section_structure: sectionStructure,
         sections: defaultSections,
         template_set_id: templateSetId,
         tenant_id: auth.tenantId,
@@ -1585,10 +1660,12 @@ export async function POST(req: NextRequest) {
   //   - min_pages, max_pages: 1..200, min <= max. Если передан только
   //     один — валидируем относительно второго В БД (а не в body).
   //   - template_set_id: uuid или null. Валидируем доступ.
+  //   - section_structure: массив (РЭ.21.7.3). Валидируется через
+  //     validateSectionStructure. Каждый элемент {type} либо
+  //     {type:'common', slots:[]}.
   //
   // НЕ принимаем (намеренно):
   //   - id, tenant_id, parent_preset_id, sections — иммутабельны.
-  //   - section_structure — будет добавлено в РЭ.21.7.3/4 (drag-and-drop).
   //   - density, version — заглушки от РЭ.20, отдельная задача.
   // ----------------------------------------------------------
   if (body.action === 'rule_preset_update') {
@@ -1726,6 +1803,15 @@ export async function POST(req: NextRequest) {
         }
         patch.template_set_id = tsid
       }
+    }
+
+    // РЭ.21.7.3: section_structure (опциональный).
+    if (body.section_structure !== undefined) {
+      const v = validateSectionStructure(body.section_structure)
+      if (!v.ok) {
+        return NextResponse.json({ error: v.error }, { status: 400 })
+      }
+      patch.section_structure = v.value
     }
 
     // 4) Если ничего не пришло — отвечаем ok без UPDATE'а

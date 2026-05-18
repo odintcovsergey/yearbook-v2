@@ -4,6 +4,22 @@ import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import CRMModal from './CRMModal'
+// РЭ.21.7.3: drag-and-drop секций в редакторе пресета.
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  arrayMove,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 const LayoutPreviewStrip = dynamic(
   () => import('./_components/LayoutPreviewStrip'),
@@ -9058,6 +9074,237 @@ type SectionStructureEntry =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
   | { type: 'common'; slots: string[] }
 
+// РЭ.21.7.3: справочники типов секций и слотов для UI редактора.
+// Должны совпадать с серверным валидатором (validateSectionStructure)
+// в app/api/tenant/route.ts.
+const SECTION_TYPE_LABELS: Record<SectionStructureEntry['type'], string> = {
+  soft_intro: 'Вступительная страница (мягкие)',
+  teachers: 'Учителя',
+  students: 'Портреты учеников',
+  common: 'Общий раздел',
+  vignette: 'Виньетка детских фото',
+  soft_final: 'Финальная страница (мягкие)',
+}
+const SECTION_TYPE_ORDER: SectionStructureEntry['type'][] = [
+  'soft_intro', 'teachers', 'students', 'common', 'vignette', 'soft_final',
+]
+const SLOT_LABELS: Record<string, string> = {
+  H: 'H (полкласса)',
+  Q: 'Q (четверть)',
+  FULL: 'FULL (общее фото)',
+  flex_A: 'flex_A (крупный приоритет)',
+  flex_B: 'flex_B (всё попробовать)',
+  flex_C: 'flex_C (правая нечётная)',
+}
+
+// Создание новой секции по типу. Для common — пустой массив слотов
+// (партнёр добавляет слоты в редакторе 21.7.4).
+function makeSection(type: SectionStructureEntry['type']): SectionStructureEntry {
+  if (type === 'common') return { type: 'common', slots: [] }
+  return { type }
+}
+
+// РЭ.21.7.3: drag-and-drop редактор секций пресета. Используется в
+// PresetForm в обоих режимах (create и edit). Снаружи получает sections +
+// onChange — родитель хранит state и шлёт в submit. Редактирование слотов
+// внутри common будет в РЭ.21.7.4 (сейчас слоты read-only с подсказкой).
+function SectionEditor({
+  sections,
+  onChange,
+  disabled,
+}: {
+  sections: SectionStructureEntry[]
+  onChange: (next: SectionStructureEntry[]) => void
+  disabled?: boolean
+}) {
+  // DnD id'ы стабильны на время сессии — не используем sections[i].type
+  // как ключ (дубликаты разрешены, поэтому нужен синтетический id).
+  // Простейший вариант: index в строке. При reorder обновляем массив,
+  // ключи пересоздаются — это ок, элементов мало.
+  const items = sections.map((_, i) => `s-${i}`)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  )
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const oldIdx = items.indexOf(String(active.id))
+    const newIdx = items.indexOf(String(over.id))
+    if (oldIdx < 0 || newIdx < 0) return
+    onChange(arrayMove(sections, oldIdx, newIdx))
+  }
+
+  const removeAt = (i: number) => {
+    onChange(sections.filter((_, idx) => idx !== i))
+  }
+  const addSection = (type: SectionStructureEntry['type']) => {
+    onChange([...sections, makeSection(type)])
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="block text-sm font-medium text-gray-700">
+          Структура секций
+        </label>
+        {!disabled && (
+          <AddSectionButton onPick={addSection} />
+        )}
+      </div>
+
+      {sections.length === 0 ? (
+        <div className="text-xs text-gray-400 italic border border-dashed rounded-md p-3">
+          Секций нет. Добавьте хотя бы «Портреты учеников» — без них альбом
+          собирать нечего.
+        </div>
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={items} strategy={verticalListSortingStrategy}>
+            <ol className="space-y-1.5">
+              {sections.map((section, i) => (
+                <SortableSectionItem
+                  key={items[i]}
+                  id={items[i]}
+                  index={i}
+                  section={section}
+                  onRemove={() => removeAt(i)}
+                  disabled={disabled}
+                />
+              ))}
+            </ol>
+          </SortableContext>
+        </DndContext>
+      )}
+
+      <div className="text-xs text-gray-500 italic mt-2">
+        Перетаскивайте секции для изменения порядка. Слоты внутри «Общего
+        раздела» можно будет редактировать в следующем обновлении.
+      </div>
+    </div>
+  )
+}
+
+function SortableSectionItem({
+  id,
+  index,
+  section,
+  onRemove,
+  disabled,
+}: {
+  id: string
+  index: number
+  section: SectionStructureEntry
+  onRemove: () => void
+  disabled?: boolean
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id, disabled })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  const label = SECTION_TYPE_LABELS[section.type] ?? section.type
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      className="flex items-start gap-2 bg-white border rounded-md px-2 py-2"
+    >
+      {/* Drag handle — отдельная зона, чтобы клик по «удалить» не цеплял drag */}
+      <button
+        type="button"
+        className="text-gray-400 hover:text-gray-700 cursor-grab active:cursor-grabbing px-1 select-none"
+        aria-label="Перетащить"
+        {...attributes}
+        {...listeners}
+      >
+        ⋮⋮
+      </button>
+      <span className="text-gray-400 font-mono text-xs w-5 shrink-0 pt-1">
+        {index + 1}.
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="font-medium text-sm">{label}</div>
+        {section.type === 'common' && (
+          <div className="text-xs text-gray-500 mt-0.5">
+            {section.slots.length === 0
+              ? 'Слотов пока нет'
+              : section.slots.map((s) => SLOT_LABELS[s] ?? s).join(' · ')}
+          </div>
+        )}
+      </div>
+      {!disabled && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-gray-400 hover:text-red-600 text-sm shrink-0 px-1"
+          aria-label="Удалить секцию"
+        >
+          ×
+        </button>
+      )}
+    </li>
+  )
+}
+
+function AddSectionButton({
+  onPick,
+}: {
+  onPick: (type: SectionStructureEntry['type']) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  // Закрываем dropdown по клику вне.
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-xs px-2 py-1 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+      >
+        + Секция
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-md shadow-md py-1 min-w-[220px]">
+          {SECTION_TYPE_ORDER.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => {
+                onPick(t)
+                setOpen(false)
+              }}
+              className="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100"
+            >
+              {SECTION_TYPE_LABELS[t]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PresetsModal({
   onClose,
   onError,
@@ -9211,6 +9458,19 @@ function PresetForm({
   // РЭ.21.6.3: '' = «По умолчанию (okeybook-default)», отправляем null.
   // uuid = конкретный template_set из списка.
   const [templateSetId, setTemplateSetId] = useState<string>(existing?.template_set_id ?? '')
+  // РЭ.21.7.3: структура секций.
+  // В режиме edit берём из existing (если NULL — пустой массив).
+  // В create — серверный default (синхронизирован с rule_preset_create).
+  const [sections, setSections] = useState<SectionStructureEntry[]>(() => {
+    if (mode === 'edit') return existing?.section_structure ?? []
+    return [
+      { type: 'soft_intro' },
+      { type: 'teachers' },
+      { type: 'students' },
+      { type: 'common', slots: ['H', 'flex_A', 'flex_A', 'flex_B'] },
+      { type: 'soft_final' },
+    ]
+  })
   const [busy, setBusy] = useState(false)
 
   const rangeError =
@@ -9244,6 +9504,7 @@ function PresetForm({
             min_pages: minPages,
             max_pages: maxPages,
             template_set_id: templateSetId || null,
+            section_structure: sections,
           }
         : {
             action: 'rule_preset_update',
@@ -9253,6 +9514,7 @@ function PresetForm({
             min_pages: minPages,
             max_pages: maxPages,
             template_set_id: templateSetId || null,
+            section_structure: sections,
           }
     const r = await api('/api/tenant', {
       method: 'POST',
@@ -9380,17 +9642,11 @@ function PresetForm({
           )}
         </div>
 
-        {mode === 'create' && (
-          <div className="text-xs text-gray-500 italic">
-            Структура секций будет создана со стартовым набором по умолчанию.
-            Редактирование секций появится в следующих обновлениях.
-          </div>
-        )}
-        {mode === 'edit' && (
-          <div className="text-xs text-gray-500 italic">
-            Структура секций редактируется отдельно (появится в следующих обновлениях).
-          </div>
-        )}
+        <SectionEditor
+          sections={sections}
+          onChange={setSections}
+          disabled={busy}
+        />
 
         <div className="flex gap-2 pt-2">
           <button
