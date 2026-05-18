@@ -9037,9 +9037,21 @@ type RulePresetRow = {
   sheet_type: string | null
   min_pages: number | null
   max_pages: number | null
+  template_set_id: string | null
   section_structure: SectionStructureEntry[] | null
   tenant_id: string | null
   version: string | null
+}
+
+// РЭ.21.6.3: минимальный тип template_set'а для UI селекта в форме
+// создания пресета. GET /api/layout?action=template_sets возвращает
+// больше полей, но нам нужны только эти.
+type TemplateSetRow = {
+  id: string
+  name: string
+  slug: string | null
+  is_global: boolean
+  tenant_id: string | null
 }
 
 type SectionStructureEntry =
@@ -9054,6 +9066,7 @@ function PresetsModal({
   onError: (msg: string) => void
 }) {
   const [presets, setPresets] = useState<RulePresetRow[]>([])
+  const [templateSets, setTemplateSets] = useState<TemplateSetRow[]>([])
   const [loading, setLoading] = useState(true)
   const [backdropStart, setBackdropStart] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
@@ -9068,12 +9081,26 @@ function PresetsModal({
 
   const load = async () => {
     setLoading(true)
-    const r = await api('/api/tenant?action=rule_presets_list')
-    if (r.ok) {
-      const d = await r.json()
+    // Параллельно: список пресетов + список доступных template_sets.
+    // Второй список нужен и для формы создания (селект «Дизайн»),
+    // и для карточек (показать название дизайна по uuid).
+    const [presetsRes, templateSetsRes] = await Promise.all([
+      api('/api/tenant?action=rule_presets_list'),
+      api('/api/layout?action=template_sets'),
+    ])
+    if (presetsRes.ok) {
+      const d = await presetsRes.json()
       setPresets(Array.isArray(d.presets) ? d.presets : [])
     } else {
       onError('Не удалось загрузить пресеты')
+    }
+    if (templateSetsRes.ok) {
+      const d = await templateSetsRes.json()
+      // GET /api/layout возвращает массив напрямую (не {template_sets: [...]}).
+      setTemplateSets(Array.isArray(d) ? d : [])
+    } else {
+      // Не критично — форма деградирует на «По умолчанию», карточки
+      // покажут uuid как fallback. Молча, не зовём onError.
     }
     setLoading(false)
   }
@@ -9123,6 +9150,7 @@ function PresetsModal({
         <div className="flex-1 overflow-y-auto p-6">
           {showCreate && (
             <PresetCreateForm
+              templateSets={templateSets}
               onCancel={() => setShowCreate(false)}
               onCreated={async () => {
                 setShowCreate(false)
@@ -9138,7 +9166,7 @@ function PresetsModal({
           ) : (
             <div className="space-y-4">
               {presets.map((p) => (
-                <PresetCard key={p.id} preset={p} />
+                <PresetCard key={p.id} preset={p} templateSets={templateSets} />
               ))}
             </div>
           )}
@@ -9149,10 +9177,12 @@ function PresetsModal({
 }
 
 function PresetCreateForm({
+  templateSets,
   onCancel,
   onCreated,
   onError,
 }: {
+  templateSets: TemplateSetRow[]
   onCancel: () => void
   onCreated: () => void | Promise<void>
   onError: (msg: string) => void
@@ -9161,6 +9191,9 @@ function PresetCreateForm({
   const [printType, setPrintType] = useState<'layflat' | 'soft'>('layflat')
   const [minPages, setMinPages] = useState(24)
   const [maxPages, setMaxPages] = useState(24)
+  // РЭ.21.6.3: '' = «По умолчанию (okeybook-default)», отправляем null.
+  // uuid = конкретный template_set из списка.
+  const [templateSetId, setTemplateSetId] = useState<string>('')
   const [busy, setBusy] = useState(false)
 
   const rangeError =
@@ -9190,6 +9223,7 @@ function PresetCreateForm({
         print_type: printType,
         min_pages: minPages,
         max_pages: maxPages,
+        template_set_id: templateSetId || null,
       }),
     })
     setBusy(false)
@@ -9248,6 +9282,30 @@ function PresetCreateForm({
               />
               <span className="text-sm">Soft (мягкие листы)</span>
             </label>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Дизайн
+          </label>
+          <select
+            value={templateSetId}
+            onChange={(e) => setTemplateSetId(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+            disabled={busy || templateSets.length === 0}
+          >
+            <option value="">По умолчанию (okeybook-default)</option>
+            {templateSets.map((ts) => (
+              <option key={ts.id} value={ts.id}>
+                {ts.name}
+                {ts.is_global ? ' (глобальный)' : ''}
+              </option>
+            ))}
+          </select>
+          <div className="text-xs text-gray-500 mt-1">
+            Набор шаблонов (мастеров), по которым будет вёрстаться альбом.
+            Оставьте «По умолчанию», если не уверены.
           </div>
         </div>
 
@@ -9315,7 +9373,13 @@ function PresetCreateForm({
   )
 }
 
-function PresetCard({ preset }: { preset: RulePresetRow }) {
+function PresetCard({
+  preset,
+  templateSets,
+}: {
+  preset: RulePresetRow
+  templateSets: TemplateSetRow[]
+}) {
   const isGlobal = preset.tenant_id === null
   const sheetLabel = preset.sheet_type === 'soft' ? 'мягкие листы' : preset.sheet_type === 'hard' ? 'плотные листы' : '—'
   const densityLabel = preset.density ?? '—'
@@ -9330,6 +9394,17 @@ function PresetCard({ preset }: { preset: RulePresetRow }) {
       return min === max ? `${min} стр.` : `${min}–${max} стр.`
     }
     return '— стр.'
+  })()
+
+  // РЭ.21.6.3: показываем название дизайна (template_set). Если у пресета
+  // template_set_id = NULL → «по умолчанию» (loadBundle подставит
+  // okeybook-default). Если uuid не найден в списке (template_set удалён
+  // или нет доступа) → показываем сокращённый uuid как fallback.
+  const templateSetLabel = (() => {
+    if (!preset.template_set_id) return 'по умолчанию'
+    const ts = templateSets.find((t) => t.id === preset.template_set_id)
+    if (!ts) return preset.template_set_id.slice(0, 8) + '…'
+    return ts.name
   })()
 
   return (
@@ -9356,6 +9431,9 @@ function PresetCard({ preset }: { preset: RulePresetRow }) {
                 <span className="font-mono text-xs">{preset.print_type}</span>
               </>
             )}
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            Дизайн: <span className="text-gray-700">{templateSetLabel}</span>
           </div>
         </div>
       </div>
