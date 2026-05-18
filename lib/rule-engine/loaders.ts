@@ -159,6 +159,16 @@ function presetRowToPreset(row: Record<string, unknown>): Preset {
       row.sheet_type === null || row.sheet_type === undefined
         ? null
         : (row.sheet_type as Preset['sheet_type']),
+    // РЭ.21.8: section_structure (jsonb). Серверный валидатор гарантирует
+    // корректную форму при write через API. Здесь — минимальная защита от
+    // случаев, когда поле NULL (старые записи) или некорректно положено
+    // через прямой SQL: принимаем только массив, иначе → null. Подробная
+    // структура (тип секций, слоты) валидируется build engine'ом
+    // (buildFromSectionStructure, РЭ.21.8.3+) — точка падения там будет
+    // ближе к смыслу.
+    section_structure: Array.isArray(row.section_structure)
+      ? (row.section_structure as Preset['section_structure'])
+      : null,
   };
 }
 

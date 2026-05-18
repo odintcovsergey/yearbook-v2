@@ -281,6 +281,86 @@ export interface Section {
   display_name?: string;
 }
 
+// -----------------------------------------------------------------------------
+// РЭ.21.8: section_structure — высокоуровневая структура альбома, редактируемая
+// партнёром в UI редактора пресетов (РЭ.21.3 → РЭ.21.7).
+//
+// Логически независима от `Preset.sections` (старая модель для rule engine):
+//   - `Preset.sections`         — список семейств правил для buildFromRules
+//                                  (head-teacher / student-section / ...);
+//                                  читается через JSON-правила в БД.
+//   - `Preset.section_structure` — массив секций альбома в порядке появления,
+//                                  с описанием слотов внутри общего раздела.
+//                                  Читается новым build engine
+//                                  (`buildFromSectionStructure`, РЭ.21.8.3+).
+//
+// Семантика и whitelist строго совпадают с серверным валидатором
+// `validateSectionStructure` в app/api/tenant/route.ts и с UI-справочниками
+// `SECTION_TYPE_ORDER` / `SLOT_TYPE_ORDER` в app/app/page.tsx.
+//
+// Источники:
+//   - docs/album-structure-inventory.md §1 (структура альбома) и §5 (общий
+//     раздел и слоты H/Q/FULL/flex_A/B/C).
+// -----------------------------------------------------------------------------
+
+/**
+ * Тип слота внутри секции `common`.
+ *
+ * Семантика «цепочки попыток» (см. album-structure-inventory.md §5):
+ *  - `H`      — страница «2 фото 1/2 класса» через J-Half.
+ *  - `Q`      — страница «2 фото 1/4 класса» через J-Quarter.
+ *  - `FULL`   — страница «1 общее фото» через J-ClassPhoto / J-ClassPhoto-Right.
+ *  - `flex_A` — крупный приоритет: J-Collage (6×1/6) → J-Half (2×1/2) → J-Full.
+ *  - `flex_B` — всё попробовать: J-Quarter → J-Collage → J-Half → J-Full.
+ *  - `flex_C` — правая нечётная (мост от портретов): J-Half → J-Collage
+ *               → J-ClassPhoto-Right.
+ *
+ * Каждый слот = одна страница (РЭ.21.8). Цепочки реализуются как чистые
+ * функции в `lib/rule-engine/slot-chains/` в РЭ.21.8.2.
+ */
+export type SlotType = 'H' | 'Q' | 'FULL' | 'flex_A' | 'flex_B' | 'flex_C';
+
+/**
+ * Тип верхнеуровневой секции альбома.
+ *
+ * Порядок появления в альбоме фиксированный (см. album-structure-inventory.md §1),
+ * но партнёр может опустить любую секцию.
+ *
+ *  - `soft_intro` — первая правая страница, только для `sheet_type='soft'`.
+ *  - `teachers`   — учительский разворот: классрук + предметники / общее фото.
+ *  - `students`   — портреты учеников; длина зависит от density и кол-ва учеников.
+ *  - `common`     — общий раздел: массив `slots` (порядок страниц).
+ *  - `vignette`   — виньетка из детских садиковых фото (опционально, MVP — заглушка).
+ *  - `soft_final` — последняя левая страница, только для `sheet_type='soft'`.
+ */
+export type SectionType =
+  | 'soft_intro'
+  | 'teachers'
+  | 'students'
+  | 'common'
+  | 'vignette'
+  | 'soft_final';
+
+/**
+ * Один элемент section_structure. Discriminated union по `type`:
+ *  - для секции `common` обязателен массив `slots`;
+ *  - для всех остальных — только `type`.
+ */
+export type SectionStructureEntry =
+  | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
+  | { type: 'common'; slots: SlotType[] };
+
+/**
+ * Полная структура альбома = массив секций в порядке появления.
+ *
+ * Хранится в БД как `presets.section_structure jsonb`. Валидируется при
+ * INSERT/UPDATE через API (validateSectionStructure). Build engine
+ * (buildFromSectionStructure, РЭ.21.8.3+) использует это поле как источник
+ * правды о структуре, заменяя устаревшую логику generic-правил для
+ * head-teacher / student-section / common-section из rule engine v1.3.
+ */
+export type SectionStructure = SectionStructureEntry[];
+
 export interface Preset {
   id: string;
   display_name: string;
@@ -343,6 +423,28 @@ export interface Preset {
    * См. также {@link SheetType}.
    */
   sheet_type?: SheetType | null;
+
+  /**
+   * РЭ.21.8: высокоуровневая структура альбома, редактируемая партнёром
+   * через UI редактора пресетов (РЭ.21.3 → РЭ.21.7).
+   *
+   * Массив секций (`soft_intro` / `teachers` / `students` / `common` / `vignette`
+   * / `soft_final`) в порядке появления. Для секций `common` — массив слотов
+   * (`H` / `Q` / `FULL` / `flex_A` / `flex_B` / `flex_C`).
+   *
+   * Источник правды для нового build engine `buildFromSectionStructure`
+   * (появится в РЭ.21.8.3). buildFromRules это поле ИГНОРИРУЕТ — оно
+   * существует параллельно с `Preset.sections` и переключается per-album
+   * (см. albums.engine_mode, РЭ.21.8.7).
+   *
+   * `null` — не задано (старые пресеты до миграции РЭ.21.2). В этом случае
+   * buildFromSectionStructure должен либо упасть в фолбэк, либо использовать
+   * default-структуру; точное поведение определится в РЭ.21.8.3.
+   *
+   * Whitelist `type` и `slots` синхронизирован с серверным валидатором
+   * `validateSectionStructure` в app/api/tenant/route.ts.
+   */
+  section_structure?: SectionStructure | null;
 }
 
 // =============================================================================
