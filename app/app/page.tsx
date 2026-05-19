@@ -67,9 +67,9 @@ type Album = {
   config_preset_name?: string | null
   vignettes_enabled?: boolean | null  // А.3.4: null=дефолт пресета, true/false=override
   common_section_max_spreads?: number | null  // А.4.3: null=без лимита, 0=отключён, >0=лимит
-  rules_preset_id?: string | null  // РЭ.16: если задан, build_album использует rule engine
+  rules_preset_id?: string | null  // РЭ.21.8.чистка-1: deprecated, оставлено для совместимости со старыми ответами API
   section_structure_preset_id?: string | null  // РЭ.21.8.7: если задан, build_album использует
-                                                // buildFromSectionStructure (приоритет над rules_preset_id)
+                                                // buildFromSectionStructure
   stats: { total: number; submitted: number; in_progress: number }
   teacher_token: string | null
   teachers: { total: number; done: number } | null
@@ -1030,92 +1030,6 @@ function VignettesControl({
   )
 }
 
-// РЭ.16.3 — Селектор rules_preset_id (rule engine).
-// Если задан → build_album пойдёт через buildFromRules (новый движок).
-// NULL = legacy buildAlbum (как было). Альбом можно переключать туда-сюда
-// и пересобирать — операция обратимая.
-function RulesPresetControl({
-  album,
-  apiVA,
-  onNotify,
-  onError,
-}: {
-  album: Album
-  apiVA: (url: string, opts?: RequestInit) => Promise<Response>
-  onNotify: (msg: string) => void
-  onError: (msg: string) => void
-}) {
-  const [value, setValue] = useState<string | null>(album.rules_preset_id ?? null)
-  const [saving, setSaving] = useState(false)
-
-  const handleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const raw = e.target.value
-    const newValue: string | null = raw === '__legacy__' ? null : raw
-    const prev = value
-    setValue(newValue)
-    setSaving(true)
-    try {
-      const r = await apiVA('/api/tenant', {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'update_album',
-          album_id: album.id,
-          rules_preset_id: newValue,
-        }),
-      })
-      if (r.ok) {
-        onNotify(
-          newValue
-            ? `Движок переключён на Rule Engine (${newValue}). Пересоберите альбом чтобы применить.`
-            : 'Движок переключён на legacy. Пересоберите альбом чтобы применить.',
-        )
-      } else {
-        setValue(prev)
-        const d = await r.json().catch(() => ({}))
-        onError(d.error ?? 'Не удалось сохранить движок')
-      }
-    } catch (err) {
-      setValue(prev)
-      onError(err instanceof Error ? err.message : 'Ошибка сети')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const RULES_PRESETS: { id: string; label: string }[] = [
-    { id: 'standard', label: 'standard' },
-    { id: 'universal', label: 'universal' },
-    { id: 'maximum', label: 'maximum' },
-    { id: 'individual', label: 'individual' },
-    { id: 'medium', label: 'medium' },
-    { id: 'light', label: 'light' },
-    { id: 'mini-soft', label: 'mini-soft' },
-  ]
-
-  return (
-    <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-3 flex-wrap">
-      <div className="text-xs text-purple-700 uppercase">🧪 Движок сборки</div>
-      <select
-        value={value ?? '__legacy__'}
-        onChange={handleChange}
-        disabled={saving}
-        className="text-sm px-2 py-1 border border-gray-300 rounded bg-white disabled:opacity-50"
-      >
-        <option value="__legacy__">Legacy (старый buildAlbum)</option>
-        {RULES_PRESETS.map((p) => (
-          <option key={p.id} value={p.id}>
-            Rule Engine: {p.label}
-          </option>
-        ))}
-      </select>
-      <div className="text-xs text-gray-400 flex-1 min-w-[200px]">
-        {value
-          ? `Альбом будет собираться через новый движок с пресетом «${value}». При сбое — авто-fallback на legacy.`
-          : 'Используется старый алгоритм buildAlbum по config_preset_id (как раньше).'}
-      </div>
-    </div>
-  )
-}
 
 // РЭ.21.8.7c — Селектор section_structure_preset_id (новый build engine).
 // Если задан → build_album пойдёт через buildFromSectionStructure
@@ -1158,7 +1072,7 @@ function SectionStructurePresetControl({
         onNotify(
           newValue
             ? `Section Structure включён (${newValue}). Пересоберите альбом чтобы применить.`
-            : 'Section Structure выключен — откат на Rule Engine / Legacy. Пересоберите альбом чтобы применить.',
+            : 'Section Structure выключен — откат на Legacy. Пересоберите альбом чтобы применить.',
         )
       } else {
         setValue(prev)
@@ -1192,7 +1106,7 @@ function SectionStructurePresetControl({
         disabled={saving}
         className="text-sm px-2 py-1 border border-gray-300 rounded bg-white disabled:opacity-50"
       >
-        <option value="__off__">Выключен (откат на Rule Engine / Legacy)</option>
+        <option value="__off__">Выключен (откат на Legacy)</option>
         {SS_PRESETS.map((p) => (
           <option key={p.id} value={p.id}>
             Section Structure: {p.label}
@@ -1201,8 +1115,8 @@ function SectionStructurePresetControl({
       </select>
       <div className="text-xs text-gray-400 flex-1 min-w-[200px]">
         {value
-          ? `Приоритетнее Rule Engine. Альбом собирается через buildFromSectionStructure с пресетом «${value}». При сбое — fallthrough на Rule Engine / Legacy.`
-          : 'Новый движок выключен. Сборка идёт по Rule Engine (если задан выше) или Legacy.'}
+          ? `Альбом собирается через buildFromSectionStructure с пресетом «${value}». При сбое — fallthrough на Legacy.`
+          : 'Новый движок выключен. Сборка идёт по Legacy.'}
       </div>
     </div>
   )
@@ -1311,261 +1225,6 @@ function CommonSectionLimitControl({
   )
 }
 
-// ============================================================
-// 🧪 Rule Engine Preview Block (РЭ.14.2)
-// ============================================================
-// Read-only превью rule engine на реальном альбоме. Никаких записей
-// в album_layouts — это инструмент оценки «как rule engine собрал
-// бы этот альбом если бы его подключили».
-//
-// Доступ: superadmin + owner/manager/viewer тенанта (через стандартный
-// requireAuth в endpoint'е).
-// ============================================================
-
-const RULES_PRESET_IDS_PREVIEW = [
-  'standard',
-  'universal',
-  'maximum',
-  'individual',
-  'medium',
-  'light',
-  'mini-soft',
-] as const
-
-type RulesPresetIdPreview = typeof RULES_PRESET_IDS_PREVIEW[number]
-
-type RulesPreviewResponse = {
-  engine: 'rules'
-  status: 'ok' | 'partial' | 'failed'
-  spreads: Array<{
-    spread_index: number
-    left?: { master_id: string; bindings: Record<string, unknown> }
-    right?: { master_id: string; bindings: Record<string, unknown> }
-    mixed_pages?: boolean
-  }>
-  decision_trace: Array<{
-    spread_index: number
-    section_index: number
-    family_id: string
-    rule_id: string
-    mixed_pages?: { left_rule_id: string; right_rule_id: string }
-    inputs: Record<string, unknown>
-    balanced?: boolean
-  }>
-  warnings: string[]
-  rules_version: string
-  smart_fill_warnings: Array<{ code: string; detail: string }>
-  summary: {
-    album_id: string
-    preset_id: string
-    preset_name: string
-    template_set_slug: string
-    total_spreads: number
-    total_warnings: number
-    total_decisions: number
-    students_count: number
-    subjects_count: number
-    common_photos_counts: Record<string, number>
-    head_teacher_present: boolean
-  }
-}
-
-function RulesEnginePreviewBlock({
-  albumId,
-  viewAsTenantId,
-}: {
-  albumId: string
-  viewAsTenantId: string | null | undefined
-}) {
-  const [open, setOpen] = useState(false)
-  const [presetId, setPresetId] = useState<RulesPresetIdPreview>('standard')
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<RulesPreviewResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const run = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    setResult(null)
-    try {
-      const url = viewAsTenantId
-        ? `/api/layout?action=preview_rules_engine&view_as=${viewAsTenantId}`
-        : '/api/layout?action=preview_rules_engine'
-      const r = await fetch(url, {
-        method: 'POST',
-        credentials: 'include',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ album_id: albumId, preset_id: presetId }),
-      })
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({ error: 'unknown error' }))
-        setError(err.error ?? `HTTP ${r.status}`)
-        return
-      }
-      setResult((await r.json()) as RulesPreviewResponse)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'network error')
-    } finally {
-      setLoading(false)
-    }
-  }, [albumId, presetId, viewAsTenantId])
-
-  return (
-    <div className="mt-3 pt-3 border-t border-purple-200">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="text-sm font-medium text-purple-700 hover:text-purple-900"
-      >
-        {open ? '▲ Скрыть' : '🧪 Превью через Rule Engine'}
-      </button>
-      <span className="ml-2 text-xs text-gray-400">
-        (read-only: показывает как новый движок собрал бы этот альбом)
-      </span>
-
-      {open && (
-        <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-          <div className="flex items-center gap-3 flex-wrap text-sm">
-            <label className="flex items-center gap-2">
-              Пресет:
-              <select
-                value={presetId}
-                onChange={(e) => setPresetId(e.target.value as RulesPresetIdPreview)}
-                className="px-2 py-1 border rounded"
-              >
-                {RULES_PRESET_IDS_PREVIEW.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              onClick={run}
-              disabled={loading}
-              className="px-3 py-1.5 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
-            >
-              {loading ? 'Прогон…' : 'Прогнать'}
-            </button>
-          </div>
-
-          {error && (
-            <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-              Ошибка: {error}
-            </div>
-          )}
-
-          {result && (
-            <div className="mt-3 space-y-3">
-              {/* Status + сводка */}
-              <div className="p-2 bg-white border border-purple-200 rounded text-xs">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold">Сводка</span>
-                  <span
-                    className={`px-2 py-0.5 rounded font-mono ${
-                      result.status === 'ok'
-                        ? 'bg-green-100 text-green-800'
-                        : result.status === 'partial'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-red-100 text-red-800'
-                    }`}
-                  >
-                    {result.status}
-                  </span>
-                </div>
-                <div>{result.summary.total_spreads} разворотов · {result.summary.total_decisions} решений · {result.summary.total_warnings} warnings</div>
-                <div className="text-gray-500 mt-1">
-                  preset: {result.summary.preset_id}{' '}
-                  <span className="text-gray-400">({result.summary.preset_name})</span>
-                </div>
-                <div className="text-gray-500">
-                  students={result.summary.students_count} · subjects={result.summary.subjects_count} · head_teacher={result.summary.head_teacher_present ? 'есть' : 'нет'}
-                </div>
-                <div className="text-gray-500">
-                  фото: full={result.summary.common_photos_counts.full_class} · half={result.summary.common_photos_counts.half_class} · spread={result.summary.common_photos_counts.spread} · quarter={result.summary.common_photos_counts.quarter} · sixth={result.summary.common_photos_counts.sixth}
-                </div>
-                <div className="text-gray-400 mt-1 font-mono">rules_version: {result.rules_version}</div>
-              </div>
-
-              {/* Smart-fill warnings */}
-              {result.smart_fill_warnings.length > 0 && (
-                <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs">
-                  <div className="font-semibold mb-1">Smart-fill warnings ({result.smart_fill_warnings.length}):</div>
-                  {result.smart_fill_warnings.map((w, i) => (
-                    <div key={i} className="font-mono">
-                      <span className="text-amber-700">{w.code}</span> — {w.detail}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Rule engine warnings */}
-              {result.warnings.length > 0 && (
-                <div className="p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
-                  <div className="font-semibold mb-1">Rule engine warnings ({result.warnings.length}):</div>
-                  {result.warnings.map((w, i) => (
-                    <div key={i} className="font-mono text-yellow-800">{w}</div>
-                  ))}
-                </div>
-              )}
-
-              {/* Decision trace */}
-              <div className="p-2 bg-white border border-purple-200 rounded text-xs">
-                <div className="font-semibold mb-1">Decision trace ({result.decision_trace.length}):</div>
-                {result.decision_trace.length === 0 && (
-                  <div className="text-gray-400">Пусто (ни одно правило не сработало)</div>
-                )}
-                <div className="max-h-60 overflow-auto">
-                  {result.decision_trace.map((d, i) => (
-                    <div key={i} className="border-b border-gray-100 py-1 last:border-b-0">
-                      <span className="font-mono text-gray-500">[#{d.spread_index}.{d.section_index}]</span>{' '}
-                      <span className="font-mono text-purple-700">{d.family_id}</span>{' → '}
-                      <span className="font-mono font-bold">{d.rule_id}</span>
-                      {d.mixed_pages && (
-                        <span className="ml-2 px-1 bg-orange-100 text-orange-800 rounded">mixed</span>
-                      )}
-                      {d.balanced && (
-                        <span className="ml-2 px-1 bg-blue-100 text-blue-800 rounded">balanced</span>
-                      )}
-                      <span className="ml-2 text-gray-500">
-                        rem={String(d.inputs.students_remaining ?? '?')} · idx={String(d.inputs.current_student_index ?? '?')}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Spreads */}
-              <div className="p-2 bg-white border border-purple-200 rounded text-xs">
-                <div className="font-semibold mb-1">Spreads ({result.spreads.length}):</div>
-                {result.spreads.length === 0 && (
-                  <div className="text-gray-400">Пусто</div>
-                )}
-                <div className="max-h-60 overflow-auto">
-                  {result.spreads.map((s) => {
-                    const leftName = (s.left?.bindings as Record<string, unknown> | undefined)?.__master_name__
-                    const rightName = (s.right?.bindings as Record<string, unknown> | undefined)?.__master_name__
-                    return (
-                      <div key={s.spread_index} className="border-b border-gray-100 py-1 last:border-b-0 font-mono">
-                        <span className="text-gray-500">[{s.spread_index}]</span>{' '}
-                        <span className="font-bold">{String(leftName ?? '—')}</span>
-                        <span className="text-gray-400 mx-2">|</span>
-                        <span className="font-bold">{String(rightName ?? '—')}</span>
-                        {s.mixed_pages && (
-                          <span className="ml-2 px-1 bg-orange-100 text-orange-800 rounded">mixed</span>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ============================================================
 // МОДАЛКА ДЕТАЛЕЙ АЛЬБОМА (с управлением учениками)
@@ -1999,23 +1658,10 @@ function AlbumDetailModal({
                       />
                     )}
 
-                    {/* РЭ.16.3 — Селектор движка сборки (legacy vs rule engine).
-                        Показываем всегда, даже без config_preset_id — rule engine
-                        работает по своему preset_id и не требует legacy config. */}
-                    {canEdit && (
-                      <RulesPresetControl
-                        album={album}
-                        apiVA={apiVA}
-                        onNotify={onNotify}
-                        onError={onError}
-                      />
-                    )}
-
                     {/* РЭ.21.8.7c — Селектор Section Structure engine.
-                        Приоритетнее Rule Engine: если задан — handleBuildAlbum
-                        идёт через buildFromSectionStructure, иначе fallthrough
-                        на Rule Engine → Legacy. Показываем рядом с Rules для
-                        удобства тестирования. */}
+                        Если задан — handleBuildAlbum идёт через
+                        buildFromSectionStructure, при сбое fallthrough
+                        на legacy buildAlbum. */}
                     {canEdit && (
                       <SectionStructurePresetControl
                         album={album}
@@ -2070,8 +1716,6 @@ function AlbumDetailModal({
                             warnings={layout.warnings.filter(w => w.level === 'info')}
                           />
                         </div>
-
-                        <RulesEnginePreviewBlock albumId={album.id} viewAsTenantId={viewAsTenantId} />
                       </div>
                     )}
                   </div>

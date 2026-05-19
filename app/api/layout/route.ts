@@ -14,7 +14,7 @@ import type {
   Preset,
   TemplateSet,
 } from '@/lib/album-builder'
-import { buildFromRules, loadBundle } from '@/lib/album-builder'
+import { loadBundle } from '@/lib/album-builder'
 import { buildFromSectionStructure } from '@/lib/rule-engine/build-from-section-structure'
 import type {
   RulesAlbumInput,
@@ -281,24 +281,11 @@ export async function POST(req: NextRequest) {
     return handleBuildAlbumTest(req)
   }
 
-  if (action === 'build_album_test_rules') {
-    if (auth.role !== 'superadmin') {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
-    }
-    return handleBuildAlbumTestRules(req)
-  }
-
   if (action === 'build_album_test_section_structure') {
     if (auth.role !== 'superadmin') {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 })
     }
     return handleBuildAlbumTestSectionStructure(req)
-  }
-
-  if (action === 'preview_rules_engine') {
-    // Доступ как у build_album (owner/manager/viewer/superadmin) + view_as
-    // для main-сотрудников. Никаких записей в БД — это read-only превью.
-    return handlePreviewRulesEngine(req, auth)
   }
 
   if (action === 'import_idml') {
@@ -567,170 +554,6 @@ async function handleBuildAlbumTest(req: NextRequest): Promise<NextResponse> {
   })
 }
 
-// ============================================================
-// POST /api/layout?action=build_album_test_rules
-// ============================================================
-// Только superadmin. Параллельный endpoint к build_album_test, но
-// использует НОВЫЙ rule engine (buildFromRules из РЭ.9) вместо legacy
-// buildAlbum. Без фолбэка — если rule engine упал, возвращаем ошибку
-// (для тестирования сам факт сбоя ценнее тихого фолбэка).
-//
-// Body:
-//   preset_id          — id из таблицы `presets` (например 'standard',
-//                        'individual', 'mini-soft', 'maximum')
-//   students_count, subjects_count, with_head_teacher,
-//   common_photos, friend_photos_per_student — те же что в test (legacy).
-//
-// Возвращает:
-//   spreads        — AlbumLayout.spreads (left/right + bindings + mixed_pages)
-//   decision_trace — какие правила применились + inputs snapshot
-//   warnings       — массив warnings (включая partial-сигналы)
-//   status         — 'ok' | 'partial' | 'failed'
-//   rules_version  — детерминированный хэш конфигурации правил
-//   summary        — total_spreads / total_warnings / preset_id / counts
-// ============================================================
-
-async function handleBuildAlbumTestRules(req: NextRequest): Promise<NextResponse> {
-  let body: unknown
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
-  }
-
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json({ error: 'body must be object' }, { status: 400 })
-  }
-  const b = body as Record<string, unknown>
-
-  const presetId = b.preset_id
-  if (typeof presetId !== 'string' || presetId.length === 0) {
-    return NextResponse.json(
-      { error: 'preset_id is required (e.g. "standard", "individual", "mini-soft")' },
-      { status: 400 },
-    )
-  }
-
-  const studentsCount = b.students_count
-  if (typeof studentsCount !== 'number' || studentsCount < 0 || studentsCount > 100) {
-    return NextResponse.json({ error: 'students_count must be number 0-100' }, { status: 400 })
-  }
-
-  const subjectsCount = b.subjects_count
-  if (typeof subjectsCount !== 'number' || subjectsCount < 0 || subjectsCount > 30) {
-    return NextResponse.json({ error: 'subjects_count must be number 0-30' }, { status: 400 })
-  }
-
-  const withHeadTeacher = b.with_head_teacher === true
-  const commonPhotosInput = (b.common_photos ?? {}) as Record<string, unknown>
-  const friendPhotosPerStudent = (b.friend_photos_per_student ?? []) as unknown[]
-
-  // Синтетический RulesAlbumInput (отличается от legacy AlbumInput структурой —
-  // students/subjects/head_teacher на верхнем уровне, не вложены в template_set).
-  const students: RulesStudentInput[] = []
-  for (let i = 0; i < studentsCount; i++) {
-    const friendCount =
-      typeof friendPhotosPerStudent[i] === 'number'
-        ? Math.min(4, Math.max(0, friendPhotosPerStudent[i] as number))
-        : 0
-    students.push({
-      full_name: `Ученик ${i + 1}`,
-      quote: `Цитата ${i + 1}`,
-      portrait: `https://fake/student-${i + 1}.jpg`,
-      friend_photos: Array.from(
-        { length: friendCount },
-        (_, j) => `https://fake/student-${i + 1}-friend-${j + 1}.jpg`,
-      ),
-    })
-  }
-
-  const subjects: RulesSubjectInput[] = Array.from({ length: subjectsCount }, (_, i) => ({
-    name: `Предметник ${i + 1}`,
-    role: 'учитель',
-    photo: `https://fake/subject-${i + 1}.jpg`,
-  }))
-
-  // Rule engine ожидает head_teacher всегда (RulesHeadTeacherInput, не nullable),
-  // но если with_head_teacher=false — поля пустые, правила head-teacher не
-  // сматчат и секция просто пропустится.
-  const headTeacher: RulesHeadTeacherInput = withHeadTeacher
-    ? {
-        name: 'Иванова Мария Петровна',
-        role: 'классный руководитель',
-        photo: 'https://fake/head.jpg',
-        text: 'Дорогие выпускники, желаю вам успехов.',
-      }
-    : { name: '', role: '', photo: null, text: '' }
-
-  const makeUrls = (n: number, prefix: string): string[] =>
-    Array.from({ length: n }, (_, i) => `https://fake/${prefix}-${i + 1}.jpg`)
-
-  const input: RulesAlbumInput = {
-    students,
-    subjects,
-    head_teacher: headTeacher,
-    common_photos: {
-      full_class: makeUrls(Number(commonPhotosInput.full_class ?? 0), 'class'),
-      half_class: makeUrls(Number(commonPhotosInput.half_class ?? commonPhotosInput.half ?? 0), 'half'),
-      spread: makeUrls(Number(commonPhotosInput.spread ?? 0), 'spread'),
-      quarter: makeUrls(Number(commonPhotosInput.quarter ?? 0), 'quarter'),
-      sixth: makeUrls(Number(commonPhotosInput.sixth ?? 0), 'sixth'),
-    },
-  }
-
-  // Загружаем bundle (preset + rules + families + template_set + masters).
-  // tenant_id=null → только глобальные правила/пресеты.
-  let bundle
-  try {
-    bundle = await loadBundle(supabaseAdmin, presetId, null)
-  } catch (e) {
-    return NextResponse.json(
-      { error: `failed to load bundle for preset '${presetId}': ${(e as Error).message}` },
-      { status: 400 },
-    )
-  }
-
-  // Сборка через rule engine. buildFromRules не бросает — fatal в warnings.
-  const layout = buildFromRules(input, bundle)
-
-  return NextResponse.json({
-    engine: 'rules',
-    status: layout.status,
-    spreads: layout.spreads,
-    decision_trace: layout.decision_trace,
-    warnings: layout.warnings,
-    rules_version: layout.rules_version,
-    summary: {
-      total_spreads: layout.spreads.length,
-      total_warnings: layout.warnings.length,
-      total_decisions: layout.decision_trace.length,
-      preset_id: bundle.preset.id,
-      preset_name: bundle.preset.display_name,
-      students_count: studentsCount,
-      subjects_count: subjectsCount,
-      template_set_slug: bundle.templateSet.slug,
-    },
-  })
-}
-
-// ============================================================
-// POST /api/layout?action=build_album_test_section_structure
-// ============================================================
-// Только superadmin. Третий sandbox endpoint рядом с build_album_test
-// (legacy) и build_album_test_rules. Использует НОВЫЙ build engine
-// buildFromSectionStructure (РЭ.21.8.3-5), читающий preset.section_structure.
-//
-// Без фолбэка — если что-то пошло не так, warnings и status='partial'/'failed'
-// возвращаются в ответе. Цель — увидеть как новый engine ведёт себя на
-// боевых пресетах и где имена мастеров/labels отличаются от ожиданий
-// (placeholder-driven mapping в sections/*.ts).
-//
-// Body: тот же что у build_album_test_rules — preset_id, students_count,
-// subjects_count, with_head_teacher, common_photos, friend_photos_per_student.
-//
-// Возвращает то же что rules-endpoint, плюс engine='section_structure'.
-// ============================================================
-
 async function handleBuildAlbumTestSectionStructure(
   req: NextRequest,
 ): Promise<NextResponse> {
@@ -885,175 +708,6 @@ async function handleBuildAlbumTestSectionStructure(
   })
 }
 
-// ============================================================
-// POST /api/layout?action=preview_rules_engine
-// ============================================================
-// Read-only превью rule engine на РЕАЛЬНЫХ данных альбома. В отличие
-// от build_album_test_rules который работает на синтетических цифрах,
-// этот endpoint:
-//   - читает реальный альбом (учеников, фото, subjects, head_teacher)
-//     через buildAlbumInput (smart-fill, как boevoy build_album)
-//   - адаптирует legacy AlbumInput → RulesAlbumInput (см. legacy-adapter)
-//   - прогоняет через buildFromRules с переданным preset_id из таблицы
-//     `presets` (rule engine), tenant-aware для партнёров
-//   - возвращает spreads/decision_trace/warnings/status, НИЧЕГО не пишет
-//     в album_layouts
-//
-// Это инструмент для оценки «как rule engine собрал бы этот альбом
-// если бы его подключили» — без риска для текущего workflow.
-//
-// Доступ: owner/manager/viewer тенанта-владельца альбома + view_as для
-// main-сотрудников + superadmin. Те же правила что у build_album.
-//
-// Body:
-//   album_id  — uuid реального альбома
-//   preset_id — id из таблицы `presets` ('standard', 'individual', и т.п.)
-//
-// Response:
-//   {
-//     engine: 'rules',
-//     status: 'ok'|'partial'|'failed',
-//     spreads, decision_trace, warnings, rules_version,
-//     smart_fill_warnings,
-//     summary: { ... + album_id + students_count_actual + ... }
-//   }
-// ============================================================
-
-async function handlePreviewRulesEngine(
-  req: NextRequest,
-  auth: AuthContext,
-): Promise<NextResponse> {
-  let body: unknown
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
-  }
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json({ error: 'body must be object' }, { status: 400 })
-  }
-  const b = body as Record<string, unknown>
-
-  const albumId = b.album_id
-  if (typeof albumId !== 'string' || !UUID_REGEX.test(albumId)) {
-    return NextResponse.json({ error: 'album_id is required (uuid)' }, { status: 400 })
-  }
-  const presetId = b.preset_id
-  if (typeof presetId !== 'string' || presetId.length === 0) {
-    return NextResponse.json(
-      { error: 'preset_id is required (e.g. "standard", "individual", "mini-soft")' },
-      { status: 400 },
-    )
-  }
-
-  // view_as паттерн (как у handleBuildAlbum).
-  const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
-  const { data: currentTenantData } = viewAsTenantId
-    ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
-    : { data: null }
-  const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
-  const tid = (canViewAs && viewAsTenantId) ? viewAsTenantId : auth.tenantId
-
-  if (!(await assertAlbumAccessLocal(auth, albumId, tid))) {
-    return NextResponse.json({ error: 'access denied' }, { status: 403 })
-  }
-
-  // Smart-fill: реальные данные альбома → legacy AlbumInput.
-  let smartFillResult: { input: AlbumInput; warnings: SmartFillWarning[] }
-  try {
-    smartFillResult = await buildAlbumInput(supabaseAdmin, albumId)
-  } catch (e) {
-    return NextResponse.json(
-      { error: `smart-fill failed: ${(e as Error).message}` },
-      { status: 500 },
-    )
-  }
-
-  // Адаптация структуры под rule engine.
-  const rulesInput = adaptLegacyAlbumInput(smartFillResult.input)
-
-  // Загружаем bundle. tenant_id=tid — чтобы пресеты партнёра тоже подцеплялись
-  // (правила глобальные + тенантские, см. loaders.ts).
-  let bundle
-  try {
-    bundle = await loadBundle(supabaseAdmin, presetId, tid)
-  } catch (e) {
-    return NextResponse.json(
-      { error: `failed to load bundle for preset '${presetId}': ${(e as Error).message}` },
-      { status: 400 },
-    )
-  }
-
-  // Сборка через rule engine. Не бросает (status в результате).
-  const layout = buildFromRules(rulesInput, bundle)
-
-  // Логирование (как у build_album — для audit_log).
-  await logAction(
-    auth,
-    'layout.preview_rules_engine',
-    'album',
-    albumId,
-    {
-      preset_id: presetId,
-      status: layout.status,
-      total_spreads: layout.spreads.length,
-      total_warnings: layout.warnings.length,
-      total_decisions: layout.decision_trace.length,
-      students_count: rulesInput.students.length,
-      subjects_count: rulesInput.subjects.length,
-    },
-  )
-
-  return NextResponse.json({
-    engine: 'rules',
-    status: layout.status,
-    spreads: layout.spreads,
-    decision_trace: layout.decision_trace,
-    warnings: layout.warnings,
-    rules_version: layout.rules_version,
-    smart_fill_warnings: smartFillResult.warnings,
-    summary: {
-      album_id: albumId,
-      preset_id: bundle.preset.id,
-      preset_name: bundle.preset.display_name,
-      template_set_slug: bundle.templateSet.slug,
-      total_spreads: layout.spreads.length,
-      total_warnings: layout.warnings.length,
-      total_decisions: layout.decision_trace.length,
-      students_count: rulesInput.students.length,
-      subjects_count: rulesInput.subjects.length,
-      common_photos_counts: {
-        full_class: rulesInput.common_photos.full_class.length,
-        half_class: rulesInput.common_photos.half_class.length,
-        spread: rulesInput.common_photos.spread.length,
-        quarter: rulesInput.common_photos.quarter.length,
-        sixth: rulesInput.common_photos.sixth.length,
-      },
-      head_teacher_present:
-        !!rulesInput.head_teacher.name || !!rulesInput.head_teacher.photo,
-    },
-  })
-}
-
-//
-// Доступ: owner/manager/viewer тенанта-владельца альбома, OkeyBook staff
-// через ?view_as=<tenant_id>, superadmin без ограничений.
-// ============================================================
-
-// ============================================================
-// РЭ.16.2 — Сборка альбома через rule engine
-// ============================================================
-// Альтернативный путь к handleBuildAlbum через buildFromRules. Вызывается
-// когда album.rules_preset_id IS NOT NULL. Smart-fill общий, отличается
-// только сборка и адаптация результата к BuildResult формату.
-//
-// Возвращает { ok: true, response } при успехе или { ok: false } при
-// сбое (тогда caller fallback'ает на legacy buildAlbum).
-//
-// album_layouts.spreads пишется в legacy формате SpreadInstance через
-// адаптер. Редактор фазы Л/М, экспорт, превью продолжают работать без
-// изменений. Это и есть смысл миграционного режима.
-// ============================================================
 
 type RulesBuildOk = {
   ok: true
@@ -1065,145 +719,21 @@ type RulesBuildSkip = {
   reason: string
 }
 
-async function tryBuildViaRules(
-  supabase: typeof supabaseAdmin,
-  albumId: string,
-  rulesPresetId: string,
-  tenantId: string,
-  auth: AuthContext,
-): Promise<RulesBuildOk | RulesBuildSkip> {
-  // 1. Smart-fill реальных данных альбома (та же функция что у legacy).
-  let smartFillResult: { input: AlbumInput; warnings: SmartFillWarning[] }
-  try {
-    smartFillResult = await buildAlbumInput(supabase, albumId)
-  } catch (e) {
-    return { ok: false, reason: `smart-fill failed: ${(e as Error).message}` }
-  }
-
-  // 2. Адаптируем legacy AlbumInput → RulesAlbumInput.
-  const rulesInput = adaptLegacyAlbumInput(smartFillResult.input)
-
-  // 3. Загружаем bundle для rule engine (правила + семейства + пресет +
-  // template_set + masters). tenant_id=tid → подтягиваются партнёрские
-  // правила/пресеты + глобальные.
-  let bundle
-  try {
-    bundle = await loadBundle(supabase, rulesPresetId, tenantId)
-  } catch (e) {
-    return {
-      ok: false,
-      reason: `loadBundle('${rulesPresetId}') failed: ${(e as Error).message}`,
-    }
-  }
-
-  // 4. Прогон через buildFromRules. Не бросает, status в результате.
-  const layout = buildFromRules(rulesInput, bundle)
-
-  if (layout.status === 'failed') {
-    // Серьёзная проблема rule engine — fallback на legacy лучше чем
-    // отдать партнёру битый layout.
-    return {
-      ok: false,
-      reason: `rule engine status=failed: ${layout.warnings.join('; ') || 'no warnings'}`,
-    }
-  }
-
-  // 5. Адаптация AlbumLayout → BuildResult (формат legacy).
-  // adaptAlbumLayoutToBuildResult бросает только на status='failed',
-  // который уже отсеян выше. Но на всякий случай try/catch.
-  let adapted
-  try {
-    adapted = adaptAlbumLayoutToBuildResult(layout)
-  } catch (e) {
-    return {
-      ok: false,
-      reason: `layout adapter failed: ${(e as Error).message}`,
-    }
-  }
-
-  // 6. Enrichment warnings (как у legacy build_album).
-  const enrichedWarnings: EnrichedWarning[] = [
-    ...adapted.result.warnings.map((w) => enrichWarning(w, 'builder')),
-    ...smartFillResult.warnings.map((w) => enrichWarning(w, 'smart_fill')),
-  ]
-
-  const warningsByLevel = {
-    blocking: enrichedWarnings.filter((w) => w.level === 'blocking').length,
-    degraded: enrichedWarnings.filter((w) => w.level === 'degraded').length,
-    info: enrichedWarnings.filter((w) => w.level === 'info').length,
-  }
-
-  // 7. Upsert в album_layouts. config_preset_id оставляем NULL —
-  // rule engine path не использует config_presets. Колонка nullable.
-  const { data: layoutRow, error: upsertErr } = await supabase
-    .from('album_layouts')
-    .upsert(
-      {
-        album_id: albumId,
-        template_set_id: bundle.templateSet.id,
-        config_preset_id: null,
-        spreads: adapted.result.spreads,
-        warnings: enrichedWarnings,
-        has_user_edits: false,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'album_id' },
-    )
-    .select('id')
-    .single()
-
-  if (upsertErr || !layoutRow) {
-    return {
-      ok: false,
-      reason: `album_layouts upsert failed: ${upsertErr?.message ?? 'no row'}`,
-    }
-  }
-
-  // 8. Audit log.
-  await logAction(auth, 'album_layout.build', 'album', albumId, {
-    engine: 'rules',
-    template_set_id: bundle.templateSet.id,
-    rules_preset_id: rulesPresetId,
-    rules_version: layout.rules_version,
-    rules_status: layout.status,
-    total_spreads: adapted.result.spreads.length,
-    total_warnings: enrichedWarnings.length,
-    warnings_by_level: warningsByLevel,
-    mixed_pages_count: adapted.rules_meta.mixed_pages_indices.length,
-  })
-
-  return {
-    ok: true,
-    response: NextResponse.json({
-      engine: 'rules',
-      spreads: adapted.result.spreads,
-      warnings: enrichedWarnings,
-      layout_id: layoutRow.id,
-      template_set_id: bundle.templateSet.id,
-      rules_meta: adapted.rules_meta,
-      summary: {
-        total_spreads: adapted.result.spreads.length,
-        total_warnings: enrichedWarnings.length,
-        warnings_by_level: warningsByLevel,
-        preset_slug: bundle.preset.id,
-        preset_name: bundle.preset.display_name,
-      },
-    }),
-  }
-}
 
 // ============================================================
 // РЭ.21.8.7b — Сборка альбома через section structure engine
 // ============================================================
-// Третий путь handleBuildAlbum. Вызывается когда
-// album.section_structure_preset_id IS NOT NULL (приоритет над
-// rules_preset_id).
+// Альтернативный путь handleBuildAlbum. Вызывается когда
+// album.section_structure_preset_id IS NOT NULL. При сбое —
+// fallthrough на legacy buildAlbum.
 //
-// Smart-fill и адаптер AlbumLayout→BuildResult ОБЩИЕ с tryBuildViaRules.
-// Отличается только engine: buildFromSectionStructure вместо buildFromRules.
+// Smart-fill общий с legacy buildAlbum. Отличается тем что после
+// smart-fill используется adaptLegacyAlbumInput → buildFromSectionStructure
+// вместо legacy buildAlbum.
 //
-// При сбое — fallthrough на rules (если задан rules_preset_id), иначе
-// на legacy. Тот же паттерн что у rules-ветки.
+// РЭ.21.8.чистка-1 (20.05.2026): удалён движок 2 (buildFromRules),
+// раньше здесь была промежуточная ветка tryBuildViaRules. Теперь только
+// 2 движка: section_structure (если включён) → legacy фолбэк.
 // ============================================================
 
 async function tryBuildViaSectionStructure(
@@ -1373,7 +903,7 @@ async function handleBuildAlbum(
 
   const { data: album, error: albumErr } = await supabaseAdmin
     .from('albums')
-    .select('id, config_preset_id, rules_preset_id, section_structure_preset_id, template_set_id, vignettes_enabled')
+    .select('id, config_preset_id, section_structure_preset_id, template_set_id, vignettes_enabled')
     .eq('id', albumId)
     .single()
 
@@ -1381,20 +911,21 @@ async function handleBuildAlbum(
     return NextResponse.json({ error: 'album not found' }, { status: 404 })
   }
 
-  // ─── РЭ.16.2 / 21.8.7b: развилка legacy vs rule engine vs section_structure ───
+  // ─── РЭ.21.8.7b / РЭ.21.8.чистка-1: развилка section_structure vs legacy ───
   // Приоритет:
   //  1. section_structure_preset_id  → buildFromSectionStructure (РЭ.21.8.3-5)
-  //  2. rules_preset_id              → buildFromRules           (РЭ.16.2)
-  //  3. config_preset_id             → buildAlbum               (legacy)
+  //  2. config_preset_id             → buildAlbum               (legacy)
   //
-  // Новый engine приоритетнее rules — он ближе к продуктовой реальности
-  // (партнёрский UI собирает section_structure через РЭ.21.3-7).
-  // При сбое каждого пути — fallthrough на следующий. Это значит партнёр
-  // не остаётся без layout'а, даже если новый engine упадёт.
+  // При сбое нового engine — fallthrough на legacy. Партнёр не остаётся
+  // без layout'а, даже если новый engine упадёт.
   //
-  // Smart-fill общий для всех путей (читает реальные данные из БД).
-  // Адаптация AlbumLayout → BuildResult — общий adapter для rules и
-  // section_structure (layout-to-buildresult.ts).
+  // Smart-fill общий для обоих путей (читает реальные данные из БД).
+  // Адаптация AlbumLayout → BuildResult — общий adapter (layout-to-buildresult.ts).
+  //
+  // Раньше было 3 движка: legacy → buildFromRules (РЭ.16.2) →
+  // buildFromSectionStructure (РЭ.21.8). buildFromRules удалён в
+  // РЭ.21.8.чистка-1 (20.05.2026) — он не использовался в боевом
+  // workflow ни одним пресетом, был фолбэк фолбэка.
 
   if (album.section_structure_preset_id) {
     const ssResult = await tryBuildViaSectionStructure(
@@ -1405,19 +936,7 @@ async function handleBuildAlbum(
       auth,
     )
     if (ssResult.ok) return ssResult.response
-    // fallthrough на rules / legacy
-  }
-
-  if (album.rules_preset_id) {
-    const rulesResult = await tryBuildViaRules(
-      supabaseAdmin,
-      albumId,
-      album.rules_preset_id,
-      tid,
-      auth,
-    )
-    if (rulesResult.ok) return rulesResult.response
-    // fallthrough на legacy при сбое rule engine
+    // fallthrough на legacy при сбое нового engine
   }
 
   if (!album.config_preset_id) {

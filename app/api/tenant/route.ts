@@ -602,13 +602,15 @@ export async function GET(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
-  // rule_presets_list (РЭ.21.3) — пресеты rule engine (новая таблица
-  // presets). Возвращает глобальные (tenant_id IS NULL) + те что
-  // принадлежат текущему тенанту. Используется в модале «Пресеты»
-  // в /app — просмотр структуры альбома для каждого пресета.
+  // rule_presets_list (РЭ.21.3) — список пресетов из таблицы `presets`.
+  // Раньше использовалось только rule engine'ом (движок 2, удалён в
+  // РЭ.21.8.чистка-1). Теперь это общая таблица для section_structure
+  // engine (движок 3) — имя action оставлено для совместимости с UI.
+  // Используется в модале «Пресеты» в /app — просмотр структуры альбома
+  // для каждого пресета.
   //
   // ВАЖНО: это РАЗНЫЕ таблицы. `config_presets` — legacy движок,
-  // `presets` — rule engine + section_structure (РЭ.21).
+  // `presets` — section_structure (РЭ.21.8).
   // ----------------------------------------------------------
   if (action === 'rule_presets_list') {
     const { data, error } = await supabaseAdmin
@@ -2188,9 +2190,10 @@ export async function POST(req: NextRequest) {
       'template_set_id',
       'vignettes_enabled',  // А.3.4 — override виньеток (true/false/null)
       'common_section_max_spreads',  // А.4 — лимит разворотов общего раздела (number/null)
-      'rules_preset_id',  // РЭ.16 — если задан, build_album использует rule engine
       'section_structure_preset_id',  // РЭ.21.8.7 — если задан, build_album использует
-                                       // buildFromSectionStructure (приоритет над rules_preset_id)
+                                       // buildFromSectionStructure (РЭ.21.8.чистка-1:
+                                       // раньше был промежуточный rules_preset_id движка 2,
+                                       // удалён вместе с движком)
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {
