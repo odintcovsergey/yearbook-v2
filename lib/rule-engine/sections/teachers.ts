@@ -259,7 +259,13 @@ function bindLeftPage(
 
     // ─ Главный учитель ─
     if (label === 'headteacherphoto') {
-      if (headTeacher.photo) bindings[ph.label] = headTeacher.photo;
+      if (headTeacher.photo) {
+        bindings[ph.label] = headTeacher.photo;
+      } else {
+        // РЭ.21.8.13: главное фото учителя отсутствует → скрываем рамку,
+        // чтобы Canvas/PDF не рисовал пустой прямоугольник.
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
       continue;
     }
     if (label === 'headteachername') {
@@ -276,25 +282,42 @@ function bindLeftPage(
     }
 
     // ─ Предметники ─
+    // РЭ.21.8.13: если subject_N отсутствует (subjects короче чем слотов
+    // в мастере) или у subject нет нужного поля — выставляем __hidden__
+    // для конкретного label. Это скрывает слот целиком (фото + имя + роль),
+    // но скрытие происходит per-label а не группой, потому что balance-
+    // overrides модель работает per-placeholder.
     const photoMatch = label.match(/^(?:subjectphoto|subject|teacherphoto)_(\d+)$/);
     if (photoMatch) {
       const n = parseInt(photoMatch[1], 10);
       const subj = subjects[n - 1];
-      if (subj && subj.photo) bindings[ph.label] = subj.photo;
+      if (subj && subj.photo) {
+        bindings[ph.label] = subj.photo;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
       continue;
     }
     const nameMatch = label.match(/^(?:subjectname|teachername)_(\d+)$/);
     if (nameMatch) {
       const n = parseInt(nameMatch[1], 10);
       const subj = subjects[n - 1];
-      if (subj) bindings[ph.label] = subj.name;
+      if (subj) {
+        bindings[ph.label] = subj.name;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
       continue;
     }
     const roleMatch = label.match(/^(?:subjectrole|teacherrole)_(\d+)$/);
     if (roleMatch) {
       const n = parseInt(roleMatch[1], 10);
       const subj = subjects[n - 1];
-      if (subj) bindings[ph.label] = subj.role;
+      if (subj) {
+        bindings[ph.label] = subj.role;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
       continue;
     }
   }
@@ -348,7 +371,12 @@ function bindRightPage(
     // ─ Общее фото класса (G-FullClass) ─
     if (label === 'classphotoframe') {
       const photo = input.common_photos.full_class[fullClassUsed];
-      if (photo) bindings[ph.label] = photo;
+      if (photo) {
+        bindings[ph.label] = photo;
+      } else {
+        // РЭ.21.8.13: фото full_class не загружено партнёром → скрываем.
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
       continue;
     }
 
@@ -357,30 +385,48 @@ function bindRightPage(
     if (halfMatch) {
       const n = parseInt(halfMatch[1], 10);
       const photo = input.common_photos.half_class[halfClassUsed + n - 1];
-      if (photo) bindings[ph.label] = photo;
+      if (photo) {
+        bindings[ph.label] = photo;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
       continue;
     }
 
     // ─ Сетка предметников (G-Teachers-*) ─
+    // Если subjects короче чем мастер ожидает (например 7 предметников
+    // при сетке 3x3 = 9 слотов) — скрываем лишние слоты.
     const photoMatch = label.match(/^(?:teacherphoto|subjectphoto|subject)_(\d+)$/);
     if (photoMatch) {
       const n = parseInt(photoMatch[1], 10);
       const subj = subjects[n - 1];
-      if (subj && subj.photo) bindings[ph.label] = subj.photo;
+      if (subj && subj.photo) {
+        bindings[ph.label] = subj.photo;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
       continue;
     }
     const nameMatch = label.match(/^(?:teachername|subjectname)_(\d+)$/);
     if (nameMatch) {
       const n = parseInt(nameMatch[1], 10);
       const subj = subjects[n - 1];
-      if (subj) bindings[ph.label] = subj.name;
+      if (subj) {
+        bindings[ph.label] = subj.name;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
       continue;
     }
     const roleMatch = label.match(/^(?:teacherrole|subjectrole)_(\d+)$/);
     if (roleMatch) {
       const n = parseInt(roleMatch[1], 10);
       const subj = subjects[n - 1];
-      if (subj) bindings[ph.label] = subj.role;
+      if (subj) {
+        bindings[ph.label] = subj.role;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
       continue;
     }
   }
