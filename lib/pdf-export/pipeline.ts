@@ -35,6 +35,7 @@ import type { FontRegistry } from './font-loader';
 import { embedPhotoOnPage, type PhotoEmbedContext } from './photo-embed';
 import { drawTextShaped } from './text-shaping';
 import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform';
+import { parseFontSizeMult, parseColor } from '@/lib/text-style';
 import { applyBalanceFromData } from '@/lib/balance-overrides';
 import type {
   AlbumExportInput,
@@ -357,6 +358,11 @@ function drawText(
     false // italic парсер не различает (см. font-loader.ts)
   );
 
+  // Р.3 — overrides шрифта из служебных ключей. Default (1, null) →
+  // используются placeholder.font_size_pt и placeholder.color.
+  const fontSizeMult = parseFontSizeMult(instance.data[`__fontSize__${ph.label}`]);
+  const colorOverride = parseColor(instance.data[`__color__${ph.label}`]);
+
   drawTextShaped(
     page,
     ph,
@@ -364,6 +370,8 @@ function drawText(
     font,
     ctx.pageBoxes,
     ctx.warnings,
-    instance.spread_index
+    instance.spread_index,
+    fontSizeMult,
+    colorOverride
   );
 }

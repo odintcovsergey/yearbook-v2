@@ -70,7 +70,11 @@ export function drawTextShaped(
   font: PDFFont,
   pageBoxes: PageBoxes,
   warnings: PdfWarning[],
-  spread_index: number
+  spread_index: number,
+  // Р.3 — override стиля. Default (1, null) → используется
+  // placeholder.font_size_pt и placeholder.color (regression-safe).
+  fontSizeMult: number = 1,
+  colorOverride: string | null = null
 ): void {
   if (!text) return;
 
@@ -92,12 +96,18 @@ export function drawTextShaped(
   const max_width_pt = isRotated ? box.height_pt : box.width_pt;
   const max_height_pt = isRotated ? box.width_pt : box.height_pt;
 
+  // Р.3 — применяем мультипликатор к font_size и min_size перед shape'ом.
+  // Если auto_fit=true и текст не влезает, shapeText продолжит уменьшать
+  // от уже scaled значения вплоть до min_size_pt * fontSizeMult.
+  const effective_base_size_pt = ph.font_size_pt * fontSizeMult;
+  const effective_min_size_pt = (ph.min_size_pt ?? ph.font_size_pt) * fontSizeMult;
+
   // Шейпим: подбираем font_size и разбиваем на строки.
   const shaped = shapeText(
     text,
     font,
-    ph.font_size_pt,
-    ph.min_size_pt ?? ph.font_size_pt,
+    effective_base_size_pt,
+    effective_min_size_pt,
     ph.auto_fit,
     max_width_pt
   );
@@ -192,7 +202,8 @@ export function drawTextShaped(
 
   // Рисуем каждую строку. rotation передаётся в drawLine как есть
   // (idml_rotation_deg) — без инверсии.
-  const color = hexToRgb01(ph.color);
+  // Р.3 — override цвета имеет приоритет, иначе placeholder.color.
+  const color = hexToRgb01(colorOverride ?? ph.color);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const baseline_x_pt = first_baseline_x_pt + i * line_step_x_pt;

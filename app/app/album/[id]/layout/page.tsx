@@ -22,7 +22,9 @@ import TemplatePickerModal from '../../../_components/TemplatePickerModal'
 import SaveIndicator from '../../../_components/SaveIndicator'
 import PhotoContextMenu from '../../../_components/PhotoContextMenu'
 import PhotoTransformPanel from '../../../_components/PhotoTransformPanel'
+import TextStylePanel from '../../../_components/TextStylePanel'
 import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform'
+import { parseFontSizeMult, parseColor } from '@/lib/text-style'
 import { remapData } from '@/lib/template-replace'
 
 // Konva-компонент: SSR-incompatible (использует window.Image).
@@ -171,6 +173,19 @@ function LayoutEditorPageInner({
   // Открывается одинарным кликом на photo placeholder с фото.
   // spreadIndex нужен для адресации в /api/layout?action=update_data.
   const [photoTransformPanel, setPhotoTransformPanel] = useState<
+    | null
+    | {
+        spreadIndex: number
+        label: string
+        clientX: number
+        clientY: number
+      }
+  >(null)
+  // Р.3 — panel стилизации текста (размер + цвет).
+  // Открывается одновременно с TextInlineEditor (handleTextClick).
+  // Закрывается вместе с фиксацией текста (handleTextSubmit/Cancel)
+  // либо явно кнопкой «Готово»/Esc — тогда textarea остаётся открытым.
+  const [textStylePanel, setTextStylePanel] = useState<
     | null
     | {
         spreadIndex: number
@@ -450,6 +465,7 @@ function LayoutEditorPageInner({
     setEditingTextLabel(null)  // если редактируется текст — закрываем
     setPhotoContextMenu(null)  // и контекстное меню
     setPhotoTransformPanel(null)  // и панель кадрирования (КЭ.5)
+    setTextStylePanel(null)       // и панель стилей текста (Р.3)
     setHistory(h => {
       if (h.past.length === 0) return h
       const last = h.past[h.past.length - 1]
@@ -468,6 +484,7 @@ function LayoutEditorPageInner({
     setEditingTextLabel(null)
     setPhotoContextMenu(null)
     setPhotoTransformPanel(null)
+    setTextStylePanel(null) // Р.3
     setHistory(h => {
       if (h.future.length === 0) return h
       const next = h.future[0]
@@ -629,12 +646,25 @@ function LayoutEditorPageInner({
 
   // ─── Фаза Л.1: handlers для редактирования текста ───────────────────────
 
-  function handleTextClick(label: string, _currentValue: string | null) {
+  function handleTextClick(
+    label: string,
+    _currentValue: string | null,
+    clientX: number,
+    clientY: number,
+  ) {
     // Если уже что-то редактируется — сначала закрываем (с сохранением
     // через onBlur эффект textarea), потом открываем новое.
     // setEditingTextLabel'у одного значения достаточно: textarea со
     // старым label получает unmount → onBlur → handleTextSubmit → cleanup.
     setEditingTextLabel(label)
+    // Р.3 — параллельно открываем TextStylePanel для размера и цвета.
+    // Координаты для позиционирования берём из клика.
+    setTextStylePanel({
+      spreadIndex: currentIdx,
+      label,
+      clientX,
+      clientY,
+    })
   }
 
   function handleTextSubmit(label: string, newValue: string | null) {
@@ -649,10 +679,48 @@ function LayoutEditorPageInner({
       return { ...prev, spreads: newSpreads }
     })
     setEditingTextLabel(null)
+    setTextStylePanel(null) // Р.3 — закрываем стиль-панель вместе с текстом
   }
 
   function handleTextCancel() {
     setEditingTextLabel(null)
+    setTextStylePanel(null) // Р.3 — закрываем стиль-панель
+  }
+
+  // Р.3 — изменение стиля текста (размер + цвет) из TextStylePanel.
+  // Аналогично handleTransformChange: optimistic update layout state →
+  // saveStatus='pending' → существующий debounce save_album_layout
+  // подхватит изменения. При default значениях (mult=1, color=null)
+  // соответствующие служебные ключи __fontSize__/__color__ удаляются.
+  function handleTextStyleChange(updates: {
+    fontSize?: string | null
+    color?: string | null
+  }) {
+    if (!textStylePanel) return
+    const { label, spreadIndex } = textStylePanel
+    setLayout((prev) => {
+      if (!prev) return prev
+      const newSpreads = prev.spreads.map((s, idx) => {
+        if (idx !== spreadIndex) return s
+        const newData = { ...s.data }
+        const fontSizeKey = `__fontSize__${label}`
+        const colorKey = `__color__${label}`
+        if (updates.fontSize !== undefined) {
+          if (updates.fontSize === null) delete newData[fontSizeKey]
+          else newData[fontSizeKey] = updates.fontSize
+        }
+        if (updates.color !== undefined) {
+          if (updates.color === null) delete newData[colorKey]
+          else newData[colorKey] = updates.color
+        }
+        return { ...s, data: newData }
+      })
+      return { ...prev, spreads: newSpreads }
+    })
+  }
+
+  function handleTextStylePanelClose() {
+    setTextStylePanel(null)
   }
 
   // При смене разворота — закрываем текущий редактор текста (если открыт).
@@ -662,6 +730,7 @@ function LayoutEditorPageInner({
     setEditingTextLabel(null)
     setPhotoContextMenu(null)
     setPhotoTransformPanel(null)  // КЭ.5 — закрываем кадрирование при смене разворота
+    setTextStylePanel(null)       // Р.3 — закрываем стилизацию текста
   }, [currentIdx])
 
   // ─── Фаза Л.2: handlers для photo context menu ──────────────────────────
@@ -1473,6 +1542,28 @@ function LayoutEditorPageInner({
             clientY={photoTransformPanel.clientY}
             onChange={handleTransformChange}
             onClose={handleTransformPanelClose}
+          />
+        )
+      })()}
+
+      {/* ─── TextStylePanel (Р.3) — override размера и цвета текста ─── */}
+      {textStylePanel && !isReadOnly && (() => {
+        // Извлекаем текущие overrides из data.
+        // Если ключей нет → mult=1, color=null → palette default,
+        // slider в центре.
+        const spread = layout?.spreads[textStylePanel.spreadIndex]
+        const data = spread?.data ?? {}
+        const mult = parseFontSizeMult(data[`__fontSize__${textStylePanel.label}`])
+        const colorOv = parseColor(data[`__color__${textStylePanel.label}`])
+        return (
+          <TextStylePanel
+            label={textStylePanel.label}
+            fontSizeMult={mult}
+            colorOverride={colorOv}
+            clientX={textStylePanel.clientX}
+            clientY={textStylePanel.clientY}
+            onChange={handleTextStyleChange}
+            onClose={handleTextStylePanelClose}
           />
         )
       })()}

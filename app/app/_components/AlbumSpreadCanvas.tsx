@@ -22,6 +22,7 @@ import {
   parseBalanceOverrides,
   applyBalanceOverrides,
 } from '@/lib/balance-overrides'
+import { parseFontSizeMult, parseColor } from '@/lib/text-style'
 
 // ─────────────────────────────────────────────────────────────────────────
 // AlbumSpreadCanvas — Konva-рендер одного SpreadInstance.
@@ -65,7 +66,7 @@ type Props = {
   //   решает открывать ли editor (обычно — да, если canEdit).
   // - onTextSubmit/onTextCancel: вызываются из TextInlineEditor.
   editingTextLabel?: string | null
-  onTextClick?: (label: string, currentValue: string | null) => void
+  onTextClick?: (label: string, currentValue: string | null, clientX: number, clientY: number) => void
   onTextSubmit?: (label: string, newValue: string | null) => void
   onTextCancel?: () => void
   // Л.2 — контекстное меню на photo placeholder (правый клик).
@@ -280,9 +281,15 @@ function PhotoSlot({
 function TextSlot({
   placeholder,
   value,
+  fontSizeMult = 1,
+  colorOverride = null,
 }: {
   placeholder: TextPlaceholder
   value: string | null
+  // Р.3 — override стиля. Default (1.0, null) → используется placeholder.color
+  // и placeholder.font_size_pt (regression-safe).
+  fontSizeMult?: number
+  colorOverride?: string | null
 }) {
   if (!value) return null
   // Маппинг IDML font_weight (regular | bold | medium | light) на CSS weight.
@@ -293,6 +300,12 @@ function TextSlot({
   // и т.д. — backlog.
   const fontStyle =
     placeholder.font_weight === 'bold' ? 'bold' : 'normal'
+  // Р.3: размер = base * mult, цвет — override → placeholder.color →
+  // fallback '#000000' если IDML отдал слишком светлый.
+  const baseColor = isTooLight(placeholder.color)
+    ? '#000000'
+    : placeholder.color || '#000000'
+  const finalColor = colorOverride ?? baseColor
   return (
     <Text
       x={placeholder.x_mm}
@@ -300,10 +313,10 @@ function TextSlot({
       width={placeholder.width_mm}
       height={placeholder.height_mm}
       text={value}
-      fontSize={placeholder.font_size_pt * PT_TO_MM}
+      fontSize={placeholder.font_size_pt * PT_TO_MM * fontSizeMult}
       fontFamily={`${placeholder.font_family}, serif`}
       fontStyle={fontStyle}
-      fill={isTooLight(placeholder.color) ? '#000000' : placeholder.color || '#000000'}
+      fill={finalColor}
       align={placeholder.align}
       verticalAlign="top"
     />
@@ -329,11 +342,11 @@ function TextDropZone({
   placeholder: TextPlaceholder
   scale: number
   hasValue: boolean
-  onClick: () => void
+  onClick: (clientX: number, clientY: number) => void
 }) {
   return (
     <div
-      onClick={onClick}
+      onClick={(e) => onClick(e.clientX, e.clientY)}
       className={`absolute pointer-events-auto cursor-text transition-all ring-1 ring-transparent hover:ring-blue-300/60 hover:bg-blue-50/30 ${
         hasValue ? '' : 'bg-amber-50/40 ring-amber-200/60'
       }`}
@@ -371,12 +384,17 @@ function TextInlineEditor({
   placeholder,
   scale,
   initialValue,
+  fontSizeMult = 1,
+  colorOverride = null,
   onSubmit,
   onCancel,
 }: {
   placeholder: TextPlaceholder
   scale: number
   initialValue: string | null
+  /** Р.3 — override размера (мультипликатор) и цвета. Default (1, null). */
+  fontSizeMult?: number
+  colorOverride?: string | null
   onSubmit: (newValue: string | null) => void
   onCancel: () => void
 }) {
@@ -394,13 +412,16 @@ function TextInlineEditor({
 
   const fontStyle =
     placeholder.font_weight === 'bold' ? 'bold' : 'normal'
-  const color = isTooLight(placeholder.color)
+  const baseColor = isTooLight(placeholder.color)
     ? '#000000'
     : placeholder.color || '#000000'
+  // Р.3: override цвета → fallback на placeholder.color.
+  const color = colorOverride ?? baseColor
   // Konva в Stage'е масштабирует на scale, поэтому реальный pixel
   // размер текста = font_size_pt * PT_TO_MM * scale. То же для
   // textarea — рендерится в DOM поверх Stage'а уже отскейленным.
-  const fontSizePx = placeholder.font_size_pt * PT_TO_MM * scale
+  // Р.3: применяется fontSizeMult.
+  const fontSizePx = placeholder.font_size_pt * PT_TO_MM * scale * fontSizeMult
 
   function handleKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Escape') {
@@ -700,7 +721,20 @@ export default function AlbumSpreadCanvas({
               // Скрываем Konva TextSlot когда этот label сейчас редактируется
               // — параллельно поверх отрисовывается TextInlineEditor.
               if (editingTextLabel === p.label) return null
-              return <TextSlot key={key} placeholder={p} value={value} />
+              // Р.3 — override стиля из служебных ключей. Default
+              // (отсутствие ключей) → mult=1, color=null → используется
+              // placeholder.font_size_pt / placeholder.color.
+              const fsMult = parseFontSizeMult(instance.data[`__fontSize__${p.label}`])
+              const colorOv = parseColor(instance.data[`__color__${p.label}`])
+              return (
+                <TextSlot
+                  key={key}
+                  placeholder={p}
+                  value={value}
+                  fontSizeMult={fsMult}
+                  colorOverride={colorOv}
+                />
+              )
             }
             return null
           })}
@@ -738,12 +772,17 @@ export default function AlbumSpreadCanvas({
               // textarea-editor. Иначе — прозрачный кликабельный DropZone
               // с cursor:text и hover ring.
               if (editingTextLabel === p.label) {
+                // Р.3 — те же overrides из data что и TextSlot.
+                const fsMult = parseFontSizeMult(instance.data[`__fontSize__${p.label}`])
+                const colorOv = parseColor(instance.data[`__color__${p.label}`])
                 return (
                   <TextInlineEditor
                     key={`text-edit-${p.label}`}
                     placeholder={p}
                     scale={scale}
                     initialValue={value}
+                    fontSizeMult={fsMult}
+                    colorOverride={colorOv}
                     onSubmit={(newValue) => onTextSubmit?.(p.label, newValue)}
                     onCancel={() => onTextCancel?.()}
                   />
@@ -755,7 +794,7 @@ export default function AlbumSpreadCanvas({
                   placeholder={p}
                   scale={scale}
                   hasValue={!!value}
-                  onClick={() => onTextClick?.(p.label, value)}
+                  onClick={(cx, cy) => onTextClick?.(p.label, value, cx, cy)}
                 />
               )
             }
