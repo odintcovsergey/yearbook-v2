@@ -57,6 +57,7 @@ import type { RuleEngineBundle } from './loaders';
 import type { CommonPhotoCounts } from './slot-chains';
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import {
+  fillCommonAutoSection,
   fillCommonSection,
   fillSoftFinalSection,
   fillSoftIntroSection,
@@ -116,7 +117,18 @@ export function buildFromSectionStructure(
 
     switch (section.type) {
       case 'common':
-        fillCommonSection(ctx, section.slots);
+        // РЭ.21.8.8: две формы common-секции.
+        //   { type: 'common', slots: [...] }                       — manual
+        //   { type: 'common', mode: 'auto', max_spreads: N }       — auto
+        // Различаем явной проверкой поля mode. TS не умеет сужать
+        // discriminated union по 'mode' in section когда оба варианта
+        // имеют один и тот же type — поэтому используем if/else с явной
+        // type assertion.
+        if ('mode' in section) {
+          fillCommonAutoSection(ctx, section.max_spreads);
+        } else {
+          fillCommonSection(ctx, section.slots);
+        }
         break;
       case 'teachers':
         fillTeachersSection(ctx);

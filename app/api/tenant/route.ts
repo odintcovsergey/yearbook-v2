@@ -27,6 +27,7 @@ async function assertAlbumAccess(auth: AuthContext, albumId: string, tenantIdOve
 // Допустимая форма: массив объектов вида:
 //   { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
 //   { type: 'common', slots: ('H' | 'Q' | 'FULL' | 'flex_A' | 'flex_B' | 'flex_C')[] }
+//   { type: 'common', mode: 'auto', max_spreads: number } — РЭ.21.8.8
 //
 // Возвращает { ok: true, value } или { ok: false, error }.
 // Намеренно строгая валидация — мусор в jsonb-поле приведёт к падению
@@ -36,6 +37,8 @@ const ALLOWED_SECTION_TYPES = new Set([
   'soft_intro', 'teachers', 'students', 'common', 'vignette', 'soft_final',
 ])
 const ALLOWED_SLOT_TYPES = new Set(['H', 'Q', 'FULL', 'flex_A', 'flex_B', 'flex_C'])
+const ALLOWED_COMMON_MODES = new Set(['auto'])  // РЭ.21.8.8: пока только auto
+                                                // (manual = старая форма со slots)
 
 // ============================================================
 // РЭ.21.7.5.1: валидатор density.
@@ -78,6 +81,7 @@ function validateDensity(
 type ValidatedSection =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
   | { type: 'common'; slots: string[] }
+  | { type: 'common'; mode: 'auto'; max_spreads: number }  // РЭ.21.8.8
 
 function validateSectionStructure(
   raw: unknown,
@@ -99,25 +103,54 @@ function validateSectionStructure(
       return { ok: false, error: `Секция #${i + 1}: недопустимый тип '${String(type)}'` }
     }
     if (type === 'common') {
-      const slots = (s as { slots?: unknown }).slots
-      if (!Array.isArray(slots)) {
-        return { ok: false, error: `Секция #${i + 1} (common): отсутствует массив slots` }
-      }
-      if (slots.length > 50) {
-        return { ok: false, error: `Секция #${i + 1} (common): слишком много слотов` }
-      }
-      const validSlots: string[] = []
-      for (let j = 0; j < slots.length; j++) {
-        const slot = slots[j]
-        if (typeof slot !== 'string' || !ALLOWED_SLOT_TYPES.has(slot)) {
+      // Две допустимые формы common-секции:
+      //   manual: { type: 'common', slots: [...] }       — старая, по умолчанию
+      //   auto:   { type: 'common', mode: 'auto', max_spreads: N } — РЭ.21.8.8
+      // Различаем по наличию поля mode. Если есть mode — auto, иначе manual.
+      const mode = (s as { mode?: unknown }).mode
+      if (mode !== undefined) {
+        // auto-режим
+        if (typeof mode !== 'string' || !ALLOWED_COMMON_MODES.has(mode)) {
           return {
             ok: false,
-            error: `Секция #${i + 1}, слот #${j + 1}: недопустимое значение '${String(slot)}'`,
+            error: `Секция #${i + 1} (common): недопустимый mode '${String(mode)}'. Допустимы: ${Array.from(ALLOWED_COMMON_MODES).join(', ')}`,
           }
         }
-        validSlots.push(slot)
+        const maxSpreads = (s as { max_spreads?: unknown }).max_spreads
+        if (
+          typeof maxSpreads !== 'number' ||
+          !Number.isInteger(maxSpreads) ||
+          maxSpreads < 0 ||
+          maxSpreads > 20
+        ) {
+          return {
+            ok: false,
+            error: `Секция #${i + 1} (common, auto): max_spreads должен быть целым числом 0..20`,
+          }
+        }
+        result.push({ type: 'common', mode: 'auto', max_spreads: maxSpreads })
+      } else {
+        // manual-режим (по умолчанию)
+        const slots = (s as { slots?: unknown }).slots
+        if (!Array.isArray(slots)) {
+          return { ok: false, error: `Секция #${i + 1} (common): отсутствует массив slots` }
+        }
+        if (slots.length > 50) {
+          return { ok: false, error: `Секция #${i + 1} (common): слишком много слотов` }
+        }
+        const validSlots: string[] = []
+        for (let j = 0; j < slots.length; j++) {
+          const slot = slots[j]
+          if (typeof slot !== 'string' || !ALLOWED_SLOT_TYPES.has(slot)) {
+            return {
+              ok: false,
+              error: `Секция #${i + 1}, слот #${j + 1}: недопустимое значение '${String(slot)}'`,
+            }
+          }
+          validSlots.push(slot)
+        }
+        result.push({ type: 'common', slots: validSlots })
       }
-      result.push({ type: 'common', slots: validSlots })
     } else {
       result.push({ type: type as Exclude<ValidatedSection['type'], 'common'> })
     }

@@ -343,12 +343,21 @@ export type SectionType =
 
 /**
  * Один элемент section_structure. Discriminated union по `type`:
- *  - для секции `common` обязателен массив `slots`;
- *  - для всех остальных — только `type`.
+ *  - для не-common секций — только `type`;
+ *  - для секции `common` две формы:
+ *    - manual: `{ type: 'common', slots: SlotType[] }` — партнёр явно
+ *      описал какие слоты и в каком порядке (используется slot-chains для
+ *      каждого слота). Старая форма, существовала с РЭ.21.2.
+ *    - auto:   `{ type: 'common', mode: 'auto', max_spreads: N }` — engine
+ *      сам решает что положить из пула common_photos, ориентируясь на
+ *      крупные → мелкие категории (РЭ.21.8.8). Лимит: не больше N разворотов.
+ *      «Лучше меньше разворотов чем пустые слоты»: если фото хватает только
+ *      на K < N разворотов — делает K с warning common_autopack_underflow.
  */
 export type SectionStructureEntry =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
-  | { type: 'common'; slots: SlotType[] };
+  | { type: 'common'; slots: SlotType[] }
+  | { type: 'common'; mode: 'auto'; max_spreads: number };
 
 /**
  * Полная структура альбома = массив секций в порядке появления.

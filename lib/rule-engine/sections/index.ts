@@ -16,7 +16,7 @@
  *  - vignette   — отложено (отдельная подсистема, виньетки из детских фото)
  */
 
-export { fillCommonSection } from './common';
+export { fillCommonSection, fillCommonAutoSection } from './common';
 export { fillTeachersSection } from './teachers';
 export { fillStudentsSection } from './students';
 export { fillSoftIntroSection } from './soft-intro';

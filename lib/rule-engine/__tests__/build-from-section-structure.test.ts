@@ -182,8 +182,8 @@ describe('buildFromSectionStructure: common секция с цепочками',
     expect(result.spreads[0].left?.master_id).toBe('id-J-Half'); // page 0, left
     expect(result.spreads[0].right?.master_id).toBe('id-J-Collage-6'); // page 1, right, flex_A → collage
     expect(result.decision_trace).toHaveLength(2);
-    expect(result.decision_trace[0].rule_id).toBe('slot:H');
-    expect(result.decision_trace[1].rule_id).toBe('slot:flex_A');
+    expect(result.decision_trace[0].rule_id).toBe('manual:H');
+    expect(result.decision_trace[1].rule_id).toBe('manual:flex_A');
     expect(result.decision_trace[1].inputs.chain_trace).toBe(
       'flex_A → J-Collage-6 (6 sixth)',
     );
