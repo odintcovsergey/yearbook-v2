@@ -1,8 +1,8 @@
 /**
  * Цепочка слота `FULL`: «1 общее фото класса».
  *
- * Один шаг: J-ClassPhoto (1 фото full_class). На правой стороне
- * используется зеркальный J-ClassPhoto-Right.
+ * Один шаг: J-Full (1 фото full_class). Мастер симметричный в template_set
+ * okeybook-default — отдельного `-Right` варианта нет.
  *
  * Возвращает null если `full_class < 1`.
  */
@@ -15,14 +15,7 @@ export function tryFillFull(
   position: SlotPosition,
 ): SlotFillResult | null {
   return withChainPrefix(
-    tryStep(
-      available,
-      position,
-      'J-ClassPhoto',
-      'full_class',
-      1,
-      'J-ClassPhoto-Right',
-    ),
+    tryStep(available, position, 'J-Full', 'full_class', 1),
     'FULL',
   );
 }

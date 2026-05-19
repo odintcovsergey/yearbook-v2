@@ -1,8 +1,9 @@
 /**
  * Цепочка слота `Q`: «страница с фото 1/4 класса».
  *
- * Один шаг: J-Quarter (2 фото quarter). У J-Quarter нет зеркального
- * `-Right` варианта (см. inventory §2.G).
+ * Один шаг: J-Quarter-Left на левой странице, J-Quarter-Right на правой.
+ * В template_set okeybook-default это два разных мастера; механизм
+ * чередования прикладывает rightVariant в `tryStep` (как для FULL до 21.8.6a).
  *
  * Возвращает null если `quarter < 2`.
  */
@@ -15,7 +16,14 @@ export function tryFillQ(
   position: SlotPosition,
 ): SlotFillResult | null {
   return withChainPrefix(
-    tryStep(available, position, 'J-Quarter', 'quarter', 2),
+    tryStep(
+      available,
+      position,
+      'J-Quarter-Left',
+      'quarter',
+      2,
+      'J-Quarter-Right',
+    ),
     'Q',
   );
 }

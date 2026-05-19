@@ -68,8 +68,8 @@ const J_HALF = makeMaster('J-Half', [
   photoSlot('halfphoto_1'),
   photoSlot('halfphoto_2'),
 ]);
-const J_CLASS_PHOTO = makeMaster('J-ClassPhoto', [photoSlot('classphotoframe')]);
-const J_CLASS_PHOTO_RIGHT = makeMaster('J-ClassPhoto-Right', [
+const J_CLASS_PHOTO = makeMaster('J-Full', [photoSlot('classphotoframe')]);
+const J_CLASS_PHOTO_RIGHT = makeMaster('J-Full', [
   photoSlot('classphotoframe'),
 ]);
 

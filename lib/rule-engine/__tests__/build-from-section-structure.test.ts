@@ -55,10 +55,10 @@ function makeMaster(name: string): SpreadTemplate {
 
 const J_MASTERS = [
   makeMaster('J-Half'),
-  makeMaster('J-Quarter'),
-  makeMaster('J-Collage'),
-  makeMaster('J-ClassPhoto'),
-  makeMaster('J-ClassPhoto-Right'),
+  makeMaster('J-Quarter-Left'),
+  makeMaster('J-Collage-6'),
+  makeMaster('J-Full'),
+  makeMaster('J-Full'),
 ];
 
 function makePreset(opts: Partial<Preset> & Pick<Preset, 'id'>): Preset {
@@ -180,12 +180,12 @@ describe('buildFromSectionStructure: common секция с цепочками',
     expect(result.spreads).toHaveLength(1);
     expect(result.spreads[0].spread_index).toBe(0);
     expect(result.spreads[0].left?.master_id).toBe('id-J-Half'); // page 0, left
-    expect(result.spreads[0].right?.master_id).toBe('id-J-Collage'); // page 1, right, flex_A → collage
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Collage-6'); // page 1, right, flex_A → collage
     expect(result.decision_trace).toHaveLength(2);
     expect(result.decision_trace[0].rule_id).toBe('slot:H');
     expect(result.decision_trace[1].rule_id).toBe('slot:flex_A');
     expect(result.decision_trace[1].inputs.chain_trace).toBe(
-      'flex_A → J-Collage (6 sixth)',
+      'flex_A → J-Collage-6 (6 sixth)',
     );
   });
 
@@ -200,10 +200,10 @@ describe('buildFromSectionStructure: common секция с цепочками',
     expect(result.status).toBe('ok');
     expect(result.spreads).toHaveLength(2);
     // Разворот 0: L=J-ClassPhoto, R=J-ClassPhoto-Right (т.к. page 1 — правая)
-    expect(result.spreads[0].left?.master_id).toBe('id-J-ClassPhoto');
-    expect(result.spreads[0].right?.master_id).toBe('id-J-ClassPhoto-Right');
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Full');
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Full');
     // Разворот 1: только L (нечётное число страниц)
-    expect(result.spreads[1].left?.master_id).toBe('id-J-ClassPhoto');
+    expect(result.spreads[1].left?.master_id).toBe('id-J-Full');
     expect(result.spreads[1].right).toBeUndefined();
   });
 
