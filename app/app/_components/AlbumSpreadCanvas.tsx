@@ -14,6 +14,8 @@ import {
   computeCrop,
   parseScale,
   parseOffset,
+  parseRotate,
+  computeAutoZoomForRotation,
   hasCustomTransform,
 } from '@/lib/photo-transform'
 import {
@@ -132,6 +134,7 @@ function PhotoSlot({
   scale = 1,
   offsetX = 0,
   offsetY = 0,
+  rotateDeg = 0,
 }: {
   placeholder: PhotoPlaceholder
   url: string | null
@@ -142,6 +145,12 @@ function PhotoSlot({
   scale?: number
   offsetX?: number
   offsetY?: number
+  // Р.2 — поворот фото (горизонт). Применяется на ВЕРХ scale/offset:
+  // изображение поворачивается вокруг центра рамки на заданный угол.
+  // Чтобы рамка не была пустой по углам, applied auto-zoom factor
+  // (computeAutoZoomForRotation) увеличивает render-размер изображения
+  // и обрезает по clipFunc до прямоугольника рамки.
+  rotateDeg?: number
 }) {
   const img = useImage(url)
 
@@ -183,6 +192,17 @@ function PhotoSlot({
     height: cropParams.cropH,
   }
 
+  // Р.2 — auto-zoom factor для покрытия рамки повёрнутым изображением.
+  // При rotateDeg=0 factor=1 → KonvaImage рендерится точно в размере
+  // рамки (regression-safe). При rotateDeg≠0 factor>1 → KonvaImage
+  // занимает больший прямоугольник, центрирован по центру рамки,
+  // повёрнут — а clipFunc обрезает по контуру рамки.
+  const autoZoom = computeAutoZoomForRotation(rotateDeg, targetRatio)
+  const renderW = placeholder.width_mm * autoZoom
+  const renderH = placeholder.height_mm * autoZoom
+  const centerX = placeholder.x_mm + placeholder.width_mm / 2
+  const centerY = placeholder.y_mm + placeholder.height_mm / 2
+
   // Круглые портреты (учительские) → клиппинг по эллипсу
   if (placeholder.is_circle) {
     const cx = placeholder.x_mm + placeholder.width_mm / 2
@@ -198,10 +218,13 @@ function PhotoSlot({
         }}
       >
         <KonvaImage
-          x={placeholder.x_mm}
-          y={placeholder.y_mm}
-          width={placeholder.width_mm}
-          height={placeholder.height_mm}
+          x={centerX}
+          y={centerY}
+          width={renderW}
+          height={renderH}
+          offsetX={renderW / 2}
+          offsetY={renderH / 2}
+          rotation={rotateDeg}
           image={img}
           crop={crop}
         />
@@ -209,15 +232,47 @@ function PhotoSlot({
     )
   }
 
+  // Прямоугольная рамка. Без поворота — fast path: позиционирование
+  // как было до Р.2 (KonvaImage напрямую без Group). С поворотом —
+  // клиппинг по прямоугольнику + центрированная повёрнутая картинка.
+  if (rotateDeg === 0) {
+    return (
+      <KonvaImage
+        x={placeholder.x_mm}
+        y={placeholder.y_mm}
+        width={placeholder.width_mm}
+        height={placeholder.height_mm}
+        image={img}
+        crop={crop}
+      />
+    )
+  }
+
   return (
-    <KonvaImage
-      x={placeholder.x_mm}
-      y={placeholder.y_mm}
-      width={placeholder.width_mm}
-      height={placeholder.height_mm}
-      image={img}
-      crop={crop}
-    />
+    <Group
+      clipFunc={(ctx) => {
+        ctx.beginPath()
+        ctx.rect(
+          placeholder.x_mm,
+          placeholder.y_mm,
+          placeholder.width_mm,
+          placeholder.height_mm,
+        )
+        ctx.closePath()
+      }}
+    >
+      <KonvaImage
+        x={centerX}
+        y={centerY}
+        width={renderW}
+        height={renderH}
+        offsetX={renderW / 2}
+        offsetY={renderH / 2}
+        rotation={rotateDeg}
+        image={img}
+        crop={crop}
+      />
+    </Group>
   )
 }
 
@@ -625,8 +680,10 @@ export default function AlbumSpreadCanvas({
               // из instance.data. Default (отсутствие ключей) →
               // scale=1, offset=(0,0) → текущее cover-crop поведение.
               // См. docs/phase-content-edit-spec.md и lib/photo-transform.
+              // Р.2: __rotate__<label> — поворот фото внутри рамки.
               const sc = parseScale(instance.data[`__scale__${p.label}`])
               const [ox, oy] = parseOffset(instance.data[`__offset__${p.label}`])
+              const rot = parseRotate(instance.data[`__rotate__${p.label}`])
               return (
                 <PhotoSlot
                   key={key}
@@ -635,6 +692,7 @@ export default function AlbumSpreadCanvas({
                   scale={sc}
                   offsetX={ox}
                   offsetY={oy}
+                  rotateDeg={rot}
                 />
               )
             }
@@ -657,9 +715,11 @@ export default function AlbumSpreadCanvas({
               // КЭ.6 — детект non-default transform для бейджа.
               // parseScale/parseOffset возвращают (1, 0, 0) если ключи
               // отсутствуют → hasCustomTransform == false.
+              // Р.2 — учитываем также __rotate__.
               const sc = parseScale(instance.data[`__scale__${p.label}`])
               const [ox, oy] = parseOffset(instance.data[`__offset__${p.label}`])
-              const hasCustom = hasCustomTransform(sc, ox, oy)
+              const rot = parseRotate(instance.data[`__rotate__${p.label}`])
+              const hasCustom = hasCustomTransform(sc, ox, oy, rot)
               return (
                 <DropZone
                   key={`photo-${p.label}`}

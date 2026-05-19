@@ -43,6 +43,15 @@ export const OFFSET_MIN = -1.0;
 export const OFFSET_MAX = 1.0;
 
 /**
+ * Min/max bounds для поворота фото (Р.2 — горизонт).
+ * ±45° достаточно для типичного use case (выправить заваленный горизонт).
+ * Полная переориентация (90°/180°) не предполагается — для этого
+ * партнёр поменяет фото через контекстное меню.
+ */
+export const ROTATE_MIN = -45;
+export const ROTATE_MAX = 45;
+
+/**
  * Вычисляет CropParams для photo внутри photo-placeholder с учётом
  * scale + offset transform.
  *
@@ -165,11 +174,74 @@ export function serializeOffset(x: number, y: number): string {
 }
 
 /**
- * Возвращает true если transform отличается от default (=1.0, =0,0).
+ * Возвращает true если transform отличается от default (=1.0, =0,0, rotate=0).
  * Используется для индикации "Кадрирован вручную" (КЭ.6).
+ *
+ * Р.2 — параметр rotateDeg необязателен (default 0). При наличии
+ * ненулевого rotate тоже считаем что transform не дефолтный.
  */
-export function hasCustomTransform(scale: number, x: number, y: number): boolean {
-  return scale !== 1 || x !== 0 || y !== 0;
+export function hasCustomTransform(
+  scale: number,
+  x: number,
+  y: number,
+  rotateDeg: number = 0,
+): boolean {
+  return scale !== 1 || x !== 0 || y !== 0 || rotateDeg !== 0;
+}
+
+/**
+ * Парсит rotate из data-значения (в градусах).
+ * Возвращает 0 для undefined/null/некорректных входов, иначе clamp
+ * в [ROTATE_MIN, ROTATE_MAX].
+ *
+ * Принимает string (из data) или number (defensive).
+ */
+export function parseRotate(v: unknown): number {
+  if (v === null || v === undefined) return 0;
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return clamp(n, ROTATE_MIN, ROTATE_MAX);
+}
+
+/**
+ * Сериализует rotate в string для записи в data.
+ * Округляем до 2 знаков (UI step=0.5° достаточно). При значении 0
+ * caller должен удалить ключ — см. PhotoTransformPanel.
+ */
+export function serializeRotate(rotateDeg: number): string {
+  const r = clamp(rotateDeg, ROTATE_MIN, ROTATE_MAX);
+  return r.toFixed(2).replace(/\.?0+$/, '');
+}
+
+/**
+ * Вычисляет минимальный auto-zoom factor чтобы повёрнутое изображение
+ * полностью покрывало рамку без видимых пустых углов.
+ *
+ * Геометрия: если рамка W×H, и внутри неё стоит изображение, повёрнутое
+ * на угол θ, то нужно увеличить изображение в:
+ *   factor = |cos θ| + max(W/H, H/W) * |sin θ|
+ *
+ * При θ=0 factor=1 (без зума). При θ=45° для квадратной рамки
+ * factor = √2 ≈ 1.414. Для прямоугольных рамок factor больше.
+ *
+ * Зум применяется ВДОБАВОК к пользовательскому scale: реальный
+ * effective scale = userScale * autoZoomFactor.
+ *
+ * @param rotateDeg   угол поворота в градусах
+ * @param targetRatio aspect ratio рамки (width/height)
+ */
+export function computeAutoZoomForRotation(
+  rotateDeg: number,
+  targetRatio: number,
+): number {
+  if (!Number.isFinite(rotateDeg) || rotateDeg === 0) return 1;
+  if (!Number.isFinite(targetRatio) || targetRatio <= 0) return 1;
+  const rad = (rotateDeg * Math.PI) / 180;
+  const absCos = Math.abs(Math.cos(rad));
+  const absSin = Math.abs(Math.sin(rad));
+  // max(W/H, H/W) гарантирует что зум покрывает обе стороны рамки.
+  const maxRatio = Math.max(targetRatio, 1 / targetRatio);
+  return absCos + maxRatio * absSin;
 }
 
 /** Standard utility — clamp number в диапазон [min, max]. */

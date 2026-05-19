@@ -45,7 +45,7 @@ import {
   endPath,
 } from 'pdf-lib';
 import { mmToPixels, placeholderToPdfBox } from './units';
-import { computeCrop } from '@/lib/photo-transform';
+import { computeCrop, computeAutoZoomForRotation } from '@/lib/photo-transform';
 import type {
   AlbumExportInput,
   OriginalPhoto,
@@ -94,11 +94,17 @@ export async function embedPhotoOnPage(
   photoUrl: string | null,
   spread_index: number,
   // КЭ.7 — transform параметры из служебных ключей data.
-  // Default (1, 0, 0) → старое поведение fit:'cover' (regression-safe,
+  // Default (1, 0, 0, 0) → старое поведение fit:'cover' (regression-safe,
   // байт-в-байт идентичен PDF до КЭ).
   scale: number = 1,
   offsetX: number = 0,
   offsetY: number = 0,
+  // Р.2 — поворот фото внутри рамки (горизонт). Применяется на ВЕРХ
+  // scale/offset: после извлечения crop'а sharp.rotate() поворачивает
+  // изображение, а auto-zoom factor гарантирует что после поворота
+  // центральная часть полностью покрывает целевую рамку без видимого
+  // фона по углам. См. lib/photo-transform → computeAutoZoomForRotation.
+  rotateDeg: number = 0,
 ): Promise<void> {
   const box = placeholderToPdfBox(
     ph.x_mm,
@@ -136,7 +142,10 @@ export async function embedPhotoOnPage(
   //                   (regression-safe для всех существующих PDF)
   // hasCustom=true  → вычисляем CropParams через computeCrop, применяем
   //                   через sharp.extract + sharp.resize fit:'fill'
-  const hasCustom = scale !== 1 || offsetX !== 0 || offsetY !== 0;
+  // Р.2 — отдельная ветка с поворотом, выше custom: если rotateDeg≠0,
+  //       расширяем crop до auto-zoom × и вращаем после resize.
+  const hasRotate = rotateDeg !== 0;
+  const hasCustom = scale !== 1 || offsetX !== 0 || offsetY !== 0 || hasRotate;
 
   let resampled: Buffer;
   try {
@@ -155,7 +164,7 @@ export async function embedPhotoOnPage(
           mozjpeg: true,
         })
         .toBuffer();
-    } else {
+    } else if (!hasRotate) {
       // CUSTOM PATH: применяем computeCrop для извлечения пользовательского
       // crop, потом resize до целевого pixel-разрешения.
       //
@@ -195,6 +204,84 @@ export async function embedPhotoOnPage(
         })
         .resize(targetW_px, targetH_px, {
           fit: 'fill',
+        })
+        .jpeg({
+          quality: ctx.profile.jpeg_quality,
+          mozjpeg: true,
+        })
+        .toBuffer();
+    } else {
+      // ROTATE PATH (Р.2): тот же base crop, но расширенный на auto-zoom
+      // factor вокруг центра crop'а. После поворота sharp.resize'ом
+      // 'cover' обрезаем центральную часть до targetW × targetH —
+      // background по углам не виден (auto-zoom гарантирует покрытие).
+      //
+      // Шаги:
+      //   1. EXIF-rotate + metadata (как в CUSTOM PATH)
+      //   2. computeCrop → base crop
+      //   3. authZoom = computeAutoZoomForRotation(rotateDeg, aspect)
+      //   4. enlargedCrop = base crop, расширенный в authZoom вокруг
+      //      центра, clamp до [0, natW/H]
+      //   5. extract enlargedCrop
+      //   6. resize до (targetW_px*authZoom, targetH_px*authZoom)
+      //      fit:'fill' — единая ось масштаба перед вращением
+      //   7. rotate(rotateDeg, {background: white}) — повернёт картинку
+      //      с белым фоном на углах bounding box'а
+      //   8. resize(targetW_px, targetH_px, fit:'cover', position:'centre')
+      //      — выйдет центральная часть нужного размера; background
+      //      отрезается, поскольку authZoom рассчитан так чтобы
+      //      повёрнутая картинка покрывала target.
+      const rotated = sharp(photoSource.buffer).rotate();
+      const meta = await rotated.metadata();
+      const natW = meta.width ?? 0;
+      const natH = meta.height ?? 0;
+      if (natW <= 0 || natH <= 0) {
+        throw new Error(`invalid image dimensions: ${natW}x${natH}`);
+      }
+      const targetRatio = ph.width_mm / ph.height_mm;
+      const baseCrop = computeCrop(natW, natH, targetRatio, scale, offsetX, offsetY);
+      const authZoom = computeAutoZoomForRotation(rotateDeg, targetRatio);
+      // Центр base crop'а.
+      const cx = baseCrop.cropX + baseCrop.cropW / 2;
+      const cy = baseCrop.cropY + baseCrop.cropH / 2;
+      // Расширенный crop. Может выйти за границы оригинала —
+      // обрезаем по фактическим границам (это даст более узкую часть,
+      // но не вернёт ошибку sharp.extract).
+      const enlW = baseCrop.cropW * authZoom;
+      const enlH = baseCrop.cropH * authZoom;
+      let enlLeft = cx - enlW / 2;
+      let enlTop = cy - enlH / 2;
+      // Clamp к границам оригинала.
+      enlLeft = Math.max(0, enlLeft);
+      enlTop = Math.max(0, enlTop);
+      const maxW = natW - enlLeft;
+      const maxH = natH - enlTop;
+      const safeW = Math.max(1, Math.min(Math.round(enlW), Math.round(maxW)));
+      const safeH = Math.max(1, Math.min(Math.round(enlH), Math.round(maxH)));
+      const safeLeft = Math.max(0, Math.round(enlLeft));
+      const safeTop = Math.max(0, Math.round(enlTop));
+      // Промежуточный размер до вращения. Сохраняем aspect рамки.
+      const interW = Math.max(1, Math.round(targetW_px * authZoom));
+      const interH = Math.max(1, Math.round(targetH_px * authZoom));
+      resampled = await rotated
+        .extract({
+          left: safeLeft,
+          top: safeTop,
+          width: safeW,
+          height: safeH,
+        })
+        .resize(interW, interH, {
+          fit: 'fill',
+        })
+        .rotate(rotateDeg, {
+          // Белый фон может выйти в видимой области если auto-zoom
+          // оказался мал (на edge случаях). Чтобы не было видимых
+          // артефактов на печати, выбираем фон под цвет страницы.
+          background: { r: 255, g: 255, b: 255, alpha: 1 },
+        })
+        .resize(targetW_px, targetH_px, {
+          fit: 'cover',
+          position: 'centre',
         })
         .jpeg({
           quality: ctx.profile.jpeg_quality,

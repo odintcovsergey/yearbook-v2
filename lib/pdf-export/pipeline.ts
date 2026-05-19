@@ -34,7 +34,7 @@ import { computePageBoxes, mmToPt } from './units';
 import type { FontRegistry } from './font-loader';
 import { embedPhotoOnPage, type PhotoEmbedContext } from './photo-embed';
 import { drawTextShaped } from './text-shaping';
-import { parseScale, parseOffset } from '@/lib/photo-transform';
+import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform';
 import { applyBalanceFromData } from '@/lib/balance-overrides';
 import type {
   AlbumExportInput,
@@ -301,8 +301,10 @@ async function drawPhoto(
   // parseScale/parseOffset возвращают (1, 0, 0) если ключи отсутствуют →
   // встроенная обратная совместимость: без transform-ключей crop как
   // раньше (sharp fit:'cover' для baseline).
+  // Р.2 — пробрасываем __rotate__<label> (default 0 → без поворота).
   const scale = parseScale(instance.data[`__scale__${ph.label}`]);
   const [offsetX, offsetY] = parseOffset(instance.data[`__offset__${ph.label}`]);
+  const rotateDeg = parseRotate(instance.data[`__rotate__${ph.label}`]);
   await embedPhotoOnPage(
     ctx.photoCtx,
     page,
@@ -312,6 +314,7 @@ async function drawPhoto(
     scale,
     offsetX,
     offsetY,
+    rotateDeg,
   );
 }
 

@@ -4,13 +4,17 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   parseScale,
   parseOffset,
+  parseRotate,
   serializeScale,
   serializeOffset,
+  serializeRotate,
   hasCustomTransform,
   SCALE_MIN,
   SCALE_MAX,
   OFFSET_MIN,
   OFFSET_MAX,
+  ROTATE_MIN,
+  ROTATE_MAX,
 } from '@/lib/photo-transform'
 
 // PhotoTransformPanel — popover с инструментами кадрирования фото.
@@ -19,12 +23,13 @@ import {
 // Позиционируется по координатам клика (clientX/clientY), всплывает
 // над фреймом. Закрывается по клику вне, Esc, или кнопке «Готово».
 //
-// Состав (per ТЗ КЭ v1.1):
-//   1. Slider масштаба 100..200% (step 1%, default 100%)
-//   2. Touchpad 120×120 для drag позиции в диапазоне (-1..1)
-//   3. Два numeric input'а X/Y (для точной правки)
-//   4. Кнопка «Сброс» — удаляет __scale__/__offset__ ключи
-//   5. Кнопка «Готово» — закрытие panel
+// Состав:
+//   1. Slider масштаба 100..200% (step 1%, default 100%) [КЭ]
+//   2. Touchpad 120×120 для drag позиции в диапазоне (-1..1) [КЭ]
+//   3. Два numeric input'а X/Y (для точной правки) [КЭ]
+//   4. Slider поворота -45..+45° (step 0.5°, default 0°) [Р.2]
+//   5. Кнопка «Сброс» — удаляет __scale__/__offset__/__rotate__ ключи
+//   6. Кнопка «Готово» — закрытие panel
 //
 // Стратегия записи:
 //   - При движении слайдера / touchpad'а → optimistic UI update
@@ -42,24 +47,28 @@ type Props = {
   /** Текущий offset из data[__offset__<label>] */
   offsetX: number
   offsetY: number
+  /** Р.2 — текущий поворот из data[__rotate__<label>] (градусы) */
+  rotateDeg: number
   /** Координаты клика для позиционирования popover */
   clientX: number
   clientY: number
   /**
    * Применить локально (optimistic). null = удалить ключ.
    * Parent делает setLayout с новыми значениями для realtime preview.
-   * При scale=1 и offset=(0,0) parent должен УДАЛИТЬ ключи (через null).
+   * При default значениях parent должен УДАЛИТЬ соответствующие ключи
+   * (через null) — emitChange ниже посылает null автоматически.
    */
   onChange: (updates: {
     scale?: string | null
     offset?: string | null
+    rotate?: string | null
   }) => void
   /** Закрытие panel */
   onClose: () => void
 }
 
 const PANEL_WIDTH = 280
-const PANEL_HEIGHT = 320
+const PANEL_HEIGHT = 400
 const TOUCHPAD_SIZE = 120
 const TOUCHPAD_DOT_SIZE = 14
 
@@ -68,6 +77,7 @@ export default function PhotoTransformPanel({
   scale: initialScale,
   offsetX: initialOffsetX,
   offsetY: initialOffsetY,
+  rotateDeg: initialRotateDeg,
   clientX,
   clientY,
   onChange,
@@ -82,6 +92,7 @@ export default function PhotoTransformPanel({
   const [scale, setScale] = useState(initialScale)
   const [offsetX, setOffsetX] = useState(initialOffsetX)
   const [offsetY, setOffsetY] = useState(initialOffsetY)
+  const [rotateDeg, setRotateDeg] = useState(initialRotateDeg)
   const [dragging, setDragging] = useState(false)
 
   // Закрытие по клику вне panel и по Esc.
@@ -103,13 +114,18 @@ export default function PhotoTransformPanel({
   }, [onClose])
 
   // Helper — отправить изменение parent'у с правильным serialize.
-  // При default значениях (1, 0, 0) → null (удалить ключ).
+  // При default значениях (1, 0, 0, 0) → null (удалить соответствующий ключ).
   const emitChange = useCallback(
-    (newScale: number, newOx: number, newOy: number) => {
-      const updates: { scale?: string | null; offset?: string | null } = {}
+    (newScale: number, newOx: number, newOy: number, newRot: number) => {
+      const updates: {
+        scale?: string | null
+        offset?: string | null
+        rotate?: string | null
+      } = {}
       updates.scale = newScale === 1 ? null : serializeScale(newScale)
       updates.offset =
         newOx === 0 && newOy === 0 ? null : serializeOffset(newOx, newOy)
+      updates.rotate = newRot === 0 ? null : serializeRotate(newRot)
       onChange(updates)
     },
     [onChange],
@@ -119,7 +135,7 @@ export default function PhotoTransformPanel({
   function handleScaleSlider(e: React.ChangeEvent<HTMLInputElement>) {
     const v = parseScale(e.target.value)
     setScale(v)
-    emitChange(v, offsetX, offsetY)
+    emitChange(v, offsetX, offsetY, rotateDeg)
   }
 
   // ─── Numeric inputs для X/Y ───────────────────────────────────────
@@ -131,7 +147,7 @@ export default function PhotoTransformPanel({
     }
     const [nx] = parseOffset(`${raw},${offsetY}`)
     setOffsetX(nx)
-    emitChange(scale, nx, offsetY)
+    emitChange(scale, nx, offsetY, rotateDeg)
   }
 
   function handleOffsetYInput(e: React.ChangeEvent<HTMLInputElement>) {
@@ -139,7 +155,7 @@ export default function PhotoTransformPanel({
     if (raw === '' || raw === '-') return
     const [, ny] = parseOffset(`${offsetX},${raw}`)
     setOffsetY(ny)
-    emitChange(scale, offsetX, ny)
+    emitChange(scale, offsetX, ny, rotateDeg)
   }
 
   // ─── Touchpad: pointer events (универсально для мыши и сенсора) ───
@@ -169,9 +185,9 @@ export default function PhotoTransformPanel({
       ny = Math.round(ny * 1000) / 1000
       setOffsetX(nx)
       setOffsetY(ny)
-      emitChange(scale, nx, ny)
+      emitChange(scale, nx, ny, rotateDeg)
     },
-    [emitChange, scale],
+    [emitChange, scale, rotateDeg],
   )
 
   function handleTouchpadDown(e: React.PointerEvent<HTMLDivElement>) {
@@ -195,18 +211,33 @@ export default function PhotoTransformPanel({
   }
 
   function handleTouchpadDoubleClick() {
-    // Двойной клик в центр — reset offset (но scale оставляем как есть).
+    // Двойной клик в центр — reset offset (но scale/rotate оставляем как есть).
     setOffsetX(0)
     setOffsetY(0)
-    emitChange(scale, 0, 0)
+    emitChange(scale, 0, 0, rotateDeg)
   }
 
-  // ─── Сброс — удалить оба ключа ────────────────────────────────────
+  // ─── Р.2 — Rotate slider handler ──────────────────────────────────
+  function handleRotateSlider(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = Number(e.target.value)
+    const v = parseRotate(raw)
+    setRotateDeg(v)
+    emitChange(scale, offsetX, offsetY, v)
+  }
+
+  function handleRotateReset() {
+    // Сброс ТОЛЬКО поворота (двойной клик на label «Поворот»).
+    setRotateDeg(0)
+    emitChange(scale, offsetX, offsetY, 0)
+  }
+
+  // ─── Сброс — удалить все ключи трансформации ───────────────────
   function handleReset() {
     setScale(1)
     setOffsetX(0)
     setOffsetY(0)
-    emitChange(1, 0, 0)
+    setRotateDeg(0)
+    emitChange(1, 0, 0, 0)
   }
 
   // Корректируем позицию popover'а если вылазит за viewport.
@@ -228,7 +259,7 @@ export default function PhotoTransformPanel({
   const dotX = ((offsetX + 1) / 2) * TOUCHPAD_SIZE - TOUCHPAD_DOT_SIZE / 2
   const dotY = ((offsetY + 1) / 2) * TOUCHPAD_SIZE - TOUCHPAD_DOT_SIZE / 2
 
-  const isDefault = !hasCustomTransform(scale, offsetX, offsetY)
+  const isDefault = !hasCustomTransform(scale, offsetX, offsetY, rotateDeg)
 
   return (
     <div
@@ -273,7 +304,7 @@ export default function PhotoTransformPanel({
             const pct = Number(e.target.value)
             const v = pct / 100
             setScale(v)
-            emitChange(v, offsetX, offsetY)
+            emitChange(v, offsetX, offsetY, rotateDeg)
           }}
           className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
         />
@@ -358,6 +389,31 @@ export default function PhotoTransformPanel({
         </div>
       </div>
 
+      {/* Р.2 — Slider поворота (горизонт) */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <span
+            className="text-xs text-gray-600 cursor-pointer select-none"
+            onDoubleClick={handleRotateReset}
+            title="Двойной клик — сбросить поворот"
+          >
+            Поворот
+          </span>
+          <span className="text-xs text-gray-900 font-mono tabular-nums">
+            {rotateDeg > 0 ? `+${rotateDeg.toFixed(1)}` : rotateDeg.toFixed(1)}°
+          </span>
+        </div>
+        <input
+          type="range"
+          min={ROTATE_MIN}
+          max={ROTATE_MAX}
+          step={0.5}
+          value={rotateDeg}
+          onChange={handleRotateSlider}
+          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+        />
+      </div>
+
       {/* Actions */}
       <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
         <button
@@ -365,7 +421,7 @@ export default function PhotoTransformPanel({
           onClick={handleReset}
           disabled={isDefault}
           className="text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
-          title="Сбросить к умолчанию (центрирование, 100%)"
+          title="Сбросить к умолчанию (центрирование, 100%, без поворота)"
         >
           ↺ Сбросить
         </button>

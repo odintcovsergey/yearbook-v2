@@ -22,10 +22,15 @@ import {
   serializeScale,
   serializeOffset,
   hasCustomTransform,
+  parseRotate,
+  serializeRotate,
+  computeAutoZoomForRotation,
   SCALE_MIN,
   SCALE_MAX,
   OFFSET_MIN,
   OFFSET_MAX,
+  ROTATE_MIN,
+  ROTATE_MAX,
 } from '../index';
 
 describe('computeCrop — baseline (scale=1, offset=0,0)', () => {
@@ -271,10 +276,103 @@ describe('hasCustomTransform', () => {
     expect(hasCustomTransform(1, 0, 0)).toBe(false);
   });
 
+  it('default с явным rotate=0 → false', () => {
+    expect(hasCustomTransform(1, 0, 0, 0)).toBe(false);
+  });
+
   it('любое изменение → true', () => {
     expect(hasCustomTransform(1.5, 0, 0)).toBe(true);
     expect(hasCustomTransform(1, 0.5, 0)).toBe(true);
     expect(hasCustomTransform(1, 0, -0.3)).toBe(true);
     expect(hasCustomTransform(2, 1, -1)).toBe(true);
+  });
+
+  it('rotate != 0 → true даже при scale=1, offset=0', () => {
+    expect(hasCustomTransform(1, 0, 0, 5)).toBe(true);
+    expect(hasCustomTransform(1, 0, 0, -1.5)).toBe(true);
+  });
+});
+
+// ─── Р.2 — rotate + auto-zoom ─────────────────────────────────────────
+
+describe('parseRotate', () => {
+  it('null/undefined/некорректные значения → 0', () => {
+    expect(parseRotate(null)).toBe(0);
+    expect(parseRotate(undefined)).toBe(0);
+    expect(parseRotate('garbage')).toBe(0);
+    expect(parseRotate(NaN)).toBe(0);
+    expect(parseRotate('')).toBe(0);
+  });
+
+  it('валидные значения проходят', () => {
+    expect(parseRotate(5)).toBe(5);
+    expect(parseRotate('-3.5')).toBe(-3.5);
+    expect(parseRotate('10')).toBe(10);
+    expect(parseRotate(0)).toBe(0);
+  });
+
+  it('clamp [-45, 45]', () => {
+    expect(parseRotate(100)).toBe(ROTATE_MAX);
+    expect(parseRotate(-100)).toBe(ROTATE_MIN);
+    expect(parseRotate(45.0001)).toBe(ROTATE_MAX);
+  });
+});
+
+describe('serializeRotate', () => {
+  it('тривиальные значения', () => {
+    expect(serializeRotate(0)).toBe('0');
+    expect(serializeRotate(5)).toBe('5');
+    expect(serializeRotate(-3)).toBe('-3');
+  });
+
+  it('дробные части', () => {
+    expect(serializeRotate(0.5)).toBe('0.5');
+    expect(serializeRotate(7.25)).toBe('7.25');
+  });
+
+  it('clamp', () => {
+    expect(serializeRotate(100)).toBe('45');
+    expect(serializeRotate(-100)).toBe('-45');
+  });
+});
+
+describe('computeAutoZoomForRotation', () => {
+  it('rotate=0 → factor=1 (без зума)', () => {
+    expect(computeAutoZoomForRotation(0, 1)).toBe(1);
+    expect(computeAutoZoomForRotation(0, 2)).toBe(1);
+    expect(computeAutoZoomForRotation(0, 0.5)).toBe(1);
+  });
+
+  it('квадратная рамка (aspect=1), 45° → √2', () => {
+    const f = computeAutoZoomForRotation(45, 1);
+    expect(f).toBeCloseTo(Math.SQRT2, 4);
+  });
+
+  it('квадратная рамка, -45° → тоже √2 (симметрия)', () => {
+    expect(computeAutoZoomForRotation(-45, 1)).toBeCloseTo(Math.SQRT2, 4);
+  });
+
+  it('малые углы дают factor близкий к 1', () => {
+    expect(computeAutoZoomForRotation(2, 1)).toBeLessThan(1.05);
+    expect(computeAutoZoomForRotation(5, 1)).toBeLessThan(1.1);
+  });
+
+  it('широкая рамка (aspect=2): больший зум на тех же углах', () => {
+    const fSquare = computeAutoZoomForRotation(30, 1);
+    const fWide = computeAutoZoomForRotation(30, 2);
+    expect(fWide).toBeGreaterThan(fSquare);
+  });
+
+  it('aspect=2 и aspect=0.5 (повернутая та же рамка) дают одинаковый factor', () => {
+    expect(computeAutoZoomForRotation(15, 2)).toBeCloseTo(
+      computeAutoZoomForRotation(15, 0.5),
+      6,
+    );
+  });
+
+  it('некорректные входы → 1 (безопасно)', () => {
+    expect(computeAutoZoomForRotation(0, 0)).toBe(1);
+    expect(computeAutoZoomForRotation(0, -1)).toBe(1);
+    expect(computeAutoZoomForRotation(NaN, 1)).toBe(1);
   });
 });

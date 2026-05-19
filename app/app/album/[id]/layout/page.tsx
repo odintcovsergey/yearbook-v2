@@ -22,7 +22,7 @@ import TemplatePickerModal from '../../../_components/TemplatePickerModal'
 import SaveIndicator from '../../../_components/SaveIndicator'
 import PhotoContextMenu from '../../../_components/PhotoContextMenu'
 import PhotoTransformPanel from '../../../_components/PhotoTransformPanel'
-import { parseScale, parseOffset } from '@/lib/photo-transform'
+import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform'
 import { remapData } from '@/lib/template-replace'
 
 // Konva-компонент: SSR-incompatible (использует window.Image).
@@ -720,6 +720,7 @@ function LayoutEditorPageInner({
   function handleTransformChange(updates: {
     scale?: string | null
     offset?: string | null
+    rotate?: string | null
   }) {
     if (!photoTransformPanel) return
     const { label, spreadIndex } = photoTransformPanel
@@ -730,6 +731,7 @@ function LayoutEditorPageInner({
         const newData = { ...s.data }
         const scaleKey = `__scale__${label}`
         const offsetKey = `__offset__${label}`
+        const rotateKey = `__rotate__${label}`
         if (updates.scale !== undefined) {
           if (updates.scale === null) delete newData[scaleKey]
           else newData[scaleKey] = updates.scale
@@ -737,6 +739,11 @@ function LayoutEditorPageInner({
         if (updates.offset !== undefined) {
           if (updates.offset === null) delete newData[offsetKey]
           else newData[offsetKey] = updates.offset
+        }
+        // Р.2 — поворот фото (горизонт). null = удалить ключ (default 0°).
+        if (updates.rotate !== undefined) {
+          if (updates.rotate === null) delete newData[rotateKey]
+          else newData[rotateKey] = updates.rotate
         }
         return { ...s, data: newData }
       })
@@ -1446,20 +1453,22 @@ function LayoutEditorPageInner({
         />
       )}
 
-      {/* ─── PhotoTransformPanel (КЭ.5) — кадрирование фото (scale + offset) ─── */}
+      {/* ─── PhotoTransformPanel (КЭ.5 + Р.2) — кадрирование + поворот фото ─── */}
       {photoTransformPanel && (() => {
         // Извлекаем текущие значения transform из layout state.
-        // Если ключей __scale__/__offset__ нет → defaults (1, 0, 0).
+        // Если ключей __scale__/__offset__/__rotate__ нет → defaults (1, 0, 0, 0).
         const spread = layout?.spreads[photoTransformPanel.spreadIndex]
         const data = spread?.data ?? {}
         const sc = parseScale(data[`__scale__${photoTransformPanel.label}`])
         const [ox, oy] = parseOffset(data[`__offset__${photoTransformPanel.label}`])
+        const rot = parseRotate(data[`__rotate__${photoTransformPanel.label}`])
         return (
           <PhotoTransformPanel
             label={photoTransformPanel.label}
             scale={sc}
             offsetX={ox}
             offsetY={oy}
+            rotateDeg={rot}
             clientX={photoTransformPanel.clientX}
             clientY={photoTransformPanel.clientY}
             onChange={handleTransformChange}
