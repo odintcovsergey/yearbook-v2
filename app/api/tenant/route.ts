@@ -35,7 +35,7 @@ async function assertAlbumAccess(auth: AuthContext, albumId: string, tenantIdOve
 // ============================================================
 const ALLOWED_SECTION_TYPES = new Set([
   'soft_intro', 'teachers', 'students', 'common', 'common_required',
-  'vignette', 'soft_final',
+  'common_additional', 'vignette', 'soft_final',
 ])
 const ALLOWED_SLOT_TYPES = new Set(['H', 'Q', 'FULL', 'flex_A', 'flex_B', 'flex_C'])
 const ALLOWED_COMMON_MODES = new Set(['auto'])  // РЭ.21.8.8: пока только auto
@@ -84,6 +84,7 @@ type ValidatedSection =
   | { type: 'common'; slots: string[] }
   | { type: 'common'; mode: 'auto'; max_spreads: number }  // РЭ.21.8.8
   | { type: 'common_required' }                            // РЭ.21.8.9
+  | { type: 'common_additional'; max_spreads: number }     // РЭ.21.8.10
 
 function validateSectionStructure(
   raw: unknown,
@@ -157,6 +158,22 @@ function validateSectionStructure(
       // РЭ.21.8.9: обязательный общий раздел по таблице OkeyBook.
       // Параметров нет — engine читает таблицу автоматически.
       result.push({ type: 'common_required' })
+    } else if (type === 'common_additional') {
+      // РЭ.21.8.10: дополнительный общий раздел (платная допуслуга).
+      // Параметр max_spreads — целое 0..20.
+      const maxSpreads = (s as { max_spreads?: unknown }).max_spreads
+      if (
+        typeof maxSpreads !== 'number' ||
+        !Number.isInteger(maxSpreads) ||
+        maxSpreads < 0 ||
+        maxSpreads > 20
+      ) {
+        return {
+          ok: false,
+          error: `Секция #${i + 1} (common_additional): max_spreads должен быть целым числом 0..20`,
+        }
+      }
+      result.push({ type: 'common_additional', max_spreads: maxSpreads })
     } else {
       result.push({
         type: type as 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final',

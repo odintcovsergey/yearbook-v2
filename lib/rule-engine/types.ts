@@ -339,6 +339,7 @@ export type SectionType =
   | 'students'
   | 'common'
   | 'common_required'  // РЭ.21.8.9: обязательный общий раздел по таблице OkeyBook
+  | 'common_additional' // РЭ.21.8.10: доп. общий раздел (платная допуслуга)
   | 'vignette'
   | 'soft_final';
 
@@ -358,12 +359,17 @@ export type SectionType =
  *    автоматически выбирает строку из эталонной таблицы OkeyBook на основе
  *    preset.density × preset.sheet_type × input.students.length. См.
  *    lib/rule-engine/album-structure-okeybook.ts.
+ *  - для секции `common_additional` (РЭ.21.8.10) обязателен `max_spreads`
+ *    — макс. количество разворотов в доп. общем разделе. Может быть 0
+ *    (тогда секция не строится — партнёр не купил допуслугу). Engine берёт
+ *    additional_pages из той же таблицы что и common_required.
  */
 export type SectionStructureEntry =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
   | { type: 'common'; slots: SlotType[] }
   | { type: 'common'; mode: 'auto'; max_spreads: number }
-  | { type: 'common_required' };
+  | { type: 'common_required' }
+  | { type: 'common_additional'; max_spreads: number };
 
 /**
  * Полная структура альбома = массив секций в порядке появления.

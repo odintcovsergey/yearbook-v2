@@ -57,6 +57,7 @@ import type { RuleEngineBundle } from './loaders';
 import type { CommonPhotoCounts } from './slot-chains';
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import {
+  fillCommonAdditionalSection,
   fillCommonAutoSection,
   fillCommonRequiredSection,
   fillCommonSection,
@@ -136,6 +137,12 @@ export function buildFromSectionStructure(
         // Параметров нет — engine сам выбирает строку таблицы по
         // density × sheet_type × students_count.
         fillCommonRequiredSection(ctx);
+        break;
+      case 'common_additional':
+        // РЭ.21.8.10: дополнительный общий раздел (платная допуслуга).
+        // max_spreads берётся из секции — партнёр в редакторе альбома
+        // выставляет сколько разворотов готов добавить.
+        fillCommonAdditionalSection(ctx, section.max_spreads);
         break;
       case 'teachers':
         fillTeachersSection(ctx);

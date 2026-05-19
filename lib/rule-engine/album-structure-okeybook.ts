@@ -90,6 +90,26 @@ export interface TableRow {
    * Длина < 6 = меньше страниц чем максимум (например мягкие имеют меньше).
    */
   pages: PageDescriptor[];
+  /**
+   * РЭ.21.8.10: страницы ДОПОЛНИТЕЛЬНОГО общего раздела.
+   *
+   * Дополнительный раздел — платная допуслуга OkeyBook: партнёр продаёт
+   * родителям возможность увеличить количество общих разворотов. Внешне
+   * страницы не отличаются от обязательного раздела (те же мастера,
+   * та же логика «или-или»), но входят в стоимость отдельно.
+   *
+   * В таблице xlsx это колонки `доп_1L..доп_5L`. У плотных листов есть
+   * только у строк с максимальным количеством учеников; у мягких —
+   * сдвинуто на 1 страницу вправо (первая страница `-`).
+   *
+   * Длина 0..5. Пустой массив = доп раздел не предусмотрен для этой
+   * комбинации (например Лайт плотные 13-15 учеников).
+   *
+   * Каждый элемент может быть null если в таблице стоит `-` (пропуск
+   * конкретной страницы). Это редкий случай — у мягких первая страница
+   * `-` (мы её просто не строим, начинаем со второй).
+   */
+  additional_pages: (PageDescriptor | null)[];
 }
 
 // ─── Шаблоны страниц (для DRY) ──────────────────────────────────────────────
@@ -120,6 +140,56 @@ const COLLAGE_OR_HALVES_OR_FULL: PageDescriptor = [
   { master: 'J-Full', category: 'full_class', count: 1 },
 ];
 
+/**
+ * «Либо 1/4 класса, либо 6 фото 1/6, либо 2 по 1/2 класса, либо 1 общая».
+ * РЭ.21.8.10: используется в доп. разделе на 3-4 страницах.
+ * Quarter мастер берётся в Left-варианте; engine на правой странице
+ * заменяет на Right (через pickRightVariant в common-required.ts).
+ */
+const QUARTERS_OR_COLLAGE_OR_HALVES_OR_FULL: PageDescriptor = [
+  { master: 'J-Quarter-Left', category: 'quarter', count: 2 },
+  { master: 'J-Collage-6', category: 'sixth', count: 6 },
+  { master: 'J-Half', category: 'half_class', count: 2 },
+  { master: 'J-Full', category: 'full_class', count: 1 },
+];
+
+/**
+ * РЭ.21.8.10: шаблоны дополнительного общего раздела.
+ *
+ * ADDITIONAL_HARD — для плотных листов. 4 страницы:
+ *   1L: «6×1/6 либо 2×1/2 либо 1 общая»
+ *   2R: «6×1/6 либо 2×1/2 либо 1 общая»
+ *   3L: «1/4 либо 6×1/6 либо 2×1/2 либо 1 общая»
+ *   4R: «1/4 либо 6×1/6 либо 2×1/2 либо 1 общая»
+ *
+ * ADDITIONAL_SOFT — для мягких листов. 5 «позиций» но первая null
+ * (доп раздел у мягких начинается со 2-й страницы, чтобы попасть на
+ * правую сторону разворота). Engine при null просто не строит страницу,
+ * pageInstances накапливается со следующей.
+ *   1L: пропуск (null)
+ *   2R: «6×1/6 либо 2×1/2 либо 1 общая»
+ *   3L: «1/4 либо 6×1/6 либо 2×1/2 либо 1 общая»
+ *   4R: «1/4 либо 6×1/6 либо 2×1/2 либо 1 общая»
+ *   5L: «6×1/6 либо 2×1/2 либо 1 общая»
+ */
+const ADDITIONAL_HARD: (PageDescriptor | null)[] = [
+  COLLAGE_OR_HALVES_OR_FULL,
+  COLLAGE_OR_HALVES_OR_FULL,
+  QUARTERS_OR_COLLAGE_OR_HALVES_OR_FULL,
+  QUARTERS_OR_COLLAGE_OR_HALVES_OR_FULL,
+];
+
+const ADDITIONAL_SOFT: (PageDescriptor | null)[] = [
+  null,
+  COLLAGE_OR_HALVES_OR_FULL,
+  QUARTERS_OR_COLLAGE_OR_HALVES_OR_FULL,
+  QUARTERS_OR_COLLAGE_OR_HALVES_OR_FULL,
+  COLLAGE_OR_HALVES_OR_FULL,
+];
+
+/** Пустой доп раздел — для строк где он не предусмотрен. */
+const NO_ADDITIONAL: (PageDescriptor | null)[] = [];
+
 // ─── Эталонная таблица OkeyBook ─────────────────────────────────────────────
 
 /**
@@ -142,18 +212,21 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     sheet_type: 'hard',
     students_match: { kind: 'ranges', ranges: [[1, 24]] },
     pages: [TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
+    additional_pages: ADDITIONAL_HARD,
   },
   {
     density: 'mini',
     sheet_type: 'hard',
     students_match: { kind: 'ranges', ranges: [[25, 28]] },
     pages: [], // обязательного общего раздела нет
+    additional_pages: NO_ADDITIONAL,
   },
   {
     density: 'mini',
     sheet_type: 'hard',
     students_match: { kind: 'ranges', ranges: [[29, 36]] },
     pages: [], // обязательного общего раздела нет
+    additional_pages: NO_ADDITIONAL,
   },
 
   // ─── Мини мягкие ───────────────────────────────────────────────────────
@@ -162,18 +235,21 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     sheet_type: 'soft',
     students_match: { kind: 'ranges', ranges: [[1, 24]] },
     pages: [TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL, ONE_FULL],
+    additional_pages: ADDITIONAL_SOFT,
   },
   {
     density: 'mini',
     sheet_type: 'soft',
     students_match: { kind: 'ranges', ranges: [[25, 28]] },
     pages: [TWO_HALVES],
+    additional_pages: NO_ADDITIONAL,
   },
   {
     density: 'mini',
     sheet_type: 'soft',
     students_match: { kind: 'ranges', ranges: [[29, 36]] },
     pages: [TWO_HALVES],
+    additional_pages: NO_ADDITIONAL,
   },
 
   // ─── Лайт плотные ──────────────────────────────────────────────────────
@@ -195,6 +271,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
       TWO_HALVES,
     ],
+    additional_pages: ADDITIONAL_HARD,
   },
   {
     density: 'light',
@@ -207,12 +284,14 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       ],
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
+    additional_pages: NO_ADDITIONAL,
   },
   {
     density: 'light',
     sheet_type: 'hard',
     students_match: { kind: 'ranges', ranges: [[16, 18]] },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
+    additional_pages: NO_ADDITIONAL,
   },
   {
     density: 'light',
@@ -232,6 +311,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
       TWO_HALVES,
     ],
+    additional_pages: NO_ADDITIONAL,
   },
 
   // ─── Лайт мягкие ───────────────────────────────────────────────────────
@@ -252,6 +332,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
       COLLAGE_OR_HALVES_OR_FULL,
     ],
+    additional_pages: ADDITIONAL_SOFT,
   },
   {
     density: 'light',
@@ -264,18 +345,21 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       ],
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
+    additional_pages: NO_ADDITIONAL,
   },
   {
     density: 'light',
     sheet_type: 'soft',
     students_match: { kind: 'ranges', ranges: [[16, 18]] },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
+    additional_pages: NO_ADDITIONAL,
   },
   {
     density: 'light',
     sheet_type: 'soft',
     students_match: { kind: 'ranges', ranges: [[19, 21]] },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
+    additional_pages: NO_ADDITIONAL,
   },
 
   // ─── Медиум плотные ────────────────────────────────────────────────────
@@ -299,6 +383,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
       TWO_HALVES,
     ],
+    additional_pages: ADDITIONAL_HARD,
   },
   {
     density: 'medium',
@@ -312,6 +397,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       ],
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
+    additional_pages: NO_ADDITIONAL,
   },
   {
     density: 'medium',
@@ -325,6 +411,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       ],
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
+    additional_pages: NO_ADDITIONAL,
   },
   {
     density: 'medium',
@@ -345,6 +432,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
       TWO_HALVES,
     ],
+    additional_pages: NO_ADDITIONAL,
   },
 
   // ─── Медиум мягкие ─────────────────────────────────────────────────────
@@ -367,6 +455,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
       COLLAGE_OR_HALVES_OR_FULL,
     ],
+    additional_pages: ADDITIONAL_SOFT,
   },
   {
     density: 'medium',
@@ -380,6 +469,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       ],
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
+    additional_pages: NO_ADDITIONAL,
   },
   {
     density: 'medium',
@@ -393,6 +483,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       ],
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
+    additional_pages: NO_ADDITIONAL,
   },
   {
     density: 'medium',
@@ -406,6 +497,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       ],
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
+    additional_pages: NO_ADDITIONAL,
   },
 
   // ─── Стандарт + Универсал плотные ──────────────────────────────────────
@@ -422,12 +514,14 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
       TWO_HALVES,
     ],
+    additional_pages: ADDITIONAL_HARD,
   },
   {
     density: 'standard',
     sheet_type: 'hard',
     students_match: { kind: 'parity', parity: 'odd' },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
+    additional_pages: NO_ADDITIONAL,
   },
   {
     density: 'universal',
@@ -441,12 +535,14 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
       TWO_HALVES,
     ],
+    additional_pages: ADDITIONAL_HARD,
   },
   {
     density: 'universal',
     sheet_type: 'hard',
     students_match: { kind: 'parity', parity: 'odd' },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
+    additional_pages: NO_ADDITIONAL,
   },
 
   // ─── Стандарт + Универсал мягкие ───────────────────────────────────────
@@ -461,12 +557,14 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
       COLLAGE_OR_HALVES_OR_FULL,
     ],
+    additional_pages: ADDITIONAL_SOFT,
   },
   {
     density: 'standard',
     sheet_type: 'soft',
     students_match: { kind: 'parity', parity: 'odd' },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
+    additional_pages: NO_ADDITIONAL,
   },
   {
     density: 'universal',
@@ -479,12 +577,14 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
       COLLAGE_OR_HALVES_OR_FULL,
     ],
+    additional_pages: ADDITIONAL_SOFT,
   },
   {
     density: 'universal',
     sheet_type: 'soft',
     students_match: { kind: 'parity', parity: 'odd' },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
+    additional_pages: NO_ADDITIONAL,
   },
 
   // ─── Максимум плотные ──────────────────────────────────────────────────
@@ -503,6 +603,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
       TWO_HALVES,
     ],
+    additional_pages: ADDITIONAL_HARD,
   },
 
   // ─── Максимум мягкие ───────────────────────────────────────────────────
@@ -517,6 +618,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
       COLLAGE_OR_HALVES_OR_FULL,
     ],
+    additional_pages: ADDITIONAL_SOFT,
   },
 ];
 
