@@ -40,11 +40,28 @@ ALTER TABLE presets
 -- 1 = одна страница на ученика (одностраничные мастера типа E-Universal-Left).
 -- 2 = разворот на ученика (двухстраничные пары типа E-Max-Left + E-Max-Right).
 -- NULL = семантический поиск не активирован (fallback по preset.id / density).
-ALTER TABLE presets
-  ADD CONSTRAINT IF NOT EXISTS presets_student_pages_per_student_chk
-    CHECK (student_pages_per_student IS NULL OR student_pages_per_student IN (1, 2));
+--
+-- Postgres НЕ поддерживает ADD CONSTRAINT IF NOT EXISTS, поэтому используем
+-- DO-блок с проверкой через pg_constraint.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'presets_student_pages_per_student_chk'
+  ) THEN
+    ALTER TABLE presets
+      ADD CONSTRAINT presets_student_pages_per_student_chk
+      CHECK (student_pages_per_student IS NULL OR student_pages_per_student IN (1, 2));
+  END IF;
+END $$;
 
 -- Whitelist значений для student_friend_photos: разумный верхний предел 10.
-ALTER TABLE presets
-  ADD CONSTRAINT IF NOT EXISTS presets_student_friend_photos_chk
-    CHECK (student_friend_photos IS NULL OR (student_friend_photos >= 0 AND student_friend_photos <= 10));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'presets_student_friend_photos_chk'
+  ) THEN
+    ALTER TABLE presets
+      ADD CONSTRAINT presets_student_friend_photos_chk
+      CHECK (student_friend_photos IS NULL OR (student_friend_photos >= 0 AND student_friend_photos <= 10));
+  END IF;
+END $$;
