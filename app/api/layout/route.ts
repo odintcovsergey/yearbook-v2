@@ -1227,7 +1227,7 @@ async function handleBuildAlbum(
 
   const { data: album, error: albumErr } = await supabaseAdmin
     .from('albums')
-    .select('id, config_preset_id, rules_preset_id, template_set_id, vignettes_enabled')
+    .select('id, config_preset_id, rules_preset_id, section_structure_preset_id, template_set_id, vignettes_enabled')
     .eq('id', albumId)
     .single()
 
