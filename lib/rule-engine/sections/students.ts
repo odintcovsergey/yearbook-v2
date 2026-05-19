@@ -1,16 +1,20 @@
 /**
  * Заполнение секции type='students' для buildFromSectionStructure.
  *
- * Логика выбора режима — по `preset.density` (см. inventory §4):
+ * Логика выбора режима — по `preset.density`, а для density=null
+ * (Максимум / Индивидуальная) фолбэк через `preset.id`:
  *
- *   density     | режим                          | мастера
- *   ────────────┼────────────────────────────────┼────────────────────────────
- *   standard    | 1 ученик = 1 страница, alt L/R  | E-Standard-Left / E-Standard-Right
- *   universal   | 1 ученик = 1 страница, alt L/R  | E-Universal-Left / E-Universal-Right
- *   medium      | сетка 4 на страницу             | M-Grid-Page + M-Combined-Page
- *   light       | адаптивная сетка 6→4→3→2        | L-Grid-Page + L-N + L-Combined-Page
- *   mini        | адаптивная сетка 12→9→6→4       | N-Grid-Page + N-N + N-Combined-Page
- *   null/other  | warning students_density_not_supported (maximum/individual)
+ *   density / preset.id  | режим                          | мастера
+ *   ─────────────────────┼────────────────────────────────┼────────────────────────────
+ *   standard             | 1 ученик = 1 страница, alt L/R  | E-Standard-Left / E-Standard-Right
+ *   universal            | 1 ученик = 1 страница, alt L/R  | E-Universal-Left / E-Universal-Right
+ *   medium               | сетка 4 на страницу             | M-Grid-Page + M-Combined-Page
+ *   light                | адаптивная сетка 6→4→3→2        | L-Grid-Page + L-N + L-Combined-Page
+ *   mini                 | адаптивная сетка 12→9→6→4       | N-Grid-Page + N-N + N-Combined-Page
+ *   null + id='maximum'  | 1 ученик = 1 разворот           | E-Max-Left + E-Max-Right  (РЭ.21.8.14)
+ *   null + id='individual'| 1 ученик = 1 разворот (заглушка) | E-Max-Left + E-Max-Right  (РЭ.21.8.14)
+ *                        | в РЭ.21.8.15 — адаптивный выбор |   мастера по friend_photos
+ *   null + другой        | warning students_density_not_supported
  *
  * Примечание (РЭ.21.8.6a, после проверки на боевых данных): в template_set
  * okeybook-default density='standard' устроена так же как universal —
@@ -38,15 +42,43 @@ import type { SectionFillContext } from './shared';
 export function fillStudentsSection(ctx: SectionFillContext): void {
   const density = ctx.bundle.preset.density;
 
-  if (density === null || density === undefined) {
+  // РЭ.21.8.14: фолбэк для density=null через preset.id. В БД у Максимум
+  // и Индивидуальной комплектации density=null (РЭ.20.5). Section Structure
+  // engine трактует preset.id='maximum' / 'individual' как маркер
+  // соответствующего layout-режима. Это разовое решение Сергея 19.05.2026 —
+  // когда появится отдельная колонка `category` в presets, эта логика
+  // переходит туда.
+  let effectiveDensity = density;
+  if (!effectiveDensity) {
+    if (ctx.bundle.preset.id === 'maximum') {
+      // Один ученик = один разворот, мастера E-Max-Left + E-Max-Right.
+      buildOnePerSpread(ctx, {
+        kind: 'maximum',
+        leftMasterName: 'E-Max-Left',
+        rightMasterName: 'E-Max-Right',
+      });
+      return;
+    }
+    if (ctx.bundle.preset.id === 'individual') {
+      // РЭ.21.8.15 (следующий коммит) — адаптивный выбор мастера по
+      // количеству фото с друзьями у ученика. Пока заглушка с тем же
+      // E-Max-Left/-Right как у Maximum, чтобы не падать. Будет
+      // переработана в следующем коммите.
+      buildOnePerSpread(ctx, {
+        kind: 'individual',
+        leftMasterName: 'E-Max-Left',
+        rightMasterName: 'E-Max-Right',
+      });
+      return;
+    }
     ctx.warnings.push(
-      `students_density_not_supported: preset.density is null ` +
-        `(maximum/individual комплектации не покрыты новым engine'ом)`,
+      `students_density_not_supported: preset.density is null и preset.id='${ctx.bundle.preset.id}' ` +
+        `не поддерживается (ожидается 'maximum' или 'individual')`,
     );
     return;
   }
 
-  switch (density) {
+  switch (effectiveDensity) {
     case 'standard':
       buildAlternatingLR(ctx, {
         density: 'standard',
@@ -145,6 +177,85 @@ function buildAlternatingLR(
         student_index: i,
         student_name: student.full_name,
         position,
+        friend_photos_count: student.friend_photos
+          ? student.friend_photos.length
+          : 0,
+      },
+    });
+  }
+}
+
+// ─── One-per-spread (Maximum, Individual) ──────────────────────────────────
+
+interface OnePerSpreadConfig {
+  kind: 'maximum' | 'individual';
+  leftMasterName: string;
+  rightMasterName: string;
+}
+
+/**
+ * Один ученик = один разворот. Используется для Максимум и (временно)
+ * Индивидуальной комплектации.
+ *
+ * Левая страница: портрет + имя (мастер leftMasterName, обычно E-Max-Left).
+ * Правая страница: фото с друзьями + текст-цитата (мастер rightMasterName,
+ * обычно E-Max-Right).
+ *
+ * Bindings обоих сторон строятся через bindSingleStudent (один ученик —
+ * placeholder-driven, поддерживает portrait/name/quote + friend_photos
+ * подставляющиеся в studentphoto_N / friendphoto_N слоты).
+ *
+ * РЭ.21.8.15 заменит этот метод для kind='individual' на адаптивный выбор
+ * мастера по количеству friend_photos.
+ */
+function buildOnePerSpread(
+  ctx: SectionFillContext,
+  config: OnePerSpreadConfig,
+): void {
+  const leftMaster = ctx.bundle.mastersByName.get(config.leftMasterName);
+  const rightMaster = ctx.bundle.mastersByName.get(config.rightMasterName);
+
+  if (!leftMaster) {
+    ctx.warnings.push(
+      `students_master_not_found: '${config.leftMasterName}' отсутствует в template_set дизайна`,
+    );
+    return;
+  }
+  if (!rightMaster) {
+    ctx.warnings.push(
+      `students_master_not_found: '${config.rightMasterName}' отсутствует в template_set дизайна`,
+    );
+    return;
+  }
+
+  const students = ctx.input.students;
+  for (let i = 0; i < students.length; i++) {
+    const student = students[i];
+
+    // Left + right bindings строим отдельно — на каждой странице свои
+    // placeholder labels (portrait слева, friend_photos справа). Логика
+    // placeholder-driven та же что в одностраничных мастерах.
+    const leftBindings = bindSingleStudent(leftMaster, student);
+    const rightBindings = bindSingleStudent(rightMaster, student);
+
+    ctx.pageInstances.push({
+      master_id: leftMaster.id,
+      bindings: leftBindings,
+    });
+    ctx.pageInstances.push({
+      master_id: rightMaster.id,
+      bindings: rightBindings,
+    });
+
+    ctx.decisionTrace.push({
+      spread_index: Math.floor((ctx.pageInstances.length - 2) / 2),
+      section_index: ctx.sectionIndex,
+      family_id: 'student-section',
+      rule_id: `${config.kind}:E-Max-spread`,
+      inputs: {
+        density: config.kind,
+        student_index: i,
+        student_name: student.full_name,
         friend_photos_count: student.friend_photos
           ? student.friend_photos.length
           : 0,
