@@ -65,6 +65,7 @@ import {
   fillSoftIntroSection,
   fillStudentsSection,
   fillTeachersSection,
+  fillTransitionSection,
 } from './sections';
 import type { SectionFillContext } from './sections';
 
@@ -143,6 +144,12 @@ export function buildFromSectionStructure(
         // max_spreads берётся из секции — партнёр в редакторе альбома
         // выставляет сколько разворотов готов добавить.
         fillCommonAdditionalSection(ctx, section.max_spreads);
+        break;
+      case 'transition':
+        // РЭ.21.8.11 (вариант C): переходная правая страница.
+        // Строится только когда pageInstances нечётный после students.
+        // Левая сторона (комбо «N учеников + 1 общая») отложена в 11b.
+        fillTransitionSection(ctx);
         break;
       case 'teachers':
         fillTeachersSection(ctx);

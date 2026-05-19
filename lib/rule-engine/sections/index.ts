@@ -19,6 +19,7 @@
 export { fillCommonSection, fillCommonAutoSection } from './common';
 export { fillCommonRequiredSection } from './common-required';
 export { fillCommonAdditionalSection } from './common-additional';
+export { fillTransitionSection } from './transition';
 export { fillTeachersSection } from './teachers';
 export { fillStudentsSection } from './students';
 export { fillSoftIntroSection } from './soft-intro';

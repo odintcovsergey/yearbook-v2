@@ -35,7 +35,7 @@ async function assertAlbumAccess(auth: AuthContext, albumId: string, tenantIdOve
 // ============================================================
 const ALLOWED_SECTION_TYPES = new Set([
   'soft_intro', 'teachers', 'students', 'common', 'common_required',
-  'common_additional', 'vignette', 'soft_final',
+  'common_additional', 'transition', 'vignette', 'soft_final',
 ])
 const ALLOWED_SLOT_TYPES = new Set(['H', 'Q', 'FULL', 'flex_A', 'flex_B', 'flex_C'])
 const ALLOWED_COMMON_MODES = new Set(['auto'])  // РЭ.21.8.8: пока только auto
@@ -85,6 +85,7 @@ type ValidatedSection =
   | { type: 'common'; mode: 'auto'; max_spreads: number }  // РЭ.21.8.8
   | { type: 'common_required' }                            // РЭ.21.8.9
   | { type: 'common_additional'; max_spreads: number }     // РЭ.21.8.10
+  | { type: 'transition' }                                 // РЭ.21.8.11
 
 function validateSectionStructure(
   raw: unknown,
@@ -158,6 +159,11 @@ function validateSectionStructure(
       // РЭ.21.8.9: обязательный общий раздел по таблице OkeyBook.
       // Параметров нет — engine читает таблицу автоматически.
       result.push({ type: 'common_required' })
+    } else if (type === 'transition') {
+      // РЭ.21.8.11: переходная страница. Параметров нет — engine
+      // читает row.transition_right из таблицы и строит правую страницу,
+      // если pageInstances нечётный после students секции.
+      result.push({ type: 'transition' })
     } else if (type === 'common_additional') {
       // РЭ.21.8.10: дополнительный общий раздел (платная допуслуга).
       // Параметр max_spreads — целое 0..20.

@@ -91,7 +91,7 @@ export interface TableRow {
    */
   pages: PageDescriptor[];
   /**
-   * РЭ.21.8.10: страницы ДОПОЛНИТЕЛЬНОГО общего раздела.
+   * РЭ.21.8.11: страницы ДОПОЛНИТЕЛЬНОГО общего раздела.
    *
    * Дополнительный раздел — платная допуслуга OkeyBook: партнёр продаёт
    * родителям возможность увеличить количество общих разворотов. Внешне
@@ -110,6 +110,41 @@ export interface TableRow {
    * `-` (мы её просто не строим, начинаем со второй).
    */
   additional_pages: (PageDescriptor | null)[];
+
+  /**
+   * РЭ.21.8.11 (вариант C, упрощённый): правая страница переходного
+   * разворота.
+   *
+   * Контекст: переходная страница появляется когда последний разворот
+   * личного раздела не заполнен целиком (например, у Стандарта при
+   * нечётном количестве учеников последняя 5-я страница ученика —
+   * на левой, справа дырка). В таблице xlsx это колонки `R3C5` (левая)
+   * и `R3C6` (правая).
+   *
+   * **Левая сторона** требует комбо-мастеров («2 фото учеников +
+   * 1 общая снизу») которых сейчас нет в template_set okeybook-default.
+   * Поэтому в варианте C мы её не строим — оставляем последнего ученика
+   * по умолчанию из students секции. Будет реализовано в РЭ.21.8.11b
+   * когда дизайнер нарисует комбо-мастера (см. master-cleanup-tz.md
+   * раздел H).
+   *
+   * **Правая сторона** — общий раздел («2×1/2 либо 6×1/6 либо 1 общая»),
+   * это тот же PageDescriptor что и в obligatory pages. Engine строит
+   * её на правой странице сразу после students секции.
+   *
+   * null = переходная не нужна (например когда обязательный раздел
+   * начинается с левой страницы — после Максимума или после чётного
+   * Стандарта). Engine просто не строит переходную и сразу переходит
+   * к common_required.
+   *
+   * Когда строится:
+   *   - У строки transition_right !== null
+   *   - После secции students текущий pageInstances.length нечётный
+   *     (висящая правая страница)
+   *
+   * Иначе secция transition ничего не делает.
+   */
+  transition_right: PageDescriptor | null;
 }
 
 // ─── Шаблоны страниц (для DRY) ──────────────────────────────────────────────
@@ -213,6 +248,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'ranges', ranges: [[1, 24]] },
     pages: [TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
     additional_pages: ADDITIONAL_HARD,
+    transition_right: null,
   },
   {
     density: 'mini',
@@ -220,6 +256,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'ranges', ranges: [[25, 28]] },
     pages: [], // обязательного общего раздела нет
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
   {
     density: 'mini',
@@ -227,6 +264,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'ranges', ranges: [[29, 36]] },
     pages: [], // обязательного общего раздела нет
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
 
   // ─── Мини мягкие ───────────────────────────────────────────────────────
@@ -236,6 +274,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'ranges', ranges: [[1, 24]] },
     pages: [TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL, ONE_FULL],
     additional_pages: ADDITIONAL_SOFT,
+    transition_right: null,
   },
   {
     density: 'mini',
@@ -243,6 +282,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'ranges', ranges: [[25, 28]] },
     pages: [TWO_HALVES],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
   {
     density: 'mini',
@@ -250,6 +290,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'ranges', ranges: [[29, 36]] },
     pages: [TWO_HALVES],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
 
   // ─── Лайт плотные ──────────────────────────────────────────────────────
@@ -272,6 +313,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       TWO_HALVES,
     ],
     additional_pages: ADDITIONAL_HARD,
+    transition_right: null,
   },
   {
     density: 'light',
@@ -285,6 +327,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
   {
     density: 'light',
@@ -292,6 +335,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'ranges', ranges: [[16, 18]] },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
   {
     density: 'light',
@@ -312,6 +356,8 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       TWO_HALVES,
     ],
     additional_pages: NO_ADDITIONAL,
+    // Комбо «3 ученика + 1 общая» — нет мастера, отложено в РЭ.21.8.11b.
+    transition_right: null,
   },
 
   // ─── Лайт мягкие ───────────────────────────────────────────────────────
@@ -333,6 +379,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
     ],
     additional_pages: ADDITIONAL_SOFT,
+    transition_right: null,
   },
   {
     density: 'light',
@@ -346,6 +393,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
   {
     density: 'light',
@@ -353,6 +401,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'ranges', ranges: [[16, 18]] },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
   {
     density: 'light',
@@ -360,6 +409,8 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'ranges', ranges: [[19, 21]] },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
     additional_pages: NO_ADDITIONAL,
+    // Комбо «3 ученика + 1 общая» — нет мастера, отложено в РЭ.21.8.11b.
+    transition_right: null,
   },
 
   // ─── Медиум плотные ────────────────────────────────────────────────────
@@ -384,6 +435,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       TWO_HALVES,
     ],
     additional_pages: ADDITIONAL_HARD,
+    transition_right: null,
   },
   {
     density: 'medium',
@@ -398,6 +450,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
   {
     density: 'medium',
@@ -412,6 +465,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
   {
     density: 'medium',
@@ -433,6 +487,8 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       TWO_HALVES,
     ],
     additional_pages: NO_ADDITIONAL,
+    // Комбо «2 ученика + 1 общая» — нет мастера, отложено в РЭ.21.8.11b.
+    transition_right: null,
   },
 
   // ─── Медиум мягкие ─────────────────────────────────────────────────────
@@ -456,6 +512,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
     ],
     additional_pages: ADDITIONAL_SOFT,
+    transition_right: null,
   },
   {
     density: 'medium',
@@ -470,6 +527,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
   {
     density: 'medium',
@@ -484,6 +542,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
   {
     density: 'medium',
@@ -498,6 +557,8 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
     additional_pages: NO_ADDITIONAL,
+    // Комбо «2 ученика + 1 общая» — нет мастера, отложено в РЭ.21.8.11b.
+    transition_right: null,
   },
 
   // ─── Стандарт + Универсал плотные ──────────────────────────────────────
@@ -515,6 +576,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       TWO_HALVES,
     ],
     additional_pages: ADDITIONAL_HARD,
+    transition_right: null,
   },
   {
     density: 'standard',
@@ -522,6 +584,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'parity', parity: 'odd' },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
   {
     density: 'universal',
@@ -536,6 +599,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       TWO_HALVES,
     ],
     additional_pages: ADDITIONAL_HARD,
+    transition_right: null,
   },
   {
     density: 'universal',
@@ -543,6 +607,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'parity', parity: 'odd' },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
 
   // ─── Стандарт + Универсал мягкие ───────────────────────────────────────
@@ -558,6 +623,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
     ],
     additional_pages: ADDITIONAL_SOFT,
+    transition_right: null,
   },
   {
     density: 'standard',
@@ -565,6 +631,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'parity', parity: 'odd' },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
   {
     density: 'universal',
@@ -578,6 +645,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
     ],
     additional_pages: ADDITIONAL_SOFT,
+    transition_right: null,
   },
   {
     density: 'universal',
@@ -585,6 +653,7 @@ export const OKEYBOOK_TABLE: TableRow[] = [
     students_match: { kind: 'parity', parity: 'odd' },
     pages: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES],
     additional_pages: NO_ADDITIONAL,
+    transition_right: COLLAGE_OR_HALVES_OR_FULL,
   },
 
   // ─── Максимум плотные ──────────────────────────────────────────────────
@@ -604,6 +673,8 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       TWO_HALVES,
     ],
     additional_pages: ADDITIONAL_HARD,
+    // Максимум: ученик = разворот, нечётности не бывает → переходная не нужна.
+    transition_right: null,
   },
 
   // ─── Максимум мягкие ───────────────────────────────────────────────────
@@ -619,6 +690,8 @@ export const OKEYBOOK_TABLE: TableRow[] = [
       COLLAGE_OR_HALVES_OR_FULL,
     ],
     additional_pages: ADDITIONAL_SOFT,
+    // Максимум: ученик = разворот, нечётности не бывает → переходная не нужна.
+    transition_right: null,
   },
 ];
 

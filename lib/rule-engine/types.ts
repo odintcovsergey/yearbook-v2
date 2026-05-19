@@ -340,6 +340,7 @@ export type SectionType =
   | 'common'
   | 'common_required'  // РЭ.21.8.9: обязательный общий раздел по таблице OkeyBook
   | 'common_additional' // РЭ.21.8.10: доп. общий раздел (платная допуслуга)
+  | 'transition'       // РЭ.21.8.11: переходная страница (правая, вариант C)
   | 'vignette'
   | 'soft_final';
 
@@ -363,13 +364,19 @@ export type SectionType =
  *    — макс. количество разворотов в доп. общем разделе. Может быть 0
  *    (тогда секция не строится — партнёр не купил допуслугу). Engine берёт
  *    additional_pages из той же таблицы что и common_required.
+ *  - для секции `transition` (РЭ.21.8.11) параметров нет. Engine строит
+ *    правую страницу переходного разворота (общий раздел) когда после
+ *    students секции pageInstances нечётно. Левая сторона переходной
+ *    в этом коммите не строится (требует комбо-мастеров, отложено в
+ *    РЭ.21.8.11b).
  */
 export type SectionStructureEntry =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
   | { type: 'common'; slots: SlotType[] }
   | { type: 'common'; mode: 'auto'; max_spreads: number }
   | { type: 'common_required' }
-  | { type: 'common_additional'; max_spreads: number };
+  | { type: 'common_additional'; max_spreads: number }
+  | { type: 'transition' };
 
 /**
  * Полная структура альбома = массив секций в порядке появления.
