@@ -1192,6 +1192,152 @@ async function tryBuildViaRules(
   }
 }
 
+// ============================================================
+// РЭ.21.8.7b — Сборка альбома через section structure engine
+// ============================================================
+// Третий путь handleBuildAlbum. Вызывается когда
+// album.section_structure_preset_id IS NOT NULL (приоритет над
+// rules_preset_id).
+//
+// Smart-fill и адаптер AlbumLayout→BuildResult ОБЩИЕ с tryBuildViaRules.
+// Отличается только engine: buildFromSectionStructure вместо buildFromRules.
+//
+// При сбое — fallthrough на rules (если задан rules_preset_id), иначе
+// на legacy. Тот же паттерн что у rules-ветки.
+// ============================================================
+
+async function tryBuildViaSectionStructure(
+  supabase: typeof supabaseAdmin,
+  albumId: string,
+  sectionStructurePresetId: string,
+  tenantId: string,
+  auth: AuthContext,
+): Promise<RulesBuildOk | RulesBuildSkip> {
+  // 1. Smart-fill — та же функция что у legacy/rules.
+  let smartFillResult: { input: AlbumInput; warnings: SmartFillWarning[] }
+  try {
+    smartFillResult = await buildAlbumInput(supabase, albumId)
+  } catch (e) {
+    return { ok: false, reason: `smart-fill failed: ${(e as Error).message}` }
+  }
+
+  // 2. Адаптируем legacy AlbumInput → RulesAlbumInput.
+  // Новый engine принимает тот же тип входа что rule engine.
+  const rulesInput = adaptLegacyAlbumInput(smartFillResult.input)
+
+  // 3. Загружаем bundle — тот же loadBundle, новый engine использует
+  // bundle.preset.section_structure (заполняется в loaders.ts на РЭ.21.8.1).
+  let bundle
+  try {
+    bundle = await loadBundle(supabase, sectionStructurePresetId, tenantId)
+  } catch (e) {
+    return {
+      ok: false,
+      reason: `loadBundle('${sectionStructurePresetId}') failed: ${(e as Error).message}`,
+    }
+  }
+
+  // 3.5. Дополнительная проверка: если у пресета пустой section_structure —
+  // engine вернёт status='failed' с конкретным warning. Поймаем это явно,
+  // чтобы caller сделал fallthrough вместо отдачи пустого layout.
+  if (!bundle.preset.section_structure) {
+    return {
+      ok: false,
+      reason: `preset '${sectionStructurePresetId}' has no section_structure (NULL or missing)`,
+    }
+  }
+
+  // 4. Прогон через buildFromSectionStructure. Не бросает, status в результате.
+  const layout = buildFromSectionStructure(bundle, rulesInput)
+
+  if (layout.status === 'failed') {
+    return {
+      ok: false,
+      reason: `section_structure engine status=failed: ${layout.warnings.join('; ') || 'no warnings'}`,
+    }
+  }
+
+  // 5. Адаптация — тот же adapter что у rules. AlbumLayout → BuildResult.
+  let adapted
+  try {
+    adapted = adaptAlbumLayoutToBuildResult(layout)
+  } catch (e) {
+    return {
+      ok: false,
+      reason: `layout adapter failed: ${(e as Error).message}`,
+    }
+  }
+
+  // 6. Enrichment warnings.
+  const enrichedWarnings: EnrichedWarning[] = [
+    ...adapted.result.warnings.map((w) => enrichWarning(w, 'builder')),
+    ...smartFillResult.warnings.map((w) => enrichWarning(w, 'smart_fill')),
+  ]
+
+  const warningsByLevel = {
+    blocking: enrichedWarnings.filter((w) => w.level === 'blocking').length,
+    degraded: enrichedWarnings.filter((w) => w.level === 'degraded').length,
+    info: enrichedWarnings.filter((w) => w.level === 'info').length,
+  }
+
+  // 7. Upsert в album_layouts. config_preset_id NULL — тот же подход
+  // что у rules-ветки.
+  const { data: layoutRow, error: upsertErr } = await supabase
+    .from('album_layouts')
+    .upsert(
+      {
+        album_id: albumId,
+        template_set_id: bundle.templateSet.id,
+        config_preset_id: null,
+        spreads: adapted.result.spreads,
+        warnings: enrichedWarnings,
+        has_user_edits: false,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'album_id' },
+    )
+    .select('id')
+    .single()
+
+  if (upsertErr || !layoutRow) {
+    return {
+      ok: false,
+      reason: `album_layouts upsert failed: ${upsertErr?.message ?? 'no row'}`,
+    }
+  }
+
+  // 8. Audit log с пометкой engine='section_structure'.
+  await logAction(auth, 'album_layout.build', 'album', albumId, {
+    engine: 'section_structure',
+    template_set_id: bundle.templateSet.id,
+    section_structure_preset_id: sectionStructurePresetId,
+    rules_version: layout.rules_version,
+    rules_status: layout.status,
+    total_spreads: adapted.result.spreads.length,
+    total_warnings: enrichedWarnings.length,
+    warnings_by_level: warningsByLevel,
+  })
+
+  return {
+    ok: true,
+    response: NextResponse.json({
+      engine: 'section_structure',
+      spreads: adapted.result.spreads,
+      warnings: enrichedWarnings,
+      layout_id: layoutRow.id,
+      template_set_id: bundle.templateSet.id,
+      rules_meta: adapted.rules_meta,
+      summary: {
+        total_spreads: adapted.result.spreads.length,
+        total_warnings: enrichedWarnings.length,
+        warnings_by_level: warningsByLevel,
+        preset_slug: bundle.preset.id,
+        preset_name: bundle.preset.display_name,
+      },
+    }),
+  }
+}
+
 async function handleBuildAlbum(
   req: NextRequest,
   auth: AuthContext,
@@ -1235,19 +1381,32 @@ async function handleBuildAlbum(
     return NextResponse.json({ error: 'album not found' }, { status: 404 })
   }
 
-  // ─── РЭ.16.2: развилка legacy vs rule engine ─────────────────────
-  // Если у альбома задан rules_preset_id — собираем через buildFromRules.
-  // Иначе legacy buildAlbum по config_preset_id (как было).
+  // ─── РЭ.16.2 / 21.8.7b: развилка legacy vs rule engine vs section_structure ───
+  // Приоритет:
+  //  1. section_structure_preset_id  → buildFromSectionStructure (РЭ.21.8.3-5)
+  //  2. rules_preset_id              → buildFromRules           (РЭ.16.2)
+  //  3. config_preset_id             → buildAlbum               (legacy)
   //
-  // Smart-fill общий для обоих путей (читает реальные данные из БД).
-  // Адаптация к rule engine — через legacy-adapter.
-  // На случай неожиданного сбоя rule engine (например пресет не найден)
-  // — auto-fallback на legacy, чтобы партнёр не остался без layout'а.
+  // Новый engine приоритетнее rules — он ближе к продуктовой реальности
+  // (партнёрский UI собирает section_structure через РЭ.21.3-7).
+  // При сбое каждого пути — fallthrough на следующий. Это значит партнёр
+  // не остаётся без layout'а, даже если новый engine упадёт.
   //
-  // album_layouts.config_preset_id остаётся текущим (legacy пресет
-  // альбома) — поле nullable, можно оставить как-было даже при rule
-  // engine пути, чтобы существующие SELECT'ы из админки продолжали
-  // работать. Информация о rule engine пишется в audit_log.
+  // Smart-fill общий для всех путей (читает реальные данные из БД).
+  // Адаптация AlbumLayout → BuildResult — общий adapter для rules и
+  // section_structure (layout-to-buildresult.ts).
+
+  if (album.section_structure_preset_id) {
+    const ssResult = await tryBuildViaSectionStructure(
+      supabaseAdmin,
+      albumId,
+      album.section_structure_preset_id,
+      tid,
+      auth,
+    )
+    if (ssResult.ok) return ssResult.response
+    // fallthrough на rules / legacy
+  }
 
   if (album.rules_preset_id) {
     const rulesResult = await tryBuildViaRules(
