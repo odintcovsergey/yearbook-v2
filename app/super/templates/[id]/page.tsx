@@ -59,6 +59,46 @@ type RulesBuildResult = {
   }
 }
 
+// РЭ.21.8.6: ответ нового sandbox endpoint'а build_album_test_section_structure.
+// Отличия от RulesBuildResult: engine='section_structure', preset_section_structure
+// (снапшот section_structure из БД), masters_by_id (для отображения имени мастера
+// по UUID — у нового engine нет bindings.__master_name__).
+type SectionStructureBuildResult = {
+  engine: 'section_structure'
+  status: 'ok' | 'partial' | 'failed'
+  spreads: Array<{
+    spread_index: number
+    left?: { master_id: string; bindings: Record<string, unknown> }
+    right?: { master_id: string; bindings: Record<string, unknown> }
+    is_spread?: boolean
+  }>
+  decision_trace: Array<{
+    spread_index: number
+    section_index: number
+    family_id: string
+    rule_id: string
+    inputs: Record<string, unknown>
+  }>
+  warnings: string[]
+  rules_version: string
+  preset_section_structure:
+    | Array<{ type: string; slots?: string[] }>
+    | null
+  masters_by_id: Record<string, string>
+  summary: {
+    total_spreads: number
+    total_warnings: number
+    total_decisions: number
+    preset_id: string
+    preset_name: string
+    preset_density: string | null
+    preset_sheet_type: string | null
+    students_count: number
+    subjects_count: number
+    template_set_slug: string
+  }
+}
+
 const RULES_PRESET_IDS = ['standard', 'universal', 'maximum', 'individual', 'medium', 'light', 'mini-soft'] as const
 type RulesPresetId = typeof RULES_PRESET_IDS[number]
 
@@ -128,6 +168,22 @@ export default function TemplateDetailPage() {
   const [rFullClass, setRFullClass] = useState(0)
   const [rHalfClass, setRHalfClass] = useState(0)
   const [rFriendsPerStudent, setRFriendsPerStudent] = useState(0)
+
+  // ─── Section Structure Build Test state (РЭ.21.8.6) ───────────────────
+  // Третий sandbox рядом с legacy и rule engine. Использует НОВЫЙ
+  // buildFromSectionStructure (РЭ.21.8.3-5) который читает
+  // preset.section_structure из БД (РЭ.21.2-7).
+  const [sBuildOpen, setSBuildOpen] = useState(false)
+  const [sBuildLoading, setSBuildLoading] = useState(false)
+  const [sBuildResult, setSBuildResult] = useState<SectionStructureBuildResult | null>(null)
+  const [sBuildError, setSBuildError] = useState<string | null>(null)
+  const [sPresetId, setSPresetId] = useState<RulesPresetId>('standard')
+  const [sStudentsCount, setSStudentsCount] = useState(5)
+  const [sSubjectsCount, setSSubjectsCount] = useState(0)
+  const [sWithHeadTeacher, setSWithHeadTeacher] = useState(false)
+  const [sFullClass, setSFullClass] = useState(0)
+  const [sHalfClass, setSHalfClass] = useState(0)
+  const [sFriendsPerStudent, setSFriendsPerStudent] = useState(0)
 
   const runBuildTest = useCallback(async () => {
     setBuildLoading(true)
@@ -203,6 +259,45 @@ export default function TemplateDetailPage() {
       setRBuildLoading(false)
     }
   }, [rPresetId, rStudentsCount, rSubjectsCount, rWithHeadTeacher, rFullClass, rHalfClass, rFriendsPerStudent])
+
+  // РЭ.21.8.6: sandbox для нового section-structure engine.
+  // Аналогичен runRulesBuildTest, но POST'ит на другой action и парсит
+  // ответ как SectionStructureBuildResult (с masters_by_id для имён мастеров).
+  const runSectionStructureBuildTest = useCallback(async () => {
+    setSBuildLoading(true)
+    setSBuildError(null)
+    setSBuildResult(null)
+    try {
+      const friendPhotos =
+        sFriendsPerStudent > 0
+          ? Array.from({ length: sStudentsCount }, () => sFriendsPerStudent)
+          : []
+      const r = await fetch('/api/layout?action=build_album_test_section_structure', {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          preset_id: sPresetId,
+          students_count: sStudentsCount,
+          subjects_count: sSubjectsCount,
+          with_head_teacher: sWithHeadTeacher,
+          common_photos: { full_class: sFullClass, half_class: sHalfClass },
+          friend_photos_per_student: friendPhotos,
+        }),
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ error: 'unknown error' }))
+        setSBuildError(err.error ?? `HTTP ${r.status}`)
+        return
+      }
+      setSBuildResult((await r.json()) as SectionStructureBuildResult)
+    } catch (e) {
+      setSBuildError(e instanceof Error ? e.message : 'network error')
+    } finally {
+      setSBuildLoading(false)
+    }
+  }, [sPresetId, sStudentsCount, sSubjectsCount, sWithHeadTeacher, sFullClass, sHalfClass, sFriendsPerStudent])
 
   useEffect(() => {
     api('/api/auth')
@@ -659,6 +754,232 @@ export default function TemplateDetailPage() {
                                   <span className="font-bold">{String(rightName ?? '—')}</span>
                                   {s.mixed_pages && (
                                     <span className="ml-2 px-1 bg-orange-100 text-orange-800 rounded text-xs">mixed</span>
+                                  )}
+                                </div>
+                                <details className="mt-1 text-xs text-gray-600">
+                                  <summary className="cursor-pointer">bindings</summary>
+                                  <pre className="mt-1 p-2 bg-gray-50 rounded overflow-auto max-h-60">
+                                    {JSON.stringify({ left: s.left?.bindings, right: s.right?.bindings }, null, 2)}
+                                  </pre>
+                                </details>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Section Structure Build Test (РЭ.21.8.6) */}
+                <button
+                  onClick={() => setSBuildOpen((v) => !v)}
+                  className="mt-3 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                >
+                  {sBuildOpen ? '▲ Скрыть Build Test (Section Structure)' : '▼ Build Test (Section Structure)'}
+                </button>
+
+                {sBuildOpen && (
+                  <div className="mt-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <h3 className="font-bold mb-3">
+                      Build Test через Section Structure engine
+                      <span className="ml-2 text-xs font-normal text-green-700">
+                        (новый buildFromSectionStructure, РЭ.21.8.3-5 / читает preset.section_structure)
+                      </span>
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                      <label className="flex items-center gap-2">
+                        preset_id:
+                        <select
+                          value={sPresetId}
+                          onChange={(e) => setSPresetId(e.target.value as RulesPresetId)}
+                          className="ml-auto px-2 py-1 border rounded"
+                        >
+                          {RULES_PRESET_IDS.map((p) => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        Учеников (0-100):
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={sStudentsCount}
+                          onChange={(e) => setSStudentsCount(Number(e.target.value))}
+                          className="ml-auto px-2 py-1 border rounded w-24"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2">
+                        Предметников (0-30):
+                        <input
+                          type="number"
+                          min={0}
+                          max={30}
+                          value={sSubjectsCount}
+                          onChange={(e) => setSSubjectsCount(Number(e.target.value))}
+                          className="ml-auto px-2 py-1 border rounded w-24"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={sWithHeadTeacher}
+                          onChange={(e) => setSWithHeadTeacher(e.target.checked)}
+                        />
+                        head_teacher
+                      </label>
+                      <label className="flex items-center gap-2">
+                        friend_photos на ученика (0-4):
+                        <input
+                          type="number"
+                          min={0}
+                          max={4}
+                          value={sFriendsPerStudent}
+                          onChange={(e) => setSFriendsPerStudent(Number(e.target.value))}
+                          className="ml-auto px-2 py-1 border rounded w-20"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2">
+                        full_class фото:
+                        <input
+                          type="number"
+                          min={0}
+                          max={5}
+                          value={sFullClass}
+                          onChange={(e) => setSFullClass(Number(e.target.value))}
+                          className="ml-auto px-2 py-1 border rounded w-20"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2">
+                        half_class фото:
+                        <input
+                          type="number"
+                          min={0}
+                          max={5}
+                          value={sHalfClass}
+                          onChange={(e) => setSHalfClass(Number(e.target.value))}
+                          className="ml-auto px-2 py-1 border rounded w-20"
+                        />
+                      </label>
+                    </div>
+
+                    <button
+                      onClick={runSectionStructureBuildTest}
+                      disabled={sBuildLoading}
+                      className="mt-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                    >
+                      {sBuildLoading ? 'Building…' : 'Build (Section Structure)'}
+                    </button>
+
+                    {sBuildError && (
+                      <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                        Ошибка: {sBuildError}
+                      </div>
+                    )}
+
+                    {sBuildResult && (
+                      <div className="mt-4 space-y-3">
+                        <div className="p-3 bg-white border border-green-200 rounded text-sm">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="font-bold">Сводка:</div>
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs font-mono ${
+                                sBuildResult.status === 'ok'
+                                  ? 'bg-green-100 text-green-800'
+                                  : sBuildResult.status === 'partial'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-red-100 text-red-800'
+                              }`}
+                            >
+                              status: {sBuildResult.status}
+                            </span>
+                          </div>
+                          <div>spreads: {sBuildResult.summary.total_spreads}</div>
+                          <div>decisions: {sBuildResult.summary.total_decisions}</div>
+                          <div>warnings: {sBuildResult.summary.total_warnings}</div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            preset: {sBuildResult.summary.preset_id}{' '}
+                            <span className="text-gray-400">({sBuildResult.summary.preset_name})</span>
+                            {' · '}density={sBuildResult.summary.preset_density ?? 'null'}
+                            {' · '}sheet_type={sBuildResult.summary.preset_sheet_type ?? 'null'}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            students={sBuildResult.summary.students_count}
+                            {' · '}
+                            subjects={sBuildResult.summary.subjects_count}
+                          </div>
+                        </div>
+
+                        {/* Снапшот section_structure пресета — то что engine видел */}
+                        {sBuildResult.preset_section_structure !== null && (
+                          <details className="p-3 bg-white border border-green-200 rounded text-sm">
+                            <summary className="font-bold cursor-pointer">
+                              preset.section_structure (из БД)
+                            </summary>
+                            <pre className="mt-2 p-2 bg-gray-50 rounded overflow-auto max-h-60 text-xs">
+                              {JSON.stringify(sBuildResult.preset_section_structure, null, 2)}
+                            </pre>
+                          </details>
+                        )}
+
+                        {sBuildResult.warnings.length > 0 && (
+                          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded text-sm">
+                            <div className="font-bold mb-2">Warnings:</div>
+                            {sBuildResult.warnings.map((w, i) => (
+                              <div key={i} className="text-xs mb-1 font-mono text-yellow-800">
+                                {w}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="p-3 bg-white border border-green-200 rounded">
+                          <div className="font-bold mb-2">Decision trace:</div>
+                          {sBuildResult.decision_trace.length === 0 && (
+                            <div className="text-xs text-gray-500">Пусто</div>
+                          )}
+                          {sBuildResult.decision_trace.map((d, i) => (
+                            <div key={i} className="border-b border-gray-100 py-1.5 text-xs last:border-b-0">
+                              <span className="font-mono text-gray-500">[#{d.spread_index}.{d.section_index}]</span>{' '}
+                              <span className="font-mono text-green-700">{d.family_id}</span>{' → '}
+                              <span className="font-mono font-bold">{d.rule_id}</span>
+                              {/* chain_trace для common-секции — наиболее полезная отладка */}
+                              {typeof d.inputs.chain_trace === 'string' && (
+                                <div className="ml-4 mt-0.5 text-gray-500 font-mono">
+                                  {d.inputs.chain_trace}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="p-3 bg-white border border-green-200 rounded">
+                          <div className="font-bold mb-2">Spreads:</div>
+                          {sBuildResult.spreads.length === 0 && (
+                            <div className="text-xs text-gray-500">Пусто</div>
+                          )}
+                          {sBuildResult.spreads.map((s) => {
+                            // Имя мастера ищем через masters_by_id из ответа
+                            // (у нового engine нет bindings.__master_name__).
+                            const leftName = s.left
+                              ? sBuildResult.masters_by_id[s.left.master_id] ?? '?'
+                              : null
+                            const rightName = s.right
+                              ? sBuildResult.masters_by_id[s.right.master_id] ?? '?'
+                              : null
+                            return (
+                              <div key={s.spread_index} className="border-b border-gray-100 py-2 text-sm last:border-b-0">
+                                <div>
+                                  <span className="font-mono text-gray-500">[{s.spread_index}]</span>{' '}
+                                  <span className="font-bold">{leftName ?? '—'}</span>
+                                  <span className="text-gray-400 mx-2">|</span>
+                                  <span className="font-bold">{rightName ?? '—'}</span>
+                                  {s.is_spread && (
+                                    <span className="ml-2 px-1 bg-indigo-100 text-indigo-800 rounded text-xs">
+                                      spread (двухстраничный)
+                                    </span>
                                   )}
                                 </div>
                                 <details className="mt-1 text-xs text-gray-600">

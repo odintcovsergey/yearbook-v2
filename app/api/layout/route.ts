@@ -15,6 +15,7 @@ import type {
   TemplateSet,
 } from '@/lib/album-builder'
 import { buildFromRules, loadBundle } from '@/lib/album-builder'
+import { buildFromSectionStructure } from '@/lib/rule-engine/build-from-section-structure'
 import type {
   RulesAlbumInput,
   RulesStudentInput,
@@ -285,6 +286,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 })
     }
     return handleBuildAlbumTestRules(req)
+  }
+
+  if (action === 'build_album_test_section_structure') {
+    if (auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
+    return handleBuildAlbumTestSectionStructure(req)
   }
 
   if (action === 'preview_rules_engine') {
@@ -698,6 +706,178 @@ async function handleBuildAlbumTestRules(req: NextRequest): Promise<NextResponse
       total_decisions: layout.decision_trace.length,
       preset_id: bundle.preset.id,
       preset_name: bundle.preset.display_name,
+      students_count: studentsCount,
+      subjects_count: subjectsCount,
+      template_set_slug: bundle.templateSet.slug,
+    },
+  })
+}
+
+// ============================================================
+// POST /api/layout?action=build_album_test_section_structure
+// ============================================================
+// Только superadmin. Третий sandbox endpoint рядом с build_album_test
+// (legacy) и build_album_test_rules. Использует НОВЫЙ build engine
+// buildFromSectionStructure (РЭ.21.8.3-5), читающий preset.section_structure.
+//
+// Без фолбэка — если что-то пошло не так, warnings и status='partial'/'failed'
+// возвращаются в ответе. Цель — увидеть как новый engine ведёт себя на
+// боевых пресетах и где имена мастеров/labels отличаются от ожиданий
+// (placeholder-driven mapping в sections/*.ts).
+//
+// Body: тот же что у build_album_test_rules — preset_id, students_count,
+// subjects_count, with_head_teacher, common_photos, friend_photos_per_student.
+//
+// Возвращает то же что rules-endpoint, плюс engine='section_structure'.
+// ============================================================
+
+async function handleBuildAlbumTestSectionStructure(
+  req: NextRequest,
+): Promise<NextResponse> {
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
+  }
+
+  if (typeof body !== 'object' || body === null) {
+    return NextResponse.json({ error: 'body must be object' }, { status: 400 })
+  }
+  const b = body as Record<string, unknown>
+
+  const presetId = b.preset_id
+  if (typeof presetId !== 'string' || presetId.length === 0) {
+    return NextResponse.json(
+      { error: 'preset_id is required' },
+      { status: 400 },
+    )
+  }
+
+  const studentsCount = b.students_count
+  if (
+    typeof studentsCount !== 'number' ||
+    studentsCount < 0 ||
+    studentsCount > 100
+  ) {
+    return NextResponse.json(
+      { error: 'students_count must be number 0-100' },
+      { status: 400 },
+    )
+  }
+
+  const subjectsCount = b.subjects_count
+  if (
+    typeof subjectsCount !== 'number' ||
+    subjectsCount < 0 ||
+    subjectsCount > 30
+  ) {
+    return NextResponse.json(
+      { error: 'subjects_count must be number 0-30' },
+      { status: 400 },
+    )
+  }
+
+  const withHeadTeacher = b.with_head_teacher === true
+  const commonPhotosInput = (b.common_photos ?? {}) as Record<string, unknown>
+  const friendPhotosPerStudent = (b.friend_photos_per_student ?? []) as unknown[]
+
+  const students: RulesStudentInput[] = []
+  for (let i = 0; i < studentsCount; i++) {
+    const friendCount =
+      typeof friendPhotosPerStudent[i] === 'number'
+        ? Math.min(4, Math.max(0, friendPhotosPerStudent[i] as number))
+        : 0
+    students.push({
+      full_name: `Ученик ${i + 1}`,
+      quote: `Цитата ${i + 1}`,
+      portrait: `https://fake/student-${i + 1}.jpg`,
+      friend_photos: Array.from(
+        { length: friendCount },
+        (_, j) => `https://fake/student-${i + 1}-friend-${j + 1}.jpg`,
+      ),
+    })
+  }
+
+  const subjects: RulesSubjectInput[] = Array.from(
+    { length: subjectsCount },
+    (_, i) => ({
+      name: `Предметник ${i + 1}`,
+      role: 'учитель',
+      photo: `https://fake/subject-${i + 1}.jpg`,
+    }),
+  )
+
+  const headTeacher: RulesHeadTeacherInput = withHeadTeacher
+    ? {
+        name: 'Иванова Мария Петровна',
+        role: 'классный руководитель',
+        photo: 'https://fake/head.jpg',
+        text: 'Дорогие выпускники, желаю вам успехов.',
+      }
+    : { name: '', role: '', photo: null, text: '' }
+
+  const makeUrls = (n: number, prefix: string): string[] =>
+    Array.from({ length: n }, (_, i) => `https://fake/${prefix}-${i + 1}.jpg`)
+
+  const input: RulesAlbumInput = {
+    students,
+    subjects,
+    head_teacher: headTeacher,
+    common_photos: {
+      full_class: makeUrls(Number(commonPhotosInput.full_class ?? 0), 'class'),
+      half_class: makeUrls(
+        Number(commonPhotosInput.half_class ?? commonPhotosInput.half ?? 0),
+        'half',
+      ),
+      spread: makeUrls(Number(commonPhotosInput.spread ?? 0), 'spread'),
+      quarter: makeUrls(Number(commonPhotosInput.quarter ?? 0), 'quarter'),
+      sixth: makeUrls(Number(commonPhotosInput.sixth ?? 0), 'sixth'),
+    },
+  }
+
+  let bundle
+  try {
+    bundle = await loadBundle(supabaseAdmin, presetId, null)
+  } catch (e) {
+    return NextResponse.json(
+      {
+        error: `failed to load bundle for preset '${presetId}': ${(e as Error).message}`,
+      },
+      { status: 400 },
+    )
+  }
+
+  // Сборка через section-structure engine. buildFromSectionStructure не бросает;
+  // ошибки уровня "section_structure=NULL" возвращаются как status='failed'.
+  const layout = buildFromSectionStructure(bundle, input)
+
+  // Map master_id → name для UI: в spreads PageInstance.master_id это UUID,
+  // а пользователю нужно видеть имя мастера ("E-Universal-Left").
+  // Используется только для отображения; legacy build-test и rules-test
+  // прячут имя в bindings.__master_name__, у нового engine этой метки нет.
+  const mastersById: Record<string, string> = {}
+  bundle.mastersByName.forEach((m) => { mastersById[m.id] = m.name })
+
+  // Снапшот section_structure пресета — полезен в UI для отладки
+  // (понять что именно engine видел при сборке).
+  return NextResponse.json({
+    engine: 'section_structure',
+    status: layout.status,
+    spreads: layout.spreads,
+    decision_trace: layout.decision_trace,
+    warnings: layout.warnings,
+    rules_version: layout.rules_version,
+    preset_section_structure: bundle.preset.section_structure ?? null,
+    masters_by_id: mastersById,
+    summary: {
+      total_spreads: layout.spreads.length,
+      total_warnings: layout.warnings.length,
+      total_decisions: layout.decision_trace.length,
+      preset_id: bundle.preset.id,
+      preset_name: bundle.preset.display_name,
+      preset_density: bundle.preset.density ?? null,
+      preset_sheet_type: bundle.preset.sheet_type ?? null,
       students_count: studentsCount,
       subjects_count: subjectsCount,
       template_set_slug: bundle.templateSet.slug,
