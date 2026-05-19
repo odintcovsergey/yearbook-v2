@@ -23,6 +23,7 @@ import SaveIndicator from '../../../_components/SaveIndicator'
 import PhotoContextMenu from '../../../_components/PhotoContextMenu'
 import PhotoTransformPanel from '../../../_components/PhotoTransformPanel'
 import { parseScale, parseOffset } from '@/lib/photo-transform'
+import { remapData } from '@/lib/template-replace'
 
 // Konva-компонент: SSR-incompatible (использует window.Image).
 const AlbumSpreadCanvas = dynamic(
@@ -852,30 +853,40 @@ function LayoutEditorPageInner({
       return
     }
 
-    // Перенос данных: новые placeholder'ы получают значения от старых
-    // если label совпадает. Лишние данные (label которых нет в новом
-    // шаблоне) отбрасываются.
-    const newData: Record<string, string | null> = {}
-    let preserved = 0
-    let lost = 0
-    for (const ph of newTemplate.placeholders) {
-      if (ph.label in oldSpread.data) {
-        newData[ph.label] = oldSpread.data[ph.label] ?? null
-        if (oldSpread.data[ph.label]) preserved++
-      } else {
-        newData[ph.label] = null
-      }
-    }
-    for (const label of Object.keys(oldSpread.data)) {
-      if (!newTemplate.placeholders.some((p) => p.label === label)) {
-        if (oldSpread.data[label]) lost++
-      }
-    }
+    // Р.1 — умное автозаполнение. Каскад стратегий:
+    //   EXACT       — точное совпадение label+type
+    //   NORMALIZED  — нестрогое (lowercase + non-alphanumeric):
+    //                  studentphoto1 ≈ student_photo_1 ≈ Student Photo 1
+    //   BY_TYPE     — fallback по типу placeholder в порядке появления
+    // Служебные ключи __scale__/__offset__/__rotate__/__fontSize__/__color__
+    // мигрируют вместе с фото/текстом. __hidden__/__pos__ привязаны к
+    // рамкам старого мастера и отбрасываются.
+    // Для умного remap'а нужны placeholders старого мастера. Если
+    // старый шаблон по template_id не найден в локальном массиве
+    // templates — fallback на пустой список (тогда работает только
+    // EXACT через oldData keys, поведение деградирует до старого).
+    const oldTemplate = templates.find((t) => t.id === oldSpread.template_id)
+    const oldPlaceholders = oldTemplate?.placeholders ?? []
+    const { newData, stats } = remapData(
+      oldSpread.data,
+      oldPlaceholders,
+      newTemplate.placeholders,
+    )
 
-    if (lost > 0) {
+    if (stats.lost > 0) {
+      const word =
+        stats.lost === 1
+          ? 'значение не помещается'
+          : stats.lost < 5
+            ? 'значения не помещаются'
+            : 'значений не помещаются'
+      const labelsHint =
+        stats.lostLabels.length > 0
+          ? ` (${stats.lostLabels.slice(0, 5).join(', ')}${stats.lostLabels.length > 5 ? '…' : ''})`
+          : ''
       const ok = confirm(
-        `Перенесено ${preserved} значений, потеряется ${lost} (фото/текст которых нет в новом шаблоне).\n\n` +
-        `Это можно отменить через Ctrl+Z. Заменить?`,
+        `При смене мастера ${stats.lost} ${word} в новый шаблон${labelsHint}.\n\n` +
+          `Это можно отменить через Ctrl+Z. Заменить?`,
       )
       if (!ok) {
         setReplaceTemplateForIdx(null)
