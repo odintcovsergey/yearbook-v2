@@ -58,6 +58,7 @@ import type { CommonPhotoCounts } from './slot-chains';
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import {
   fillCommonAutoSection,
+  fillCommonRequiredSection,
   fillCommonSection,
   fillSoftFinalSection,
   fillSoftIntroSection,
@@ -129,6 +130,12 @@ export function buildFromSectionStructure(
         } else {
           fillCommonSection(ctx, section.slots);
         }
+        break;
+      case 'common_required':
+        // РЭ.21.8.9: обязательный общий раздел по эталонной таблице OkeyBook.
+        // Параметров нет — engine сам выбирает строку таблицы по
+        // density × sheet_type × students_count.
+        fillCommonRequiredSection(ctx);
         break;
       case 'teachers':
         fillTeachersSection(ctx);

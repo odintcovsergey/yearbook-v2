@@ -34,7 +34,8 @@ async function assertAlbumAccess(auth: AuthContext, albumId: string, tenantIdOve
 // build engine'а на проде с непонятной ошибкой.
 // ============================================================
 const ALLOWED_SECTION_TYPES = new Set([
-  'soft_intro', 'teachers', 'students', 'common', 'vignette', 'soft_final',
+  'soft_intro', 'teachers', 'students', 'common', 'common_required',
+  'vignette', 'soft_final',
 ])
 const ALLOWED_SLOT_TYPES = new Set(['H', 'Q', 'FULL', 'flex_A', 'flex_B', 'flex_C'])
 const ALLOWED_COMMON_MODES = new Set(['auto'])  // РЭ.21.8.8: пока только auto
@@ -82,6 +83,7 @@ type ValidatedSection =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
   | { type: 'common'; slots: string[] }
   | { type: 'common'; mode: 'auto'; max_spreads: number }  // РЭ.21.8.8
+  | { type: 'common_required' }                            // РЭ.21.8.9
 
 function validateSectionStructure(
   raw: unknown,
@@ -151,8 +153,14 @@ function validateSectionStructure(
         }
         result.push({ type: 'common', slots: validSlots })
       }
+    } else if (type === 'common_required') {
+      // РЭ.21.8.9: обязательный общий раздел по таблице OkeyBook.
+      // Параметров нет — engine читает таблицу автоматически.
+      result.push({ type: 'common_required' })
     } else {
-      result.push({ type: type as Exclude<ValidatedSection['type'], 'common'> })
+      result.push({
+        type: type as 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final',
+      })
     }
   }
   return { ok: true, value: result }

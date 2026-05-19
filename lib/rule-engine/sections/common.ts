@@ -334,7 +334,7 @@ export function fillCommonAutoSection(
  *
  * Вызывается ДО decrementAvailable — порядок важен.
  */
-function bindCommonPhotos(
+export function bindCommonPhotos(
   master: SpreadTemplate,
   input: RulesAlbumInput,
   available: CommonPhotoCounts,
@@ -404,7 +404,7 @@ function bindCommonPhotos(
   return bindings;
 }
 
-function decrementAvailable(
+export function decrementAvailable(
   available: CommonPhotoCounts,
   consumes: SlotConsumes,
 ): void {

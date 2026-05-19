@@ -338,6 +338,7 @@ export type SectionType =
   | 'teachers'
   | 'students'
   | 'common'
+  | 'common_required'  // РЭ.21.8.9: обязательный общий раздел по таблице OkeyBook
   | 'vignette'
   | 'soft_final';
 
@@ -353,11 +354,16 @@ export type SectionType =
  *      крупные → мелкие категории (РЭ.21.8.8). Лимит: не больше N разворотов.
  *      «Лучше меньше разворотов чем пустые слоты»: если фото хватает только
  *      на K < N разворотов — делает K с warning common_autopack_underflow.
+ *  - для секции `common_required` (РЭ.21.8.9) параметров нет — engine
+ *    автоматически выбирает строку из эталонной таблицы OkeyBook на основе
+ *    preset.density × preset.sheet_type × input.students.length. См.
+ *    lib/rule-engine/album-structure-okeybook.ts.
  */
 export type SectionStructureEntry =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
   | { type: 'common'; slots: SlotType[] }
-  | { type: 'common'; mode: 'auto'; max_spreads: number };
+  | { type: 'common'; mode: 'auto'; max_spreads: number }
+  | { type: 'common_required' };
 
 /**
  * Полная структура альбома = массив секций в порядке появления.
