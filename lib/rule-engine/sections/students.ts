@@ -36,6 +36,7 @@
  */
 
 import type { SpreadTemplate } from '@/lib/album-builder/types';
+import { findStudentMaster } from '../master-finder';
 import type { RulesStudentInput } from '../types';
 import type { SectionFillContext } from './shared';
 
@@ -60,15 +61,27 @@ export function fillStudentsSection(ctx: SectionFillContext): void {
       return;
     }
     if (ctx.bundle.preset.id === 'individual') {
-      // РЭ.21.8.15 (следующий коммит) — адаптивный выбор мастера по
-      // количеству фото с друзьями у ученика. Пока заглушка с тем же
-      // E-Max-Left/-Right как у Maximum, чтобы не падать. Будет
-      // переработана в следующем коммите.
-      buildOnePerSpread(ctx, {
-        kind: 'individual',
-        leftMasterName: 'E-Max-Left',
-        rightMasterName: 'E-Max-Right',
-      });
+      // РЭ.21.8.15: семантический выбор мастера для каждого ученика.
+      // Если у пресета заполнены поля student_pages_per_student=2 и
+      // student_has_quote — engine ищет E-Individual-N (или другие
+      // подходящие) мастера через findStudentMaster для каждого ученика
+      // отдельно (у каждого своё количество friend_photos).
+      // Иначе fallback на E-Max-Left/Right как у Maximum (заглушка
+      // 21.8.14, сохраняет обратную совместимость).
+      const preset = ctx.bundle.preset;
+      const useSemanticSearch =
+        preset.student_pages_per_student === 2 &&
+        typeof preset.student_has_quote === 'boolean';
+
+      if (useSemanticSearch) {
+        buildOnePerSpreadAdaptive(ctx);
+      } else {
+        buildOnePerSpread(ctx, {
+          kind: 'individual',
+          leftMasterName: 'E-Max-Left',
+          rightMasterName: 'E-Max-Right',
+        });
+      }
       return;
     }
     ctx.warnings.push(
@@ -259,6 +272,107 @@ function buildOnePerSpread(
         friend_photos_count: student.friend_photos
           ? student.friend_photos.length
           : 0,
+      },
+    });
+  }
+}
+
+/**
+ * Адаптивный one-per-spread (РЭ.21.8.15): мастер выбирается отдельно
+ * для каждого ученика по количеству его friend_photos.
+ *
+ * Используется когда у пресета заполнены поля:
+ *   - student_pages_per_student=2 (двухстраничный режим)
+ *   - student_has_quote (булево)
+ *
+ * Алгоритм для каждого ученика:
+ *   1. Левая страница — findStudentMaster(pageRole='student_left',
+ *      photosFriend=0, hasPortrait=true). У E-Max-Left photos_friend=0
+ *      (фото только справа).
+ *   2. Правая страница — findStudentMaster(pageRole='student_right',
+ *      photosFriend=student.friend_photos.length, hasQuote=preset.has_quote).
+ *      Engine найдёт E-Individual-N с подходящим числом слотов или ближайший
+ *      меньший.
+ *   3. Если у ученика 5 фото, а мастер на 4 — engine помещает 4, 1 фото
+ *      теряется + warning students_lost_photos с указанием на partнера.
+ *
+ * Если для какого-то ученика мастер не найден вообще — warning + ученик
+ * пропускается (остальные продолжают строиться).
+ */
+function buildOnePerSpreadAdaptive(ctx: SectionFillContext): void {
+  const preset = ctx.bundle.preset;
+  const hasQuote = preset.student_has_quote ?? false;
+  const students = ctx.input.students;
+
+  for (let i = 0; i < students.length; i++) {
+    const student = students[i];
+    const friendCount = student.friend_photos
+      ? student.friend_photos.length
+      : 0;
+
+    // Левая страница: портрет ученика, без фото с друзьями.
+    const leftResult = findStudentMaster(ctx.bundle.mastersByName, {
+      presetId: preset.id,
+      pageRole: 'student_left',
+      photosFriend: 0,
+      hasPortrait: true,
+    });
+
+    // Правая страница: фото с друзьями.
+    const rightResult = findStudentMaster(ctx.bundle.mastersByName, {
+      presetId: preset.id,
+      pageRole: 'student_right',
+      photosFriend: friendCount,
+      hasQuote: hasQuote,
+    });
+
+    if (!leftResult || !rightResult) {
+      const missing: string[] = [];
+      if (!leftResult) missing.push('left (page_role=student_left)');
+      if (!rightResult) missing.push(`right (page_role=student_right, friend_photos=${friendCount})`);
+      ctx.warnings.push(
+        `students_master_not_found: для ученика '${student.full_name}' ` +
+          `не найдены мастера: ${missing.join(', ')}`,
+      );
+      continue;
+    }
+
+    // Bindings обеих сторон.
+    const leftBindings = bindSingleStudent(leftResult.master, student);
+    const rightBindings = bindSingleStudent(rightResult.master, student);
+
+    ctx.pageInstances.push({
+      master_id: leftResult.master.id,
+      bindings: leftBindings,
+    });
+    ctx.pageInstances.push({
+      master_id: rightResult.master.id,
+      bindings: rightBindings,
+    });
+
+    // Warning о потерянных фото, если правый мастер вместил меньше.
+    if (rightResult.lostPhotos > 0) {
+      ctx.warnings.push(
+        `students_lost_photos: у ученика '${student.full_name}' было ${friendCount} фото с друзьями, ` +
+          `мастер '${rightResult.master.name}' вмещает только ${friendCount - rightResult.lostPhotos}, ` +
+          `${rightResult.lostPhotos} фото не размещены в layout (фото сохранены в пуле партнёра)`,
+      );
+    }
+
+    ctx.decisionTrace.push({
+      spread_index: Math.floor((ctx.pageInstances.length - 2) / 2),
+      section_index: ctx.sectionIndex,
+      family_id: 'student-section',
+      rule_id: `adaptive:${leftResult.master.name}+${rightResult.master.name}`,
+      inputs: {
+        density: 'individual',
+        student_index: i,
+        student_name: student.full_name,
+        friend_photos_count: friendCount,
+        left_master: leftResult.master.name,
+        right_master: rightResult.master.name,
+        right_exact_match: rightResult.exactMatch,
+        right_lost_photos: rightResult.lostPhotos,
       },
     });
   }

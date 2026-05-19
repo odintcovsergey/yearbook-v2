@@ -214,6 +214,10 @@ export type SlotCapacity = {
   photos_sixth?: number;
   photos_collage?: number;
   photos_friend?: number;
+  /** РЭ.21.8.15: семантические булевы теги для findStudentMaster. */
+  has_quote?: boolean;
+  has_portrait?: boolean;
+  has_name?: boolean;
 };
 
 // ─── Placeholder (из БД, та же форма что в lib/idml-converter/types.ts) ───

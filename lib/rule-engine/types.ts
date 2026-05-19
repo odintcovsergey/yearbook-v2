@@ -440,6 +440,30 @@ export interface Preset {
   sheet_type?: SheetType | null;
 
   /**
+   * РЭ.21.8.15: семантическое описание макета личного раздела.
+   *
+   * Партнёр при создании пресета описывает структуру личного раздела
+   * как набор требований к мастеру:
+   *  - `student_pages_per_student` — 1 (одностраничный мастер) или
+   *    2 (двухстраничный, разворот на ученика)
+   *  - `student_friend_photos` — сколько фото с друзьями (0..10)
+   *  - `student_has_quote` — есть ли слот для текста-цитаты
+   *
+   * Engine `sections/students.ts` ищет в template_set мастер с
+   * подходящим `slot_capacity` (см. lib/rule-engine/master-finder.ts).
+   * Когда все 3 поля NOT NULL — используется семантический поиск.
+   * Когда хоть одно NULL — fallback на legacy выбор по density / preset.id
+   * (для existing 7 пресетов, до их миграции на новые поля).
+   *
+   * Полстраницы на ученика (`student_pages_per_student=0.5`) пока не
+   * реализовано — Сергей готов добавить в будущем когда такие мастера
+   * появятся в template_set.
+   */
+  student_pages_per_student?: 1 | 2 | null;
+  student_friend_photos?: number | null;
+  student_has_quote?: boolean | null;
+
+  /**
    * РЭ.21.8: высокоуровневая структура альбома, редактируемая партнёром
    * через UI редактора пресетов (РЭ.21.3 → РЭ.21.7).
    *
