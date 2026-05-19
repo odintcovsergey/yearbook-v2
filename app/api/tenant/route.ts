@@ -613,7 +613,7 @@ export async function GET(req: NextRequest) {
   if (action === 'rule_presets_list') {
     const { data, error } = await supabaseAdmin
       .from('presets')
-      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, template_set_id, section_structure, tenant_id, version')
+      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, template_set_id, section_structure, student_pages_per_student, student_friend_photos, student_has_quote, tenant_id, version')
       .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
       .order('display_name')
 
@@ -1810,16 +1810,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Пресет не найден' }, { status: 404 })
     }
 
-    // 2) Проверка владения. Глобальные (tenant_id=NULL) → 403.
+    // 2) Проверка владения. Глобальные (tenant_id=NULL) — только superadmin.
     // Чужие тенант'овские → 404 (скрываем существование).
     const isGlobalPreset = existing.tenant_id === null
-    if (isGlobalPreset) {
+    if (isGlobalPreset && auth.role !== 'superadmin') {
       return NextResponse.json(
         { error: 'Глобальные пресеты редактируются только суперадмином' },
         { status: 403 }
       )
     }
-    if (existing.tenant_id !== auth.tenantId) {
+    if (!isGlobalPreset && existing.tenant_id !== auth.tenantId && auth.role !== 'superadmin') {
       return NextResponse.json({ error: 'Пресет не найден' }, { status: 404 })
     }
 
@@ -1942,19 +1942,86 @@ export async function POST(req: NextRequest) {
       patch.density = v.value
     }
 
+    // РЭ.21.8.15: sheet_type (hard/soft) — теперь отдельное поле.
+    // Партнёр может явно переключить пресет на мягкие/плотные листы.
+    if (body.sheet_type !== undefined) {
+      if (body.sheet_type === null) {
+        patch.sheet_type = null
+      } else {
+        const st = String(body.sheet_type)
+        if (st !== 'hard' && st !== 'soft') {
+          return NextResponse.json(
+            { error: 'sheet_type должен быть hard или soft' },
+            { status: 400 }
+          )
+        }
+        patch.sheet_type = st
+      }
+    }
+
+    // РЭ.21.8.15: семантический описание макета личного раздела.
+    // Все 3 поля nullable — null значит «семантический поиск не активен,
+    // engine использует жёсткие имена по density / preset.id».
+    if (body.student_pages_per_student !== undefined) {
+      if (body.student_pages_per_student === null) {
+        patch.student_pages_per_student = null
+      } else {
+        const n = Number(body.student_pages_per_student)
+        if (n !== 1 && n !== 2) {
+          return NextResponse.json(
+            { error: 'student_pages_per_student должен быть 1 или 2 (или null)' },
+            { status: 400 }
+          )
+        }
+        patch.student_pages_per_student = n
+      }
+    }
+
+    if (body.student_friend_photos !== undefined) {
+      if (body.student_friend_photos === null) {
+        patch.student_friend_photos = null
+      } else {
+        const n = Number(body.student_friend_photos)
+        if (!Number.isInteger(n) || n < 0 || n > 10) {
+          return NextResponse.json(
+            { error: 'student_friend_photos должен быть целым 0..10 (или null)' },
+            { status: 400 }
+          )
+        }
+        patch.student_friend_photos = n
+      }
+    }
+
+    if (body.student_has_quote !== undefined) {
+      if (body.student_has_quote === null) {
+        patch.student_has_quote = null
+      } else if (typeof body.student_has_quote === 'boolean') {
+        patch.student_has_quote = body.student_has_quote
+      } else {
+        return NextResponse.json(
+          { error: 'student_has_quote должен быть boolean (или null)' },
+          { status: 400 }
+        )
+      }
+    }
+
     // 4) Если ничего не пришло — отвечаем ok без UPDATE'а
     // (избегаем лишнего round-trip к БД).
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ ok: true, preset: { id: presetId }, updated: false })
     }
 
-    // 5) UPDATE с фильтром по id + tenant_id (защита от гонки —
-    // если за это время кто-то сменил владельца, не апдейтим чужое).
-    const { data: updated, error: updateErr } = await supabaseAdmin
+    // 5) UPDATE с фильтром по id. Для не-superadmin'а добавляем фильтр
+    // по tenant_id (защита от гонки если за это время кто-то сменил
+    // владельца). Superadmin может править любой пресет.
+    let updateQuery = supabaseAdmin
       .from('presets')
       .update(patch)
       .eq('id', presetId)
-      .eq('tenant_id', auth.tenantId)
+    if (auth.role !== 'superadmin') {
+      updateQuery = updateQuery.eq('tenant_id', auth.tenantId)
+    }
+    const { data: updated, error: updateErr } = await updateQuery
       .select('id, display_name')
       .single()
     if (updateErr) {
