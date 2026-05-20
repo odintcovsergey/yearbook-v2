@@ -23,6 +23,12 @@ export interface Preset {
   student_layout_mode: 'page' | 'spread' | 'grid' | null
   student_grid_size: number | null
   version: string
+  /**
+   * РЭ.24.7: показывать ли шаблон в каталоге /app/templates для партнёров.
+   * Только глобальные пресеты (tenant_id=NULL) могут быть рекомендованы.
+   * См. docs/phase-Р24-spec.md §5.
+   */
+  is_recommended: boolean
 }
 
 export type Section =
@@ -159,6 +165,12 @@ export default function PresetEditorModal({
     preset.student_has_quote ?? false
   )
 
+  // РЭ.24.7: галка «рекомендовать в каталоге партнёров».
+  // Применима только к глобальным пресетам — для тенантских скрыта в UI.
+  const [isRecommended, setIsRecommended] = useState<boolean>(
+    preset.is_recommended ?? false
+  )
+
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -209,6 +221,8 @@ export default function PresetEditorModal({
         student_pages_per_student: legacyPagesPerStudent,
         student_friend_photos: effectiveFriendPhotos,
         student_has_quote: studentHasQuote,
+        // РЭ.24.7: рекомендованность в каталоге (только для глобальных).
+        is_recommended: isRecommended,
       }
       if (minPages !== '') body.min_pages = minPages
       if (maxPages !== '') body.max_pages = maxPages
@@ -311,6 +325,33 @@ export default function PresetEditorModal({
                 className="w-full border rounded px-3 py-2 text-sm"
               />
             </div>
+
+            {/* РЭ.24.7: галка «рекомендовать в каталоге партнёров».
+                Показываем только для глобальных пресетов (tenant_id=NULL).
+                Тенантские пресеты не могут быть recommended — в каталоге
+                /app/templates показываются только глобальные. */}
+            {preset.tenant_id === null && (
+              <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isRecommended}
+                    onChange={(e) => setIsRecommended(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-800">
+                      Показывать в каталоге для партнёров
+                    </span>
+                    <span className="text-gray-600 block text-xs mt-0.5">
+                      Если включено — этот шаблон появится в разделе
+                      «Шаблоны» у партнёров (внутри своего дизайна). Партнёры
+                      смогут клонировать его в свою личную библиотеку.
+                    </span>
+                  </div>
+                </label>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div>

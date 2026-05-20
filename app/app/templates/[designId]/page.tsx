@@ -285,6 +285,7 @@ export default function TemplatesPage() {
         student_layout_mode: full.student_layout_mode ?? null,
         student_grid_size: full.student_grid_size ?? null,
         version: full.version ?? '1.0',
+        is_recommended: full.is_recommended ?? false,
       })
     } catch (e: unknown) {
       notify(e instanceof Error ? e.message : 'Ошибка загрузки шаблона', 'err')

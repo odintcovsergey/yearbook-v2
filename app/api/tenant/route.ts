@@ -664,7 +664,7 @@ export async function GET(req: NextRequest) {
   if (action === 'rule_presets_list') {
     const { data, error } = await supabaseAdmin
       .from('presets')
-      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, template_set_id, section_structure, student_pages_per_student, student_friend_photos, student_has_quote, student_layout_mode, student_grid_size, tenant_id, version')
+      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, template_set_id, section_structure, student_pages_per_student, student_friend_photos, student_has_quote, student_layout_mode, student_grid_size, tenant_id, version, is_recommended')
       .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
       .order('display_name')
 
@@ -2470,6 +2470,27 @@ export async function POST(req: NextRequest) {
         }
         patch.student_grid_size = n
       }
+    }
+
+    // РЭ.24.7: галка «рекомендовать в каталоге партнёров».
+    // Только глобальные пресеты могут быть recommended — для тенантских
+    // это поле не используется в API templates_list_global. Если приходит
+    // is_recommended=true для тенантского пресета — это пользовательская
+    // ошибка, отвечаем 400 чтобы избежать молчаливого ничего-не-делания.
+    if (body.is_recommended !== undefined) {
+      if (typeof body.is_recommended !== 'boolean') {
+        return NextResponse.json(
+          { error: 'is_recommended должен быть boolean' },
+          { status: 400 },
+        )
+      }
+      if (body.is_recommended === true && !isGlobalPreset) {
+        return NextResponse.json(
+          { error: 'Рекомендовать можно только глобальные пресеты' },
+          { status: 400 },
+        )
+      }
+      patch.is_recommended = body.is_recommended
     }
 
     // 4) Если ничего не пришло — отвечаем ok без UPDATE'а
