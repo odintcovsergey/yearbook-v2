@@ -43,15 +43,18 @@ import type { SectionFillContext } from './shared';
 export function fillStudentsSection(ctx: SectionFillContext): void {
   const preset = ctx.bundle.preset;
 
-  // РЭ.22.4: приоритетная ветка для двух-осевой модели (см. spec §6.1).
+  // РЭ.22.4-22.5: приоритетные ветки для двух-осевой модели (см. spec §6.1).
   // Если у пресета задан `student_layout_mode` — engine идёт по
   // семантическому пути через findStudentMaster. Когда поле NULL —
   // fallback на legacy выбор по density / preset.id (ниже).
   //
-  // mode='spread' и mode='grid' пока тоже идут в legacy (будут включены
-  // в РЭ.22.5 и РЭ.22.6 соответственно).
+  // mode='grid' пока идёт в legacy (будет включён в РЭ.22.6).
   if (preset.student_layout_mode === 'page') {
     buildPageSemantic(ctx);
+    return;
+  }
+  if (preset.student_layout_mode === 'spread') {
+    buildSpreadSemantic(ctx);
     return;
   }
 
@@ -304,6 +307,125 @@ function buildPageSemantic(ctx: SectionFillContext): void {
         master_name: result.master.name,
         exact_match: result.exactMatch,
         lost_photos: result.lostPhotos,
+      },
+    });
+  }
+}
+
+// ─── Spread semantic (РЭ.22.5) ──────────────────────────────────────────────
+
+/**
+ * РЭ.22.5: семантический выбор мастера для mode='spread' (один ученик =
+ * один разворот, 2 страницы). Заменяет жёстко прошитые E-Max-Left/Right
+ * на семантический поиск через `findStudentMaster`.
+ *
+ * Активна только когда `preset.student_layout_mode === 'spread'`.
+ *
+ * FIXED модель: один и тот же мастер используется для ВСЕХ учеников (по
+ * `preset.student_friend_photos`). Это отличается от per-student адаптивной
+ * модели `buildOnePerSpreadAdaptive` (РЭ.21.8.15), которая для Individual
+ * выбирает мастер под количество фактических фото КАЖДОГО ученика отдельно.
+ *
+ * ⚠️ Побочный эффект: если в UI переключить Individual-пресет на
+ * student_layout_mode='spread' (и сохранить) — он потеряет per-student
+ * адаптивность. Чтобы её сохранить, Individual должен оставаться в
+ * legacy-пути (mode=NULL + preset.id='individual'). UI РЭ.22.3
+ * computeInitialLayoutMode возвращает 'spread' для Individual в initial
+ * state, но в БД пишет только после явного нажатия Save — до тех пор
+ * Individual работает как раньше.
+ *
+ * Алгоритм для каждого ученика (2 страницы):
+ *  1. Левая страница (портрет + имя): findStudentMaster с
+ *     pageRole='student_left', photosFriend=0, hasPortrait=true.
+ *  2. Правая страница (фото с друзьями + опц. quote): findStudentMaster с
+ *     pageRole='student_right', photosFriend=preset.student_friend_photos,
+ *     hasQuote=preset.student_has_quote.
+ *  3. Если любой не найден — warning, ученик пропускается (но остальные
+ *     строятся).
+ *  4. Если правый найден ближайший меньший по photos_friend — warning
+ *     students_lost_photos.
+ */
+function buildSpreadSemantic(ctx: SectionFillContext): void {
+  const preset = ctx.bundle.preset;
+  const photosFriendRequired = preset.student_friend_photos ?? 0;
+  const hasQuote = preset.student_has_quote ?? false;
+  const students = ctx.input.students;
+
+  for (let i = 0; i < students.length; i++) {
+    const student = students[i];
+
+    // Левая страница: портрет ученика, без фото и без quote.
+    const leftResult = findStudentMaster(ctx.bundle.mastersByName, {
+      presetId: preset.id,
+      pageRole: 'student_left',
+      photosFriend: 0,
+      hasPortrait: true,
+    });
+
+    // Правая страница: фото с друзьями (количество фиксировано через пресет).
+    const rightResult = findStudentMaster(ctx.bundle.mastersByName, {
+      presetId: preset.id,
+      pageRole: 'student_right',
+      photosFriend: photosFriendRequired,
+      hasQuote: hasQuote,
+    });
+
+    if (!leftResult || !rightResult) {
+      const missing: string[] = [];
+      if (!leftResult) {
+        missing.push("page_role='student_left', photos_friend=0, has_portrait=true");
+      }
+      if (!rightResult) {
+        missing.push(
+          `page_role='student_right', photos_friend=${photosFriendRequired}, has_quote=${hasQuote}`,
+        );
+      }
+      ctx.warnings.push(
+        `students_master_not_found: для пресета '${preset.id}' (mode=spread) ` +
+          `для ученика '${student.full_name}' не найдены мастера: ${missing.join('; ')}. ` +
+          `Закажите мастер у дизайнера.`,
+      );
+      continue;
+    }
+
+    const leftBindings = bindSingleStudent(leftResult.master, student);
+    const rightBindings = bindSingleStudent(rightResult.master, student);
+
+    ctx.pageInstances.push({
+      master_id: leftResult.master.id,
+      bindings: leftBindings,
+    });
+    ctx.pageInstances.push({
+      master_id: rightResult.master.id,
+      bindings: rightBindings,
+    });
+
+    // Warning о потерянных фото, если правый мастер вместил меньше.
+    if (rightResult.lostPhotos > 0) {
+      ctx.warnings.push(
+        `students_lost_photos: у ученика '${student.full_name}' пресет требует ` +
+          `${photosFriendRequired} фото с друзьями, мастер '${rightResult.master.name}' ` +
+          `вмещает только ${photosFriendRequired - rightResult.lostPhotos}, ` +
+          `${rightResult.lostPhotos} фото не размещены в layout ` +
+          `(фото сохранены в пуле партнёра)`,
+      );
+    }
+
+    ctx.decisionTrace.push({
+      spread_index: Math.floor((ctx.pageInstances.length - 2) / 2),
+      section_index: ctx.sectionIndex,
+      family_id: 'student-section',
+      rule_id: `spread_semantic:${leftResult.master.name}+${rightResult.master.name}`,
+      inputs: {
+        mode: 'spread',
+        student_index: i,
+        student_name: student.full_name,
+        photos_friend_required: photosFriendRequired,
+        has_quote_required: hasQuote,
+        left_master: leftResult.master.name,
+        right_master: rightResult.master.name,
+        right_exact_match: rightResult.exactMatch,
+        right_lost_photos: rightResult.lostPhotos,
       },
     });
   }
