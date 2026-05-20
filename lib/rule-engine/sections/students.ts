@@ -36,25 +36,27 @@
  */
 
 import type { SpreadTemplate } from '@/lib/album-builder/types';
-import { findStudentMaster } from '../master-finder';
+import { findStudentMaster, findStudentGridMaster } from '../master-finder';
 import type { RulesStudentInput } from '../types';
 import type { SectionFillContext } from './shared';
 
 export function fillStudentsSection(ctx: SectionFillContext): void {
   const preset = ctx.bundle.preset;
 
-  // РЭ.22.4-22.5: приоритетные ветки для двух-осевой модели (см. spec §6.1).
+  // РЭ.22.4-22.6: приоритетные ветки для двух-осевой модели (см. spec §6.1).
   // Если у пресета задан `student_layout_mode` — engine идёт по
-  // семантическому пути через findStudentMaster. Когда поле NULL —
-  // fallback на legacy выбор по density / preset.id (ниже).
-  //
-  // mode='grid' пока идёт в legacy (будет включён в РЭ.22.6).
+  // семантическому пути через findStudentMaster / findStudentGridMaster.
+  // Когда поле NULL — fallback на legacy выбор по density / preset.id (ниже).
   if (preset.student_layout_mode === 'page') {
     buildPageSemantic(ctx);
     return;
   }
   if (preset.student_layout_mode === 'spread') {
     buildSpreadSemantic(ctx);
+    return;
+  }
+  if (preset.student_layout_mode === 'grid') {
+    buildGridSemantic(ctx);
     return;
   }
 
@@ -654,6 +656,159 @@ function bindSingleStudent(
     }
   }
   return bindings;
+}
+
+// ─── Grid semantic (РЭ.22.6) ─────────────────────────────────────────────
+
+/**
+ * РЭ.22.6: семантический выбор мастера для mode='grid'. Заменяет жёсткие
+ * имена M/L/N-Grid-Page и адаптивный список L-2/3/4 / N-4/6/9 на
+ * семантический поиск через `findStudentGridMaster` (page_role='student_grid*',
+ * slot_capacity.students=N).
+ *
+ * Активна только когда `preset.student_layout_mode === 'grid'`. Для legacy
+ * пресетов (mode=NULL) используется `buildGrid` со старыми жёсткими именами.
+ *
+ * Алгоритм (повторяет логику buildGrid, но через семантический поиск):
+ *  1. Base-мастер: точное совпадение по students=preset.student_grid_size,
+ *     photos_full=0 (обычная сетка без общего фото).
+ *  2. Полные страницы заполняются base-мастером.
+ *  3. Хвост (remainder = total % gridSize):
+ *     a. Combined-tail: если available.full_class >= 1 — ищем мастер с
+ *        photos_full=1, students>=remainder (min_fit). Если найден,
+ *        используем + декремент full_class.
+ *     b. Adaptive tail: ищем мастер с photos_full=0, students>=remainder.
+ *        Эта ветка покрывает случаи когда в template_set есть мастера
+ *        размером меньше base-сетки (L-2/L-3/L-4 для Light).
+ *     c. Fallback: base-мастер с null-заполнением (последние слоты null).
+ *        Warning students_grid_tail_padded.
+ *
+ * Если base-мастер не найден — warning + секция не строится.
+ * Если grid_size не задан в пресете — warning + секция не строится.
+ */
+function buildGridSemantic(ctx: SectionFillContext): void {
+  const preset = ctx.bundle.preset;
+  const gridSize = preset.student_grid_size;
+  const hasQuote = preset.student_has_quote ?? false;
+
+  if (gridSize === null || gridSize === undefined) {
+    ctx.warnings.push(
+      `students_grid_size_missing: для пресета '${preset.id}' (mode=grid) ` +
+        `не задан student_grid_size. Заполните в /super/presets и сохраните.`,
+    );
+    return;
+  }
+
+  const students = ctx.input.students;
+  if (students.length === 0) return;
+
+  // 1. Base-мастер для полных страниц: точное совпадение students=gridSize,
+  //    без общего фото (photos_full=0).
+  const baseResult = findStudentGridMaster(ctx.bundle.mastersByName, {
+    presetId: preset.id,
+    pageRole: null, // принимаем любую grid-роль
+    studentsCount: gridSize,
+    match: 'exact',
+    photosFull: 0,
+    hasQuote: hasQuote,
+    hasPortrait: true,
+  });
+
+  if (!baseResult) {
+    ctx.warnings.push(
+      `students_master_not_found: для пресета '${preset.id}' (mode=grid) ` +
+        `не найден base-мастер с page_role='student_grid*', ` +
+        `slot_capacity.students=${gridSize}, photos_full=0, ` +
+        `has_quote=${hasQuote}, has_portrait=true. ` +
+        `Закажите мастер у дизайнера.`,
+    );
+    return;
+  }
+
+  const baseMaster = baseResult.master;
+  const slotsPerPage = gridSize;
+
+  const total = students.length;
+  const fullPages = Math.floor(total / slotsPerPage);
+  const remainder = total % slotsPerPage;
+
+  // 2. Полные страницы — все на baseMaster.
+  for (let i = 0; i < fullPages; i++) {
+    const slice = students.slice(i * slotsPerPage, (i + 1) * slotsPerPage);
+    pushGridPage(ctx, baseMaster, slice, slotsPerPage, `grid_semantic:base:${baseMaster.name}`);
+  }
+
+  if (remainder === 0) return;
+
+  // 3. Хвост — три варианта: combined / adaptive / base с null'ями.
+  const tail = students.slice(fullPages * slotsPerPage);
+
+  // 3a. Combined-tail (если есть свободное full_class фото).
+  if (ctx.available.full_class >= 1) {
+    const combinedResult = findStudentGridMaster(ctx.bundle.mastersByName, {
+      presetId: preset.id,
+      pageRole: null,
+      studentsCount: remainder,
+      match: 'min_fit',
+      photosFull: 1,
+      hasQuote: hasQuote,
+      hasPortrait: true,
+    });
+    if (combinedResult) {
+      const combSlots = combinedResult.emptySlots + remainder;
+      pushCombinedTailPage(
+        ctx,
+        combinedResult.master,
+        tail,
+        combSlots,
+        // density передаётся в decision_trace; используем 'semantic' маркер.
+        'semantic' as unknown as GridConfig['density'],
+      );
+      return;
+    }
+  }
+
+  // 3b. Adaptive tail (мастер с students=remainder, без common фото).
+  const adaptiveResult = findStudentGridMaster(ctx.bundle.mastersByName, {
+    presetId: preset.id,
+    pageRole: null,
+    studentsCount: remainder,
+    match: 'min_fit',
+    photosFull: 0,
+    hasQuote: hasQuote,
+    hasPortrait: true,
+  });
+  // Используем adaptive только если он МЕНЬШЕ base-мастера (иначе нет смысла
+  // — лучше base с null-padding покажет правильное число слотов).
+  if (adaptiveResult && adaptiveResult.master.id !== baseMaster.id) {
+    const adaptiveSlots = adaptiveResult.emptySlots + remainder;
+    if (adaptiveSlots < slotsPerPage) {
+      pushGridPage(
+        ctx,
+        adaptiveResult.master,
+        tail,
+        adaptiveSlots,
+        `grid_semantic:adaptive_tail:${adaptiveResult.master.name}`,
+      );
+      return;
+    }
+  }
+
+  // 3c. Fallback — base-мастер с null'ями (последние slotsPerPage - remainder
+  //     слотов остаются пустыми, Konva/PDF их скроют через __hidden__ логику).
+  pushGridPage(
+    ctx,
+    baseMaster,
+    tail,
+    slotsPerPage,
+    `grid_semantic:tail_padded:${baseMaster.name}`,
+  );
+  ctx.warnings.push(
+    `students_grid_tail_padded: остаток ${remainder} учеников вместился в ` +
+      `${slotsPerPage}-слотный '${baseMaster.name}' с null-заполнением. ` +
+      `Закажите адаптивный мастер с students=${remainder} у дизайнера если ` +
+      `нужна более компактная вёрстка хвоста.`,
+  );
 }
 
 // ─── Grid режимы (Medium / Light / Mini) ───────────────────────────────────

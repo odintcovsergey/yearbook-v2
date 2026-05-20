@@ -35,12 +35,29 @@ import type { SlotCapacity, SpreadTemplate } from '@/lib/album-builder/types';
  * Это **одна страница** в кадре поиска (left или right), даже если
  * personalspread занимает 2 страницы — caller вызывает findStudentMaster
  * дважды (для left и для right) с разными запросами.
+ *
+ * РЭ.22.6: добавлены grid-роли `student_grid` / `student_grid_left` /
+ * `student_grid_right`. Но `findStudentMaster` сам ВСЁ ЕЩЁ требует
+ * `slot_capacity.students === 1` (см. фильтр в теле функции) — для grid
+ * (`studentsCount > 1`) используется отдельная функция
+ * `findStudentGridMaster`. Это сознательное разделение: page/spread
+ * ищет «точное совпадение по photos_friend ИЛИ ближайший меньший», а
+ * grid — «точное совпадение по students» (для base) или «минимально-
+ * достаточный по students» (для адаптивного хвоста). Семантика поиска
+ * разная, поэтому функции разные.
  */
 export interface StudentLayoutRequest {
   /** preset.id альбома, для фильтра по applies_to_configs. */
   presetId: string;
   /** Какая страница разворота нужна. NULL = любая. */
-  pageRole?: 'student' | 'student_left' | 'student_right' | null;
+  pageRole?:
+    | 'student'
+    | 'student_left'
+    | 'student_right'
+    | 'student_grid'
+    | 'student_grid_left'
+    | 'student_grid_right'
+    | null;
   /** Сколько фото с друзьями должен помещать мастер. */
   photosFriend: number;
   /** Должен ли мастер иметь слот для цитаты. NULL = не важно. */
@@ -179,5 +196,171 @@ export function findStudentMaster(
     master: best,
     exactMatch: false,
     lostPhotos: request.photosFriend - bestCapacity,
+  };
+}
+
+// ─── РЭ.22.6: семантический поиск для grid-режима ──────────────────────────
+
+/**
+ * Запрос к template_set для grid-мастера (mode='grid' в двух-осевой модели).
+ *
+ * В отличие от `StudentLayoutRequest` (один ученик на страницу), здесь
+ * партнёр указывает сколько учеников должно помещаться на странице
+ * (`studentsCount`). Опционально требует `photosFull` (1 для combined-tail
+ * с общим фото класса, 0 для обычной сетки).
+ *
+ * Совмещение grid + photos_friend в текущей модели не поддерживается
+ * (для сетки фото с друзьями обычно не предусмотрены — каждый ученик
+ * представлен только портретом).
+ */
+export interface StudentGridLayoutRequest {
+  /** preset.id альбома, для фильтра по applies_to_configs. */
+  presetId: string;
+  /**
+   * Какая страница нужна. По умолчанию учитываются `student_grid_left`,
+   * `student_grid_right` и `student_grid` (последний — fallback для
+   * симметричных мастеров).
+   *
+   * Если NULL или не задан — принимаются все три grid-роли.
+   */
+  pageRole?: 'student_grid' | 'student_grid_left' | 'student_grid_right' | null;
+  /** Сколько учеников должно поместиться на странице. */
+  studentsCount: number;
+  /**
+   * Режим сопоставления по числу учеников:
+   *  - `exact` — точное совпадение `slot_capacity.students === studentsCount`.
+   *    Используется для базы сетки.
+   *  - `min_fit` — `slot_capacity.students >= studentsCount`, выбирается
+   *    минимально-достаточный. Используется для адаптивного хвоста и
+   *    combined-tail (мастер шире остатка → лишние слоты остаются null).
+   */
+  match: 'exact' | 'min_fit';
+  /**
+   * Должно ли быть `slot_capacity.photos_full === photosFull` (точное).
+   * Не задан → не фильтруем. Обычно: 0 для plain grid, 1 для combined-tail.
+   */
+  photosFull?: number;
+  /** Должен ли мастер иметь quote-слоты для всех учеников. NULL = не важно. */
+  hasQuote?: boolean | null;
+  /** Должен ли мастер иметь portrait-слоты. NULL = не важно. */
+  hasPortrait?: boolean | null;
+}
+
+export interface FindStudentGridMasterResult {
+  master: SpreadTemplate;
+  /** true если slot_capacity.students точно совпал с studentsCount. */
+  exactMatch: boolean;
+  /**
+   * Сколько слотов учеников останется пустыми. 0 если exactMatch=true,
+   * (slot_capacity.students - studentsCount) если match='min_fit' и мастер
+   * шире.
+   */
+  emptySlots: number;
+}
+
+/**
+ * Семантический поиск grid-мастера в template_set (РЭ.22.6).
+ *
+ * Алгоритм:
+ *  1. Фильтр `applies_to_configs` (как в findStudentMaster).
+ *  2. Фильтр `page_role`: принимаются `student_grid_*` (left/right) и
+ *     нейтральный `student_grid`. Если `request.pageRole` задан конкретно
+ *     — фильтр строгий.
+ *  3. Фильтр `slot_capacity.students` — по `match`:
+ *     - `exact`: students === studentsCount
+ *     - `min_fit`: students >= studentsCount
+ *  4. Опциональный фильтр `slot_capacity.photos_full` (точное совпадение).
+ *  5. Опциональные `has_quote` / `has_portrait`.
+ *  6. Если кандидатов несколько:
+ *     - `exact`: возвращаем первого по итерации Map'а
+ *     - `min_fit`: возвращаем кандидата с минимальным `students` (ближе
+ *       всего к studentsCount)
+ */
+export function findStudentGridMaster(
+  mastersByName: ReadonlyMap<string, SpreadTemplate>,
+  request: StudentGridLayoutRequest,
+): FindStudentGridMasterResult | null {
+  const candidates: SpreadTemplate[] = [];
+
+  mastersByName.forEach((master) => {
+    // Фильтр applies_to_configs.
+    const configs = master.applies_to_configs;
+    if (configs && configs.length > 0) {
+      const presetAsConfig = request.presetId as unknown as (typeof configs)[number];
+      if (configs.indexOf(presetAsConfig) < 0) return;
+    }
+
+    // Фильтр page_role.
+    const role = master.page_role;
+    if (request.pageRole !== undefined && request.pageRole !== null) {
+      // Конкретная роль запрошена — строгое совпадение, но student_grid
+      // принимается как fallback для student_grid_left/right (симметричный).
+      const acceptsGenericGrid =
+        (request.pageRole === 'student_grid_left' ||
+          request.pageRole === 'student_grid_right') &&
+        role === 'student_grid';
+      if (master.page_role !== request.pageRole && !acceptsGenericGrid) return;
+    } else {
+      // Любая grid-роль принимается.
+      if (
+        role !== 'student_grid' &&
+        role !== 'student_grid_left' &&
+        role !== 'student_grid_right'
+      ) {
+        return;
+      }
+    }
+
+    // Фильтр по students.
+    const studentsCap = getCapacityNumber(master.slot_capacity, 'students');
+    if (request.match === 'exact') {
+      if (studentsCap !== request.studentsCount) return;
+    } else {
+      // min_fit
+      if (studentsCap < request.studentsCount) return;
+    }
+
+    // Опциональный фильтр по photos_full.
+    if (request.photosFull !== undefined) {
+      const photosFullCap = getCapacityNumber(master.slot_capacity, 'photos_full');
+      if (photosFullCap !== request.photosFull) return;
+    }
+
+    // Фильтр has_quote (если задан).
+    if (request.hasQuote !== undefined && request.hasQuote !== null) {
+      const masterHasQuote = getCapacityBool(master.slot_capacity, 'has_quote');
+      if (masterHasQuote !== request.hasQuote) return;
+    }
+
+    // Фильтр has_portrait (если задан).
+    if (request.hasPortrait !== undefined && request.hasPortrait !== null) {
+      const masterHasPortrait = getCapacityBool(master.slot_capacity, 'has_portrait');
+      if (masterHasPortrait !== request.hasPortrait) return;
+    }
+
+    candidates.push(master);
+  });
+
+  if (candidates.length === 0) return null;
+
+  if (request.match === 'exact') {
+    // Точное совпадение — берём первого по итерации Map'а.
+    return { master: candidates[0], exactMatch: true, emptySlots: 0 };
+  }
+
+  // min_fit — берём кандидата с минимальным students (ближе всего к запросу).
+  let best = candidates[0];
+  let bestCap = getCapacityNumber(best.slot_capacity, 'students');
+  for (let i = 1; i < candidates.length; i++) {
+    const cap = getCapacityNumber(candidates[i].slot_capacity, 'students');
+    if (cap < bestCap) {
+      bestCap = cap;
+      best = candidates[i];
+    }
+  }
+  return {
+    master: best,
+    exactMatch: bestCap === request.studentsCount,
+    emptySlots: bestCap - request.studentsCount,
   };
 }
