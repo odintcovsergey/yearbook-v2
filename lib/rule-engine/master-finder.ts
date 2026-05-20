@@ -499,3 +499,70 @@ export function findTeacherMaster(
     emptySlots: bestCap - requestedTeachers,
   };
 }
+
+// ─── РЭ.22.8.2: семантический поиск soft_intro/soft_final мастеров ──────────
+
+/**
+ * Запрос к template_set для soft-секции (intro / final).
+ *
+ * Эти секции — одностраничные, один мастер на роль. Семантика проще чем
+ * у students/teachers: нет режимов match (для одной роли мастер либо есть,
+ * либо нет), нет таблицы выбора по числу. Опциональный `photosFull` фильтр
+ * (1 если у мастера должен быть слот classphotoframe, 0 если без).
+ */
+export interface SoftSectionRequest {
+  presetId: string;
+  pageRole: 'intro' | 'final';
+  /**
+   * Точное число рамок общего фото класса. По умолчанию не фильтруем
+   * (любой мастер с подходящим page_role).
+   */
+  photosFull?: number;
+}
+
+export interface FindSoftSectionMasterResult {
+  master: SpreadTemplate;
+}
+
+/**
+ * Семантический поиск soft-мастера (intro/final) в template_set (РЭ.22.8.2).
+ *
+ * Алгоритм:
+ *  1. Фильтр applies_to_configs (как везде).
+ *  2. Фильтр page_role — строгий ('intro' или 'final').
+ *  3. Опциональный точный фильтр photos_full.
+ *  4. Возвращаем первого подходящего по итерации Map'а.
+ *     Множественные кандидаты возможны если у партнёра в template_set
+ *     несколько мастеров одной роли — в этом случае выбор «первого»
+ *     детерминирован порядком записей в БД (см. spec D.1).
+ */
+export function findSoftSectionMaster(
+  mastersByName: ReadonlyMap<string, SpreadTemplate>,
+  request: SoftSectionRequest,
+): FindSoftSectionMasterResult | null {
+  let result: SpreadTemplate | null = null;
+
+  mastersByName.forEach((master) => {
+    if (result) return; // first-match выход
+
+    // Фильтр applies_to_configs.
+    const configs = master.applies_to_configs;
+    if (configs && configs.length > 0) {
+      const presetAsConfig = request.presetId as unknown as (typeof configs)[number];
+      if (configs.indexOf(presetAsConfig) < 0) return;
+    }
+
+    // Фильтр page_role.
+    if (master.page_role !== request.pageRole) return;
+
+    // Опциональный фильтр photos_full.
+    if (request.photosFull !== undefined) {
+      const cap = getCapacityNumber(master.slot_capacity, 'photos_full');
+      if (cap !== request.photosFull) return;
+    }
+
+    result = master;
+  });
+
+  return result ? { master: result } : null;
+}

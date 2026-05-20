@@ -193,6 +193,7 @@ export type PageRole =
   | 'teacher_right'
   | 'common'
   | 'intro'
+  | 'final'
   | 'cover';
 
 // ─── Проекции БД (spread_templates / template_sets) ───────────────────────

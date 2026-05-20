@@ -6,9 +6,9 @@
  * `preset.sheet_type === 'soft'`. Для hard — секция игнорируется
  * с warning (партнёр поставил её в section_structure ошибочно).
  *
- * Мастер: жёстко прошито имя `S-Intro`. В реальной БД для okeybook-default
- * этот мастер есть (из контекста v38: «intro (2)» в page_role). Если
- * его нет — warning master_not_found.
+ * РЭ.22.8.2: семантический поиск мастера через page_role='intro' +
+ * опциональный photos_full=1. Legacy fallback на жёсткое имя 'S-Intro'
+ * для template_set'ов где теги ещё не размечены.
  *
  * Bindings: placeholder-driven, единственный поддерживаемый label —
  * `classphotoframe` (первое ещё неиспользованное full_class). Cursor-логика
@@ -22,6 +22,8 @@
  * (страница есть, фото есть). Партнёр в редакторе может подвинуть.
  */
 
+import type { SpreadTemplate } from '@/lib/album-builder/types';
+import { findSoftSectionMaster } from '../master-finder';
 import type { SectionFillContext } from './shared';
 
 export function fillSoftIntroSection(ctx: SectionFillContext): void {
@@ -33,10 +35,29 @@ export function fillSoftIntroSection(ctx: SectionFillContext): void {
     return;
   }
 
-  const master = ctx.bundle.mastersByName.get('S-Intro');
+  // 1) Семантический путь: ищем мастер с page_role='intro', photos_full=1
+  //    (требуется слот для общего фото класса).
+  const semanticResult = findSoftSectionMaster(ctx.bundle.mastersByName, {
+    presetId: ctx.bundle.preset.id,
+    pageRole: 'intro',
+    photosFull: 1,
+  });
+
+  let master: SpreadTemplate | undefined;
+  let semantic = false;
+  if (semanticResult) {
+    master = semanticResult.master;
+    semantic = true;
+  } else {
+    // 2) Legacy fallback по имени
+    master = ctx.bundle.mastersByName.get('S-Intro');
+  }
+
   if (!master) {
     ctx.warnings.push(
-      `soft_intro_master_not_found: 'S-Intro' отсутствует в template_set дизайна`,
+      `soft_intro_master_not_found: ни через семантический поиск ` +
+        `(page_role='intro', photos_full=1), ни по имени 'S-Intro' мастер ` +
+        `не найден в template_set. Закажите мастер у дизайнера.`,
     );
     return;
   }
@@ -69,10 +90,11 @@ export function fillSoftIntroSection(ctx: SectionFillContext): void {
     spread_index: Math.floor(pageIndex / 2),
     section_index: ctx.sectionIndex,
     family_id: 'intro',
-    rule_id: 'soft_intro:S-Intro',
+    rule_id: `soft_intro:${master.name}`,
     inputs: {
       consumes: { full_class: consumedFullClass },
       sheet_type: 'soft',
+      semantic,
     },
   });
 }

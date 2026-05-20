@@ -6,10 +6,11 @@
  * Применяется только когда `preset.sheet_type === 'soft'`. Для hard —
  * секция игнорируется с warning.
  *
- * Мастер: жёстко прошито имя `S-Final`. В реальной БД для okeybook-default
- * мастер существует под именем `S-Final-Soft-L` (из фикстур rule-engine).
- * Если `S-Final` не находится — пробуем `S-Final-Soft-L` как fallback.
- * Если ни один не найден — warning master_not_found.
+ * РЭ.22.8.2: семантический поиск мастера через page_role='final' +
+ * опциональный photos_full=1. Legacy fallback двойной: сначала 'S-Final'
+ * (которого в реальной БД okeybook-default не существует, но может быть
+ * у партнёра), потом 'S-Final-Soft-L'. После семантизации эта
+ * двойственность имён не нужна — engine ищет по page_role.
  *
  * Bindings: placeholder-driven, поддерживаемый label — `classphotoframe`
  * (если есть в мастере). Cursor-логика через
@@ -17,11 +18,12 @@
  *
  * Позиция: S-Final встаёт как очередная страница в pageInstances. Для
  * хорошей визуальной картины должна быть на левой стороне последнего
- * разворота. Орchestrator не гарантирует это; партнёр в редакторе
+ * разворота. Orchestrator не гарантирует это; партнёр в редакторе
  * подвинет при необходимости.
  */
 
 import type { SpreadTemplate } from '@/lib/album-builder/types';
+import { findSoftSectionMaster } from '../master-finder';
 import type { SectionFillContext } from './shared';
 
 export function fillSoftFinalSection(ctx: SectionFillContext): void {
@@ -33,11 +35,32 @@ export function fillSoftFinalSection(ctx: SectionFillContext): void {
     return;
   }
 
-  let master: SpreadTemplate | undefined = ctx.bundle.mastersByName.get('S-Final');
-  if (!master) master = ctx.bundle.mastersByName.get('S-Final-Soft-L');
+  // 1) Семантический путь: page_role='final', photos_full=1.
+  const semanticResult = findSoftSectionMaster(ctx.bundle.mastersByName, {
+    presetId: ctx.bundle.preset.id,
+    pageRole: 'final',
+    photosFull: 1,
+  });
+
+  let master: SpreadTemplate | undefined;
+  let semantic = false;
+  if (semanticResult) {
+    master = semanticResult.master;
+    semantic = true;
+  } else {
+    // 2) Legacy fallback по имени — сначала S-Final, потом S-Final-Soft-L.
+    //    В реальной БД okeybook-default есть только второй, но первый
+    //    может быть у других партнёров.
+    master = ctx.bundle.mastersByName.get('S-Final');
+    if (!master) master = ctx.bundle.mastersByName.get('S-Final-Soft-L');
+  }
+
   if (!master) {
     ctx.warnings.push(
-      `soft_final_master_not_found: ни 'S-Final' ни 'S-Final-Soft-L' не найдены в template_set дизайна`,
+      `soft_final_master_not_found: ни через семантический поиск ` +
+        `(page_role='final', photos_full=1), ни по именам 'S-Final' / ` +
+        `'S-Final-Soft-L' мастер не найден в template_set. Закажите ` +
+        `мастер у дизайнера.`,
     );
     return;
   }
@@ -73,6 +96,7 @@ export function fillSoftFinalSection(ctx: SectionFillContext): void {
     inputs: {
       consumes: { full_class: consumedFullClass },
       sheet_type: 'soft',
+      semantic,
     },
   });
 }
