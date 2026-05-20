@@ -391,6 +391,13 @@ export default function AppPage() {
                 )}
               </div>
             )}
+            <button
+              onClick={() => router.push('/app/templates')}
+              className="btn-secondary"
+              title="Готовые шаблоны и моя библиотека"
+            >
+              📐 Шаблоны
+            </button>
             <button onClick={handleLogout} className="btn-secondary">Выйти</button>
           </div>
         </div>
