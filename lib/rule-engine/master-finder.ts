@@ -364,3 +364,138 @@ export function findStudentGridMaster(
     emptySlots: bestCap - request.studentsCount,
   };
 }
+
+// ─── РЭ.22.7.2: семантический поиск teacher-мастеров ───────────────────────
+
+/**
+ * Запрос к template_set для учительского мастера (секция 'teachers').
+ *
+ * Учительский разворот всегда имеет две стороны:
+ *  - Левая (page_role='teacher_left'): главный учитель + опц. сетка
+ *    предметников или общее фото класса (F-Head-WithClassPhoto-L).
+ *  - Правая (page_role='teacher_right'): либо общее фото класса
+ *    (G-FullClass / G-HalfClass), либо сетка предметников
+ *    (G-Teachers-3x3 / 3x4 / 4x4).
+ *
+ * Критерии поиска:
+ *  - `headTeacher` (точное): сколько слотов главного учителя должен
+ *    иметь мастер. Обычно 1 для левой страницы, 0 для правой.
+ *  - `teachers` (по match): сколько слотов предметников.
+ *  - `photosFull` (точное): рамок общего фото класса.
+ *  - `photosHalf` (точное): рамок «полкласса».
+ *
+ * `match` для `teachers`:
+ *  - `exact` — точное совпадение `slot_capacity.teachers === teachers`.
+ *  - `min_fit` — `slot_capacity.teachers >= teachers`, минимально-достаточный.
+ */
+export interface TeacherSearchRequest {
+  presetId: string;
+  pageRole: 'teacher_left' | 'teacher_right';
+  match: 'exact' | 'min_fit';
+  /** Точное число слотов главного учителя. По умолчанию не фильтруем. */
+  headTeacher?: number;
+  /** Число слотов предметников, режим определяется `match`. */
+  teachers?: number;
+  /** Точное число рамок общего фото класса. По умолчанию не фильтруем. */
+  photosFull?: number;
+  /** Точное число рамок полкласса. По умолчанию не фильтруем. */
+  photosHalf?: number;
+}
+
+export interface FindTeacherMasterResult {
+  master: SpreadTemplate;
+  /** true если slot_capacity.teachers точно совпал с запросом. */
+  exactMatch: boolean;
+  /**
+   * Сколько слотов предметников останется пустыми (0 если exactMatch=true,
+   * (slot_capacity.teachers - request.teachers) если match='min_fit').
+   */
+  emptySlots: number;
+}
+
+/**
+ * Семантический поиск teacher-мастера в template_set (РЭ.22.7.2).
+ *
+ * Алгоритм:
+ *  1. Фильтр applies_to_configs (как в findStudentMaster).
+ *  2. Фильтр page_role — строгий ('teacher_left' либо 'teacher_right').
+ *  3. Опциональные точные фильтры headTeacher / photosFull / photosHalf.
+ *  4. Фильтр teachers по match:
+ *     - 'exact': slot_capacity.teachers === request.teachers
+ *     - 'min_fit': slot_capacity.teachers >= request.teachers
+ *  5. Из подходящих кандидатов:
+ *     - 'exact': первый по итерации Map'а
+ *     - 'min_fit': кандидат с минимальным slot_capacity.teachers
+ */
+export function findTeacherMaster(
+  mastersByName: ReadonlyMap<string, SpreadTemplate>,
+  request: TeacherSearchRequest,
+): FindTeacherMasterResult | null {
+  const candidates: SpreadTemplate[] = [];
+
+  mastersByName.forEach((master) => {
+    // Фильтр applies_to_configs.
+    const configs = master.applies_to_configs;
+    if (configs && configs.length > 0) {
+      const presetAsConfig = request.presetId as unknown as (typeof configs)[number];
+      if (configs.indexOf(presetAsConfig) < 0) return;
+    }
+
+    // Фильтр page_role — строгий.
+    if (master.page_role !== request.pageRole) return;
+
+    // Точный фильтр head_teacher.
+    if (request.headTeacher !== undefined) {
+      const cap = getCapacityNumber(master.slot_capacity, 'head_teacher');
+      if (cap !== request.headTeacher) return;
+    }
+
+    // Точный фильтр photos_full.
+    if (request.photosFull !== undefined) {
+      const cap = getCapacityNumber(master.slot_capacity, 'photos_full');
+      if (cap !== request.photosFull) return;
+    }
+
+    // Точный фильтр photos_half.
+    if (request.photosHalf !== undefined) {
+      const cap = getCapacityNumber(master.slot_capacity, 'photos_half');
+      if (cap !== request.photosHalf) return;
+    }
+
+    // Фильтр teachers по match.
+    if (request.teachers !== undefined) {
+      const cap = getCapacityNumber(master.slot_capacity, 'teachers');
+      if (request.match === 'exact') {
+        if (cap !== request.teachers) return;
+      } else {
+        if (cap < request.teachers) return;
+      }
+    }
+
+    candidates.push(master);
+  });
+
+  if (candidates.length === 0) return null;
+
+  const requestedTeachers = request.teachers ?? 0;
+
+  if (request.match === 'exact') {
+    return { master: candidates[0], exactMatch: true, emptySlots: 0 };
+  }
+
+  // min_fit — берём кандидата с минимальным teachers (ближайший к запросу).
+  let best = candidates[0];
+  let bestCap = getCapacityNumber(best.slot_capacity, 'teachers');
+  for (let i = 1; i < candidates.length; i++) {
+    const cap = getCapacityNumber(candidates[i].slot_capacity, 'teachers');
+    if (cap < bestCap) {
+      bestCap = cap;
+      best = candidates[i];
+    }
+  }
+  return {
+    master: best,
+    exactMatch: bestCap === requestedTeachers,
+    emptySlots: bestCap - requestedTeachers,
+  };
+}

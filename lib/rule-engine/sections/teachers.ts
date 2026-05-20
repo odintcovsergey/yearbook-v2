@@ -36,6 +36,7 @@
  */
 
 import type { SpreadTemplate } from '@/lib/album-builder/types';
+import { findTeacherMaster } from '../master-finder';
 import type {
   RulesAlbumInput,
   RulesHeadTeacherInput,
@@ -44,13 +45,33 @@ import type {
 import type { CommonPhotoCounts } from '../slot-chains';
 import type { SectionFillContext } from './shared';
 
+/**
+ * РЭ.22.7.2: семантический выбор мастера для левой/правой стороны
+ * учительского разворота.
+ *
+ * Алгоритм для каждой стороны:
+ *  1. Сначала семантический поиск через findTeacherMaster — engine ищет
+ *     мастер по тегам page_role + slot_capacity (head_teacher / teachers /
+ *     photos_full / photos_half). Это путь приоритета.
+ *  2. Если семантика не нашла (template_set не размечен) — fallback на
+ *     поиск по жёсткому имени (legacy путь, для template_sets где мастера
+ *     ещё не размечены тегами).
+ *
+ * Результат содержит SpreadTemplate напрямую (а не имя), чтобы caller'у
+ * не приходилось ещё раз тянуть его через mastersByName.get.
+ */
 interface LeftChoice {
+  master: SpreadTemplate;
+  /** Имя мастера (для decision_trace и warnings). */
   masterName: string;
   /** Сколько subjects класть на левой странице (для F-Head-SmallGrid/LargeGrid). */
   subjectsCount: number;
+  /** true если мастер найден через семантический поиск, false — legacy fallback. */
+  semantic: boolean;
 }
 
 interface RightChoice {
+  master: SpreadTemplate;
   masterName: string;
   /** Сколько subjects класть на правой странице (для G-Teachers-*). */
   subjectsCount: number;
@@ -58,32 +79,29 @@ interface RightChoice {
   subjectsOffset: number;
   /** Сколько общих фото потребит мастер (для G-HalfClass/FullClass). */
   consumes: { full_class?: number; half_class?: number };
+  semantic: boolean;
 }
 
 export function fillTeachersSection(ctx: SectionFillContext): void {
   const subjects = ctx.input.subjects;
   const subjectsCount = subjects.length;
 
-  const left = pickLeftMaster(subjectsCount);
-  const right = pickRightMaster(subjectsCount, ctx.input.common_photos);
+  const left = pickLeftMaster(subjectsCount, ctx);
+  const right = pickRightMaster(subjectsCount, ctx.input.common_photos, ctx);
 
   // ─── Левая страница: F-Head-* ─────────────────────────────────────────────
-  const leftMaster = ctx.bundle.mastersByName.get(left.masterName);
-  if (!leftMaster) {
-    ctx.warnings.push(
-      `teachers_master_not_found: '${left.masterName}' отсутствует в template_set дизайна`,
-    );
-    return;
-  }
+  // pickLeftMaster через resolveTeacherMaster пишет warning сам, если ничего
+  // не нашёл. Здесь просто прерываемся.
+  if (left === null) return;
 
   const leftBindings = bindLeftPage(
-    leftMaster,
+    left.master,
     ctx.input.head_teacher,
     subjects.slice(0, left.subjectsCount),
   );
 
   const leftPageIndex = ctx.pageInstances.length;
-  ctx.pageInstances.push({ master_id: leftMaster.id, bindings: leftBindings });
+  ctx.pageInstances.push({ master_id: left.master.id, bindings: leftBindings });
   ctx.decisionTrace.push({
     spread_index: Math.floor(leftPageIndex / 2),
     section_index: ctx.sectionIndex,
@@ -92,32 +110,22 @@ export function fillTeachersSection(ctx: SectionFillContext): void {
     inputs: {
       subjects_count: subjectsCount,
       subjects_on_left: left.subjectsCount,
+      semantic: left.semantic,
     },
   });
 
   // ─── Правая страница: G-* (опционально) ───────────────────────────────────
-  if (right === null) {
-    // subjects ≤ 8 и нет общих фото → одиночная страница F-* без правой.
-    ctx.warnings.push(
-      `teachers_right_empty: нет общих фото для правой страницы (subjects=${subjectsCount})`,
-    );
-    return;
-  }
-
-  const rightMaster = ctx.bundle.mastersByName.get(right.masterName);
-  if (!rightMaster) {
-    ctx.warnings.push(
-      `teachers_master_not_found: '${right.masterName}' отсутствует в template_set дизайна`,
-    );
-    return;
-  }
+  // pickRightMaster пишет warning сам (teachers_right_empty если нет общих
+  // фото для ≤8 subjects, teachers_master_not_found через resolveTeacherMaster
+  // если мастер не найден). Здесь просто прерываемся при null.
+  if (right === null) return;
 
   // Bindings ДО consumes — внутри используется
   // `used = arr.length - available[k]` как индекс «первого ещё
   // неиспользованного фото». Если бы decrement шёл первым, used сдвинулся бы
   // на consumes раньше срока и взяли бы фото за пределами незатронутого пула.
   const rightBindings = bindRightPage(
-    rightMaster,
+    right.master,
     right,
     ctx.input,
     ctx.available,
@@ -132,7 +140,7 @@ export function fillTeachersSection(ctx: SectionFillContext): void {
 
   const rightPageIndex = ctx.pageInstances.length;
   ctx.pageInstances.push({
-    master_id: rightMaster.id,
+    master_id: right.master.id,
     bindings: rightBindings,
   });
   ctx.decisionTrace.push({
@@ -145,87 +153,305 @@ export function fillTeachersSection(ctx: SectionFillContext): void {
       subjects_on_right: right.subjectsCount,
       subjects_offset: right.subjectsOffset,
       consumes: right.consumes,
+      semantic: right.semantic,
     },
   });
 }
 
 // ─── Выбор мастеров ────────────────────────────────────────────────────────
 
-function pickLeftMaster(subjects: number): LeftChoice {
-  if (subjects === 0) {
-    return { masterName: 'F-Head-WithPhoto', subjectsCount: 0 };
+/**
+ * РЭ.22.7.2: вспомогательный поиск через семантику с fallback на legacy
+ * имя. Используется в pickLeftMaster / pickRightMaster.
+ *
+ * Возвращает {master, semantic} либо null. semantic=true если найден через
+ * findTeacherMaster (т.е. в template_set теги размечены), false если
+ * через mastersByName.get(legacyName).
+ *
+ * Если ни через семантику, ни через legacy мастер не нашёлся —
+ * **сам** пушит warning `teachers_master_not_found` со спецификацией.
+ * Caller'у достаточно проверить только null/non-null.
+ */
+function resolveTeacherMaster(
+  ctx: SectionFillContext,
+  pageRole: 'teacher_left' | 'teacher_right',
+  semanticReq: {
+    headTeacher?: number;
+    teachers?: number;
+    photosFull?: number;
+    photosHalf?: number;
+    match: 'exact' | 'min_fit';
+  },
+  legacyName: string,
+): { master: SpreadTemplate; semantic: boolean } | null {
+  // 1) Семантический путь
+  const semanticResult = findTeacherMaster(ctx.bundle.mastersByName, {
+    presetId: ctx.bundle.preset.id,
+    pageRole,
+    ...semanticReq,
+  });
+  if (semanticResult) {
+    return { master: semanticResult.master, semantic: true };
   }
-  if (subjects <= 4) {
-    return { masterName: 'F-Head-SmallGrid', subjectsCount: subjects };
+  // 2) Legacy fallback по жёсткому имени
+  const legacy = ctx.bundle.mastersByName.get(legacyName);
+  if (legacy) {
+    return { master: legacy, semantic: false };
   }
-  if (subjects <= 8) {
-    return { masterName: 'F-Head-LargeGrid', subjectsCount: subjects };
-  }
-  // 9..16: предметники полностью на правой (G-Teachers-*), левая = F-Head-WithPhoto
-  if (subjects <= 16) {
-    return { masterName: 'F-Head-WithPhoto', subjectsCount: 0 };
-  }
-  // 17+: 8 на левой (LargeGrid), остаток на правой
-  return { masterName: 'F-Head-LargeGrid', subjectsCount: 8 };
+  // 3) Ни то ни другое — warning со спецификацией
+  const specParts: string[] = [`page_role='${pageRole}'`];
+  if (semanticReq.headTeacher !== undefined)
+    specParts.push(`head_teacher=${semanticReq.headTeacher}`);
+  if (semanticReq.teachers !== undefined)
+    specParts.push(
+      `teachers${semanticReq.match === 'exact' ? '=' : '>='}${semanticReq.teachers}`,
+    );
+  if (semanticReq.photosFull !== undefined)
+    specParts.push(`photos_full=${semanticReq.photosFull}`);
+  if (semanticReq.photosHalf !== undefined)
+    specParts.push(`photos_half=${semanticReq.photosHalf}`);
+  ctx.warnings.push(
+    `teachers_master_not_found: '${legacyName}' отсутствует в template_set ` +
+      `и не найден семантический мастер с {${specParts.join(', ')}}. ` +
+      `Закажите мастер у дизайнера.`,
+  );
+  return null;
 }
 
+/**
+ * РЭ.22.7.2: выбор мастера левой страницы учительского разворота.
+ *
+ * Семантика по числу subjects (таблица из docs/album-structure-inventory.md §3):
+ *   0     → F-Head-WithPhoto    (headTeacher=1, teachers=0)
+ *   1-4   → F-Head-SmallGrid    (headTeacher=1, teachers=subjects, min_fit)
+ *   5-8   → F-Head-LargeGrid    (headTeacher=1, teachers=subjects, min_fit)
+ *   9-16  → F-Head-WithPhoto    (только главный, subjects идут на правую)
+ *   17+   → F-Head-LargeGrid    (headTeacher=1, teachers=8 на левой)
+ *
+ * Семантический запрос всегда указывает photos_full=0, чтобы отсеять
+ * F-Head-WithClassPhoto-L (head=1, photos_full=1) — он не используется
+ * в этой таблице (его задействуем в будущей оптимизации).
+ */
+function pickLeftMaster(
+  subjects: number,
+  ctx: SectionFillContext,
+): LeftChoice | null {
+  if (subjects === 0) {
+    const r = resolveTeacherMaster(
+      ctx,
+      'teacher_left',
+      { headTeacher: 1, teachers: 0, photosFull: 0, match: 'exact' },
+      'F-Head-WithPhoto',
+    );
+    if (!r) return null;
+    return {
+      master: r.master,
+      masterName: r.master.name,
+      subjectsCount: 0,
+      semantic: r.semantic,
+    };
+  }
+  if (subjects <= 4) {
+    const r = resolveTeacherMaster(
+      ctx,
+      'teacher_left',
+      { headTeacher: 1, teachers: subjects, photosFull: 0, match: 'min_fit' },
+      'F-Head-SmallGrid',
+    );
+    if (!r) return null;
+    return {
+      master: r.master,
+      masterName: r.master.name,
+      subjectsCount: subjects,
+      semantic: r.semantic,
+    };
+  }
+  if (subjects <= 8) {
+    const r = resolveTeacherMaster(
+      ctx,
+      'teacher_left',
+      { headTeacher: 1, teachers: subjects, photosFull: 0, match: 'min_fit' },
+      'F-Head-LargeGrid',
+    );
+    if (!r) return null;
+    return {
+      master: r.master,
+      masterName: r.master.name,
+      subjectsCount: subjects,
+      semantic: r.semantic,
+    };
+  }
+  // 9..16: предметники полностью на правой, левая — только главный.
+  if (subjects <= 16) {
+    const r = resolveTeacherMaster(
+      ctx,
+      'teacher_left',
+      { headTeacher: 1, teachers: 0, photosFull: 0, match: 'exact' },
+      'F-Head-WithPhoto',
+    );
+    if (!r) return null;
+    return {
+      master: r.master,
+      masterName: r.master.name,
+      subjectsCount: 0,
+      semantic: r.semantic,
+    };
+  }
+  // 17+: 8 предметников на левой (LargeGrid), остаток на правой.
+  const r = resolveTeacherMaster(
+    ctx,
+    'teacher_left',
+    { headTeacher: 1, teachers: 8, photosFull: 0, match: 'min_fit' },
+    'F-Head-LargeGrid',
+  );
+  if (!r) return null;
+  return {
+    master: r.master,
+    masterName: r.master.name,
+    subjectsCount: 8,
+    semantic: r.semantic,
+  };
+}
+
+/**
+ * РЭ.22.7.2: выбор мастера правой страницы учительского разворота.
+ *
+ * Семантика по числу subjects + наличию общих фото:
+ *   ≤8 + half_class≥2 → G-HalfClass    (photosHalf=2)
+ *   ≤8 + full_class≥1 → G-FullClass    (photosFull=1)
+ *   ≤8 без общих фото → null (правая страница не строится)
+ *   9                 → G-Teachers-3x3 (teachers=9, min_fit)
+ *   10-12             → G-Teachers-3x4 (teachers=subjects, min_fit) ✅ закрытие бага G-Teachers-4x3
+ *   13-16             → G-Teachers-4x4 (teachers=subjects, min_fit)
+ *   17+               → G-Teachers-4x4 (teachers=subjects-8, min_fit, offset=8)
+ *
+ * Закрытие скрытого бага: legacy-код искал 'G-Teachers-4x3' для 10-12,
+ * в БД мастер 'G-Teachers-3x4'. Через семантический поиск ищем по
+ * slot_capacity.teachers=10/11/12 и находим G-Teachers-3x4 (teachers=12)
+ * как минимально-достаточный.
+ */
 function pickRightMaster(
   subjects: number,
   commonPhotos: RulesAlbumInput['common_photos'],
+  ctx: SectionFillContext,
 ): RightChoice | null {
   // subjects ≤ 8: правая = общее фото
   if (subjects <= 8) {
     if (commonPhotos.half_class.length >= 2) {
+      const r = resolveTeacherMaster(
+        ctx,
+        'teacher_right',
+        { teachers: 0, photosHalf: 2, match: 'exact' },
+        'G-HalfClass',
+      );
+      if (!r) return null;
       return {
-        masterName: 'G-HalfClass',
+        master: r.master,
+        masterName: r.master.name,
         subjectsCount: 0,
         subjectsOffset: 0,
         consumes: { half_class: 2 },
+        semantic: r.semantic,
       };
     }
     if (commonPhotos.full_class.length >= 1) {
+      const r = resolveTeacherMaster(
+        ctx,
+        'teacher_right',
+        { teachers: 0, photosFull: 1, match: 'exact' },
+        'G-FullClass',
+      );
+      if (!r) return null;
       return {
-        masterName: 'G-FullClass',
+        master: r.master,
+        masterName: r.master.name,
         subjectsCount: 0,
         subjectsOffset: 0,
         consumes: { full_class: 1 },
+        semantic: r.semantic,
       };
     }
+    // Ни half_class, ни full_class — правая страница не строится.
+    ctx.warnings.push(
+      `teachers_right_empty: нет общих фото для правой страницы (subjects=${subjects})`,
+    );
     return null;
   }
   // 9: G-Teachers-3x3 (9 слотов)
   if (subjects === 9) {
+    const r = resolveTeacherMaster(
+      ctx,
+      'teacher_right',
+      { teachers: 9, match: 'min_fit' },
+      'G-Teachers-3x3',
+    );
+    if (!r) return null;
     return {
-      masterName: 'G-Teachers-3x3',
+      master: r.master,
+      masterName: r.master.name,
       subjectsCount: 9,
       subjectsOffset: 0,
       consumes: {},
+      semantic: r.semantic,
     };
   }
-  // 10-12: G-Teachers-4x3 (12 слотов)
+  // 10-12: G-Teachers-3x4 (12 слотов в БД, но legacy-код искал 'G-Teachers-4x3')
   if (subjects <= 12) {
+    const r = resolveTeacherMaster(
+      ctx,
+      'teacher_right',
+      { teachers: subjects, match: 'min_fit' },
+      // Legacy fallback: имя из старого кода. После применения РЭ.22.7.1
+      // семантический путь всегда найдёт мастер (G-Teachers-3x4 размечен),
+      // но если template_set не размечен — legacy путь ищет несуществующее
+      // имя 'G-Teachers-4x3' (баг). Указываем настоящее имя 'G-Teachers-3x4'
+      // чтобы fallback работал в обоих случаях.
+      'G-Teachers-3x4',
+    );
+    if (!r) return null;
     return {
-      masterName: 'G-Teachers-4x3',
+      master: r.master,
+      masterName: r.master.name,
       subjectsCount: subjects,
       subjectsOffset: 0,
       consumes: {},
+      semantic: r.semantic,
     };
   }
   // 13-16: G-Teachers-4x4 (16 слотов)
   if (subjects <= 16) {
+    const r = resolveTeacherMaster(
+      ctx,
+      'teacher_right',
+      { teachers: subjects, match: 'min_fit' },
+      'G-Teachers-4x4',
+    );
+    if (!r) return null;
     return {
-      masterName: 'G-Teachers-4x4',
+      master: r.master,
+      masterName: r.master.name,
       subjectsCount: subjects,
       subjectsOffset: 0,
       consumes: {},
+      semantic: r.semantic,
     };
   }
   // 17+: остаток (до 16) на G-Teachers-4x4, начиная с offset=8
+  const remaining = Math.min(16, subjects - 8);
+  const r = resolveTeacherMaster(
+    ctx,
+    'teacher_right',
+    { teachers: remaining, match: 'min_fit' },
+    'G-Teachers-4x4',
+  );
+  if (!r) return null;
   return {
-    masterName: 'G-Teachers-4x4',
-    subjectsCount: Math.min(16, subjects - 8),
+    master: r.master,
+    masterName: r.master.name,
+    subjectsCount: remaining,
     subjectsOffset: 8,
     consumes: {},
+    semantic: r.semantic,
   };
 }
 

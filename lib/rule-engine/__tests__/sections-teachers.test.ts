@@ -116,7 +116,7 @@ function gTeachers(name: string, n: number): SpreadTemplate {
   return makeMaster(name, ph);
 }
 const G_3X3 = gTeachers('G-Teachers-3x3', 9);
-const G_4X3 = gTeachers('G-Teachers-4x3', 12);
+const G_4X3 = gTeachers('G-Teachers-3x4', 12);
 const G_4X4 = gTeachers('G-Teachers-4x4', 16);
 
 // J-Half нужен для проверки взаимодействия teachers + common(H) — fillCommonSection
@@ -262,9 +262,9 @@ describe('teachers: выбор F-Head-* по subjects_count', () => {
     expect(result.spreads[0].right?.master_id).toBe('id-G-Teachers-3x3');
   });
 
-  it('12 subjects → F-WithPhoto + G-Teachers-4x3', () => {
+  it('12 subjects → F-WithPhoto + G-Teachers-3x4 (РЭ.22.7.2: ранее искалось 4x3 — баг)', () => {
     const { result } = buildOnlyTeachers(12);
-    expect(result.spreads[0].right?.master_id).toBe('id-G-Teachers-4x3');
+    expect(result.spreads[0].right?.master_id).toBe('id-G-Teachers-3x4');
   });
 
   it('15 subjects → F-WithPhoto + G-Teachers-4x4', () => {
