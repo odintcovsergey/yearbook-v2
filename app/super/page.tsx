@@ -210,6 +210,10 @@ export default function SuperPage() {
             className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
             📐 Шаблоны →
           </button>
+          <button onClick={() => router.push('/super/master-catalog')}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            📚 Каталог мастеров →
+          </button>
           <button onClick={() => router.push('/super/presets')}
             className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
             🎛️ Пресеты →
