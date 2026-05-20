@@ -75,6 +75,47 @@ const api = (path: string, opts?: RequestInit) =>
     headers: { 'Content-Type': 'application/json', ...opts?.headers },
   })
 
+// ─── Fallback для legacy пресетов без student_layout_mode (РЭ.22.3) ──────
+//
+// При первом открытии пресета без `student_layout_mode` UI вычисляет режим
+// из density / preset.id. Это **только** для initial state — в БД остаётся
+// NULL пока партнёр не нажал «Сохранить». Видно по-прежнему, какие пресеты
+// ещё не мигрированы (warning под селектами).
+
+function computeInitialLayoutMode(preset: Preset): 'page' | 'spread' | 'grid' {
+  if (preset.student_layout_mode) return preset.student_layout_mode
+  // Fallback по density / preset.id.
+  if (preset.density === 'medium' || preset.density === 'light' || preset.density === 'mini') {
+    return 'grid'
+  }
+  if (preset.density === 'standard' || preset.density === 'universal') {
+    return 'page'
+  }
+  // density=NULL — это Maximum или Individual (РЭ.20.5).
+  if (preset.id === 'maximum' || preset.id === 'individual') {
+    return 'spread'
+  }
+  // Custom-пресеты с density=NULL и неизвестным id — берём page как
+  // самый частый дефолт.
+  return 'page'
+}
+
+function computeInitialGridSize(
+  preset: Preset,
+  mode: 'page' | 'spread' | 'grid',
+): number | null {
+  // Если режим — не grid, размер сетки не нужен.
+  if (mode !== 'grid') return null
+  // Если в БД уже есть — используем.
+  if (preset.student_grid_size != null) return preset.student_grid_size
+  // Иначе fallback по density (соответствует жёстким размерам из buildGrid).
+  if (preset.density === 'medium') return 4
+  if (preset.density === 'light') return 6
+  if (preset.density === 'mini') return 12
+  // Custom — дефолт 4.
+  return 4
+}
+
 // ─── Modal ───────────────────────────────────────────────────────────────
 
 export default function PresetEditorModal({
@@ -95,14 +136,27 @@ export default function PresetEditorModal({
   const [sections, setSections] = useState<Section[]>(
     Array.isArray(preset.section_structure) ? preset.section_structure : []
   )
-  const [studentPages, setStudentPages] = useState<1 | 2 | null>(
-    preset.student_pages_per_student
+
+  // РЭ.22.3: двух-осевая модель «режим × параметры». См. docs/phase-Р22-spec.md §5.
+  //
+  // При первом открытии пресета без `student_layout_mode` (legacy запись)
+  // — UI вычисляет режим из density / preset.id (см. computeInitialLayoutMode).
+  // Это fallback ТОЛЬКО для UI — в БД остаётся NULL пока партнёр не нажал
+  // «Сохранить». Видно по-прежнему, какие пресеты ещё не мигрированы.
+  const initialMode = computeInitialLayoutMode(preset)
+  const initialGridSize = computeInitialGridSize(preset, initialMode)
+
+  const [studentLayoutMode, setStudentLayoutMode] = useState<
+    'page' | 'spread' | 'grid'
+  >(initialMode)
+  const [studentGridSize, setStudentGridSize] = useState<number | ''>(
+    initialGridSize ?? ''
   )
   const [studentFriendPhotos, setStudentFriendPhotos] = useState<number | ''>(
     preset.student_friend_photos ?? ''
   )
-  const [studentHasQuote, setStudentHasQuote] = useState<boolean | null>(
-    preset.student_has_quote
+  const [studentHasQuote, setStudentHasQuote] = useState<boolean>(
+    preset.student_has_quote ?? false
   )
 
   const [saving, setSaving] = useState(false)
@@ -113,6 +167,34 @@ export default function PresetEditorModal({
     setSaving(true)
     setError(null)
     try {
+      // РЭ.22.3: пишем в новые поля + дублируем в legacy для отката Vercel
+      // (см. spec §3). Маппинг режима в legacy student_pages_per_student:
+      //   page  → 1 страница на ученика
+      //   spread → 2 страницы (разворот)
+      //   grid  → null (legacy не знает про сетку, для grid Section Structure
+      //           engine использует buildGrid с density)
+      const legacyPagesPerStudent: 1 | 2 | null =
+        studentLayoutMode === 'page'
+          ? 1
+          : studentLayoutMode === 'spread'
+            ? 2
+            : null
+
+      // friend_photos и grid_size актуальны только для своих режимов —
+      // для остальных пишем null чтобы в БД не оставался мусор.
+      const effectiveFriendPhotos =
+        studentLayoutMode === 'page' || studentLayoutMode === 'spread'
+          ? studentFriendPhotos === ''
+            ? null
+            : studentFriendPhotos
+          : null
+      const effectiveGridSize =
+        studentLayoutMode === 'grid'
+          ? studentGridSize === ''
+            ? null
+            : studentGridSize
+          : null
+
       const body: Record<string, unknown> = {
         action: 'rule_preset_update',
         preset_id: preset.id,
@@ -120,9 +202,12 @@ export default function PresetEditorModal({
         density,
         sheet_type: sheetType,
         section_structure: sections,
-        student_pages_per_student: studentPages,
-        student_friend_photos:
-          studentFriendPhotos === '' ? null : studentFriendPhotos,
+        // Новые поля (РЭ.22.2).
+        student_layout_mode: studentLayoutMode,
+        student_grid_size: effectiveGridSize,
+        // Legacy (дублирование для отката).
+        student_pages_per_student: legacyPagesPerStudent,
+        student_friend_photos: effectiveFriendPhotos,
         student_has_quote: studentHasQuote,
       }
       if (minPages !== '') body.min_pages = minPages
@@ -291,67 +376,114 @@ export default function PresetEditorModal({
             </div>
           </section>
 
-          {/* ─── Личный раздел (РЭ.21.8.15) ─── */}
+          {/* ─── Личный раздел (РЭ.22.3 — двух-осевая модель) ─── */}
           <section className="space-y-3 border-t pt-6">
             <div>
               <h3 className="font-semibold text-sm text-gray-700 uppercase tracking-wide">
-                Личный раздел (семантический поиск мастера)
+                Личный раздел
               </h3>
               <p className="text-xs text-gray-500 mt-1">
-                Если заполнены все 3 поля — engine ищет в template_set мастер
-                с подходящим slot_capacity. Иначе fallback на жёсткие имена
-                E-Standard / E-Universal / E-Max.
+                Выберите режим: одна страница на ученика, разворот на ученика
+                или сетка из нескольких. Engine ищет в template_set мастер
+                с подходящим slot_capacity по этим параметрам.
               </p>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-sm text-gray-600 block mb-1">Страниц на ученика</label>
-                <select
-                  value={studentPages ?? ''}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setStudentPages(v === '' ? null : (Number(v) as 1 | 2))
-                  }}
-                  className="w-full border rounded px-3 py-2 text-sm"
-                >
-                  <option value="">— (не задано)</option>
-                  <option value="1">1 страница</option>
-                  <option value="2">2 страницы (разворот)</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-sm text-gray-600 block mb-1">Фото с друзьями</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={10}
-                  value={studentFriendPhotos}
-                  onChange={(e) =>
-                    setStudentFriendPhotos(
-                      e.target.value === '' ? '' : Number(e.target.value)
-                    )
-                  }
-                  className="w-full border rounded px-3 py-2 text-sm"
-                  placeholder="0..10"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-gray-600 block mb-1">Цитата</label>
-                <select
-                  value={studentHasQuote === null ? '' : String(studentHasQuote)}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setStudentHasQuote(v === '' ? null : v === 'true')
-                  }}
-                  className="w-full border rounded px-3 py-2 text-sm"
-                >
-                  <option value="">— (не задано)</option>
-                  <option value="true">да, есть слот</option>
-                  <option value="false">нет</option>
-                </select>
-              </div>
+            <div>
+              <label className="text-sm text-gray-600 block mb-1">Режим</label>
+              <select
+                value={studentLayoutMode}
+                onChange={(e) =>
+                  setStudentLayoutMode(e.target.value as 'page' | 'spread' | 'grid')
+                }
+                className="w-full border rounded px-3 py-2 text-sm"
+              >
+                <option value="page">1 ученик на страницу</option>
+                <option value="spread">1 ученик на разворот (2 страницы)</option>
+                <option value="grid">Сетка из N учеников на страницу</option>
+              </select>
             </div>
+
+            {/* Параметры зависят от режима */}
+            {(studentLayoutMode === 'page' || studentLayoutMode === 'spread') && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm text-gray-600 block mb-1">
+                    Фото с друзьями
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={studentFriendPhotos}
+                    onChange={(e) =>
+                      setStudentFriendPhotos(
+                        e.target.value === '' ? '' : Number(e.target.value)
+                      )
+                    }
+                    className="w-full border rounded px-3 py-2 text-sm"
+                    placeholder="0..10"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-600 block mb-1">Цитата</label>
+                  <select
+                    value={String(studentHasQuote)}
+                    onChange={(e) => setStudentHasQuote(e.target.value === 'true')}
+                    className="w-full border rounded px-3 py-2 text-sm"
+                  >
+                    <option value="true">да, есть слот</option>
+                    <option value="false">нет</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {studentLayoutMode === 'grid' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm text-gray-600 block mb-1">
+                    Учеников на страницу
+                  </label>
+                  <input
+                    type="number"
+                    min={2}
+                    max={12}
+                    value={studentGridSize}
+                    onChange={(e) =>
+                      setStudentGridSize(
+                        e.target.value === '' ? '' : Number(e.target.value)
+                      )
+                    }
+                    className="w-full border rounded px-3 py-2 text-sm"
+                    placeholder="2..12"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Базовый размер сетки. Адаптивный хвост (последняя
+                    неполная страница) подбирается engine'ом автоматически
+                    из доступных мастеров template_set.
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-600 block mb-1">Цитата</label>
+                  <select
+                    value={String(studentHasQuote)}
+                    onChange={(e) => setStudentHasQuote(e.target.value === 'true')}
+                    className="w-full border rounded px-3 py-2 text-sm"
+                  >
+                    <option value="true">да, под каждым учеником</option>
+                    <option value="false">нет</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {preset.student_layout_mode === null && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                Режим вычислен из density / preset.id (legacy запись).
+                Нажмите «Сохранить» чтобы зафиксировать в БД.
+              </p>
+            )}
           </section>
 
           {/* ─── section_structure редактор ─── */}
