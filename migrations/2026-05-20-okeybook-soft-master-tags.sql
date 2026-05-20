@@ -15,10 +15,41 @@
 -- всегда. После семантизации обе разновидности имени становятся
 -- неважны — engine ищет page_role='final'.
 --
+-- ⚠️ ВАЖНО (обнаружено при первой попытке применения):
+-- CHECK constraint spread_templates_page_role_check (определён в
+-- migrations/2026-05-07-page-role-overflow-right.sql) разрешает
+-- 'intro' но НЕ разрешает 'final'. Поэтому миграция расширяет
+-- constraint ПЕРЕД UPDATE'ами.
+--
 -- ⚠️ Миграция БЕЗУСЛОВНО overwrites page_role и slot_capacity для
 -- перечисленных имён. Текущие значения дефолтные (NULL / {}) — риск нулевой.
 
--- ─── S-Intro → page_role='intro' ──────────────────────────────────────────
+-- ─── 0. Расширяем CHECK constraint: добавляем 'final' ────────────────────
+ALTER TABLE spread_templates
+DROP CONSTRAINT IF EXISTS spread_templates_page_role_check;
+
+ALTER TABLE spread_templates
+ADD CONSTRAINT spread_templates_page_role_check CHECK (
+  page_role IS NULL OR page_role IN (
+    'student',
+    'student_left',
+    'student_right',
+    'student_grid',
+    'student_grid_left',
+    'student_grid_right',
+    'student_overflow',
+    'student_overflow_right',
+    'student_last',
+    'teacher_left',
+    'teacher_right',
+    'common',
+    'intro',
+    'final',
+    'cover'
+  )
+);
+
+-- ─── 1. S-Intro → page_role='intro' ──────────────────────────────────────
 UPDATE spread_templates
 SET
   page_role = 'intro',
@@ -30,7 +61,7 @@ SET
   )
 WHERE name = 'S-Intro';
 
--- ─── S-Final-Soft-L → page_role='final' ──────────────────────────────────
+-- ─── 2. S-Final-Soft-L → page_role='final' ──────────────────────────────────
 -- В БД нет мастера 'S-Final' без суффикса; единственный финальный
 -- мастер — S-Final-Soft-L. Размечаем его как 'final'.
 UPDATE spread_templates
