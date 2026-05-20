@@ -767,8 +767,153 @@ export async function GET(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
-  // templates_list_global (РЭ.24.4) — глобальные шаблоны для каталога
+  // designs_list (РЭ.24.5b) — список доступных дизайнов
+  // (template_set'ов) для каталога /app/templates.
+  //
+  // Возвращает: свои (tenant_id=auth.tenantId) + глобальные (tenant_id=NULL)
+  // template_set'ы. Для каждого:
+  //   • счётчики: сколько recommended-глобальных шаблонов и сколько
+  //     моих шаблонов привязано к этому дизайну
+  //   • до 3 SVG-превью характерных мастеров (для карточки дизайна)
+  //   • основные метаданные template_set'а
+  //
+  // Если template_set не имеет ни одного recommended-шаблона ни одного
+  // партнёрского — он всё равно показывается (дизайн доступен для
+  // создания пустого шаблона с нуля).
+  //
+  // Доступ: любой авторизованный с tenantId.
+  // ----------------------------------------------------------
+  if (action === 'designs_list') {
+    if (!auth.tenantId) {
+      return NextResponse.json({ error: 'Не задан tenant' }, { status: 400 })
+    }
+
+    // 1) Все доступные template_set'ы.
+    let tsQuery = supabaseAdmin
+      .from('template_sets')
+      .select('id, name, slug, tenant_id, print_type, page_width_mm, page_height_mm')
+    if (auth.role !== 'superadmin') {
+      tsQuery = tsQuery.or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+    }
+    const { data: tsRows, error: tsErr } = await tsQuery.order('name')
+    if (tsErr) {
+      return NextResponse.json({ error: tsErr.message }, { status: 500 })
+    }
+    const tsIds = (tsRows ?? []).map((t: any) => t.id)
+    if (tsIds.length === 0) {
+      return NextResponse.json({ designs: [] })
+    }
+
+    // 2) Счётчики recommended-шаблонов (глобальных) по каждому template_set.
+    const { data: globalCounts } = await supabaseAdmin
+      .from('presets')
+      .select('template_set_id')
+      .is('tenant_id', null)
+      .eq('is_recommended', true)
+      .in('template_set_id', tsIds)
+    const globalCountByTs = new Map<string, number>()
+    for (const row of globalCounts ?? []) {
+      const k = (row as any).template_set_id
+      if (k) globalCountByTs.set(k, (globalCountByTs.get(k) ?? 0) + 1)
+    }
+
+    // 3) Счётчики моих шаблонов по каждому template_set.
+    const { data: myCounts } = await supabaseAdmin
+      .from('presets')
+      .select('template_set_id')
+      .eq('tenant_id', auth.tenantId)
+      .in('template_set_id', tsIds)
+    const myCountByTs = new Map<string, number>()
+    for (const row of myCounts ?? []) {
+      const k = (row as any).template_set_id
+      if (k) myCountByTs.set(k, (myCountByTs.get(k) ?? 0) + 1)
+    }
+
+    // 4) До 3 характерных мастеров каждого template_set'а для превью.
+    // Берём те у которых page_role задан (значит мастер уже размечен,
+    // не служебный) и предпочитаем student_grid > student_left > teacher_left.
+    const { data: allMasters } = await supabaseAdmin
+      .from('spread_templates')
+      .select('id, name, template_set_id, page_role, is_spread, width_mm, height_mm, placeholders')
+      .in('template_set_id', tsIds)
+      .order('name')
+
+    const mastersByTs = new Map<string, any[]>()
+    for (const m of allMasters ?? []) {
+      const k = (m as any).template_set_id
+      if (!k) continue
+      if (!mastersByTs.has(k)) mastersByTs.set(k, [])
+      mastersByTs.get(k)!.push(m)
+    }
+
+    // 5) Собираем итог.
+    const PRIORITY_ROLES = ['student_grid', 'student_left', 'teacher_left', 'cover', 'intro']
+    const results = (tsRows ?? []).map((ts: any) => {
+      const masters = mastersByTs.get(ts.id) ?? []
+      // Сортируем по приоритету ролей, потом по имени
+      const sorted = masters
+        .filter((m) => m.page_role) // только размеченные
+        .sort((a, b) => {
+          const ai = PRIORITY_ROLES.indexOf(a.page_role)
+          const bi = PRIORITY_ROLES.indexOf(b.page_role)
+          const ax = ai < 0 ? 999 : ai
+          const bx = bi < 0 ? 999 : bi
+          if (ax !== bx) return ax - bx
+          return String(a.name).localeCompare(String(b.name))
+        })
+        .slice(0, 3)
+
+      const previews: string[] = []
+      for (const m of sorted) {
+        const template = {
+          id: m.id,
+          name: m.name,
+          type: 'common' as const,
+          is_spread: m.is_spread === true,
+          width_mm: m.width_mm,
+          height_mm: m.height_mm,
+          placeholders: Array.isArray(m.placeholders) ? m.placeholders : [],
+          rules: null,
+          sort_order: 0,
+          applies_to_configs: [],
+          default_for_configs: [],
+          page_role: m.page_role ?? null,
+          slot_capacity: null,
+          is_fallback: false,
+          mirror_for_soft: false,
+          audit_notes: null,
+        }
+        try {
+          previews.push(renderPreviewSvg(template))
+        } catch {
+          // молча пропускаем
+        }
+      }
+
+      return {
+        id: ts.id,
+        name: ts.name,
+        slug: ts.slug,
+        tenant_id: ts.tenant_id,
+        is_global: ts.tenant_id === null,
+        print_type: ts.print_type,
+        page_width_mm: ts.page_width_mm,
+        page_height_mm: ts.page_height_mm,
+        recommended_count: globalCountByTs.get(ts.id) ?? 0,
+        my_count: myCountByTs.get(ts.id) ?? 0,
+        previews,
+      }
+    })
+
+    return NextResponse.json({ designs: results })
+  }
+
+  // ----------------------------------------------------------
   // /app/templates. Возвращает только is_recommended=true.
+  //
+  // РЭ.24.5b: добавлен параметр ?design_id=... для фильтрации по
+  // конкретному дизайну (template_set_id). Если не указан — возвращает
+  // все рекомендованные шаблоны (для совместимости с прежним поведением).
   //
   // Для каждого шаблона:
   //   • validatePreset → отбрасываем невалидные (с warning в логе)
@@ -778,12 +923,16 @@ export async function GET(req: NextRequest) {
   // им можно просто посмотреть каталог, клонировать они не смогут).
   // ----------------------------------------------------------
   if (action === 'templates_list_global') {
-    const { data: rows, error: loadErr } = await supabaseAdmin
+    const designId = req.nextUrl.searchParams.get('design_id')
+    let query = supabaseAdmin
       .from('presets')
       .select('*')
       .is('tenant_id', null)
       .eq('is_recommended', true)
-      .order('display_name')
+    if (designId) {
+      query = query.eq('template_set_id', designId)
+    }
+    const { data: rows, error: loadErr } = await query.order('display_name')
     if (loadErr) {
       return NextResponse.json({ error: loadErr.message }, { status: 500 })
     }
@@ -821,6 +970,7 @@ export async function GET(req: NextRequest) {
         student_grid_size: preset.student_grid_size ?? null,
         min_pages: row.min_pages ?? null,
         max_pages: row.max_pages ?? null,
+        template_set_id: row.template_set_id ?? null,
         previews,
       })
     }
@@ -831,6 +981,8 @@ export async function GET(req: NextRequest) {
   // ----------------------------------------------------------
   // templates_list_my (РЭ.24.4) — личная библиотека партнёра.
   // SELECT * FROM presets WHERE tenant_id = auth.tenantId.
+  //
+  // РЭ.24.5b: параметр ?design_id=... для фильтрации по template_set.
   //
   // Для каждого:
   //   • validatePreset → флаг valid + errors[]
@@ -845,11 +997,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Не задан tenant' }, { status: 400 })
     }
 
-    const { data: rows, error: loadErr } = await supabaseAdmin
+    const designId = req.nextUrl.searchParams.get('design_id')
+    let query = supabaseAdmin
       .from('presets')
       .select('*')
       .eq('tenant_id', auth.tenantId)
-      .order('display_name')
+    if (designId) {
+      query = query.eq('template_set_id', designId)
+    }
+    const { data: rows, error: loadErr } = await query.order('display_name')
     if (loadErr) {
       return NextResponse.json({ error: loadErr.message }, { status: 500 })
     }
@@ -880,6 +1036,7 @@ export async function GET(req: NextRequest) {
         student_grid_size: preset.student_grid_size ?? null,
         min_pages: row.min_pages ?? null,
         max_pages: row.max_pages ?? null,
+        template_set_id: row.template_set_id ?? null,
         parent_preset_id: row.parent_preset_id ?? null,
         valid: validation.valid,
         errors: validation.errors,
