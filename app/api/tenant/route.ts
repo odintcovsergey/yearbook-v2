@@ -789,11 +789,16 @@ export async function GET(req: NextRequest) {
     }
 
     // 1) Все доступные template_set'ы.
+    // Не-superadmin не видит технические тестовые наборы (name LIKE 'TEST%').
+    // Это template_set'ы из РЭ.22 (балансировочные тесты engine'а),
+    // которые нужны Сергею для отладки, но не для партнёров.
     let tsQuery = supabaseAdmin
       .from('template_sets')
       .select('id, name, slug, tenant_id, print_type, page_width_mm, page_height_mm')
     if (auth.role !== 'superadmin') {
-      tsQuery = tsQuery.or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+      tsQuery = tsQuery
+        .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+        .not('name', 'ilike', 'TEST%')
     }
     const { data: tsRows, error: tsErr } = await tsQuery.order('name')
     if (tsErr) {
