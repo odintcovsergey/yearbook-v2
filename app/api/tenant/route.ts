@@ -2929,8 +2929,48 @@ export async function POST(req: NextRequest) {
       presetPrintType = preset.print_type
     }
 
-    // Auto-resolve template_set_id (единственный okeybook-default)
-    const templateSetId = await getDefaultTemplateSetId()
+    // РЭ.24.6: если передан section_structure_preset_id — это новый
+    // путь через каталог /app/templates. Берём template_set_id и
+    // print_type из preset'а. Legacy preset_slug игнорируется (если
+    // вдруг пришёл одновременно). Валидируем что preset существует
+    // и доступен партнёру (свой или глобальный).
+    let sectionStructurePresetId: string | null = null
+    let resolvedTemplateSetId: string | null = null
+    if (typeof body.section_structure_preset_id === 'string' && body.section_structure_preset_id.length > 0) {
+      const { data: ps, error: psErr } = await supabaseAdmin
+        .from('presets')
+        .select('id, tenant_id, template_set_id, print_type')
+        .eq('id', body.section_structure_preset_id)
+        .maybeSingle()
+      if (psErr) {
+        return NextResponse.json({ error: psErr.message }, { status: 500 })
+      }
+      if (!ps) {
+        return NextResponse.json(
+          { error: 'Шаблон не найден' },
+          { status: 400 },
+        )
+      }
+      const accessible =
+        ps.tenant_id === null ||
+        ps.tenant_id === auth.tenantId ||
+        auth.role === 'superadmin'
+      if (!accessible) {
+        return NextResponse.json(
+          { error: 'Шаблон недоступен' },
+          { status: 403 },
+        )
+      }
+      sectionStructurePresetId = ps.id
+      resolvedTemplateSetId = ps.template_set_id ?? null
+      presetPrintType = ps.print_type ?? presetPrintType
+      // Когда выбран новый шаблон — legacy config_preset_id очищаем.
+      configPresetId = null
+    }
+
+    // template_set_id: приоритет — из section_structure preset'а;
+    // fallback — единственный okeybook-default (для legacy/безпресетных).
+    const templateSetId = resolvedTemplateSetId ?? (await getDefaultTemplateSetId())
 
     const { data, error } = await supabaseAdmin
       .from('albums')
@@ -2958,6 +2998,7 @@ export async function POST(req: NextRequest) {
         config_preset_id: configPresetId,
         template_set_id: templateSetId,
         print_type: presetPrintType,
+        section_structure_preset_id: sectionStructurePresetId,
       })
       .select()
       .single()
@@ -3011,6 +3052,50 @@ export async function POST(req: NextRequest) {
       if (!existing?.template_set_id) {
         const tsId = await getDefaultTemplateSetId()
         if (tsId) body.template_set_id = tsId
+      }
+    }
+
+    // РЭ.24.6: если приходит section_structure_preset_id — это новый
+    // путь через каталог. Резолвим preset, подтягиваем template_set_id
+    // и print_type из него, очищаем legacy config_preset_id.
+    // Если приходит null — снимаем шаблон (валидно — альбом разрешён
+    // существовать без шаблона до явного выбора партнёром).
+    if ('section_structure_preset_id' in body) {
+      const newVal = body.section_structure_preset_id
+      if (newVal === null) {
+        // Снятие шаблона — больше ничего не подтягиваем, legacy
+        // обработается ниже своим путём (если придёт preset_slug).
+      } else if (typeof newVal === 'string' && newVal.length > 0) {
+        const { data: ps, error: psErr } = await supabaseAdmin
+          .from('presets')
+          .select('id, tenant_id, template_set_id, print_type')
+          .eq('id', newVal)
+          .maybeSingle()
+        if (psErr) {
+          return NextResponse.json({ error: psErr.message }, { status: 500 })
+        }
+        if (!ps) {
+          return NextResponse.json({ error: 'Шаблон не найден' }, { status: 400 })
+        }
+        const accessible =
+          ps.tenant_id === null ||
+          ps.tenant_id === auth.tenantId ||
+          auth.role === 'superadmin'
+        if (!accessible) {
+          return NextResponse.json({ error: 'Шаблон недоступен' }, { status: 403 })
+        }
+        // Подтягиваем из шаблона если в body не передано явно
+        if (ps.template_set_id) body.template_set_id = ps.template_set_id
+        if (ps.print_type) body.print_type = ps.print_type
+        // Legacy преcет очищаем — новый шаблон приоритетнее
+        body.config_preset_id = null
+        // preset_slug если пришёл одновременно — игнорируем
+        delete body.preset_slug
+      } else {
+        return NextResponse.json(
+          { error: 'section_structure_preset_id должен быть string или null' },
+          { status: 400 },
+        )
       }
     }
 

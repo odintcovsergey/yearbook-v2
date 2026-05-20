@@ -2333,6 +2333,17 @@ type FormData = {
   class_name: string
   config_type: string
   print_type: string
+  /**
+   * РЭ.24.6: id выбранного шаблона из каталога /app/templates.
+   * Если задан — engine использует buildFromSectionStructure,
+   * template_set_id и print_type берутся из preset'а.
+   * Если NULL — старая логика через preset_slug (legacy).
+   */
+  section_structure_preset_id: string | null
+  /** Для отображения в кнопке — название выбранного шаблона. */
+  section_structure_preset_name: string | null
+  /** Для отображения в кнопке — название дизайна выбранного шаблона. */
+  section_structure_design_name: string | null
 }
 
 const textTypeOptions = [
@@ -2366,6 +2377,9 @@ function emptyForm(): FormData {
     class_name: '',
     config_type: 'standard',
     print_type: 'layflat',
+    section_structure_preset_id: null,
+    section_structure_preset_name: null,
+    section_structure_design_name: null,
   }
 }
 
@@ -2481,6 +2495,12 @@ function AlbumFormModal({
         class_name: ((album as any).classes ?? []).join(', '),
         config_type: cfgType,
         print_type: prtType,
+        // РЭ.24.6: подхватываем выбранный шаблон если у альбома он был.
+        // Названия (preset_name + design_name) подгружаются асинхронно
+        // в useEffect ниже — для отображения на кнопке.
+        section_structure_preset_id: (album as any).section_structure_preset_id ?? null,
+        section_structure_preset_name: null,
+        section_structure_design_name: null,
       }
     }
     return emptyForm()
@@ -2492,6 +2512,13 @@ function AlbumFormModal({
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [backdropStart, setBackdropStart] = useState(false)
+  // РЭ.24.6: модалка выбора шаблона + диалог смены/снятия шаблона.
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
+  const [pendingTemplateChange, setPendingTemplateChange] = useState<{
+    newId: string | null
+    newName: string | null
+    newDesignName: string | null
+  } | null>(null)
 
   const handleBackdropMouseDown = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) setBackdropStart(true)
@@ -2522,6 +2549,37 @@ function AlbumFormModal({
       .catch(() => setPresets([]))
   }, [])
 
+  // РЭ.24.6: если форма открыта в режиме редактирования и у альбома
+  // уже задан section_structure_preset_id — подгружаем его название
+  // и название дизайна для отображения на кнопке-бейдже.
+  // Делаем один запрос (rule_presets_list возвращает все доступные)
+  // и сразу второй на designs_list для названия дизайна.
+  useEffect(() => {
+    const psId = form.section_structure_preset_id
+    if (!psId) return
+    if (form.section_structure_preset_name && form.section_structure_design_name) {
+      return // уже подгружено
+    }
+    let cancelled = false
+    Promise.all([
+      api('/api/tenant?action=rule_presets_list').then(r => r.ok ? r.json() : null),
+      api('/api/tenant?action=designs_list').then(r => r.ok ? r.json() : null),
+    ]).then(([presetsData, designsData]) => {
+      if (cancelled) return
+      const preset = (presetsData?.presets ?? []).find((p: any) => p.id === psId)
+      if (!preset) return
+      const design = (designsData?.designs ?? []).find(
+        (d: any) => d.id === preset.template_set_id,
+      )
+      setForm(f => ({
+        ...f,
+        section_structure_preset_name: preset.display_name ?? '?',
+        section_structure_design_name: design?.name ?? null,
+      }))
+    }).catch(() => { /* молча — кнопка покажет id */ })
+    return () => { cancelled = true }
+  }, [form.section_structure_preset_id])
+
   const applyTemplate = (t: Template) => {
     setForm(f => ({
       ...f,
@@ -2542,6 +2600,54 @@ function AlbumFormModal({
       template_title: t.title,
     }))
   }
+
+  // РЭ.24.6: обработчик выбора шаблона в TemplatePickerModal.
+  // Если у альбома уже был шаблон — показываем диалог подтверждения
+  // (есть риск потерять drafts из редактора, см. spec §6 пункт 4).
+  // Иначе — применяем сразу.
+  const handleTemplatePicked = (
+    newId: string | null,
+    newName: string | null,
+    newDesignName: string | null,
+  ) => {
+    setTemplatePickerOpen(false)
+    const currentId = form.section_structure_preset_id
+    if (currentId && currentId !== newId) {
+      // Смена/снятие существующего — нужен confirm
+      setPendingTemplateChange({ newId, newName, newDesignName })
+    } else {
+      // Нет существующего шаблона или тот же самый — применяем сразу
+      setForm(f => ({
+        ...f,
+        section_structure_preset_id: newId,
+        section_structure_preset_name: newName,
+        section_structure_design_name: newDesignName,
+      }))
+    }
+  }
+
+  const handleTemplateClear = () => {
+    // Снятие шаблона — тоже через confirm если шаблон уже был
+    if (form.section_structure_preset_id) {
+      setPendingTemplateChange({
+        newId: null,
+        newName: null,
+        newDesignName: null,
+      })
+    }
+  }
+
+  const confirmTemplateChange = () => {
+    if (!pendingTemplateChange) return
+    setForm(f => ({
+      ...f,
+      section_structure_preset_id: pendingTemplateChange.newId,
+      section_structure_preset_name: pendingTemplateChange.newName,
+      section_structure_design_name: pendingTemplateChange.newDesignName,
+    }))
+    setPendingTemplateChange(null)
+  }
+  const cancelTemplateChange = () => setPendingTemplateChange(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -2576,9 +2682,27 @@ function AlbumFormModal({
       // preset_slug отправляем только если оба поля выбраны. Иначе альбом
       // сохраняется с config_preset_id=NULL (sentinel-вариант для альбомов
       // без пресета — пользователь увидит ⚠ в карточке/обзоре до явного выбора).
-      ...(form.config_type && form.print_type
-        ? { preset_slug: `${form.config_type}-${form.print_type}` }
-        : {}),
+      //
+      // РЭ.24.6: если выбран новый шаблон из каталога — section_structure_preset_id
+      // ПРИОРИТЕТНЕЕ. При его наличии preset_slug НЕ отправляется (legacy
+      // выключается). На сервере create_album / update_album берут
+      // template_set_id и print_type из preset'а.
+      // При update_album ВСЕГДА отправляем section_structure_preset_id —
+      // в т.ч. null, чтобы корректно снять шаблон с существующего альбома.
+      ...(mode === 'create'
+        ? form.section_structure_preset_id
+          ? { section_structure_preset_id: form.section_structure_preset_id }
+          : form.config_type && form.print_type
+            ? { preset_slug: `${form.config_type}-${form.print_type}` }
+            : {}
+        : {
+            section_structure_preset_id: form.section_structure_preset_id,
+            ...(form.section_structure_preset_id
+              ? {}
+              : form.config_type && form.print_type
+                ? { preset_slug: `${form.config_type}-${form.print_type}` }
+                : {}),
+          }),
     }
 
     if (mode === 'create') {
@@ -2791,8 +2915,62 @@ function AlbumFormModal({
             </p>
           </div>
 
-          {/* Пресет вёрстки — комплектация + тип печати */}
+          {/* РЭ.24.6: выбор шаблона из каталога — новый путь.
+              Если выбран — section_structure_preset_id заполняется и
+              приоритетнее, чем legacy селекты ниже (комплектация + тип печати).
+              Опциональное поле: партнёр может создать альбом без шаблона
+              и добавить позже когда согласует дизайн с школой. */}
           <div className="border-t-2 border-gray-200 pt-5 mt-1">
+            <p className="text-sm font-semibold text-blue-700 mb-2">
+              Шаблон <span className="font-normal text-gray-400 text-xs">(опционально — можно выбрать позже)</span>
+            </p>
+            {form.section_structure_preset_id ? (
+              <div className="inline-flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                <span className="text-blue-700 font-medium">
+                  {form.section_structure_preset_name ?? form.section_structure_preset_id}
+                </span>
+                {form.section_structure_design_name && (
+                  <span className="text-blue-500 text-xs">
+                    · {form.section_structure_design_name}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setTemplatePickerOpen(true)}
+                  disabled={loading}
+                  className="text-blue-600 hover:text-blue-800 text-xs underline ml-1"
+                >
+                  сменить
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTemplateClear}
+                  disabled={loading}
+                  className="text-red-500 hover:text-red-700 text-lg leading-none ml-1"
+                  title="Снять шаблон"
+                >
+                  ×
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setTemplatePickerOpen(true)}
+                disabled={loading}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-sm text-gray-700"
+              >
+                Выбрать шаблон (опционально)
+              </button>
+            )}
+            <p className="text-xs text-gray-500 mt-2">
+              Шаблон из каталога даст готовую структуру альбома (дизайн +
+              секции + тип листов). Если шаблон не выбран — настройте
+              старые поля «Комплектация» и «Тип печати» ниже.
+            </p>
+          </div>
+
+          {/* Пресет вёрстки — комплектация + тип печати (legacy) */}
+          <div className={`border-t-2 border-gray-200 pt-5 mt-1 ${form.section_structure_preset_id ? 'opacity-50 pointer-events-none' : ''}`}>
             <p className="text-sm font-semibold text-blue-700 mb-2">
               Пресет вёрстки <span className="font-normal text-gray-400 text-xs">(определяет автосборку альбома)</span>
             </p>
@@ -3193,7 +3371,378 @@ function AlbumFormModal({
           )}
         </form>
       </div>
+      {/* РЭ.24.6: модалка выбора шаблона */}
+      {templatePickerOpen && (
+        <TemplatePickerModal
+          currentPresetId={form.section_structure_preset_id}
+          onPick={handleTemplatePicked}
+          onClose={() => setTemplatePickerOpen(false)}
+        />
+      )}
+      {/* РЭ.24.6: диалог подтверждения смены/снятия шаблона */}
+      {pendingTemplateChange && (
+        <div
+          className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4"
+          onClick={cancelTemplateChange}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold mb-3">
+              {pendingTemplateChange.newId ? 'Сменить шаблон?' : 'Снять шаблон?'}
+            </h3>
+            <div className="text-sm text-gray-700 space-y-2 mb-4">
+              <p>Это пересоздаст структуру альбома:</p>
+              <ul className="list-disc pl-5 text-gray-600 text-sm space-y-1">
+                <li>Все вёрстки которые ты делал вручную в редакторе — сохранятся как drafts, но могут некорректно отобразиться в новом шаблоне.</li>
+                <li>Если в новом дизайне другие пропорции — фото могут потребовать повторного кропа.</li>
+              </ul>
+              <p className="text-xs text-gray-500 mt-2">
+                Если ты ещё не вёрстал альбом в редакторе — ничего не потеряешь.
+              </p>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={cancelTemplateChange}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-sm"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={confirmTemplateChange}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+              >
+                {pendingTemplateChange.newId ? 'Сменить шаблон' : 'Снять шаблон'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+// ============================================================
+// РЭ.24.6: TemplatePickerModal — выбор шаблона при создании/редактировании
+// альбома. Показывает «Мои шаблоны» + «Готовые от OkeyBook» с
+// группировкой по дизайнам. Невалидные → disabled с пометкой 'Доработай'.
+// ============================================================
+
+type PickerDesign = {
+  id: string
+  name: string
+}
+
+type PickerTemplate = {
+  id: string
+  display_name: string
+  description: string
+  template_set_id: string | null
+  valid: boolean
+  errors: string[]
+  previews: { students: string | null }
+  kind: 'global' | 'my'
+}
+
+function TemplatePickerModal({
+  currentPresetId,
+  onPick,
+  onClose,
+}: {
+  currentPresetId: string | null
+  onPick: (
+    newId: string | null,
+    newName: string | null,
+    newDesignName: string | null,
+  ) => void
+  onClose: () => void
+}) {
+  const [designs, setDesigns] = useState<PickerDesign[]>([])
+  const [globals, setGlobals] = useState<PickerTemplate[]>([])
+  const [mine, setMine] = useState<PickerTemplate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [designFilter, setDesignFilter] = useState<string>('') // '' = все
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    Promise.all([
+      api('/api/tenant?action=designs_list'),
+      api('/api/tenant?action=templates_list_global'),
+      api('/api/tenant?action=templates_list_my'),
+    ])
+      .then(async ([dResp, gResp, mResp]) => {
+        if (cancelled) return
+        if (!dResp.ok || !gResp.ok || !mResp.ok) {
+          throw new Error('Не удалось загрузить шаблоны')
+        }
+        const dData = await dResp.json()
+        const gData = await gResp.json()
+        const mData = await mResp.json()
+        setDesigns(
+          (dData.designs ?? []).map((d: any) => ({ id: d.id, name: d.name })),
+        )
+        setGlobals(
+          (gData.templates ?? []).map((t: any) => ({
+            id: t.id,
+            display_name: t.display_name,
+            description: t.description ?? '',
+            template_set_id: t.template_set_id,
+            valid: true,
+            errors: [],
+            previews: { students: t.previews?.students ?? null },
+            kind: 'global' as const,
+          })),
+        )
+        setMine(
+          (mData.templates ?? []).map((t: any) => ({
+            id: t.id,
+            display_name: t.display_name,
+            description: t.description ?? '',
+            template_set_id: t.template_set_id,
+            valid: t.valid ?? false,
+            errors: t.errors ?? [],
+            previews: { students: t.previews?.students ?? null },
+            kind: 'my' as const,
+          })),
+        )
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Ошибка')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const designNameById = (id: string | null): string | null => {
+    if (!id) return null
+    const d = designs.find((x) => x.id === id)
+    return d?.name ?? null
+  }
+
+  const pick = (t: PickerTemplate) => {
+    if (!t.valid) return
+    onPick(t.id, t.display_name, designNameById(t.template_set_id))
+  }
+
+  // Фильтрация по дизайну (если выбран)
+  const filteredGlobals = designFilter
+    ? globals.filter((t) => t.template_set_id === designFilter)
+    : globals
+  const filteredMine = designFilter
+    ? mine.filter((t) => t.template_set_id === designFilter)
+    : mine
+
+  // Группировка глобальных по дизайнам
+  const globalsByDesign = new Map<string, PickerTemplate[]>()
+  for (const t of filteredGlobals) {
+    const key = t.template_set_id ?? '__no_design__'
+    if (!globalsByDesign.has(key)) globalsByDesign.set(key, [])
+    globalsByDesign.get(key)!.push(t)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/60 z-[55] flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Шапка */}
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <h3 className="text-lg font-semibold">Выбрать шаблон</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Шаблон описывает структуру альбома: дизайн + секции + тип листов.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+            aria-label="Закрыть"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Фильтр по дизайну (показываем только если дизайнов > 1) */}
+        {designs.length > 1 && (
+          <div className="px-4 py-2 border-b bg-gray-50 flex items-center gap-2 text-sm">
+            <span className="text-gray-600">Дизайн:</span>
+            <select
+              value={designFilter}
+              onChange={(e) => setDesignFilter(e.target.value)}
+              className="border rounded px-2 py-1 text-sm"
+            >
+              <option value="">Все ({designs.length})</option>
+              {designs.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Содержимое */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          {loading && (
+            <div className="text-center text-gray-500 py-8">Загрузка...</div>
+          )}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+              {error}
+            </div>
+          )}
+
+          {!loading && !error && (
+            <>
+              {/* Мои шаблоны */}
+              <section>
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                  Мои шаблоны ({filteredMine.length})
+                </h4>
+                {filteredMine.length === 0 ? (
+                  <div className="text-xs text-gray-400 italic">
+                    У вас пока нет своих шаблонов в этом дизайне.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {filteredMine.map((t) => (
+                      <PickerCard
+                        key={t.id}
+                        template={t}
+                        designName={designNameById(t.template_set_id)}
+                        isCurrent={t.id === currentPresetId}
+                        onPick={() => pick(t)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* Готовые от OkeyBook — по дизайнам */}
+              <section>
+                <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                  Готовые от OkeyBook ({filteredGlobals.length})
+                </h4>
+                {filteredGlobals.length === 0 ? (
+                  <div className="text-xs text-gray-400 italic">
+                    Нет рекомендованных шаблонов от OkeyBook.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {Array.from(globalsByDesign.entries()).map(([designId, items]) => {
+                      const designName = designNameById(designId === '__no_design__' ? null : designId)
+                      return (
+                        <div key={designId}>
+                          {designs.length > 1 && designName && (
+                            <div className="text-xs font-medium text-gray-500 mb-2">
+                              Дизайн: {designName}
+                            </div>
+                          )}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                            {items.map((t) => (
+                              <PickerCard
+                                key={t.id}
+                                template={t}
+                                designName={designName}
+                                isCurrent={t.id === currentPresetId}
+                                onPick={() => pick(t)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+            </>
+          )}
+        </div>
+
+        {/* Подвал */}
+        <div className="border-t p-4 flex items-center justify-between gap-2 bg-gray-50">
+          <button
+            type="button"
+            onClick={() => onPick(null, null, null)}
+            className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 rounded text-sm"
+          >
+            Создать без шаблона
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 rounded text-sm"
+          >
+            Отмена
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PickerCard({
+  template,
+  designName,
+  isCurrent,
+  onPick,
+}: {
+  template: PickerTemplate
+  designName: string | null
+  isCurrent: boolean
+  onPick: () => void
+}) {
+  const disabled = !template.valid
+  return (
+    <button
+      type="button"
+      onClick={disabled ? undefined : onPick}
+      disabled={disabled}
+      className={`text-left p-3 rounded-lg border transition-all flex flex-col gap-2 ${
+        disabled
+          ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
+          : isCurrent
+          ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-200'
+          : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm cursor-pointer'
+      }`}
+    >
+      {/* Превью */}
+      <div
+        className="w-full bg-gray-50 border border-gray-200 rounded overflow-hidden flex items-center justify-center"
+        style={{ aspectRatio: '1 / 1.4', minHeight: '90px' }}
+        dangerouslySetInnerHTML={{
+          __html:
+            template.previews.students ??
+            '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;font-size:10px;">нет превью</div>',
+        }}
+      />
+      <div className="text-sm font-medium text-gray-900 truncate" title={template.display_name}>
+        {template.display_name}
+      </div>
+      {designName && (
+        <div className="text-xs text-gray-500 truncate">{designName}</div>
+      )}
+      {template.description && (
+        <div className="text-xs text-gray-500 line-clamp-2">{template.description}</div>
+      )}
+      {disabled && (
+        <div className="text-xs text-red-600 font-medium">
+          Доработай в «Шаблонах»
+        </div>
+      )}
+      {isCurrent && !disabled && (
+        <div className="text-xs text-blue-700 font-medium">Выбран сейчас</div>
+      )}
+    </button>
   )
 }
 
