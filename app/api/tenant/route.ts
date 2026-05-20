@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, type AuthContext } from '@/lib/auth'
 import { ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
+import { renderPreviewSvg } from '@/lib/album-builder/render-preview-svg'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -624,6 +625,97 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ presets: data ?? [] })
+  }
+
+  // ----------------------------------------------------------
+  // template_set_list_with_previews (РЭ.23.3) — список мастеров
+  // template_set'а с автогенерированными SVG-превью для admin-tool
+  // /super/master-catalog.
+  //
+  // Доступ только админам/суперадминам (не viewer, не партнёрский UI).
+  // Tenant-aware: возвращает мастера template_set'ов которые принадлежат
+  // текущему tenant'у ИЛИ глобальным (tenant_id=NULL у template_set).
+  // Для суперадмина — все template_set'ы.
+  //
+  // SVG-превью рендерится синхронно через renderPreviewSvg (чистая
+  // функция, без I/O). Размер ~1-3 KB на мастер.
+  // ----------------------------------------------------------
+  if (action === 'template_set_list_with_previews') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+
+    // 1) Выбираем template_set'ы доступные тенант'у (свои + глобальные).
+    let templateSetsQuery = supabaseAdmin
+      .from('template_sets')
+      .select('id, name, slug, tenant_id')
+    if (auth.role !== 'superadmin') {
+      templateSetsQuery = templateSetsQuery.or(
+        `tenant_id.is.null,tenant_id.eq.${auth.tenantId}`,
+      )
+    }
+    const { data: templateSets, error: tsErr } = await templateSetsQuery
+    if (tsErr) {
+      return NextResponse.json({ error: tsErr.message }, { status: 500 })
+    }
+    const tsIds = (templateSets ?? []).map((t: any) => t.id)
+    if (tsIds.length === 0) {
+      return NextResponse.json({ masters: [] })
+    }
+
+    // 2) Выбираем мастера этих template_set'ов.
+    const { data: masters, error: mErr } = await supabaseAdmin
+      .from('spread_templates')
+      .select(
+        'id, name, display_label, template_set_id, page_role, slot_capacity, ' +
+          'is_spread, width_mm, height_mm, placeholders, rules, sort_order, ' +
+          'applies_to_configs, default_for_configs, is_fallback, mirror_for_soft, audit_notes, type',
+      )
+      .in('template_set_id', tsIds)
+      .order('name')
+    if (mErr) {
+      return NextResponse.json({ error: mErr.message }, { status: 500 })
+    }
+
+    // 3) Рендерим SVG-превью для каждого мастера.
+    const result = (masters ?? []).map((m: any) => {
+      // renderPreviewSvg ждёт SpreadTemplate — собираем минимально-нужное
+      // подмножество полей (функция использует только placeholders +
+      // width_mm/height_mm + is_spread).
+      const template = {
+        id: m.id,
+        name: m.name,
+        type: m.type ?? 'common',
+        is_spread: m.is_spread === true,
+        width_mm: m.width_mm,
+        height_mm: m.height_mm,
+        placeholders: Array.isArray(m.placeholders) ? m.placeholders : [],
+        rules: m.rules ?? null,
+        sort_order: m.sort_order ?? 0,
+        applies_to_configs: m.applies_to_configs ?? [],
+        default_for_configs: m.default_for_configs ?? [],
+        page_role: m.page_role ?? null,
+        slot_capacity: m.slot_capacity ?? null,
+        is_fallback: m.is_fallback ?? false,
+        mirror_for_soft: m.mirror_for_soft ?? false,
+        audit_notes: m.audit_notes ?? null,
+      }
+      return {
+        id: m.id,
+        name: m.name,
+        display_label: m.display_label ?? null,
+        template_set_id: m.template_set_id,
+        page_role: m.page_role ?? null,
+        slot_capacity: m.slot_capacity ?? null,
+        is_spread: m.is_spread === true,
+        preview_svg: renderPreviewSvg(template),
+      }
+    })
+
+    return NextResponse.json({
+      masters: result,
+      template_sets: templateSets ?? [],
+    })
   }
 
   // ----------------------------------------------------------
@@ -2070,6 +2162,88 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true, preset: updated, updated: true })
+  }
+
+  // ----------------------------------------------------------
+  // template_set_update_display_label (РЭ.23.3) — обновление
+  // человеко-читаемого названия мастера для каталога /super/master-catalog.
+  //
+  // Body: { template_id: string (uuid), display_label: string | null }
+  // Доступ только админам/суперадминам.
+  // Tenant-aware: чужие глобальные template_set'ы (tenant_id=NULL) —
+  // только superadmin; чужие тенант'овские → 404.
+  // ----------------------------------------------------------
+  if (body.action === 'template_set_update_display_label') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+
+    const templateId = String(body.template_id ?? '').trim()
+    if (!templateId) {
+      return NextResponse.json(
+        { error: 'template_id обязателен' },
+        { status: 400 },
+      )
+    }
+
+    // display_label: null допустим (UI fallback на name); иначе trimmed строка.
+    let displayLabel: string | null
+    if (body.display_label === null || body.display_label === undefined) {
+      displayLabel = null
+    } else {
+      const trimmed = String(body.display_label).trim()
+      displayLabel = trimmed === '' ? null : trimmed
+    }
+
+    // 1) Загружаем мастер чтобы узнать его template_set_id.
+    const { data: master, error: loadErr } = await supabaseAdmin
+      .from('spread_templates')
+      .select('id, template_set_id')
+      .eq('id', templateId)
+      .maybeSingle()
+    if (loadErr) {
+      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+    }
+    if (!master) {
+      return NextResponse.json({ error: 'Мастер не найден' }, { status: 404 })
+    }
+
+    // 2) Проверка владения через template_set.
+    const { data: ts, error: tsErr } = await supabaseAdmin
+      .from('template_sets')
+      .select('id, tenant_id')
+      .eq('id', master.template_set_id)
+      .maybeSingle()
+    if (tsErr) {
+      return NextResponse.json({ error: tsErr.message }, { status: 500 })
+    }
+    if (!ts) {
+      return NextResponse.json({ error: 'Мастер не найден' }, { status: 404 })
+    }
+    const isGlobal = ts.tenant_id === null
+    if (isGlobal && auth.role !== 'superadmin') {
+      return NextResponse.json(
+        { error: 'Глобальные мастера редактируются только суперадмином' },
+        { status: 403 },
+      )
+    }
+    if (!isGlobal && ts.tenant_id !== auth.tenantId && auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Мастер не найден' }, { status: 404 })
+    }
+
+    // 3) Обновление.
+    const { error: updErr } = await supabaseAdmin
+      .from('spread_templates')
+      .update({ display_label: displayLabel })
+      .eq('id', templateId)
+    if (updErr) {
+      return NextResponse.json({ error: updErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({
+      ok: true,
+      master: { id: templateId, display_label: displayLabel },
+    })
   }
 
   if (body.action === 'create_album') {
