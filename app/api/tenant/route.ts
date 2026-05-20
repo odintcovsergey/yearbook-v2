@@ -3,6 +3,9 @@ import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, type AuthContext } from '@/lib/auth'
 import { ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
 import { renderPreviewSvg } from '@/lib/album-builder/render-preview-svg'
+import { validatePreset } from '@/lib/presets/validate'
+import { buildPresetPreviewBundle } from '@/lib/presets/preview-bundle'
+import { loadBundle } from '@/lib/rule-engine/loaders'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -20,6 +23,51 @@ async function assertAlbumAccess(auth: AuthContext, albumId: string, tenantIdOve
     .single()
 
   return data?.tenant_id === (tenantIdOverride ?? auth.tenantId)
+}
+
+// ============================================================
+// РЭ.24.4: легковесная конвертация preset-row из БД в Preset
+// для validatePreset. Не пытается полностью восстановить Preset
+// (это делает presetRowToPreset в loaders.ts) — только поля
+// которые проверяет валидатор.
+// ============================================================
+function rowToPresetForValidation(row: any) {
+  return {
+    id: row.id,
+    display_name: row.display_name ?? '',
+    print_type: row.print_type,
+    pages_per_spread: row.pages_per_spread ?? 2,
+    version: row.version ?? '1.0',
+    sections: row.sections ?? [],
+    tenant_id: row.tenant_id ?? null,
+    template_set_id: row.template_set_id ?? null,
+    section_structure: row.section_structure ?? null,
+    student_layout_mode: row.student_layout_mode ?? null,
+    student_grid_size: row.student_grid_size ?? null,
+  } as any
+}
+
+// ============================================================
+// РЭ.24.4: короткое описание шаблона для карточки каталога.
+// Собирается из ключевых полей: режим личного раздела + сетка
+// + тип печати. Партнёр видит понятную сводку без необходимости
+// смотреть детали.
+// ============================================================
+function rowToDescription(row: any): string {
+  const parts: string[] = []
+  if (row.student_layout_mode === 'grid' && row.student_grid_size) {
+    parts.push(`${row.student_grid_size} учеников на странице`)
+  } else if (row.student_layout_mode === 'page') {
+    parts.push('1 ученик на странице')
+  } else if (row.student_layout_mode === 'spread') {
+    parts.push('1 ученик на развороте')
+  }
+  if (row.print_type === 'layflat') {
+    parts.push('твёрдая обложка')
+  } else if (row.print_type === 'soft') {
+    parts.push('мягкая обложка')
+  }
+  return parts.length > 0 ? parts.join(', ') : ''
 }
 
 // ============================================================
@@ -716,6 +764,130 @@ export async function GET(req: NextRequest) {
       masters: result,
       template_sets: templateSets ?? [],
     })
+  }
+
+  // ----------------------------------------------------------
+  // templates_list_global (РЭ.24.4) — глобальные шаблоны для каталога
+  // /app/templates. Возвращает только is_recommended=true.
+  //
+  // Для каждого шаблона:
+  //   • validatePreset → отбрасываем невалидные (с warning в логе)
+  //   • loadBundle → buildPresetPreviewBundle → 4 SVG
+  //
+  // Доступ: любой авторизованный (включая партнёров с ролью viewer —
+  // им можно просто посмотреть каталог, клонировать они не смогут).
+  // ----------------------------------------------------------
+  if (action === 'templates_list_global') {
+    const { data: rows, error: loadErr } = await supabaseAdmin
+      .from('presets')
+      .select('*')
+      .is('tenant_id', null)
+      .eq('is_recommended', true)
+      .order('display_name')
+    if (loadErr) {
+      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+    }
+
+    const results = []
+    for (const row of rows ?? []) {
+      // Конвертируем row → Preset (по минимуму, чтобы validatePreset работал).
+      const preset = rowToPresetForValidation(row)
+      const validation = validatePreset(preset)
+      if (!validation.valid) {
+        console.warn(
+          `[templates_list_global] preset '${preset.id}' (${preset.display_name}) невалиден, пропускаем:`,
+          validation.errors,
+        )
+        continue
+      }
+
+      // Рендерим превью.
+      let previews: { students: string | null; cover: string | null; teachers: string | null; soft: string | null } =
+        { students: null, cover: null, teachers: null, soft: null }
+      try {
+        const bundle = await loadBundle(supabaseAdmin, preset.id, null)
+        previews = buildPresetPreviewBundle(bundle)
+      } catch (e) {
+        console.warn(`[templates_list_global] loadBundle failed for '${preset.id}':`, e)
+      }
+
+      results.push({
+        id: preset.id,
+        display_name: preset.display_name,
+        description: rowToDescription(row),
+        print_type: preset.print_type,
+        sheet_type: row.sheet_type ?? null,
+        student_layout_mode: preset.student_layout_mode ?? null,
+        student_grid_size: preset.student_grid_size ?? null,
+        min_pages: row.min_pages ?? null,
+        max_pages: row.max_pages ?? null,
+        previews,
+      })
+    }
+
+    return NextResponse.json({ templates: results })
+  }
+
+  // ----------------------------------------------------------
+  // templates_list_my (РЭ.24.4) — личная библиотека партнёра.
+  // SELECT * FROM presets WHERE tenant_id = auth.tenantId.
+  //
+  // Для каждого:
+  //   • validatePreset → флаг valid + errors[]
+  //   • Если valid → buildPresetPreviewBundle → 4 SVG
+  //   • Если невалиден → превью пустые (4 null), UI пометит 'Доработай'
+  //
+  // Доступ: любой авторизованный с tenantId (включая viewer — увидит
+  // только просмотр, без действий).
+  // ----------------------------------------------------------
+  if (action === 'templates_list_my') {
+    if (!auth.tenantId) {
+      return NextResponse.json({ error: 'Не задан tenant' }, { status: 400 })
+    }
+
+    const { data: rows, error: loadErr } = await supabaseAdmin
+      .from('presets')
+      .select('*')
+      .eq('tenant_id', auth.tenantId)
+      .order('display_name')
+    if (loadErr) {
+      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+    }
+
+    const results = []
+    for (const row of rows ?? []) {
+      const preset = rowToPresetForValidation(row)
+      const validation = validatePreset(preset)
+
+      let previews: { students: string | null; cover: string | null; teachers: string | null; soft: string | null } =
+        { students: null, cover: null, teachers: null, soft: null }
+      if (validation.valid) {
+        try {
+          const bundle = await loadBundle(supabaseAdmin, preset.id, auth.tenantId)
+          previews = buildPresetPreviewBundle(bundle)
+        } catch (e) {
+          console.warn(`[templates_list_my] loadBundle failed for '${preset.id}':`, e)
+        }
+      }
+
+      results.push({
+        id: preset.id,
+        display_name: preset.display_name,
+        description: rowToDescription(row),
+        print_type: preset.print_type,
+        sheet_type: row.sheet_type ?? null,
+        student_layout_mode: preset.student_layout_mode ?? null,
+        student_grid_size: preset.student_grid_size ?? null,
+        min_pages: row.min_pages ?? null,
+        max_pages: row.max_pages ?? null,
+        parent_preset_id: row.parent_preset_id ?? null,
+        valid: validation.valid,
+        errors: validation.errors,
+        previews,
+      })
+    }
+
+    return NextResponse.json({ templates: results })
   }
 
   // ----------------------------------------------------------
@@ -2244,6 +2416,234 @@ export async function POST(req: NextRequest) {
       ok: true,
       master: { id: templateId, display_label: displayLabel },
     })
+  }
+
+  // ----------------------------------------------------------
+  // template_clone (РЭ.24.4) — клонирование глобального шаблона
+  // в личную библиотеку партнёра.
+  //
+  // Body: { template_id: string, display_name?: string }
+  //
+  // Шаги:
+  //   1. SELECT preset WHERE id=template_id AND tenant_id IS NULL.
+  //      Если не найден или это партнёрский — 404.
+  //   2. INSERT копия с tenant_id=auth.tenantId, parent_preset_id=
+  //      template_id, новым id, is_recommended=false. Все остальные
+  //      поля копируются как есть.
+  //   3. Возврат: { id, display_name }.
+  //
+  // Доступ: не-viewer (admin/owner/photographer/superadmin).
+  // ----------------------------------------------------------
+  if (body.action === 'template_clone') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+    if (!auth.tenantId) {
+      return NextResponse.json({ error: 'Не задан tenant' }, { status: 400 })
+    }
+
+    const sourceId = String(body.template_id ?? '').trim()
+    if (!sourceId) {
+      return NextResponse.json(
+        { error: 'template_id обязателен' },
+        { status: 400 },
+      )
+    }
+
+    // Загружаем оригинал.
+    const { data: source, error: loadErr } = await supabaseAdmin
+      .from('presets')
+      .select('*')
+      .eq('id', sourceId)
+      .maybeSingle()
+    if (loadErr) {
+      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+    }
+    if (!source) {
+      return NextResponse.json({ error: 'Шаблон не найден' }, { status: 404 })
+    }
+    if (source.tenant_id !== null) {
+      // Клонировать можно только глобальные.
+      return NextResponse.json(
+        { error: 'Клонировать можно только глобальные шаблоны' },
+        { status: 403 },
+      )
+    }
+
+    // Имя клона.
+    const customName = body.display_name
+      ? String(body.display_name).trim()
+      : null
+    const newDisplayName = customName || `${source.display_name} (копия)`
+
+    // Новый id.
+    const randomSuffix = Math.random().toString(36).slice(2, 10)
+    const newId = `clone-${randomSuffix}`
+
+    // Копируем все поля кроме id, tenant_id, parent_preset_id,
+    // is_recommended, display_name, created_at.
+    const newRow: any = {
+      ...source,
+      id: newId,
+      tenant_id: auth.tenantId,
+      parent_preset_id: source.id,
+      is_recommended: false, // только глобальные рекомендованные
+      display_name: newDisplayName,
+    }
+    // Удаляем поля которые БД проставит сама.
+    delete newRow.created_at
+    delete newRow.updated_at
+
+    const { data: created, error: insErr } = await supabaseAdmin
+      .from('presets')
+      .insert(newRow)
+      .select('id, display_name')
+      .single()
+    if (insErr) {
+      return NextResponse.json({ error: insErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true, template: created })
+  }
+
+  // ----------------------------------------------------------
+  // template_create_blank (РЭ.24.4) — пустой шаблон с нуля.
+  //
+  // Body: { display_name: string }
+  //
+  // Создаёт минимальный шаблон с tenant_id=auth.tenantId. Никаких
+  // других обязательных полей не требуем — партнёр доработает через
+  // PresetEditorModal (тот же что используется в /super/presets).
+  // На этом этапе шаблон НЕВАЛИДЕН (template_set_id=null,
+  // section_structure пустой), что нормально — UI пометит «Доработай».
+  //
+  // Доступ: не-viewer.
+  // ----------------------------------------------------------
+  if (body.action === 'template_create_blank') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+    if (!auth.tenantId) {
+      return NextResponse.json({ error: 'Не задан tenant' }, { status: 400 })
+    }
+
+    const displayName = String(body.display_name ?? '').trim()
+    if (!displayName) {
+      return NextResponse.json(
+        { error: 'Название шаблона обязательно' },
+        { status: 400 },
+      )
+    }
+
+    const randomSuffix = Math.random().toString(36).slice(2, 10)
+    const newId = `blank-${randomSuffix}`
+
+    const { data: created, error: insErr } = await supabaseAdmin
+      .from('presets')
+      .insert({
+        id: newId,
+        display_name: displayName,
+        print_type: 'layflat',
+        pages_per_spread: 2,
+        version: '1.0',
+        sections: [],
+        section_structure: [],
+        tenant_id: auth.tenantId,
+        parent_preset_id: null,
+        is_recommended: false,
+        sheet_type: 'hard',
+      })
+      .select('id, display_name')
+      .single()
+    if (insErr) {
+      return NextResponse.json({ error: insErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true, template: created })
+  }
+
+  // ----------------------------------------------------------
+  // template_delete (РЭ.24.4) — удаление шаблона партнёра.
+  //
+  // Body: { template_id: string }
+  //
+  // Шаги:
+  //   1. SELECT preset → 404 если не найден или не свой.
+  //   2. SELECT COUNT(*) FROM albums WHERE preset_id=template_id
+  //      AND archived=false. Если > 0 → 409 со списком альбомов.
+  //   3. DELETE FROM presets.
+  //
+  // Доступ: admin/owner/superadmin (photographer тоже может).
+  // ----------------------------------------------------------
+  if (body.action === 'template_delete') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+    if (!auth.tenantId) {
+      return NextResponse.json({ error: 'Не задан tenant' }, { status: 400 })
+    }
+
+    const templateId = String(body.template_id ?? '').trim()
+    if (!templateId) {
+      return NextResponse.json(
+        { error: 'template_id обязателен' },
+        { status: 400 },
+      )
+    }
+
+    // Загружаем шаблон.
+    const { data: preset, error: loadErr } = await supabaseAdmin
+      .from('presets')
+      .select('id, tenant_id, display_name')
+      .eq('id', templateId)
+      .maybeSingle()
+    if (loadErr) {
+      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+    }
+    if (!preset) {
+      return NextResponse.json({ error: 'Шаблон не найден' }, { status: 404 })
+    }
+    // Глобальный — нельзя удалить через этот endpoint даже superadmin.
+    if (preset.tenant_id === null) {
+      return NextResponse.json(
+        { error: 'Глобальные шаблоны не удаляются через эту операцию' },
+        { status: 403 },
+      )
+    }
+    // Чужой тенант — 404.
+    if (preset.tenant_id !== auth.tenantId && auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Шаблон не найден' }, { status: 404 })
+    }
+
+    // Проверка активных альбомов.
+    const { data: albums, error: albumsErr } = await supabaseAdmin
+      .from('albums')
+      .select('id, title, archived')
+      .eq('preset_id', templateId)
+      .eq('archived', false)
+    if (albumsErr) {
+      return NextResponse.json({ error: albumsErr.message }, { status: 500 })
+    }
+    if ((albums?.length ?? 0) > 0) {
+      return NextResponse.json(
+        {
+          error: `Шаблон используется в ${albums!.length} альбомах. Сначала переключите альбомы на другой шаблон или архивируйте их.`,
+          albums: albums!.map((a) => ({ id: a.id, title: a.title })),
+        },
+        { status: 409 },
+      )
+    }
+
+    // Удаляем.
+    const { error: delErr } = await supabaseAdmin
+      .from('presets')
+      .delete()
+      .eq('id', templateId)
+    if (delErr) {
+      return NextResponse.json({ error: delErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true })
   }
 
   if (body.action === 'create_album') {
