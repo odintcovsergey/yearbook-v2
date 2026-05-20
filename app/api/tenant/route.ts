@@ -615,7 +615,7 @@ export async function GET(req: NextRequest) {
   if (action === 'rule_presets_list') {
     const { data, error } = await supabaseAdmin
       .from('presets')
-      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, template_set_id, section_structure, student_pages_per_student, student_friend_photos, student_has_quote, tenant_id, version')
+      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, template_set_id, section_structure, student_pages_per_student, student_friend_photos, student_has_quote, student_layout_mode, student_grid_size, tenant_id, version')
       .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
       .order('display_name')
 
@@ -2004,6 +2004,45 @@ export async function POST(req: NextRequest) {
           { error: 'student_has_quote должен быть boolean (или null)' },
           { status: 400 }
         )
+      }
+    }
+
+    // РЭ.22.2: двух-осевая модель личного раздела (см. docs/phase-Р22-spec.md §4).
+    // student_layout_mode — один из 'page'/'spread'/'grid' или null.
+    // null = семантика не активна, engine идёт по legacy-пути.
+    if (body.student_layout_mode !== undefined) {
+      if (body.student_layout_mode === null) {
+        patch.student_layout_mode = null
+      } else if (
+        typeof body.student_layout_mode === 'string' &&
+        (body.student_layout_mode === 'page' ||
+          body.student_layout_mode === 'spread' ||
+          body.student_layout_mode === 'grid')
+      ) {
+        patch.student_layout_mode = body.student_layout_mode
+      } else {
+        return NextResponse.json(
+          { error: "student_layout_mode должен быть 'page' / 'spread' / 'grid' (или null)" },
+          { status: 400 }
+        )
+      }
+    }
+
+    // student_grid_size — целое 2..12 или null. Применимо только для
+    // mode='grid', но cross-field валидацию здесь не делаем (это recommend,
+    // не hard error — см. spec §4). UI РЭ.22.3 пишет null когда режим не grid.
+    if (body.student_grid_size !== undefined) {
+      if (body.student_grid_size === null) {
+        patch.student_grid_size = null
+      } else {
+        const n = Number(body.student_grid_size)
+        if (!Number.isInteger(n) || n < 2 || n > 12) {
+          return NextResponse.json(
+            { error: 'student_grid_size должен быть целым 2..12 (или null)' },
+            { status: 400 }
+          )
+        }
+        patch.student_grid_size = n
       }
     }
 

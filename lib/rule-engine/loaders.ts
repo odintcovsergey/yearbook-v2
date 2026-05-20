@@ -169,6 +169,38 @@ function presetRowToPreset(row: Record<string, unknown>): Preset {
     section_structure: Array.isArray(row.section_structure)
       ? (row.section_structure as Preset['section_structure'])
       : null,
+    // РЭ.21.8.15 (DEPRECATED legacy student-fields).
+    //
+    // ⚠️ ИЗНАЧАЛЬНО эти поля НЕ были добавлены в presetRowToPreset (РЭ.21.8.15
+    // 19.05.2026) — из-за чего `buildOnePerSpreadAdaptive` фактически
+    // никогда не активировался в проде: engine читал `preset.student_*`,
+    // получал `undefined`, useSemanticSearch=false → fallback на
+    // `E-Max-Left/Right`. Тесты не падали потому что собирали Preset
+    // напрямую. Закрыто попутно в РЭ.22.2 одновременно с добавлением
+    // новых полей двух-осевой модели (см. ниже).
+    student_pages_per_student:
+      row.student_pages_per_student === null || row.student_pages_per_student === undefined
+        ? null
+        : (Number(row.student_pages_per_student) === 2 ? 2 : 1),
+    student_friend_photos:
+      row.student_friend_photos === null || row.student_friend_photos === undefined
+        ? null
+        : Number(row.student_friend_photos),
+    student_has_quote:
+      typeof row.student_has_quote === 'boolean' ? row.student_has_quote : null,
+    // РЭ.22.2: двух-осевая модель (см. docs/phase-Р22-spec.md §3).
+    // Engine начнёт читать эти поля в РЭ.22.4-6 (priority over legacy
+    // student_pages_per_student).
+    student_layout_mode:
+      row.student_layout_mode === 'page' ||
+      row.student_layout_mode === 'spread' ||
+      row.student_layout_mode === 'grid'
+        ? row.student_layout_mode
+        : null,
+    student_grid_size:
+      row.student_grid_size === null || row.student_grid_size === undefined
+        ? null
+        : Number(row.student_grid_size),
   };
 }
 

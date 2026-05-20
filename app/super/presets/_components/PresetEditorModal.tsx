@@ -15,9 +15,13 @@ export interface Preset {
   max_pages: number | null
   template_set_id: string | null
   section_structure: Section[] | null
+  /** РЭ.21.8.15 (одно-осевая модель, DEPRECATED в РЭ.22.1). */
   student_pages_per_student: 1 | 2 | null
   student_friend_photos: number | null
   student_has_quote: boolean | null
+  /** РЭ.22.1: двух-осевая модель. См. docs/phase-Р22-spec.md §3. */
+  student_layout_mode: 'page' | 'spread' | 'grid' | null
+  student_grid_size: number | null
   version: string
 }
 

@@ -453,28 +453,50 @@ export interface Preset {
   sheet_type?: SheetType | null;
 
   /**
-   * РЭ.21.8.15: семантическое описание макета личного раздела.
+   * РЭ.21.8.15 (изначальная одно-осевая модель — DEPRECATED в РЭ.22.1):
+   * семантическое описание макета личного раздела через 3 независимых поля.
    *
-   * Партнёр при создании пресета описывает структуру личного раздела
-   * как набор требований к мастеру:
-   *  - `student_pages_per_student` — 1 (одностраничный мастер) или
-   *    2 (двухстраничный, разворот на ученика)
+   *  - `student_pages_per_student` — 1 (одностраничный) или 2 (разворот)
    *  - `student_friend_photos` — сколько фото с друзьями (0..10)
    *  - `student_has_quote` — есть ли слот для текста-цитаты
    *
-   * Engine `sections/students.ts` ищет в template_set мастер с
-   * подходящим `slot_capacity` (см. lib/rule-engine/master-finder.ts).
-   * Когда все 3 поля NOT NULL — используется семантический поиск.
-   * Когда хоть одно NULL — fallback на legacy выбор по density / preset.id
-   * (для existing 7 пресетов, до их миграции на новые поля).
+   * Engine `sections/students.ts` ищет в template_set мастер с подходящим
+   * `slot_capacity` (см. lib/rule-engine/master-finder.ts). Когда все 3
+   * поля NOT NULL — используется семантический поиск. Когда хоть одно
+   * NULL — fallback на legacy выбор по density / preset.id.
    *
-   * Полстраницы на ученика (`student_pages_per_student=0.5`) пока не
-   * реализовано — Сергей готов добавить в будущем когда такие мастера
-   * появятся в template_set.
+   * ⚠️ Эти поля DEPRECATED с РЭ.22.1 — заменены двух-осевой моделью
+   * (`student_layout_mode` + `student_grid_size` ниже). До зачистки
+   * (отдельная сессия) UI пишет в обе модели — старая остаётся для
+   * отката Vercel.
    */
   student_pages_per_student?: 1 | 2 | null;
   student_friend_photos?: number | null;
   student_has_quote?: boolean | null;
+
+  /**
+   * РЭ.22.1: двух-осевая модель личного раздела «режим × параметры».
+   *
+   *  - `student_layout_mode` — один из трёх режимов:
+   *      'page'   — 1 ученик/страница (Standard/Universal комплектации)
+   *      'spread' — 1 ученик/разворот (Maximum/Individual)
+   *      'grid'   — сетка N учеников/страница (Medium/Light/Mini)
+   *      NULL = семантический поиск не активирован, engine идёт по
+   *             legacy-пути (жёсткие имена по preset.density / preset.id).
+   *
+   *  - `student_grid_size` — сколько учеников помещается на одной
+   *      странице сетки. Применимо только когда mode='grid'. Свободное
+   *      число 2..12 (не enum) — партнёр может указать любое значение,
+   *      engine ищет в template_set мастер с подходящим
+   *      `slot_capacity.students`. Адаптивный хвост (последняя неполная
+   *      страница) подбирается семантически.
+   *      Для mode='page'/'spread' значение игнорируется.
+   *
+   * См. docs/phase-Р22-spec.md §3 для детального контракта и §6 для
+   * описания engine-логики (которая придёт в РЭ.22.4-РЭ.22.6).
+   */
+  student_layout_mode?: 'page' | 'spread' | 'grid' | null;
+  student_grid_size?: number | null;
 
   /**
    * РЭ.21.8: высокоуровневая структура альбома, редактируемая партнёром
