@@ -2664,15 +2664,24 @@ export async function POST(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
-  // template_create_blank (РЭ.24.4) — пустой шаблон с нуля.
+  // template_create_blank (РЭ.24.4 / расширено в РЭ.24.5b) —
+  // пустой шаблон с нуля.
   //
-  // Body: { display_name: string }
+  // Body: { display_name: string, template_set_id?: string }
   //
-  // Создаёт минимальный шаблон с tenant_id=auth.tenantId. Никаких
-  // других обязательных полей не требуем — партнёр доработает через
-  // PresetEditorModal (тот же что используется в /super/presets).
-  // На этом этапе шаблон НЕВАЛИДЕН (template_set_id=null,
-  // section_structure пустой), что нормально — UI пометит «Доработай».
+  // Создаёт минимальный шаблон с tenant_id=auth.tenantId.
+  // РЭ.24.5b: если передан template_set_id — шаблон сразу привязан
+  // к конкретному дизайну (партнёр создаёт шаблон находясь в дизайне).
+  // Если не передан — оставляем NULL, шаблон будет невалиден до тех
+  // пор пока партнёр не выберет дизайн в редакторе.
+  //
+  // Если передан template_set_id — проверяем что он доступен партнёру
+  // (глобальный или его собственный) — нельзя создать шаблон ссылкой
+  // на чужой template_set.
+  //
+  // На этапе создания шаблон невалиден (section_structure пустой,
+  // student_layout_mode=null), что нормально — UI пометит «Доработай»
+  // и партнёр доработает через PresetEditorModal.
   //
   // Доступ: не-viewer.
   // ----------------------------------------------------------
@@ -2692,6 +2701,37 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Опциональный template_set_id — валидируем доступ.
+    let templateSetId: string | null = null
+    if (body.template_set_id) {
+      const tsid = String(body.template_set_id).trim()
+      const { data: ts, error: tsErr } = await supabaseAdmin
+        .from('template_sets')
+        .select('id, tenant_id')
+        .eq('id', tsid)
+        .maybeSingle()
+      if (tsErr) {
+        return NextResponse.json({ error: tsErr.message }, { status: 500 })
+      }
+      if (!ts) {
+        return NextResponse.json(
+          { error: 'Дизайн не найден' },
+          { status: 400 },
+        )
+      }
+      const accessible =
+        ts.tenant_id === null ||
+        ts.tenant_id === auth.tenantId ||
+        auth.role === 'superadmin'
+      if (!accessible) {
+        return NextResponse.json(
+          { error: 'Этот дизайн недоступен' },
+          { status: 403 },
+        )
+      }
+      templateSetId = tsid
+    }
+
     const randomSuffix = Math.random().toString(36).slice(2, 10)
     const newId = `blank-${randomSuffix}`
 
@@ -2705,6 +2745,7 @@ export async function POST(req: NextRequest) {
         version: '1.0',
         sections: [],
         section_structure: [],
+        template_set_id: templateSetId,
         tenant_id: auth.tenantId,
         parent_preset_id: null,
         is_recommended: false,
