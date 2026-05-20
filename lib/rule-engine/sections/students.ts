@@ -41,7 +41,21 @@ import type { RulesStudentInput } from '../types';
 import type { SectionFillContext } from './shared';
 
 export function fillStudentsSection(ctx: SectionFillContext): void {
-  const density = ctx.bundle.preset.density;
+  const preset = ctx.bundle.preset;
+
+  // РЭ.22.4: приоритетная ветка для двух-осевой модели (см. spec §6.1).
+  // Если у пресета задан `student_layout_mode` — engine идёт по
+  // семантическому пути через findStudentMaster. Когда поле NULL —
+  // fallback на legacy выбор по density / preset.id (ниже).
+  //
+  // mode='spread' и mode='grid' пока тоже идут в legacy (будут включены
+  // в РЭ.22.5 и РЭ.22.6 соответственно).
+  if (preset.student_layout_mode === 'page') {
+    buildPageSemantic(ctx);
+    return;
+  }
+
+  const density = preset.density;
 
   // РЭ.21.8.14: фолбэк для density=null через preset.id. В БД у Максимум
   // и Индивидуальной комплектации density=null (РЭ.20.5). Section Structure
@@ -68,7 +82,6 @@ export function fillStudentsSection(ctx: SectionFillContext): void {
       // отдельно (у каждого своё количество friend_photos).
       // Иначе fallback на E-Max-Left/Right как у Maximum (заглушка
       // 21.8.14, сохраняет обратную совместимость).
-      const preset = ctx.bundle.preset;
       const useSemanticSearch =
         preset.student_pages_per_student === 2 &&
         typeof preset.student_has_quote === 'boolean';
@@ -193,6 +206,104 @@ function buildAlternatingLR(
         friend_photos_count: student.friend_photos
           ? student.friend_photos.length
           : 0,
+      },
+    });
+  }
+}
+
+// ─── Page semantic (РЭ.22.4) ────────────────────────────────────────────────
+
+/**
+ * РЭ.22.4: семантический выбор мастера для mode='page' (одна страница
+ * на ученика, чередование L/R). Заменяет жёсткие имена E-Standard-Left/Right
+ * и E-Universal-Left/Right на поиск через `findStudentMaster`.
+ *
+ * Активна только когда `preset.student_layout_mode === 'page'`. Для legacy
+ * пресетов (mode=NULL) используется `buildAlternatingLR` со старыми
+ * жёсткими именами — ничего не ломается.
+ *
+ * Алгоритм для каждого ученика:
+ *  1. Определяем позицию (left/right) по чётности `ctx.pageInstances.length`.
+ *     Это нужно чтобы корректно обрабатывать ситуации когда перед students
+ *     прошла секция с нечётным числом страниц (например teachers одним F-*).
+ *  2. Запрашиваем мастер через findStudentMaster:
+ *       - pageRole = 'student_left' или 'student_right' соответственно
+ *       - photosFriend = preset.student_friend_photos ?? 0
+ *       - hasQuote = preset.student_has_quote ?? false
+ *       - hasPortrait = true (для personal page портрет нужен всегда)
+ *  3. Если мастер не найден — warning со спецификацией недостающих
+ *     slot_capacity тегов, ученик пропускается (но остальные строятся).
+ *  4. Если найден ближайший меньший по photos_friend — warning
+ *     students_lost_photos (фото не помещаются в layout, но сохраняются
+ *     в пуле партнёра).
+ *
+ * Bindings строятся через тот же `bindSingleStudent` что и для legacy —
+ * placeholder-driven, поддерживает studentportrait/name/quote +
+ * studentphoto_N / friendphoto_N для фото с друзьями.
+ */
+function buildPageSemantic(ctx: SectionFillContext): void {
+  const preset = ctx.bundle.preset;
+  const photosFriend = preset.student_friend_photos ?? 0;
+  const hasQuote = preset.student_has_quote ?? false;
+  const students = ctx.input.students;
+
+  for (let i = 0; i < students.length; i++) {
+    const student = students[i];
+    const pageIndex = ctx.pageInstances.length;
+    const position: 'left' | 'right' = pageIndex % 2 === 0 ? 'left' : 'right';
+    const pageRole: 'student_left' | 'student_right' =
+      position === 'left' ? 'student_left' : 'student_right';
+
+    const result = findStudentMaster(ctx.bundle.mastersByName, {
+      presetId: preset.id,
+      pageRole,
+      photosFriend,
+      hasQuote,
+      hasPortrait: true,
+    });
+
+    if (!result) {
+      ctx.warnings.push(
+        `students_master_not_found: для пресета '${preset.id}' (mode=page) ` +
+          `не найден мастер с page_role='${pageRole}', ` +
+          `slot_capacity.students=1, photos_friend=${photosFriend}, ` +
+          `has_quote=${hasQuote}, has_portrait=true. ` +
+          `Закажите мастер у дизайнера.`,
+      );
+      continue;
+    }
+
+    const bindings = bindSingleStudent(result.master, student);
+    ctx.pageInstances.push({
+      master_id: result.master.id,
+      bindings,
+    });
+
+    // Warning о потерянных фото, если мастер вместил меньше friend_photos.
+    if (result.lostPhotos > 0) {
+      ctx.warnings.push(
+        `students_lost_photos: у ученика '${student.full_name}' было ${photosFriend} фото с друзьями, ` +
+          `мастер '${result.master.name}' вмещает только ${photosFriend - result.lostPhotos}, ` +
+          `${result.lostPhotos} фото не размещены в layout (фото сохранены в пуле партнёра)`,
+      );
+    }
+
+    ctx.decisionTrace.push({
+      spread_index: Math.floor(pageIndex / 2),
+      section_index: ctx.sectionIndex,
+      family_id: 'student-section',
+      rule_id: `page_semantic:${result.master.name}`,
+      inputs: {
+        mode: 'page',
+        student_index: i,
+        student_name: student.full_name,
+        position,
+        page_role: pageRole,
+        photos_friend_required: photosFriend,
+        has_quote_required: hasQuote,
+        master_name: result.master.name,
+        exact_match: result.exactMatch,
+        lost_photos: result.lostPhotos,
       },
     });
   }
