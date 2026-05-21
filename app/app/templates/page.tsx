@@ -20,6 +20,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { CloneTemplateSetModal } from './_components/CloneTemplateSetModal'
 
 interface Design {
   id: string
@@ -57,6 +58,9 @@ export default function DesignsListPage() {
   // РЭ.28.4: отдельный state для пользователя действий (удаление)
   // чтобы блокировать кнопки во время запроса.
   const [actionTsId, setActionTsId] = useState<string | null>(null)
+  // РЭ.28.5: source-дизайн для открытой модалки клонирования.
+  // null = модалка закрыта.
+  const [cloneSource, setCloneSource] = useState<Design | null>(null)
 
   // Авторизация
   useEffect(() => {
@@ -94,17 +98,24 @@ export default function DesignsListPage() {
     if (authChecked) loadDesigns()
   }, [authChecked, loadDesigns])
 
-  // РЭ.28.4: заглушка для клонирования. Реальная модалка с вводом размеров
-  // приедет в 28.5. Пока — просто info-alert чтобы партнёр видел что
-  // кнопка работает и API будет вызван.
+  // РЭ.28.5: открываем модалку с source-дизайном.
+  // Раньше (РЭ.28.4) тут был alert-заглушка.
   const handleCloneClick = useCallback((design: Design) => {
-    // eslint-disable-next-line no-alert
-    alert(
-      `Создание клона дизайна «${design.name}»\n\n` +
-        `В следующем подэтапе (РЭ.28.5) откроется модалка где можно ` +
-        `задать новое название и размеры. Сейчас — заглушка для тестирования.`,
-    )
+    setCloneSource(design)
   }, [])
+
+  // РЭ.28.5: после успешного создания клона — закрываем модалку,
+  // перезагружаем список и можем перейти к новому дизайну (опционально
+  // — пока остаёмся в списке, партнёр сам решит).
+  const handleCloneSuccess = useCallback(
+    async (newTsId: string) => {
+      setCloneSource(null)
+      await loadDesigns()
+      // eslint-disable-next-line no-console
+      console.info('[clone] created new template_set:', newTsId)
+    },
+    [loadDesigns],
+  )
 
   // РЭ.28.4: удаление своего дизайна. Confirm + API template_set_delete.
   const handleDeleteClick = useCallback(
@@ -237,6 +248,21 @@ export default function DesignsListPage() {
           </section>
         )}
       </div>
+
+      {/* РЭ.28.5: модалка клонирования. Рендерится поверх — fixed inset-0. */}
+      {cloneSource && (
+        <CloneTemplateSetModal
+          source={{
+            id: cloneSource.id,
+            name: cloneSource.name,
+            page_width_mm: cloneSource.page_width_mm,
+            page_height_mm: cloneSource.page_height_mm,
+          }}
+          sourceBleedMm={null}
+          onClose={() => setCloneSource(null)}
+          onSuccess={handleCloneSuccess}
+        />
+      )}
     </div>
   )
 }
