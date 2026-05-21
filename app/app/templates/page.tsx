@@ -10,9 +10,10 @@
  *     «M моих шаблонов»
  *   • Кнопка «Открыть» → /app/templates/[designId]
  *
- * Сейчас в БД один template_set okeybook-default («белый, без фона»).
- * В планах ~20-30 дизайнов под садики и школы. Когда дизайн добавится
- * через /super (загрузка IDML) — он автоматически появится здесь.
+ * РЭ.28.4: дизайны разделены на два раздела — «Глобальные шаблоны OkeyBook»
+ * и «Мои дизайны». На глобальных карточках — кнопка «Создать на основе...»
+ * (в 28.4 — заглушка, реальная модалка приедет в 28.5). На карточках
+ * своих дизайнов — кнопка «Удалить» (с confirm + API template_set_delete).
  */
 
 'use client'
@@ -53,6 +54,9 @@ export default function DesignsListPage() {
   const [designs, setDesigns] = useState<Design[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // РЭ.28.4: отдельный state для пользователя действий (удаление)
+  // чтобы блокировать кнопки во время запроса.
+  const [actionTsId, setActionTsId] = useState<string | null>(null)
 
   // Авторизация
   useEffect(() => {
@@ -90,7 +94,65 @@ export default function DesignsListPage() {
     if (authChecked) loadDesigns()
   }, [authChecked, loadDesigns])
 
+  // РЭ.28.4: заглушка для клонирования. Реальная модалка с вводом размеров
+  // приедет в 28.5. Пока — просто info-alert чтобы партнёр видел что
+  // кнопка работает и API будет вызван.
+  const handleCloneClick = useCallback((design: Design) => {
+    // eslint-disable-next-line no-alert
+    alert(
+      `Создание клона дизайна «${design.name}»\n\n` +
+        `В следующем подэтапе (РЭ.28.5) откроется модалка где можно ` +
+        `задать новое название и размеры. Сейчас — заглушка для тестирования.`,
+    )
+  }, [])
+
+  // РЭ.28.4: удаление своего дизайна. Confirm + API template_set_delete.
+  const handleDeleteClick = useCallback(
+    async (design: Design) => {
+      // eslint-disable-next-line no-alert
+      const ok = window.confirm(
+        `Удалить дизайн «${design.name}»?\n\n` +
+          `Это действие необратимо. Если дизайн используется в альбомах ` +
+          `или пресетах — удалить не получится.`,
+      )
+      if (!ok) return
+
+      setActionTsId(design.id)
+      setError(null)
+      try {
+        const r = await api('/api/tenant', {
+          method: 'POST',
+          body: JSON.stringify({
+            action: 'template_set_delete',
+            template_set_id: design.id,
+          }),
+        })
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}))
+          // 409: дизайн используется. Показываем сообщение из API.
+          if (r.status === 409) {
+            throw new Error(d.error ?? 'Дизайн используется')
+          }
+          throw new Error(d.error ?? `HTTP ${r.status}`)
+        }
+        await loadDesigns()
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Ошибка удаления')
+      } finally {
+        setActionTsId(null)
+      }
+    },
+    [loadDesigns],
+  )
+
   if (!authChecked) return null
+
+  // РЭ.28.4: разделение на глобальные и мои.
+  // tenant_id IS NULL → глобальный, иначе — мой.
+  // Используем поле is_global (из API designs_list) — оно дублирует
+  // tenant_id IS NULL и проще читается.
+  const globalDesigns = designs.filter((d) => d.is_global)
+  const myDesigns = designs.filter((d) => !d.is_global)
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -127,62 +189,128 @@ export default function DesignsListPage() {
           </div>
         )}
 
-        {/* Сетка дизайнов */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {designs.map((d) => (
-            <DesignCard
-              key={d.id}
-              design={d}
-              onOpen={() => router.push(`/app/templates/${d.id}`)}
-            />
-          ))}
-        </div>
+        {/* РЭ.28.4: Раздел «Мои дизайны» — показываем только если есть клоны. */}
+        {myDesigns.length > 0 && (
+          <section className="mb-8">
+            <h2 className="text-lg font-semibold text-gray-800 mb-3">
+              Мои дизайны
+              <span className="text-sm font-normal text-gray-500 ml-2">
+                ({myDesigns.length})
+              </span>
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {myDesigns.map((d) => (
+                <DesignCard
+                  key={d.id}
+                  design={d}
+                  onOpen={() => router.push(`/app/templates/${d.id}`)}
+                  onClone={null}
+                  onDelete={() => handleDeleteClick(d)}
+                  deleting={actionTsId === d.id}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* РЭ.28.4: Раздел «Глобальные шаблоны OkeyBook». */}
+        {globalDesigns.length > 0 && (
+          <section>
+            <h2 className="text-lg font-semibold text-gray-800 mb-3">
+              {myDesigns.length > 0 ? 'Глобальные шаблоны OkeyBook' : 'Доступные дизайны'}
+              <span className="text-sm font-normal text-gray-500 ml-2">
+                ({globalDesigns.length})
+              </span>
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {globalDesigns.map((d) => (
+                <DesignCard
+                  key={d.id}
+                  design={d}
+                  onOpen={() => router.push(`/app/templates/${d.id}`)}
+                  onClone={() => handleCloneClick(d)}
+                  onDelete={null}
+                  deleting={false}
+                />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   )
 }
 
-function DesignCard({ design, onOpen }: { design: Design; onOpen: () => void }) {
+function DesignCard({
+  design,
+  onOpen,
+  onClone,
+  onDelete,
+  deleting,
+}: {
+  design: Design
+  onOpen: () => void
+  /** Кнопка «Создать на основе...» — null для своих дизайнов. */
+  onClone: (() => void) | null
+  /** Кнопка «Удалить» — null для глобальных дизайнов. */
+  onDelete: (() => void) | null
+  deleting: boolean
+}) {
   const hasPreviews = design.previews.length > 0
 
   return (
-    <button
-      onClick={onOpen}
-      className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-blue-300 transition-all text-left flex flex-col"
-    >
-      {/* Превью */}
-      {hasPreviews ? (
-        <div className="grid grid-cols-3 gap-1 mb-3">
-          {design.previews.map((svg, i) => (
-            <div
-              key={i}
-              className="bg-gray-50 border border-gray-200 rounded overflow-hidden flex items-center justify-center"
-              style={{ aspectRatio: '1 / 1.4', minHeight: '70px' }}
-              dangerouslySetInnerHTML={{ __html: svg }}
-            />
-          ))}
-          {/* Заполнители если меньше 3 превью */}
-          {Array.from({ length: 3 - design.previews.length }).map((_, i) => (
-            <div
-              key={`empty-${i}`}
-              className="bg-gray-50 border border-dashed border-gray-200 rounded"
-              style={{ aspectRatio: '1 / 1.4', minHeight: '70px' }}
-            />
-          ))}
-        </div>
-      ) : (
-        <div
-          className="bg-gray-50 border border-dashed border-gray-200 rounded mb-3 flex items-center justify-center text-gray-400 text-xs"
-          style={{ aspectRatio: '3 / 1.4', minHeight: '70px' }}
-        >
-          Нет превью мастеров
+    <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-blue-300 transition-all flex flex-col">
+      {/* Превью — клик открывает дизайн */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="text-left mb-3 cursor-pointer"
+      >
+        {hasPreviews ? (
+          <div className="grid grid-cols-3 gap-1">
+            {design.previews.map((svg, i) => (
+              <div
+                key={i}
+                className="bg-gray-50 border border-gray-200 rounded overflow-hidden flex items-center justify-center"
+                style={{ aspectRatio: '1 / 1.4', minHeight: '70px' }}
+                dangerouslySetInnerHTML={{ __html: svg }}
+              />
+            ))}
+            {/* Заполнители если меньше 3 превью */}
+            {Array.from({ length: 3 - design.previews.length }).map((_, i) => (
+              <div
+                key={`empty-${i}`}
+                className="bg-gray-50 border border-dashed border-gray-200 rounded"
+                style={{ aspectRatio: '1 / 1.4', minHeight: '70px' }}
+              />
+            ))}
+          </div>
+        ) : (
+          <div
+            className="bg-gray-50 border border-dashed border-gray-200 rounded flex items-center justify-center text-gray-400 text-xs"
+            style={{ aspectRatio: '3 / 1.4', minHeight: '70px' }}
+          >
+            Нет превью мастеров
+          </div>
+        )}
+      </button>
+
+      {/* Название — тоже клик-зона */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="font-semibold text-gray-900 truncate text-left hover:text-blue-700"
+        title={design.name}
+      >
+        {design.name}
+      </button>
+
+      {/* Размеры (РЭ.28.4): полезно при выборе для клонирования */}
+      {design.page_width_mm && design.page_height_mm && (
+        <div className="text-xs text-gray-500 mt-1">
+          {Math.round(design.page_width_mm)}×{Math.round(design.page_height_mm)} мм
         </div>
       )}
-
-      {/* Название */}
-      <div className="font-semibold text-gray-900 truncate" title={design.name}>
-        {design.name}
-      </div>
 
       {/* Бейджи */}
       <div className="flex flex-wrap gap-1 mt-2">
@@ -221,10 +349,40 @@ function DesignCard({ design, onOpen }: { design: Design; onOpen: () => void }) 
         )}
       </div>
 
-      {/* Стрелка-индикатор */}
-      <div className="mt-3 text-blue-600 text-sm font-medium">
-        Открыть →
+      {/* Кнопки действий */}
+      <div className="mt-3 flex items-center gap-2 flex-wrap">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="text-blue-600 text-sm font-medium hover:text-blue-800"
+        >
+          Открыть →
+        </button>
+
+        {/* РЭ.28.4: «Создать на основе...» — только для глобальных */}
+        {onClone && (
+          <button
+            type="button"
+            onClick={onClone}
+            className="ml-auto px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs rounded border border-gray-300"
+            title="Скопировать этот дизайн с изменёнными размерами"
+          >
+            Создать на основе…
+          </button>
+        )}
+
+        {/* РЭ.28.4: «Удалить» — только для своих */}
+        {onDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={deleting}
+            className="ml-auto px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 text-xs rounded border border-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {deleting ? 'Удаление...' : 'Удалить'}
+          </button>
+        )}
       </div>
-    </button>
+    </div>
   )
 }
