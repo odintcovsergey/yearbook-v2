@@ -6,6 +6,7 @@ import { renderPreviewSvg } from '@/lib/album-builder/render-preview-svg'
 import { validatePreset } from '@/lib/presets/validate'
 import { buildPresetPreviewBundle } from '@/lib/presets/preview-bundle'
 import { loadBundle } from '@/lib/rule-engine/loaders'
+import { prepareTemplateSetClone } from '@/lib/template-set-clone'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -1102,6 +1103,43 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ templates: results })
+  }
+
+  // ----------------------------------------------------------
+  // РЭ.28.3: template_set_my_list — клоны template_set'ов партнёра.
+  //
+  // Возвращает партнёру список template_set'ов с tenant_id = его id
+  // (т.е. клоны которые он сделал в РЭ.28). Глобальные сюда НЕ
+  // включаются — для них есть существующий designs_list, который
+  // отдаёт «свои + глобальные» вперемешку. UI в /app/templates
+  // использует designs_list для основного каталога, а этот endpoint —
+  // если нужен отдельный «только мои» список (например для странички
+  // управления своими дизайнами).
+  //
+  // Также возвращает parent_template_set_id чтобы UI мог отобразить
+  // «создано на основе ХХХ» (название источника подтянет отдельно
+  // или берёт из designs_list).
+  // ----------------------------------------------------------
+  if (action === 'template_set_my_list') {
+    if (!auth.tenantId) {
+      return NextResponse.json({ error: 'Не задан tenant' }, { status: 400 })
+    }
+
+    const { data: rows, error: loadErr } = await supabaseAdmin
+      .from('template_sets')
+      .select(
+        'id, name, slug, tenant_id, parent_template_set_id, print_type, ' +
+          'page_width_mm, page_height_mm, spread_width_mm, spread_height_mm, ' +
+          'bleed_mm, facing_pages, page_binding, description, created_at',
+      )
+      .eq('tenant_id', auth.tenantId)
+      .order('created_at', { ascending: false })
+
+    if (loadErr) {
+      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ template_sets: rows ?? [] })
   }
 
   // ----------------------------------------------------------
@@ -2924,6 +2962,345 @@ export async function POST(req: NextRequest) {
       .eq('id', templateId)
     if (delErr) {
       return NextResponse.json({ error: delErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // РЭ.28.3: template_set_clone — клонирование глобального
+  // template_set'а с изменением размеров под партнёрскую типографию.
+  //
+  // Body: {
+  //   source_template_set_id: string (uuid),
+  //   new_name: string,
+  //   new_page_width_mm: number,
+  //   new_page_height_mm: number,
+  //   new_bleed_mm?: number | null,
+  // }
+  //
+  // Логика (см. docs/phase-Р28-spec.md §4.1):
+  // 1) Загружаем source template_set + связанные spread_templates.
+  // 2) Проверяем доступ: source должен быть глобальным
+  //    (tenant_id IS NULL) либо принадлежать партнёру.
+  // 3) prepareTemplateSetClone(...) — чистая функция из РЭ.28.2,
+  //    делает всю валидацию и подготовку ClonePlan.
+  // 4) Если plan.resize_info.aspect_check.level === 'blocked' —
+  //    функция throw, ловим и отдаём 400 партнёру.
+  // 5) INSERT template_sets → новый id.
+  // 6) INSERT spread_templates (все мастера, batched).
+  //    Если шаг 6 упал — ручной rollback (DELETE template_set),
+  //    так как Supabase JS client не поддерживает явные транзакции.
+  // 7) Audit log + response.
+  //
+  // Доступ: не-viewer (партнёр сам клонирует свои дизайны).
+  // ----------------------------------------------------------
+  if (body.action === 'template_set_clone') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+    if (!auth.tenantId) {
+      return NextResponse.json({ error: 'Не задан tenant' }, { status: 400 })
+    }
+
+    const sourceId = String(body.source_template_set_id ?? '').trim()
+    const newName = String(body.new_name ?? '').trim()
+    const newW = Number(body.new_page_width_mm)
+    const newH = Number(body.new_page_height_mm)
+    const newBleedRaw = body.new_bleed_mm
+
+    if (!sourceId) {
+      return NextResponse.json(
+        { error: 'source_template_set_id обязателен' },
+        { status: 400 },
+      )
+    }
+    if (!newName) {
+      return NextResponse.json(
+        { error: 'new_name обязателен' },
+        { status: 400 },
+      )
+    }
+    if (!Number.isFinite(newW) || newW < 50 || newW > 500) {
+      return NextResponse.json(
+        { error: 'new_page_width_mm должен быть числом 50-500' },
+        { status: 400 },
+      )
+    }
+    if (!Number.isFinite(newH) || newH < 50 || newH > 500) {
+      return NextResponse.json(
+        { error: 'new_page_height_mm должен быть числом 50-500' },
+        { status: 400 },
+      )
+    }
+    // new_bleed_mm: undefined / null / число 0-20
+    let newBleed: number | null | undefined
+    if (newBleedRaw === undefined) {
+      newBleed = undefined
+    } else if (newBleedRaw === null) {
+      newBleed = null
+    } else {
+      const b = Number(newBleedRaw)
+      if (!Number.isFinite(b) || b < 0 || b > 20) {
+        return NextResponse.json(
+          { error: 'new_bleed_mm должен быть числом 0-20 или null' },
+          { status: 400 },
+        )
+      }
+      newBleed = b
+    }
+
+    // 1) Загружаем source template_set.
+    const { data: source, error: srcErr } = await supabaseAdmin
+      .from('template_sets')
+      .select('*')
+      .eq('id', sourceId)
+      .maybeSingle()
+    if (srcErr) {
+      return NextResponse.json({ error: srcErr.message }, { status: 500 })
+    }
+    if (!source) {
+      return NextResponse.json({ error: 'Дизайн не найден' }, { status: 404 })
+    }
+
+    // 2) Проверка доступа.
+    const sourceTenantId = (source as { tenant_id: string | null }).tenant_id
+    if (sourceTenantId !== null && sourceTenantId !== auth.tenantId) {
+      return NextResponse.json(
+        { error: 'Можно клонировать только глобальные или свои дизайны' },
+        { status: 403 },
+      )
+    }
+
+    // Загружаем все spread_templates исходника.
+    const { data: sourceMasters, error: mastersErr } = await supabaseAdmin
+      .from('spread_templates')
+      .select('*')
+      .eq('template_set_id', sourceId)
+    if (mastersErr) {
+      return NextResponse.json({ error: mastersErr.message }, { status: 500 })
+    }
+
+    // 3) prepareTemplateSetClone — все валидации внутри.
+    let plan
+    try {
+      plan = prepareTemplateSetClone({
+        source_template_set: {
+          id: (source as { id: string }).id,
+          name: (source as { name: string }).name,
+          page_width_mm: Number((source as { page_width_mm: number }).page_width_mm),
+          page_height_mm: Number((source as { page_height_mm: number }).page_height_mm),
+          spread_width_mm: Number((source as { spread_width_mm: number }).spread_width_mm),
+          spread_height_mm: Number((source as { spread_height_mm: number }).spread_height_mm),
+          bleed_mm: (source as { bleed_mm: number | null }).bleed_mm,
+          print_type: (source as { print_type: string }).print_type,
+          facing_pages: (source as { facing_pages: boolean | null }).facing_pages,
+          page_binding: (source as { page_binding: string | null }).page_binding,
+          description: (source as { description: string | null }).description,
+        },
+        source_masters: (sourceMasters ?? []) as Parameters<typeof prepareTemplateSetClone>[0]['source_masters'],
+        new_name: newName,
+        new_page_width_mm: newW,
+        new_page_height_mm: newH,
+        new_bleed_mm: newBleed,
+      })
+    } catch (e) {
+      return NextResponse.json(
+        { error: (e as Error).message },
+        { status: 400 },
+      )
+    }
+
+    // 5) INSERT нового template_set.
+    const newTsRow = {
+      ...plan.new_template_set,
+      tenant_id: auth.tenantId,
+    }
+    const { data: createdTs, error: insTsErr } = await supabaseAdmin
+      .from('template_sets')
+      .insert(newTsRow)
+      .select('id')
+      .single()
+    if (insTsErr || !createdTs) {
+      return NextResponse.json(
+        { error: insTsErr?.message ?? 'Не удалось создать template_set' },
+        { status: 500 },
+      )
+    }
+    const newTsId = (createdTs as { id: string }).id
+
+    // 6) INSERT spread_templates. Если упадёт — rollback (DELETE template_set).
+    if (plan.new_masters.length > 0) {
+      // Чистим служебные поля от source (id, template_set_id, created_at)
+      // и проставляем новый template_set_id.
+      const mastersToInsert = plan.new_masters.map((m) => {
+        const cleaned: Record<string, unknown> = { ...m }
+        delete cleaned.id
+        delete cleaned.template_set_id
+        delete cleaned.created_at
+        cleaned.template_set_id = newTsId
+        return cleaned
+      })
+
+      const { error: insMastersErr } = await supabaseAdmin
+        .from('spread_templates')
+        .insert(mastersToInsert)
+      if (insMastersErr) {
+        // Ручной rollback — удаляем созданный template_set.
+        await supabaseAdmin.from('template_sets').delete().eq('id', newTsId)
+        return NextResponse.json(
+          {
+            error:
+              'Не удалось вставить мастера, изменения отменены: ' +
+              insMastersErr.message,
+          },
+          { status: 500 },
+        )
+      }
+    }
+
+    // 7) Audit log.
+    try {
+      await logAction(auth, 'template_set.clone', 'template_set', newTsId, {
+        source_template_set_id: sourceId,
+        new_name: newName,
+        new_page_width_mm: newW,
+        new_page_height_mm: newH,
+        scale_x: plan.resize_info.scale_x,
+        scale_y: plan.resize_info.scale_y,
+        aspect_level: plan.resize_info.aspect_check.level,
+        aspect_diff_percent: plan.resize_info.aspect_check.aspect_diff_percent,
+        masters_count: plan.resize_info.masters_count,
+        placeholders_resized: plan.resize_info.placeholders_resized,
+      })
+    } catch (e) {
+      // Audit лог не должен ломать главный flow.
+      console.warn('[template_set_clone] audit log failed:', e)
+    }
+
+    return NextResponse.json({
+      ok: true,
+      template_set_id: newTsId,
+      aspect_check: plan.resize_info.aspect_check,
+      masters_count: plan.resize_info.masters_count,
+    })
+  }
+
+  // ----------------------------------------------------------
+  // РЭ.28.3: template_set_delete — удаление партнёрского клона.
+  //
+  // Body: { template_set_id: string }
+  //
+  // Защита:
+  // - Только tenant_id === auth.tenantId (партнёр свой удаляет).
+  // - Глобальные (tenant_id IS NULL) НИКОГДА не удаляются.
+  // - COUNT ссылок из albums.template_set_id + presets.template_set_id.
+  //   Если ≥ 1 → 409 + сообщение «используется в N альбомах и M пресетах».
+  //
+  // Доступ: не-viewer.
+  // ----------------------------------------------------------
+  if (body.action === 'template_set_delete') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+    if (!auth.tenantId) {
+      return NextResponse.json({ error: 'Не задан tenant' }, { status: 400 })
+    }
+
+    const tsId = String(body.template_set_id ?? '').trim()
+    if (!tsId) {
+      return NextResponse.json(
+        { error: 'template_set_id обязателен' },
+        { status: 400 },
+      )
+    }
+
+    // Загружаем template_set.
+    const { data: ts, error: loadErr } = await supabaseAdmin
+      .from('template_sets')
+      .select('id, tenant_id, name')
+      .eq('id', tsId)
+      .maybeSingle()
+    if (loadErr) {
+      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+    }
+    if (!ts) {
+      return NextResponse.json({ error: 'Дизайн не найден' }, { status: 404 })
+    }
+    const tsTenantId = (ts as { tenant_id: string | null }).tenant_id
+    // Глобальный — нельзя удалить никогда через этот endpoint.
+    if (tsTenantId === null) {
+      return NextResponse.json(
+        { error: 'Глобальные дизайны не удаляются' },
+        { status: 403 },
+      )
+    }
+    // Чужой тенант — 404.
+    if (tsTenantId !== auth.tenantId && auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Дизайн не найден' }, { status: 404 })
+    }
+
+    // Проверка ссылок из albums.
+    const { count: albumsCount, error: albumsErr } = await supabaseAdmin
+      .from('albums')
+      .select('id', { count: 'exact', head: true })
+      .eq('template_set_id', tsId)
+    if (albumsErr) {
+      return NextResponse.json({ error: albumsErr.message }, { status: 500 })
+    }
+    // Проверка ссылок из presets.
+    const { count: presetsCount, error: presetsErr } = await supabaseAdmin
+      .from('presets')
+      .select('id', { count: 'exact', head: true })
+      .eq('template_set_id', tsId)
+    if (presetsErr) {
+      return NextResponse.json({ error: presetsErr.message }, { status: 500 })
+    }
+
+    const ac = albumsCount ?? 0
+    const pc = presetsCount ?? 0
+    if (ac > 0 || pc > 0) {
+      const parts: string[] = []
+      if (ac > 0) parts.push(`${ac} альбомах`)
+      if (pc > 0) parts.push(`${pc} пресетах`)
+      return NextResponse.json(
+        {
+          error: `Дизайн используется в ${parts.join(' и ')}. Сначала переключите их на другой дизайн.`,
+          albums_count: ac,
+          presets_count: pc,
+        },
+        { status: 409 },
+      )
+    }
+
+    // Удаляем сначала мастера (нет ON DELETE CASCADE).
+    const { error: delMastersErr } = await supabaseAdmin
+      .from('spread_templates')
+      .delete()
+      .eq('template_set_id', tsId)
+    if (delMastersErr) {
+      return NextResponse.json(
+        { error: 'Не удалось удалить мастера: ' + delMastersErr.message },
+        { status: 500 },
+      )
+    }
+
+    // Удаляем template_set.
+    const { error: delTsErr } = await supabaseAdmin
+      .from('template_sets')
+      .delete()
+      .eq('id', tsId)
+    if (delTsErr) {
+      return NextResponse.json({ error: delTsErr.message }, { status: 500 })
+    }
+
+    // Audit log.
+    try {
+      await logAction(auth, 'template_set.delete', 'template_set', tsId, {
+        name: (ts as { name: string }).name,
+      })
+    } catch (e) {
+      console.warn('[template_set_delete] audit log failed:', e)
     }
 
     return NextResponse.json({ ok: true })
