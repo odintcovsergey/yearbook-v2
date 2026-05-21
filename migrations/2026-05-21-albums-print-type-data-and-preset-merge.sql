@@ -1,197 +1,158 @@
 -- РЭ.27.7: миграция данных + слияние дубль-пресетов config_presets.
+-- ВЕРСИЯ 2 (21.05.2026) — после проверки реальной схемы БД.
 --
 -- ⚠️ КРИТИЧЕСКАЯ МИГРАЦИЯ — затрагивает живые альбомы и пресеты.
 -- ПЕРЕД ПРИМЕНЕНИЕМ: снапшот таблиц albums и config_presets через
--- Supabase Dashboard → Database → Backups, или вручную:
---   pg_dump -t albums -t config_presets <db> > backup-before-27.7.sql
+-- Supabase Dashboard → Database → Backups.
 --
 -- Контекст:
--- После РЭ.27 тип переплёта (layflat / soft) переехал в albums.print_type.
--- Это позволяет слить дубль-пресеты вида 'standard-layflat' / 'standard-soft'
--- в единственный 'standard' — содержательно они идентичны, отличался
--- только print_type, а теперь это атрибут альбома.
+-- После РЭ.27 тип переплёта переехал в albums.print_type. Это позволяет
+-- слить дубль-пресеты вида 'standard-layflat' / 'standard-soft' в один
+-- 'standard' — содержательно они идентичны.
 --
 -- ───────────────────────────────────────────────────────────────────────────
--- Состояние БД на момент написания миграции (21.05.2026):
+-- Реальная схема (подтверждено 21.05.2026):
 -- ───────────────────────────────────────────────────────────────────────────
--- albums.print_type распределение (12 альбомов):
---   layflat: 4 (новые, после копирования preset.print_type при create_album)
---   soft:    2 (новые)
---   NULL:    6 (старые, до появления копирования)
+--   albums.config_preset_id            uuid NULL   → FK на config_presets.id (uuid)
+--   albums.print_type                  text NULL   ← наша новая колонка
+--   albums.section_structure_preset_id text NULL   → FK на presets.id (uuid, мягкая связь)
+--   config_presets.id                  uuid NOT NULL  (PK)
+--   config_presets.slug                text NOT NULL  (human-readable ярлык, не ключ)
+--   config_presets.print_type          text NOT NULL  (legacy, заполнено везде)
+--   config_presets.tenant_id           uuid NULL      (мульти-тенантность)
 --
--- config_presets: 14 записей = 7 пар (layflat + soft):
---   individual-layflat / individual-soft
---   light-layflat      / light-soft
---   maximum-layflat    / maximum-soft
---   medium-layflat     / medium-soft
---   mini-layflat       / mini-soft
---   standard-layflat   / standard-soft
---   universal-layflat  / universal-soft
+-- Связь albums ↔ config_presets — ЧЕРЕЗ UUID (config_preset_id = id).
+-- slug — это лейбл для UI и legacy preset_slug-flow в форме создания
+-- альбома. Менять slug безопасно — FK не зависит от него.
 --
 -- ───────────────────────────────────────────────────────────────────────────
--- ПЛАН МИГРАЦИИ (4 шага):
+-- Состояние БД (выгружено Сергеем 21.05.2026):
+-- ───────────────────────────────────────────────────────────────────────────
+-- albums.print_type (12 записей): layflat=4, soft=2, NULL=6
+--
+-- config_presets (14 записей = 7 пар layflat+soft):
+--   individual-layflat = 98bfb269-1f07-47d8-8e94-8a3ab5142d3c
+--   individual-soft    = a126aace-e734-4369-ba2a-6f27b9c084ea
+--   light-layflat      = 7b8dc24f-e014-49ec-9e08-758f812c7517
+--   light-soft         = f6c85995-da95-4029-b703-bbdd22e28dbc
+--   maximum-layflat    = eafedb11-5508-4996-9062-dde288436bf4
+--   maximum-soft       = d0216518-509b-4252-8f28-41352fbe6596
+--   medium-layflat     = 3587a91a-29ff-4caf-b759-544b6747c5bd
+--   medium-soft        = ed762ba1-72e2-428d-a7d2-6d7bcbb05ba7
+--   mini-layflat       = ecb6c08c-43f7-4d34-b2d3-5fcdb781bb94
+--   mini-soft          = 4cdcec39-0978-47b1-bb23-d74ec54b9cd5
+--   standard-layflat   = e510b344-6e39-4a97-ac90-7ac982bcaec6
+--   standard-soft      = e583453a-2f10-4bcb-9ff1-df69f0b003bd
+--   universal-layflat  = 1949575a-9c74-4672-842a-e2cfa41bc2c8
+--   universal-soft     = acaea778-6a16-40bf-b7cf-1959c8d9fa21
+--
 -- ───────────────────────────────────────────────────────────────────────────
 
 BEGIN;
 
--- ━━━ ШАГ 1: Заполнение albums.print_type у NULL-альбомов ━━━━━━━━━━━━━━━━━━━
--- Берём значение print_type из связанного config_presets (по slug).
--- ssId-путь (section_structure_preset_id → presets) тоже учитываем —
--- хотя на момент написания таких NULL-альбомов нет (1 альбом с ss-пресетом
--- уже имеет print_type=layflat).
---
--- ВАЖНО: используем 'config_presets', не 'presets' (разные таблицы,
--- см. fix(РЭ.27.4) от 21.05.2026).
-
+-- ━━━ ШАГ 1: заполнение albums.print_type у NULL-альбомов ━━━━━━━━━━━━━━━━━━━
+-- Через JOIN UUID = UUID (config_preset_id = id). Никаких slug.
 UPDATE albums a
 SET print_type = cp.print_type
 FROM config_presets cp
-WHERE a.config_preset_id = cp.slug
-  AND a.print_type IS NULL
-  AND cp.print_type IS NOT NULL;
+WHERE a.config_preset_id = cp.id
+  AND a.print_type IS NULL;
 
--- Тот же UPDATE через новую таблицу presets — для альбомов с
--- section_structure_preset_id. На момент написания таких NULL-альбомов
--- нет, но защищаемся на будущее.
-UPDATE albums a
-SET print_type = p.print_type
-FROM presets p
-WHERE a.section_structure_preset_id = p.id
-  AND a.print_type IS NULL
-  AND p.print_type IS NOT NULL;
+-- Контроль: SELECT print_type, COUNT(*) FROM albums GROUP BY print_type;
+-- Ожидание: NULL = 0 (все 6 заполнены, потому что у пресетов print_type NOT NULL).
 
--- Контрольная проверка после шага 1:
--- SELECT print_type, COUNT(*) FROM albums GROUP BY print_type ORDER BY print_type;
--- Ожидание:
---   layflat: ≥4 (исходные 4 + сколько-то из 6 NULL)
---   soft:    ≥2 (исходные 2 + сколько-то из 6 NULL)
---   NULL:    0 или близко к нулю (если у пресета был NULL print_type — но это
---            не наш случай, все 14 config_presets имеют значение).
+-- ━━━ ШАГ 2: перепривязка soft → layflat (uuid → uuid) ━━━━━━━━━━━━━━━━━━━━━
+-- Если есть альбом ссылающийся на soft-вариант, заменяем на layflat-вариант.
+-- Содержательно пресеты идентичны, отличался только print_type — уже в albums.
 
--- ━━━ ШАГ 2: Перепривязка soft → layflat для каждой пары ━━━━━━━━━━━━━━━━━━━
--- Каждый альбом, ссылающийся на soft-вариант пресета, перепривязываем
--- на layflat-вариант. Содержательно пресеты идентичны (та же структура,
--- тот же дизайн), отличался только print_type — он уже в albums.print_type.
+UPDATE albums SET config_preset_id = '98bfb269-1f07-47d8-8e94-8a3ab5142d3c'::uuid
+WHERE config_preset_id = 'a126aace-e734-4369-ba2a-6f27b9c084ea'::uuid;
+-- individual-layflat ← individual-soft
 
-UPDATE albums SET config_preset_id = 'individual-layflat'  WHERE config_preset_id = 'individual-soft';
-UPDATE albums SET config_preset_id = 'light-layflat'       WHERE config_preset_id = 'light-soft';
-UPDATE albums SET config_preset_id = 'maximum-layflat'     WHERE config_preset_id = 'maximum-soft';
-UPDATE albums SET config_preset_id = 'medium-layflat'      WHERE config_preset_id = 'medium-soft';
-UPDATE albums SET config_preset_id = 'mini-layflat'        WHERE config_preset_id = 'mini-soft';
-UPDATE albums SET config_preset_id = 'standard-layflat'    WHERE config_preset_id = 'standard-soft';
-UPDATE albums SET config_preset_id = 'universal-layflat'   WHERE config_preset_id = 'universal-soft';
+UPDATE albums SET config_preset_id = '7b8dc24f-e014-49ec-9e08-758f812c7517'::uuid
+WHERE config_preset_id = 'f6c85995-da95-4029-b703-bbdd22e28dbc'::uuid;
+-- light-layflat ← light-soft
 
--- Контрольная проверка после шага 2:
--- SELECT config_preset_id, COUNT(*) FROM albums GROUP BY config_preset_id;
--- Ожидание: ни одной строки с *-soft slug'ом.
+UPDATE albums SET config_preset_id = 'eafedb11-5508-4996-9062-dde288436bf4'::uuid
+WHERE config_preset_id = 'd0216518-509b-4252-8f28-41352fbe6596'::uuid;
+-- maximum-layflat ← maximum-soft
 
--- ━━━ ШАГ 3: Удаление осиротевших soft-пресетов ━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- После шага 2 на soft-варианты пресетов никто не ссылается.
+UPDATE albums SET config_preset_id = '3587a91a-29ff-4caf-b759-544b6747c5bd'::uuid
+WHERE config_preset_id = 'ed762ba1-72e2-428d-a7d2-6d7bcbb05ba7'::uuid;
+-- medium-layflat ← medium-soft
 
-DELETE FROM config_presets WHERE slug = 'individual-soft';
-DELETE FROM config_presets WHERE slug = 'light-soft';
-DELETE FROM config_presets WHERE slug = 'maximum-soft';
-DELETE FROM config_presets WHERE slug = 'medium-soft';
-DELETE FROM config_presets WHERE slug = 'mini-soft';
-DELETE FROM config_presets WHERE slug = 'standard-soft';
-DELETE FROM config_presets WHERE slug = 'universal-soft';
+UPDATE albums SET config_preset_id = 'ecb6c08c-43f7-4d34-b2d3-5fcdb781bb94'::uuid
+WHERE config_preset_id = '4cdcec39-0978-47b1-bb23-d74ec54b9cd5'::uuid;
+-- mini-layflat ← mini-soft
 
--- ━━━ ШАГ 4: Переименование layflat-вариантов — убрать суффикс ━━━━━━━━━━━━━
--- Slug 'standard-layflat' → 'standard'.
--- Name 'Стандарт (твёрдые листы)' → 'Стандарт'.
---
--- Сначала обновляем albums.config_preset_id (он хранит slug — внешний
--- ключ по тексту), потом сам config_presets.slug. Делаем атомарно
--- через CTE-подобный паттерн: одной транзакцией.
+UPDATE albums SET config_preset_id = 'e510b344-6e39-4a97-ac90-7ac982bcaec6'::uuid
+WHERE config_preset_id = 'e583453a-2f10-4bcb-9ff1-df69f0b003bd'::uuid;
+-- standard-layflat ← standard-soft
 
--- ─ individual ─
-UPDATE albums SET config_preset_id = 'individual' WHERE config_preset_id = 'individual-layflat';
-UPDATE config_presets
-SET slug = 'individual', name = 'Индивидуальный'
+UPDATE albums SET config_preset_id = '1949575a-9c74-4672-842a-e2cfa41bc2c8'::uuid
+WHERE config_preset_id = 'acaea778-6a16-40bf-b7cf-1959c8d9fa21'::uuid;
+-- universal-layflat ← universal-soft
+
+-- ━━━ ШАГ 3: удаление осиротевших soft-пресетов ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- После шага 2 на soft-варианты никто не ссылается. Удаляем по slug
+-- (читаемее в логе чем по UUID).
+DELETE FROM config_presets
+WHERE slug IN (
+  'individual-soft',
+  'light-soft',
+  'maximum-soft',
+  'medium-soft',
+  'mini-soft',
+  'standard-soft',
+  'universal-soft'
+);
+
+-- ━━━ ШАГ 4: переименование оставшихся layflat-вариантов ━━━━━━━━━━━━━━━━━━━
+-- FK через UUID, slug не задействован — это безопасно.
+-- Меняем только slug и name; print_type оставляем 'layflat' (NOT NULL).
+-- Партнёр в каталоге увидит чистый список без суффиксов.
+
+UPDATE config_presets SET slug = 'individual', name = 'Индивидуальный'
 WHERE slug = 'individual-layflat';
 
--- ─ light ─
-UPDATE albums SET config_preset_id = 'light' WHERE config_preset_id = 'light-layflat';
-UPDATE config_presets
-SET slug = 'light', name = 'Лайт'
+UPDATE config_presets SET slug = 'light', name = 'Лайт'
 WHERE slug = 'light-layflat';
 
--- ─ maximum ─
-UPDATE albums SET config_preset_id = 'maximum' WHERE config_preset_id = 'maximum-layflat';
-UPDATE config_presets
-SET slug = 'maximum', name = 'Максимум'
+UPDATE config_presets SET slug = 'maximum', name = 'Максимум'
 WHERE slug = 'maximum-layflat';
 
--- ─ medium ─
-UPDATE albums SET config_preset_id = 'medium' WHERE config_preset_id = 'medium-layflat';
-UPDATE config_presets
-SET slug = 'medium', name = 'Медиум'
+UPDATE config_presets SET slug = 'medium', name = 'Медиум'
 WHERE slug = 'medium-layflat';
 
--- ─ mini ─
-UPDATE albums SET config_preset_id = 'mini' WHERE config_preset_id = 'mini-layflat';
-UPDATE config_presets
-SET slug = 'mini', name = 'Мини'
+UPDATE config_presets SET slug = 'mini', name = 'Мини'
 WHERE slug = 'mini-layflat';
 
--- ─ standard ─
-UPDATE albums SET config_preset_id = 'standard' WHERE config_preset_id = 'standard-layflat';
-UPDATE config_presets
-SET slug = 'standard', name = 'Стандарт'
+UPDATE config_presets SET slug = 'standard', name = 'Стандарт'
 WHERE slug = 'standard-layflat';
 
--- ─ universal ─
-UPDATE albums SET config_preset_id = 'universal' WHERE config_preset_id = 'universal-layflat';
-UPDATE config_presets
-SET slug = 'universal', name = 'Универсал'
+UPDATE config_presets SET slug = 'universal', name = 'Универсал'
 WHERE slug = 'universal-layflat';
 
--- ━━━ ШАГ 5 (опциональный): обнулить config_presets.print_type ━━━━━━━━━━━━
--- Колонку оставляем (НЕ DROP) — для обратной совместимости с кодом
--- который её ещё читает (напр. в engine для fallback). Но значения
--- проставляем в NULL: тип переплёта теперь в albums.print_type,
--- preset.print_type становится unused legacy-полем.
---
--- НЕ ДЕЛАЕМ этот шаг сейчас — пусть значение 'layflat' останется
--- как корректный fallback для случая когда у альбома albums.print_type=NULL
--- (теоретически такой может появиться через ручной UPDATE).
--- Удалим колонку в отдельной зачистке (потенциально часть РЭ.28+).
+-- ━━━ КОНТРОЛЬНЫЕ ПРОВЕРКИ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
--- ━━━ КОНТРОЛЬНЫЕ ПРОВЕРКИ ПОСЛЕ ВСЕЙ МИГРАЦИИ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
--- 1. В config_presets ровно 7 записей с чистыми slug'ами:
+-- 1. config_presets: ровно 7 записей с чистыми slug'ами.
 -- SELECT slug, name, print_type FROM config_presets ORDER BY slug;
--- Ожидание:
---   individual | Индивидуальный | layflat
---   light      | Лайт           | layflat
---   maximum    | Максимум       | layflat
---   medium     | Медиум         | layflat
---   mini       | Мини           | layflat
---   standard   | Стандарт       | layflat
---   universal  | Универсал      | layflat
 
--- 2. Распределение по типам переплёта (12 альбомов):
+-- 2. Распределение по типам переплёта: layflat + soft = 12, NULL = 0.
 -- SELECT print_type, COUNT(*) FROM albums GROUP BY print_type;
--- Ожидание: layflat + soft = 12, NULL ≈ 0.
 
--- 3. Ни одного альбома на старых slug-форматах:
--- SELECT config_preset_id, COUNT(*) FROM albums GROUP BY config_preset_id;
--- Ожидание: только чистые slug ('standard', 'mini', etc.), без -layflat / -soft.
-
--- 4. Все FK в albums.config_preset_id ссылаются на существующие записи:
--- SELECT a.config_preset_id FROM albums a
--- LEFT JOIN config_presets cp ON a.config_preset_id = cp.slug
--- WHERE a.config_preset_id IS NOT NULL AND cp.slug IS NULL;
--- Ожидание: 0 строк.
+-- 3. Целостность FK: 0 строк.
+-- SELECT a.id, a.config_preset_id FROM albums a
+-- LEFT JOIN config_presets cp ON cp.id = a.config_preset_id
+-- WHERE a.config_preset_id IS NOT NULL AND cp.id IS NULL;
 
 COMMIT;
 
 -- ───────────────────────────────────────────────────────────────────────────
--- ⚠️ ПОСЛЕ УСПЕШНОГО ПРИМЕНЕНИЯ В SUPABASE:
+-- ⚠️ ПОСЛЕ УСПЕШНОГО ПРИМЕНЕНИЯ:
 -- ───────────────────────────────────────────────────────────────────────────
--- На стороне кода нужно обновить submit-path в форме создания альбома
--- (app/app/page.tsx), который сейчас строит preset_slug как
+-- На стороне кода обновить submit-path в форме создания альбома
+-- (app/app/page.tsx): preset_slug строится как
 -- '${form.config_type}-${form.print_type}'. После слияния таких slug'ов
--- больше не существует — нужно отправлять чистый '${form.config_type}'.
--- Это часть подэтапа 27.7 (codе-cleanup, отдельный коммит после
--- применения миграции).
+-- больше нет — нужно отправлять чистый '${form.config_type}'.
+-- Это часть 2 подэтапа РЭ.27.7 (отдельный коммит после миграции).
