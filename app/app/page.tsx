@@ -1572,7 +1572,7 @@ function AlbumDetailModal({
                           </>
                         ) : (
                           <div className="text-amber-600">
-                            Не выбран. Откройте «Редактировать» → задайте комплектацию и тип печати.
+                            Не выбран. Откройте «Редактировать» → выберите шаблон в каталоге.
                           </div>
                         )}
                       </div>
@@ -1583,7 +1583,7 @@ function AlbumDetailModal({
                           disabled={!album.config_preset_id || smartFillBusy}
                           className="btn-primary text-sm px-4 py-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                           title={!album.config_preset_id
-                            ? 'Сначала выберите пресет вёрстки в форме редактирования'
+                            ? 'Сначала выберите шаблон в форме редактирования альбома'
                             : layout
                               ? 'Запустить сборку заново — текущий layout будет перезаписан'
                               : 'Запустить автосборку альбома'}
@@ -2553,7 +2553,8 @@ function AlbumFormModal({
   })
 
   const [templates, setTemplates] = useState<Template[]>([])
-  const [presets, setPresets] = useState<PresetOption[]>([])
+  // РЭ.30.6: state `presets` удалён — он питал dropdown'ы «Комплектация»
+  // и «Тип печати» в блоке «Пресет вёрстки», которого больше нет в форме.
   const [loading, setLoading] = useState(false)
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -2587,13 +2588,8 @@ function AlbumFormModal({
     }
   }, [mode])
 
-  // Загружаем глобальные пресеты для dropdown'ов «Комплектация» + «Тип печати»
-  useEffect(() => {
-    api('/api/tenant?action=presets_list')
-      .then(r => r.ok ? r.json() : { presets: [] })
-      .then(d => setPresets(d.presets ?? []))
-      .catch(() => setPresets([]))
-  }, [])
+  // РЭ.30.6: useEffect для загрузки presets_list удалён —
+  // он питал dropdown'ы блока «Пресет вёрстки», которого больше нет.
 
   // РЭ.24.6: если форма открыта в режиме редактирования и у альбома
   // уже задан section_structure_preset_id — подгружаем его название
@@ -2735,41 +2731,22 @@ function AlbumFormModal({
       ...(form.print_type_override === 'layflat' || form.print_type_override === 'soft'
         ? { print_type: form.print_type_override }
         : {}),
-      // preset_slug отправляем только если оба поля выбраны. Иначе альбом
-      // сохраняется с config_preset_id=NULL (sentinel-вариант для альбомов
-      // без пресета — пользователь увидит ⚠ в карточке/обзоре до явного выбора).
+      // РЭ.24.6 + РЭ.30.6: единственный путь задания структуры альбома —
+      // выбор Шаблона в каталоге (section_structure_preset_id). Engine
+      // через buildFromSectionStructure получает template_set_id и
+      // print_type из выбранного preset'а.
       //
-      // РЭ.24.6: если выбран новый шаблон из каталога — section_structure_preset_id
-      // ПРИОРИТЕТНЕЕ. При его наличии preset_slug НЕ отправляется (legacy
-      // выключается). На сервере create_album / update_album берут
-      // template_set_id и print_type из preset'а.
+      // legacy preset_slug ('standard', 'universal' и т.д.) больше НЕ
+      // отправляется. Колонка albums.config_preset_id остаётся в БД
+      // (legacy-альбомы), но новые альбомы её не заполняют — поэтому при
+      // create_album приходит section_structure_preset_id или ничего.
       // При update_album ВСЕГДА отправляем section_structure_preset_id —
       // в т.ч. null, чтобы корректно снять шаблон с существующего альбома.
-      //
-      // РЭ.27.7: после слияния дубль-пресетов в БД остались только чистые
-      // slug'и без суффикса (-layflat / -soft). Раньше тут строилось
-      // '${form.config_type}-${form.print_type}' = 'standard-layflat',
-      // теперь — просто '${form.config_type}' = 'standard'. Тип переплёта
-      // партнёр выбирает в отдельном селекте «Тип листов» (print_type_override
-      // выше, из РЭ.27.6) — он пишется напрямую в albums.print_type.
-      // Поле form.print_type (legacy) оставлено как «гейт обязательности»:
-      // если оба config_type и print_type выбраны → отправляем preset_slug.
-      // Если хотя бы одно пусто → preset_slug не отправляем (бэкенд оставит
-      // config_preset_id=NULL и пользователь увидит ⚠).
       ...(mode === 'create'
         ? form.section_structure_preset_id
           ? { section_structure_preset_id: form.section_structure_preset_id }
-          : form.config_type && form.print_type
-            ? { preset_slug: form.config_type }
-            : {}
-        : {
-            section_structure_preset_id: form.section_structure_preset_id,
-            ...(form.section_structure_preset_id
-              ? {}
-              : form.config_type && form.print_type
-                ? { preset_slug: form.config_type }
-                : {}),
-          }),
+          : {}
+        : { section_structure_preset_id: form.section_structure_preset_id }),
     }
 
     if (mode === 'create') {
@@ -3030,9 +3007,9 @@ function AlbumFormModal({
               </button>
             )}
             <p className="text-xs text-gray-500 mt-2">
-              Шаблон из каталога даст готовую структуру альбома (дизайн +
-              секции + тип листов). Если шаблон не выбран — настройте
-              старые поля «Комплектация» и «Тип печати» ниже.
+              Шаблон из каталога задаёт структуру альбома (дизайн +
+              секции + тип листов). Без шаблона автосборка не сработает —
+              выберите шаблон, чтобы запустить «Собрать автоматически».
             </p>
           </div>
 
@@ -3093,73 +3070,14 @@ function AlbumFormModal({
             </label>
           </div>
 
-          {/* Пресет вёрстки — комплектация + тип печати (legacy) */}
-          <div className={`border-t-2 border-gray-200 pt-5 mt-1 ${form.section_structure_preset_id ? 'opacity-50 pointer-events-none' : ''}`}>
-            <p className="text-sm font-semibold text-blue-700 mb-2">
-              Пресет вёрстки <span className="font-normal text-gray-400 text-xs">(определяет автосборку альбома)</span>
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Комплектация
-                </label>
-                <select
-                  value={form.config_type}
-                  onChange={(e) => set('config_type', e.target.value)}
-                  className="input"
-                  disabled={loading}
-                >
-                  <option value="" disabled>— выберите —</option>
-                  <option value="standard">Стандарт</option>
-                  <option value="universal">Универсал</option>
-                  <option value="maximum">Максимум</option>
-                  <option value="medium">Медиум</option>
-                  <option value="light">Лайт</option>
-                  <option value="mini">Мини</option>
-                  <option value="individual">Индивидуальный</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Тип печати
-                </label>
-                <select
-                  value={form.print_type}
-                  onChange={(e) => set('print_type', e.target.value)}
-                  className="input"
-                  disabled={loading}
-                >
-                  <option value="" disabled>— выберите —</option>
-                  <option value="layflat">Твёрдые листы</option>
-                  <option value="soft">Мягкие листы</option>
-                </select>
-              </div>
-            </div>
-            {(() => {
-              if (!form.config_type || !form.print_type) {
-                return (
-                  <p className="text-xs text-amber-600 mt-2">
-                    Пресет не выбран — выберите комплектацию и тип печати.
-                    Альбом сохранится без пресета, но автосборка не сработает,
-                    пока он не задан.
-                  </p>
-                )
-              }
-              // РЭ.27.7: после слияния дубль-пресетов slug в БД — чистый
-              // (без суффикса -layflat / -soft), формируется из config_type.
-              const slug = form.config_type
-              const matched = presets.find(p => p.slug === slug)
-              return matched ? (
-                <p className="text-xs text-gray-500 mt-2">
-                  Выбран пресет: <span className="font-medium text-gray-700">{matched.name}</span>
-                </p>
-              ) : (
-                <p className="text-xs text-amber-600 mt-2">
-                  Пресет {slug} не найден в библиотеке
-                </p>
-              )
-            })()}
-          </div>
+          {/* РЭ.30.6: блок «Пресет вёрстки» (Комплектация + Тип печати)
+              удалён. Это была legacy-альтернатива выбору Шаблона из
+              каталога, которая писала config_preset_id напрямую. После
+              РЭ.30 единственный путь — выбор Шаблона выше (виджет
+              section_structure_preset_id). Колонка albums.config_preset_id
+              остаётся в БД (legacy-альбомы продолжают её использовать
+              через старый движок buildAlbum), но новые альбомы её
+              больше не заполняют. */}
 
           {/* Обложка */}
           <div className="border-t-2 border-gray-200 pt-5 mt-1">
