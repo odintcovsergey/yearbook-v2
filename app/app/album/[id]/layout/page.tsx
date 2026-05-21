@@ -127,6 +127,43 @@ export default function LayoutEditorPage({
   )
 }
 
+/**
+ * РЭ.27.4: визуальная заглушка «Форзац» для soft-альбомов.
+ * Рисуется рядом с canvas на первом (слева) и последнем (справа)
+ * развороте. Чисто визуальный элемент — в данных layout'а ничего
+ * не появляется, существующая логика не задета.
+ *
+ * Размер подбирается под текущий canvas через пропс width + aspectRatio
+ * (ширина/высота_мм одной страницы мастера).
+ *
+ * Стиль: белая страница с тонкой рамкой и водяным знаком «Форзац»
+ * бледным курсивом по центру. Соответствует физической реальности —
+ * это страница, просто специальная.
+ */
+function EndpaperPlaceholder({
+  width,
+  aspectRatio,
+}: {
+  width: number
+  aspectRatio: number
+}) {
+  const height = width / aspectRatio
+  return (
+    <div
+      className="bg-white rounded shadow-sm border border-gray-200 flex items-center justify-center select-none"
+      style={{ width: `${width}px`, height: `${height}px` }}
+      title="Физический форзац типографии — не часть макета"
+    >
+      <span
+        className="italic text-gray-300"
+        style={{ fontSize: `${Math.max(16, height * 0.06)}px`, letterSpacing: '0.05em' }}
+      >
+        Форзац
+      </span>
+    </div>
+  )
+}
+
 function LayoutEditorPageInner({
   params,
 }: {
@@ -141,6 +178,10 @@ function LayoutEditorPageInner({
   const [templates, setTemplates] = useState<SpreadTemplate[]>([])
   const [photos, setPhotos] = useState<AlbumPhoto[]>([])
   const [albumTitle, setAlbumTitle] = useState<string>('')
+  // РЭ.27.4: тип переплёта альбома (вычисляется на сервере через
+  // resolvePrintType). Используется для визуализации форзацев
+  // на первом/последнем развороте soft-альбомов.
+  const [effectivePrintType, setEffectivePrintType] = useState<'layflat' | 'soft'>('layflat')
   const [currentIdx, setCurrentIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -336,9 +377,15 @@ function LayoutEditorPageInner({
         const photosJson = await photosRes.json()
         // album endpoint можно проигнорировать если упал — это не блокер
         let title = ''
+        let printType: 'layflat' | 'soft' = 'layflat'
         if (albumRes.ok) {
           const albumJson = await albumRes.json()
           title = (Array.isArray(albumJson) ? albumJson[0]?.title : albumJson?.title) ?? ''
+          // РЭ.27.4: effective_print_type вычислен на сервере.
+          const ept = Array.isArray(albumJson)
+            ? albumJson[0]?.effective_print_type
+            : albumJson?.effective_print_type
+          if (ept === 'soft' || ept === 'layflat') printType = ept
         }
 
         if (cancelled) return
@@ -347,6 +394,7 @@ function LayoutEditorPageInner({
         setTemplates(templateJson.spread_templates ?? [])
         setPhotos(photosJson.photos ?? [])
         setAlbumTitle(title)
+        setEffectivePrintType(printType)
         setLoading(false)
       } catch (e) {
         if (!cancelled) {
@@ -1346,23 +1394,79 @@ function LayoutEditorPageInner({
       <div className="flex-1 flex overflow-hidden">
         {/* ─── Левая колонка: canvas + навигация ─── */}
         <main className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto">
+          {/* РЭ.27.4: информационная плашка для soft-альбомов.
+              Объясняет фотографу что в реальной книге первая страница
+              будет правой (титульной), последняя — левой, а между
+              ними физический форзац от типографии. */}
+          {effectivePrintType === 'soft' && (
+            <div className="mb-4 max-w-2xl rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-medium">📖 Мягкий переплёт</p>
+              <p className="text-xs text-amber-800 mt-1">
+                На первом и последнем разворотах одна страница — это физический
+                форзац типографии (показан как «Форзац» с водяным знаком).
+                Содержательная вёрстка начинается с правой страницы первого
+                разворота и заканчивается на левой странице последнего.
+              </p>
+            </div>
+          )}
+
           {currentSpread && currentTemplate ? (
             <>
-              <div className="bg-white rounded shadow-sm border border-gray-200">
-                <AlbumSpreadCanvas
-                  instance={currentSpread}
-                  template={currentTemplate}
-                  containerWidth={canvasContainerWidth}
-                  mode={isReadOnly ? 'preview' : 'edit'}
-                  draggingLabel={dragState?.mode === 'swap' ? dragState.label : null}
-                  editingTextLabel={editingTextLabel}
-                  onTextClick={isReadOnly ? undefined : handleTextClick}
-                  onTextSubmit={isReadOnly ? undefined : handleTextSubmit}
-                  onTextCancel={isReadOnly ? undefined : handleTextCancel}
-                  onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
-                  onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
-                />
-              </div>
+              {/* РЭ.27.4: канвас + опциональные визуальные заглушки «Форзац»
+                  для soft-альбомов на первом/последнем развороте.
+                  Это чисто визуальная подсказка — в данных layout'а
+                  заглушек нет, существующая логика не задета. */}
+              {(() => {
+                const isSoftAlbum = effectivePrintType === 'soft'
+                const isFirstSpread = currentIdx === 0
+                const isLastSpread = currentIdx === spreads.length - 1
+                const showEndpaperBefore = isSoftAlbum && isFirstSpread
+                const showEndpaperAfter = isSoftAlbum && isLastSpread
+                // Размер заглушки = одной странице canvas'а. Для одностраничного
+                // мастера containerWidth = ширина одной страницы. Для двухстраничного
+                // (is_spread=true) containerWidth = ширина двух страниц + сгиб, но
+                // в soft первый/последний spread фактически одностраничный (см. spec
+                // §3.5 — фильтр spread-мастера для soft).
+                const isSpreadMaster = currentTemplate.is_spread === true
+                const endpaperWidth = isSpreadMaster
+                  ? canvasContainerWidth / 2
+                  : canvasContainerWidth
+                return (
+                  <div className="flex items-stretch gap-1">
+                    {showEndpaperBefore && (
+                      <EndpaperPlaceholder
+                        width={endpaperWidth}
+                        aspectRatio={
+                          currentTemplate.width_mm / currentTemplate.height_mm
+                        }
+                      />
+                    )}
+                    <div className="bg-white rounded shadow-sm border border-gray-200">
+                      <AlbumSpreadCanvas
+                        instance={currentSpread}
+                        template={currentTemplate}
+                        containerWidth={canvasContainerWidth}
+                        mode={isReadOnly ? 'preview' : 'edit'}
+                        draggingLabel={dragState?.mode === 'swap' ? dragState.label : null}
+                        editingTextLabel={editingTextLabel}
+                        onTextClick={isReadOnly ? undefined : handleTextClick}
+                        onTextSubmit={isReadOnly ? undefined : handleTextSubmit}
+                        onTextCancel={isReadOnly ? undefined : handleTextCancel}
+                        onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
+                        onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
+                      />
+                    </div>
+                    {showEndpaperAfter && (
+                      <EndpaperPlaceholder
+                        width={endpaperWidth}
+                        aspectRatio={
+                          currentTemplate.width_mm / currentTemplate.height_mm
+                        }
+                      />
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* Навигация */}
               <div className="mt-4 flex items-center gap-3 flex-wrap">

@@ -485,7 +485,48 @@ export async function GET(req: NextRequest) {
       .eq('id', albumId)
       .single()
 
-    return NextResponse.json(album)
+    // РЭ.27.4: добавляем вычисленный effective_print_type для UI.
+    // Логика та же что в layout API: album.print_type приоритетнее,
+    // fallback на preset.print_type, дефолт 'layflat'. Это позволяет
+    // layout viewer'у показывать визуальные форзацы для soft без
+    // дублирования логики resolve на клиенте.
+    let effectivePrintType: 'layflat' | 'soft' = 'layflat'
+    if (album) {
+      const albumPt = (album as { print_type?: string | null }).print_type
+      if (albumPt === 'layflat' || albumPt === 'soft') {
+        effectivePrintType = albumPt
+      } else {
+        // Fallback: посмотреть в связанном пресете. Сначала пробуем
+        // section_structure_preset_id (новый путь), потом config_preset_id
+        // (legacy slug).
+        const ssId = (album as { section_structure_preset_id?: string | null })
+          .section_structure_preset_id
+        const cfgId = (album as { config_preset_id?: string | null })
+          .config_preset_id
+        if (ssId) {
+          const { data: ps } = await supabaseAdmin
+            .from('presets')
+            .select('print_type')
+            .eq('id', ssId)
+            .maybeSingle()
+          const psPt = (ps as { print_type?: string | null } | null)?.print_type
+          if (psPt === 'layflat' || psPt === 'soft') effectivePrintType = psPt
+        } else if (cfgId) {
+          const { data: ps } = await supabaseAdmin
+            .from('presets')
+            .select('print_type')
+            .eq('slug', cfgId)
+            .maybeSingle()
+          const psPt = (ps as { print_type?: string | null } | null)?.print_type
+          if (psPt === 'layflat' || psPt === 'soft') effectivePrintType = psPt
+        }
+      }
+    }
+
+    return NextResponse.json({
+      ...album,
+      effective_print_type: effectivePrintType,
+    })
   }
 
   // ----------------------------------------------------------
