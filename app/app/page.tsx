@@ -1063,96 +1063,15 @@ function VignettesControl({
 }
 
 
-// РЭ.21.8.7c — Селектор section_structure_preset_id (новый build engine).
-// Если задан → build_album пойдёт через buildFromSectionStructure
-// (читает preset.section_structure из БД).
-// Имеет ПРИОРИТЕТ над rules_preset_id: оба заданы → используется
-// section_structure. При сбое нового движка fallthrough на rules,
-// если он задан, иначе на legacy. Все переключения обратимы.
-function SectionStructurePresetControl({
-  album,
-  apiVA,
-  onNotify,
-  onError,
-}: {
-  album: Album
-  apiVA: (url: string, opts?: RequestInit) => Promise<Response>
-  onNotify: (msg: string) => void
-  onError: (msg: string) => void
-}) {
-  const [value, setValue] = useState<string | null>(
-    album.section_structure_preset_id ?? null,
-  )
-  const [saving, setSaving] = useState(false)
-
-  const handleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const raw = e.target.value
-    const newValue: string | null = raw === '__off__' ? null : raw
-    const prev = value
-    setValue(newValue)
-    setSaving(true)
-    try {
-      const r = await apiVA('/api/tenant', {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'update_album',
-          album_id: album.id,
-          section_structure_preset_id: newValue,
-        }),
-      })
-      if (r.ok) {
-        onNotify(
-          newValue
-            ? `Section Structure включён (${newValue}). Пересоберите альбом чтобы применить.`
-            : 'Section Structure выключен — откат на Legacy. Пересоберите альбом чтобы применить.',
-        )
-      } else {
-        setValue(prev)
-        const d = await r.json().catch(() => ({}))
-        onError(d.error ?? 'Не удалось сохранить движок')
-      }
-    } catch (err) {
-      setValue(prev)
-      onError(err instanceof Error ? err.message : 'Ошибка сети')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const SS_PRESETS: { id: string; label: string }[] = [
-    { id: 'standard', label: 'standard' },
-    { id: 'universal', label: 'universal' },
-    { id: 'maximum', label: 'maximum' },
-    { id: 'individual', label: 'individual' },
-    { id: 'medium', label: 'medium' },
-    { id: 'light', label: 'light' },
-    { id: 'mini-soft', label: 'mini-soft' },
-  ]
-
-  return (
-    <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-3 flex-wrap">
-      <div className="text-xs text-green-700 uppercase">🧱 Section Structure</div>
-      <select
-        value={value ?? '__off__'}
-        onChange={handleChange}
-        disabled={saving}
-        className="text-sm px-2 py-1 border border-gray-300 rounded bg-white disabled:opacity-50"
-      >
-        <option value="__off__">Выключен (откат на Legacy)</option>
-        {SS_PRESETS.map((p) => (
-          <option key={p.id} value={p.id}>
-            Section Structure: {p.label}
-          </option>
-        ))}
-      </select>
-      <div className="text-xs text-gray-400 flex-1 min-w-[200px]">
-        {value
-          ? `Альбом собирается через buildFromSectionStructure с пресетом «${value}». При сбое — fallthrough на Legacy.`
-          : 'Новый движок выключен. Сборка идёт по Legacy.'}
-      </div>
-    </div>
-  )
-}
+// РЭ.30.4: компонент `SectionStructurePresetControl` удалён.
+// До РЭ.30 в обзоре альбома был селект «🧱 Section Structure» с 7
+// захардкоженными ID (standard, universal, maximum, individual,
+// medium, light, mini-soft) — параллельный путь задания структуры
+// сборки рядом с выбором Шаблона в форме альбома. Эту лишнюю развилку
+// убрали — структура теперь задаётся только через Шаблон.
+// Поле `albums.section_structure_preset_id` в БД остаётся
+// (заполняется в форме создания/редактирования альбома виджетом
+// «Шаблон»). Старые альбомы продолжают использовать его как раньше.
 
 // А.4.3 — Числовой инпут лимита разворотов в общем разделе альбома.
 // null = без ограничения (builder вставляет всё), 0 = раздел отключён,
@@ -1690,18 +1609,9 @@ function AlbumDetailModal({
                       />
                     )}
 
-                    {/* РЭ.21.8.7c — Селектор Section Structure engine.
-                        Если задан — handleBuildAlbum идёт через
-                        buildFromSectionStructure, при сбое fallthrough
-                        на legacy buildAlbum. */}
-                    {canEdit && (
-                      <SectionStructurePresetControl
-                        album={album}
-                        apiVA={apiVA}
-                        onNotify={onNotify}
-                        onError={onError}
-                      />
-                    )}
+                    {/* РЭ.30.4 — Селектор «Section Structure» удалён.
+                        Структура альбома задаётся только через выбор
+                        Шаблона в форме альбома (виджет «Шаблон»). */}
 
                     {/* А.4.3 — Лимит разворотов общего раздела.
                         NULL = без лимита (builder вставит всё), 0 = отключить,
