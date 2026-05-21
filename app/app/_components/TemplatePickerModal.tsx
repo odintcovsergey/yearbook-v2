@@ -25,12 +25,21 @@ const AlbumSpreadCanvas = dynamic(() => import('./AlbumSpreadCanvas'), {
 // Превью каждого шаблона рисуется через AlbumSpreadCanvas с пустым
 // instance (data={}) — это показывает структуру placeholder'ов.
 
+import { isMasterAllowedForPrintType } from '@/lib/album-builder'
+
 type Props = {
   templates: SpreadTemplate[]
   title: string
   description?: string
   onSelect: (template: SpreadTemplate) => void
   onClose: () => void
+  /**
+   * РЭ.27.5: тип переплёта альбома. Если 'soft' — spread-мастера
+   * (фото на разворот) показываются disabled с подсказкой
+   * «недоступно для мягких листов». Если 'layflat' (или undefined
+   * для обратной совместимости) — все мастера доступны.
+   */
+  printType?: 'layflat' | 'soft'
 }
 
 const PREVIEW_WIDTH = 200
@@ -54,6 +63,7 @@ export default function TemplatePickerModal({
   description,
   onSelect,
   onClose,
+  printType,
 }: Props) {
   const [query, setQuery] = useState('')
 
@@ -179,16 +189,32 @@ export default function TemplatePickerModal({
                   {label} <span className="text-gray-400 ml-1">({list.length})</span>
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {list.map((t) => (
+                  {list.map((t) => {
+                    // РЭ.27.5: для soft-альбомов spread-мастера запрещены.
+                    // Делаем кнопку disabled с visual cue и tooltip.
+                    const allowed = printType
+                      ? isMasterAllowedForPrintType(t, printType)
+                      : true
+                    return (
                     <button
                       key={t.id}
                       type="button"
+                      disabled={!allowed}
                       onClick={() => {
+                        if (!allowed) return
                         onSelect(t)
                         onClose()
                       }}
-                      className="text-left border border-gray-200 rounded-lg overflow-hidden hover:border-blue-400 hover:shadow-md transition-all bg-white"
-                      title={t.audit_notes ?? t.name}
+                      className={
+                        allowed
+                          ? 'text-left border border-gray-200 rounded-lg overflow-hidden hover:border-blue-400 hover:shadow-md transition-all bg-white'
+                          : 'text-left border border-gray-200 rounded-lg overflow-hidden bg-white opacity-40 cursor-not-allowed'
+                      }
+                      title={
+                        !allowed
+                          ? 'Недоступно для мягких листов — мастер «фото на разворот» пересёк бы корешок'
+                          : t.audit_notes ?? t.name
+                      }
                     >
                       <div className="bg-gray-50">
                         <AlbumSpreadCanvas
@@ -205,9 +231,15 @@ export default function TemplatePickerModal({
                         {t.is_fallback && (
                           <p className="text-[10px] text-amber-600 mt-0.5">fallback</p>
                         )}
+                        {!allowed && (
+                          <p className="text-[10px] text-gray-400 mt-0.5">
+                            не для мягких листов
+                          </p>
+                        )}
                       </div>
                     </button>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             ))

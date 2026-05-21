@@ -1555,6 +1555,7 @@ function LayoutEditorPageInner({
           description={`Новый разворот будет вставлен после позиции ${addAfterIdx + 1}. Выберите шаблон.`}
           onSelect={handleAddSpread}
           onClose={() => setAddAfterIdx(null)}
+          printType={effectivePrintType}
         />
       )}
 
@@ -1572,6 +1573,7 @@ function LayoutEditorPageInner({
             }
             onSelect={handleReplaceTemplate}
             onClose={() => setReplaceTemplateForIdx(null)}
+            printType={effectivePrintType}
           />
         )
       })()}
