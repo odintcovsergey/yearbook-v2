@@ -23,10 +23,13 @@ import type {
   Student,
   CommonPhotos,
 } from '@/lib/album-builder';
+import { filterChildrenByPurchase } from './filter-by-purchase';
 
 export type SmartFillWarningCode =
   | 'students_no_portrait'
-  | 'per_child_override_ignored';
+  | 'per_child_override_ignored'
+  | 'non_purchasers_filtered';  // РЭ.25: N учеников с is_purchased=false
+                                 // отсечены из личного раздела.
 
 export type SmartFillWarning = {
   code: SmartFillWarningCode;
@@ -61,7 +64,7 @@ export async function buildAlbumInput(
 ): Promise<BuildAlbumInputResult> {
   const { data: album, error: albumErr } = await supabase
     .from('albums')
-    .select('id, template_set_id, common_section_max_spreads')
+    .select('id, template_set_id, common_section_max_spreads, include_non_purchasers')
     .eq('id', albumId)
     .single();
 
@@ -92,7 +95,7 @@ export async function buildAlbumInput(
       .order('created_at'),
     supabase
       .from('children')
-      .select('id, full_name, class, config_preset_id')
+      .select('id, full_name, class, config_preset_id, is_purchased')
       .eq('album_id', albumId)
       .order('class')
       .order('full_name'),
@@ -106,7 +109,28 @@ export async function buildAlbumInput(
   }
 
   const teachers = teachersRes.data ?? [];
-  const children = childrenRes.data ?? [];
+  const childrenAll = childrenRes.data ?? [];
+
+  // ─── РЭ.25: фильтр не-заказчиков в личном разделе ──────────────────
+  // Если album.include_non_purchasers=true → мягкий режим, все
+  // ученики получают персональную страницу независимо от is_purchased.
+  // Иначе (default false) → строгий режим: дети с is_purchased=false
+  // отсекаются ДО формирования AlbumInput.students[].
+  //
+  // Бэк-совместимость: значения undefined/null трактуем как «по умолчанию».
+  // Для is_purchased это значит true (ребёнок участвует) — корректно
+  // для случаев, когда миграция БД ещё не применена или БД отдала
+  // частичный набор колонок.
+  //
+  // Архитектурное место фильтра — здесь, ДО входа в buildAlbum.
+  // Engine остаётся чистым, не знает про is_purchased. См. spec §4.
+  const includeAll =
+    (album as { include_non_purchasers?: boolean | null })
+      .include_non_purchasers === true;
+  const children = filterChildrenByPurchase(childrenAll, includeAll);
+  const filteredOutCount = childrenAll.length - children.length;
+  // ──────────────────────────────────────────────────────────────────
+
   const teacherIds = teachers.map((t: any) => t.id);
   const childIds = children.map((c: any) => c.id);
 
@@ -301,6 +325,15 @@ export async function buildAlbumInput(
     warnings.push({
       code: 'per_child_override_ignored',
       detail: `${overrideCount} учеников имеют свой пресет — игнорируется на MVP`,
+    });
+  }
+
+  // РЭ.25: статистика фильтрации не-заказчиков (только если строгий режим
+  // и кто-то реально отсечён — пустой warning не плодим).
+  if (!includeAll && filteredOutCount > 0) {
+    warnings.push({
+      code: 'non_purchasers_filtered',
+      detail: `${filteredOutCount} учеников с is_purchased=false исключены из личного раздела`,
     });
   }
 

@@ -6,6 +6,7 @@
  */
 
 export { buildAlbumInput } from './build-album-input';
+export { filterChildrenByPurchase } from './filter-by-purchase';
 export type {
   SmartFillWarningCode,
   SmartFillWarning,
