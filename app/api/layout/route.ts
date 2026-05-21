@@ -15,6 +15,7 @@ import type {
   TemplateSet,
 } from '@/lib/album-builder'
 import { loadBundle } from '@/lib/album-builder'
+import { resolvePrintType, printTypeToSheetType } from '@/lib/album-builder'
 import { buildFromSectionStructure } from '@/lib/rule-engine/build-from-section-structure'
 import type {
   RulesAlbumInput,
@@ -767,6 +768,38 @@ async function tryBuildViaSectionStructure(
     }
   }
 
+  // РЭ.27.3: переопределяем print_type из альбома если задан.
+  // Это даёт engine читать тип переплёта из albums.print_type
+  // (новый путь после фазы РЭ.27) с fallback на preset.print_type
+  // (бэк-совместимость для альбомов до миграции 27.7).
+  // Engine использует два связанных поля — print_type (legacy) и
+  // sheet_type (новый формат), оба обновляем синхронно.
+  try {
+    const { data: albumRow } = await supabase
+      .from('albums')
+      .select('print_type')
+      .eq('id', albumId)
+      .single()
+    const albumPrintType = (albumRow?.print_type ?? null) as
+      | 'layflat'
+      | 'soft'
+      | null
+    const presetPrintType = (bundle.preset.print_type ?? null) as
+      | 'layflat'
+      | 'soft'
+      | null
+    const effective = resolvePrintType(albumPrintType, presetPrintType)
+    // mutating bundle.preset — это локальная копия, не БД-объект.
+    // loadBundle не кэширует, каждый build получает свежий bundle.
+    ;(bundle.preset as { print_type: 'layflat' | 'soft' }).print_type = effective
+    ;(bundle.preset as { sheet_type: 'hard' | 'soft' }).sheet_type =
+      printTypeToSheetType(effective)
+  } catch (e) {
+    // Не падаем — если SELECT не удался, оставляем bundle как пришёл
+    // (poka работает старое поведение, читаем из пресета).
+    console.error('[РЭ.27.3] print_type resolve failed, fallback to preset:', e)
+  }
+
   // 3.5. Дополнительная проверка: если у пресета пустой section_structure —
   // engine вернёт status='failed' с конкретным warning. Поймаем это явно,
   // чтобы caller сделал fallthrough вместо отдачи пустого layout.
@@ -903,7 +936,7 @@ async function handleBuildAlbum(
 
   const { data: album, error: albumErr } = await supabaseAdmin
     .from('albums')
-    .select('id, config_preset_id, section_structure_preset_id, template_set_id, vignettes_enabled')
+    .select('id, config_preset_id, section_structure_preset_id, template_set_id, vignettes_enabled, print_type')
     .eq('id', albumId)
     .single()
 
@@ -964,6 +997,25 @@ async function handleBuildAlbum(
       { error: `preset load failed: ${(e as Error).message}` },
       { status: 500 },
     )
+  }
+
+  // РЭ.27.3: переопределяем print_type из альбома если задан.
+  // Engine читает preset.print_type — обновляем его значением из
+  // albums.print_type через resolvePrintType (с fallback на preset
+  // для бэк-совместимости со старыми альбомами до миграции 27.7).
+  // Mutating preset безопасно — loadPresetById возвращает свежую
+  // копию из БД, не кэширует.
+  {
+    const albumPrintType = (album.print_type ?? null) as
+      | 'layflat'
+      | 'soft'
+      | null
+    const presetPrintType = (preset.print_type ?? null) as
+      | 'layflat'
+      | 'soft'
+      | null
+    const effective = resolvePrintType(albumPrintType, presetPrintType)
+    preset.print_type = effective
   }
 
   let templateSet: TemplateSet

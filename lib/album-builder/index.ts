@@ -80,3 +80,21 @@ export type {
   LayoutStatus,
 } from '../rule-engine/types';
 export type { RuleEngineBundle } from '../rule-engine/loaders';
+
+// ─── РЭ.27.3: print_type resolver + endpaper rules + spread filter ────────
+
+export {
+  resolvePrintType,
+  printTypeToSheetType,
+  sheetTypeToPrintType,
+} from './print-type-resolver';
+export type { SheetType } from './print-type-resolver';
+
+export { getEndpaperRules } from './endpaper-rules';
+export type { EndpaperPosition, EndpaperSpec } from './endpaper-rules';
+
+export {
+  isSpreadMaster,
+  isMasterAllowedForPrintType,
+} from './spread-master-filter';
+export type { SpreadMasterCandidate } from './spread-master-filter';
