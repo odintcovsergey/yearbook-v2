@@ -65,7 +65,7 @@ const SECTION_LABELS: Record<Section['type'], string> = {
 
 const SECTION_DESCRIPTIONS: Partial<Record<Section['type'], string>> = {
   common_required:
-    'Структура по эталонной таблице OkeyBook. Параметров нет — engine выбирает страницы по density × sheet_type × число учеников.',
+    'Структура по эталонной таблице OkeyBook. Параметров нет — engine выбирает страницы по числу учеников и параметрам шаблона (Режим + grid_size + friends).',
   common_additional:
     'Платная допуслуга. Партнёр выставляет max_spreads — сколько доп. разворотов готов добавить (0 = не строить).',
   transition:
@@ -81,29 +81,18 @@ const api = (path: string, opts?: RequestInit) =>
     headers: { 'Content-Type': 'application/json', ...opts?.headers },
   })
 
-// ─── Fallback для legacy пресетов без student_layout_mode (РЭ.22.3) ──────
+// ─── Initial state для нового пресета (РЭ.30.5) ──────────────────────────
 //
-// При первом открытии пресета без `student_layout_mode` UI вычисляет режим
-// из density / preset.id. Это **только** для initial state — в БД остаётся
-// NULL пока партнёр не нажал «Сохранить». Видно по-прежнему, какие пресеты
-// ещё не мигрированы (warning под селектами).
+// До РЭ.30 эти хелперы fallback'или по `density / preset.id`, чтобы
+// зашевелить UI у legacy-пресетов где `student_layout_mode` ещё NULL.
+// После РЭ.30 все 7 глобальных пресетов мигрированы (есть layout_mode +
+// grid_size), а новые пресеты создаются сразу в семантической модели —
+// необходимость в density-fallback'ах отпала. Оставлен минимальный
+// дефолт: page + grid_size=4 (стартовая точка для пустых партнёрских
+// записей).
 
 function computeInitialLayoutMode(preset: Preset): 'page' | 'spread' | 'grid' {
-  if (preset.student_layout_mode) return preset.student_layout_mode
-  // Fallback по density / preset.id.
-  if (preset.density === 'medium' || preset.density === 'light' || preset.density === 'mini') {
-    return 'grid'
-  }
-  if (preset.density === 'standard' || preset.density === 'universal') {
-    return 'page'
-  }
-  // density=NULL — это Maximum или Individual (РЭ.20.5).
-  if (preset.id === 'maximum' || preset.id === 'individual') {
-    return 'spread'
-  }
-  // Custom-пресеты с density=NULL и неизвестным id — берём page как
-  // самый частый дефолт.
-  return 'page'
+  return preset.student_layout_mode ?? 'page'
 }
 
 function computeInitialGridSize(
@@ -112,14 +101,8 @@ function computeInitialGridSize(
 ): number | null {
   // Если режим — не grid, размер сетки не нужен.
   if (mode !== 'grid') return null
-  // Если в БД уже есть — используем.
-  if (preset.student_grid_size != null) return preset.student_grid_size
-  // Иначе fallback по density (соответствует жёстким размерам из buildGrid).
-  if (preset.density === 'medium') return 4
-  if (preset.density === 'light') return 6
-  if (preset.density === 'mini') return 12
-  // Custom — дефолт 4.
-  return 4
+  // Если в БД уже есть — используем; иначе дефолт 4.
+  return preset.student_grid_size ?? 4
 }
 
 // ─── Modal ───────────────────────────────────────────────────────────────
@@ -135,20 +118,22 @@ export default function PresetEditorModal({
 }) {
   // Локальные стейты — копия пресета.
   const [displayName, setDisplayName] = useState(preset.display_name)
-  const [density, setDensity] = useState<Preset['density']>(preset.density)
-  const [sheetType, setSheetType] = useState<Preset['sheet_type']>(preset.sheet_type)
+  // РЭ.30.5: state density/sheetType удалены вместе с UI селектами.
+  // Поля в БД остаются (через тип Preset), но больше не редактируются
+  // через эту модалку — для глобальных мигрированы в Б.1, для новых
+  // партнёрских пресетов остаются NULL.
   const [minPages, setMinPages] = useState<number | ''>(preset.min_pages ?? '')
   const [maxPages, setMaxPages] = useState<number | ''>(preset.max_pages ?? '')
   const [sections, setSections] = useState<Section[]>(
     Array.isArray(preset.section_structure) ? preset.section_structure : []
   )
 
-  // РЭ.22.3: двух-осевая модель «режим × параметры». См. docs/phase-Р22-spec.md §5.
+  // РЭ.22.3 + РЭ.30.5: двух-осевая модель «режим × параметры».
+  // См. docs/phase-Р22-spec.md §5 и docs/phase-Р30-spec.md.
   //
-  // При первом открытии пресета без `student_layout_mode` (legacy запись)
-  // — UI вычисляет режим из density / preset.id (см. computeInitialLayoutMode).
-  // Это fallback ТОЛЬКО для UI — в БД остаётся NULL пока партнёр не нажал
-  // «Сохранить». Видно по-прежнему, какие пресеты ещё не мигрированы.
+  // Если у пресета `student_layout_mode` уже задан (после Б.1 — у всех
+  // глобальных) — UI открывается на этом значении. Если NULL (новые
+  // пустые партнёрские пресеты) — дефолтит на 'page'.
   const initialMode = computeInitialLayoutMode(preset)
   const initialGridSize = computeInitialGridSize(preset, initialMode)
 
@@ -360,39 +345,11 @@ export default function PresetEditorModal({
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm text-gray-600 block mb-1">Плотность портретов</label>
-                <select
-                  value={density ?? ''}
-                  onChange={(e) =>
-                    setDensity((e.target.value || null) as Preset['density'])
-                  }
-                  className="w-full border rounded px-3 py-2 text-sm"
-                >
-                  <option value="">— (для Максимум/Индивидуальной)</option>
-                  <option value="standard">standard</option>
-                  <option value="universal">universal</option>
-                  <option value="medium">medium</option>
-                  <option value="light">light</option>
-                  <option value="mini">mini</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-sm text-gray-600 block mb-1">Тип листов</label>
-                <select
-                  value={sheetType ?? ''}
-                  onChange={(e) =>
-                    setSheetType((e.target.value || null) as Preset['sheet_type'])
-                  }
-                  className="w-full border rounded px-3 py-2 text-sm"
-                >
-                  <option value="">— (не задано)</option>
-                  <option value="hard">плотные (hard)</option>
-                  <option value="soft">мягкие (soft)</option>
-                </select>
-              </div>
-            </div>
+            {/* РЭ.30.5: блок «Плотность портретов» + «Тип листов»
+                удалён. Density больше не редактируется через UI (все
+                глобальные мигрированы в Б.1, новые пресеты сразу на
+                семантической модели). Тип листов живёт на уровне
+                альбома (РЭ.27 — albums.print_type) и template_set. */}
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -528,8 +485,8 @@ export default function PresetEditorModal({
 
             {preset.student_layout_mode === null && (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                Режим вычислен из density / preset.id (legacy запись).
-                Нажмите «Сохранить» чтобы зафиксировать в БД.
+                Режим личного раздела ещё не задан в БД (дефолт «page»).
+                Проверьте параметры и нажмите «Сохранить», чтобы зафиксировать.
               </p>
             )}
           </section>
