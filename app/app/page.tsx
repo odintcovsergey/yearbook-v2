@@ -2458,6 +2458,18 @@ type FormData = {
    * поведение. При true — все ученики получают личную страницу.
    */
   include_non_purchasers: boolean
+  /**
+   * РЭ.27.6: явный override типа переплёта альбома.
+   * - '' (пустая строка) → не переопределять (engine возьмёт из пресета).
+   * - 'layflat' → явно твёрдые листы (приоритет над пресетом).
+   * - 'soft' → явно мягкие листы (приоритет над пресетом).
+   *
+   * Сохраняется в albums.print_type через body.print_type
+   * (API принимает с РЭ.27.2). Не путать с legacy form.print_type
+   * выше — то поле строит preset_slug = '<config>-<print>' для
+   * старых альбомов без шаблона.
+   */
+  print_type_override: string
 }
 
 const textTypeOptions = [
@@ -2495,6 +2507,7 @@ function emptyForm(): FormData {
     section_structure_preset_name: null,
     section_structure_design_name: null,
     include_non_purchasers: false,  // РЭ.25: строгое поведение по умолчанию
+    print_type_override: '',  // РЭ.27.6: пусто = не переопределять, engine возьмёт из пресета
   }
 }
 
@@ -2618,6 +2631,12 @@ function AlbumFormModal({
         section_structure_design_name: null,
         // РЭ.25: подхватываем галку «включить не-заказчиков» из БД.
         include_non_purchasers: (album as any).include_non_purchasers === true,
+        // РЭ.27.6: подхватываем явный print_type из БД (если задан).
+        // Пустая строка = не задан = engine возьмёт из пресета.
+        print_type_override:
+          (album as any).print_type === 'layflat' || (album as any).print_type === 'soft'
+            ? (album as any).print_type
+            : '',
       }
     }
     return emptyForm()
@@ -2798,6 +2817,14 @@ function AlbumFormModal({
         : [],
       // РЭ.25: переопределение фильтра не-заказчиков для альбома.
       include_non_purchasers: form.include_non_purchasers,
+      // РЭ.27.6: явный print_type override.
+      // Если пользователь выбрал в селекте 'layflat' / 'soft' — отправляем.
+      // Если пусто ('') — НЕ отправляем поле вообще (тогда API
+      // оставит существующее значение при update_album, или скопирует
+      // из пресета при create_album).
+      ...(form.print_type_override === 'layflat' || form.print_type_override === 'soft'
+        ? { print_type: form.print_type_override }
+        : {}),
       // preset_slug отправляем только если оба поля выбраны. Иначе альбом
       // сохраняется с config_preset_id=NULL (sentinel-вариант для альбомов
       // без пресета — пользователь увидит ⚠ в карточке/обзоре до явного выбора).
@@ -3085,6 +3112,38 @@ function AlbumFormModal({
               Шаблон из каталога даст готовую структуру альбома (дизайн +
               секции + тип листов). Если шаблон не выбран — настройте
               старые поля «Комплектация» и «Тип печати» ниже.
+            </p>
+          </div>
+
+          {/* РЭ.27.6: явный override типа листов альбома.
+              Работает независимо от выбора шаблона / комплектации:
+              - 'Из шаблона' (пусто) → не переопределять, engine применит
+                preset.print_type как fallback.
+              - 'Твёрдые листы' (layflat) → явное значение, приоритет.
+              - 'Мягкие листы' (soft) → явное значение, приоритет.
+              Сохраняется в albums.print_type через body.print_type (API
+              принимает с РЭ.27.2). На сборку влияет через resolvePrintType
+              в engine (РЭ.27.3). */}
+          <div className="border border-gray-200 rounded-lg p-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Тип листов в альбоме
+            </label>
+            <select
+              value={form.print_type_override}
+              onChange={(e) => set('print_type_override', e.target.value)}
+              className="input"
+              disabled={loading}
+            >
+              <option value="">Из шаблона (по умолчанию)</option>
+              <option value="layflat">Твёрдые листы (layflat)</option>
+              <option value="soft">Мягкие листы (soft)</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-2">
+              Тип переплёта влияет на правила сборки. На мягких листах
+              недоступен мастер «фото на разворот» (фото пересекало бы
+              корешок). На первом и последнем разворотах будут показаны
+              форзацы. Можно изменить в любой момент — engine применит
+              правила при следующей пересборке.
             </p>
           </div>
 
