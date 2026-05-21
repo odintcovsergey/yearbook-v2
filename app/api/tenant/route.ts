@@ -1650,7 +1650,7 @@ export async function GET(req: NextRequest) {
 
     const { data: children } = await supabaseAdmin
       .from('children')
-      .select('id, full_name, class, submitted_at, started_at')
+      .select('id, full_name, class, submitted_at, started_at, is_purchased')
       .eq('album_id', albumId)
       .order('class')
       .order('full_name')
@@ -1704,6 +1704,11 @@ export async function GET(req: NextRequest) {
       return {
         Класс: c.class ?? '',
         Ученик: c.full_name ?? '',
+        // РЭ.25: колонка для скрипта автовёрстки InDesign.
+        // 'да' = заказывает (default true), 'нет' = не заказывает.
+        // Скрипт может фильтровать строки с 'нет' если нужно
+        // пропустить их в личном разделе.
+        Заказ: c.is_purchased === false ? 'нет' : 'да',
         Портрет_страница: (pp as any)?.photos?.filename ?? '',
         Обложка: cover?.cover_option ?? 'none',
         Портрет_обложка: pc
@@ -1754,6 +1759,8 @@ export async function GET(req: NextRequest) {
       return {
         Класс: 'УЧИТЕЛЬ',
         Ученик: t.full_name ?? '',
+        // РЭ.25: для учителей колонка не имеет смысла, ставим '—'.
+        Заказ: '—',
         Портрет_страница: photo?.filename ?? '',
         Обложка: t.position ?? '',
         Портрет_обложка: '',

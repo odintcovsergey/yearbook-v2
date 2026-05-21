@@ -70,12 +70,25 @@ export default function ParentPage() {
 
   const [lightbox, setLightbox] = useState<{ photos: Photo[], index: number, onSelect?: (id: string) => void | Promise<void> } | null>(null)
 
+  // РЭ.25: «Мы заказываем альбом». По умолчанию true (родитель
+  // купил, личная страница будет). Снятие → ребёнок остаётся в
+  // общих фото и виньетке, но без личной страницы.
+  // Меняется в любой момент, даже после submitted_at — поэтому
+  // показывается и на основном flow, и на alreadySubmitted-экране.
+  const [isPurchased, setIsPurchased] = useState<boolean>(true)
+  const [purchaseSaving, setPurchaseSaving] = useState(false)
+  const [purchaseError, setPurchaseError] = useState<string>('')
+
   useEffect(() => {
     fetch(`/api/child?token=${token}`)
       .then(r => r.json())
       .then(data => {
         if (data.error) { setError(data.error); setLoading(false); return }
         setChildName(data.child.full_name)
+        // РЭ.25: дефолт true для бэк-совместимости (если БД ещё не отдаёт
+        // поле или старая запись без миграции). is_purchased!==false →
+        // ребёнок участвует.
+        setIsPurchased(data.child.is_purchased !== false)
         setAlbumTitle(data.album?.title ?? '')
         setAlbumDeadline(data.album?.deadline ?? null)
         setCoverMode(data.album?.cover_mode ?? 'none')
@@ -211,6 +224,34 @@ export default function ParentPage() {
     }
   }, [done, portraitPage, lockPhoto, unlockPhoto])
 
+  // РЭ.25: переключатель «Мы заказываем альбом».
+  // Доступен всегда (даже при alreadySubmitted=true). Optimistic
+  // update + откат при ошибке. Не блокируется submitted_at в API
+  // (см. /api/select PUT, ветка set_purchased).
+  const handlePurchaseChange = useCallback(async (newValue: boolean) => {
+    setPurchaseSaving(true)
+    setPurchaseError('')
+    const prev = isPurchased
+    setIsPurchased(newValue) // optimistic
+    try {
+      const r = await fetch('/api/select', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action: 'set_purchased', value: newValue }),
+      })
+      if (!r.ok) {
+        setIsPurchased(prev)
+        const data = await r.json().catch(() => ({}))
+        setPurchaseError(data.error ?? 'Не удалось сохранить')
+      }
+    } catch (err) {
+      setIsPurchased(prev)
+      setPurchaseError(err instanceof Error ? err.message : 'Не удалось сохранить')
+    } finally {
+      setPurchaseSaving(false)
+    }
+  }, [token, isPurchased])
+
   const handleSubmit = async () => {
     setSaving(true)
     const res = await fetch('/api/select', {
@@ -263,6 +304,32 @@ export default function ParentPage() {
           <h2 className="text-xl font-medium text-gray-800 mb-2">Выбор уже сделан</h2>
           <p className="text-gray-500 text-sm mb-4">Фотографии для <strong>{childName}</strong> уже выбраны и сохранены.</p>
           <p className="text-gray-400 text-sm">Если нужно внести изменения — обратитесь к вашему менеджеру.</p>
+        </div>
+        {/* РЭ.25: галка «Мы заказываем альбом» — родитель может
+            передумать в любой момент, даже после submit. */}
+        <div className="card p-5">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isPurchased}
+              disabled={purchaseSaving}
+              onChange={(e) => handlePurchaseChange(e.target.checked)}
+              className="mt-0.5 w-5 h-5"
+            />
+            <div className="flex-1">
+              <span className="text-sm font-medium text-gray-800">
+                Мы заказываем альбом
+              </span>
+              <p className="text-xs text-gray-500 mt-1">
+                Если вы не покупаете альбом — снимите галочку. Личной
+                страницы для ребёнка в альбоме не будет, но он останется
+                на общих классных фото и в виньетке класса.
+              </p>
+              {purchaseError && (
+                <p className="text-xs text-red-600 mt-1">{purchaseError}</p>
+              )}
+            </div>
+          </label>
         </div>
         <div className="card p-5">
           <p className="text-sm font-medium text-blue-800 mb-1">🎁 Получите скидку 50%</p>
@@ -350,6 +417,33 @@ export default function ParentPage() {
       })()}
 
       <div className="max-w-6xl mx-auto px-4 py-6">
+
+        {/* РЭ.25: галка «Мы заказываем альбом» — постоянно видна на всех
+            шагах. Меняется в любой момент. По умолчанию проставлена. */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-5">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isPurchased}
+              disabled={purchaseSaving}
+              onChange={(e) => handlePurchaseChange(e.target.checked)}
+              className="mt-0.5 w-5 h-5"
+            />
+            <div className="flex-1">
+              <span className="text-sm font-medium text-gray-800">
+                Мы заказываем альбом
+              </span>
+              <p className="text-xs text-gray-500 mt-1">
+                Если вы не покупаете альбом — снимите галочку. Личной
+                страницы для ребёнка в альбоме не будет, но он останется
+                на общих классных фото и в виньетке класса.
+              </p>
+              {purchaseError && (
+                <p className="text-xs text-red-600 mt-1">{purchaseError}</p>
+              )}
+            </div>
+          </label>
+        </div>
 
         {step === 1 && tenantWelcomeText && (
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-gray-700 mb-5 whitespace-pre-wrap">
