@@ -395,7 +395,7 @@ export async function GET(req: NextRequest) {
         .order('created_at', { ascending: false }),
       supabaseAdmin
         .from('children')
-        .select('album_id, submitted_at, started_at, albums!inner(tenant_id)')
+        .select('album_id, submitted_at, started_at, is_purchased, albums!inner(tenant_id)')
         .eq('albums.tenant_id', tid),
       supabaseAdmin
         .from('responsible_parents')
@@ -414,12 +414,15 @@ export async function GET(req: NextRequest) {
     const albums = albumsRes.data ?? []
 
     // Статистика по альбомам
-    const statsMap: Record<string, { total: number; submitted: number; in_progress: number }> = {}
+    const statsMap: Record<string, { total: number; submitted: number; in_progress: number; purchased: number }> = {}
     for (const c of childrenRes.data ?? []) {
-      if (!statsMap[c.album_id]) statsMap[c.album_id] = { total: 0, submitted: 0, in_progress: 0 }
+      if (!statsMap[c.album_id]) statsMap[c.album_id] = { total: 0, submitted: 0, in_progress: 0, purchased: 0 }
       statsMap[c.album_id].total++
       if (c.submitted_at) statsMap[c.album_id].submitted++
       else if (c.started_at) statsMap[c.album_id].in_progress++
+      // РЭ.25: считаем заказчиков. is_purchased!==false → заказывает
+      // (default true, бэк-совместимость с не-мигрированной БД).
+      if ((c as any).is_purchased !== false) statsMap[c.album_id].purchased++
     }
 
     const tokenMap: Record<string, string> = {}
@@ -450,7 +453,7 @@ export async function GET(req: NextRequest) {
           ...a,
           config_preset_slug: preset?.slug ?? null,
           config_preset_name: preset?.name ?? null,
-          stats: statsMap[a.id] ?? { total: 0, submitted: 0, in_progress: 0 },
+          stats: statsMap[a.id] ?? { total: 0, submitted: 0, in_progress: 0, purchased: 0 },
           teacher_token: tokenMap[a.id] ?? null,
           teachers: teacherMap[a.id] ?? null,
         }
@@ -494,7 +497,7 @@ export async function GET(req: NextRequest) {
     }
 
     const [children, teachers, surcharges] = await Promise.all([
-      supabaseAdmin.from('children').select('id, submitted_at, started_at').eq('album_id', albumId),
+      supabaseAdmin.from('children').select('id, submitted_at, started_at, is_purchased').eq('album_id', albumId),
       supabaseAdmin.from('teachers').select('id, submitted_at').eq('album_id', albumId),
       supabaseAdmin
         .from('cover_selections')
@@ -512,6 +515,8 @@ export async function GET(req: NextRequest) {
       submitted: ch.filter((c: any) => c.submitted_at).length,
       in_progress: ch.filter((c: any) => !c.submitted_at && c.started_at).length,
       not_started: ch.filter((c: any) => !c.submitted_at && !c.started_at).length,
+      // РЭ.25: счётчик заказчиков. is_purchased!==false → заказывает.
+      purchased: ch.filter((c: any) => c.is_purchased !== false).length,
       teachers_total: tch.length,
       teachers_done: tch.filter((t: any) => t.submitted_at).length,
       surcharge_total: surch.reduce((sum: number, s: any) => sum + (s.surcharge ?? 0), 0),

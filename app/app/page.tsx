@@ -71,7 +71,7 @@ type Album = {
   section_structure_preset_id?: string | null  // РЭ.21.8.7: если задан, build_album использует
                                                 // buildFromSectionStructure
   include_non_purchasers?: boolean  // РЭ.25: включать ли не-заказчиков в личный раздел
-  stats: { total: number; submitted: number; in_progress: number }
+  stats: { total: number; submitted: number; in_progress: number; purchased?: number }
   teacher_token: string | null
   teachers: { total: number; done: number } | null
 }
@@ -106,6 +106,7 @@ type AlbumStats = {
   submitted: number
   in_progress: number
   not_started: number
+  purchased?: number  // РЭ.25: N учеников с is_purchased!==false
   teachers_total: number
   teachers_done: number
   surcharge_total: number
@@ -824,6 +825,28 @@ function AlbumCard({
           <span className="badge-amber">{album.stats.in_progress} в процессе</span>
         )}
       </div>
+
+      {/* РЭ.25: счётчик заказчиков. Показываем только если есть не-заказчики
+          и альбом НЕ в мягком режиме (include_non_purchasers=true делает
+          цифры бессмысленными — в альбоме все). Если все заказали или
+          0 учеников — блок скрыт, чтобы не загромождать карточку. */}
+      {!album.include_non_purchasers &&
+        album.stats.total > 0 &&
+        typeof album.stats.purchased === 'number' &&
+        album.stats.purchased < album.stats.total && (
+          <div className="mt-2 text-xs text-gray-500 pt-2 border-t border-gray-100">
+            Заказали альбом:{' '}
+            <span className="text-gray-700 font-medium">
+              {album.stats.purchased}
+            </span>
+            {' из '}
+            <span className="text-gray-700">{album.stats.total}</span>
+            <span className="text-gray-400">
+              {' '}
+              ({album.stats.total - album.stats.purchased} без личной страницы)
+            </span>
+          </div>
+        )}
 
       {album.teachers && album.teachers.total > 0 && (
         <div className="mt-2 text-xs text-gray-500 pt-2 border-t border-gray-100">
@@ -1750,6 +1773,25 @@ function AlbumDetailModal({
                     <MiniStat label="В процессе" value={stats.in_progress} tone="amber" />
                     <MiniStat label="Не начали" value={stats.not_started} tone="gray" />
                   </div>
+
+                  {/* РЭ.25: блок заказчиков. Показываем только если есть
+                      не-заказчики и альбом НЕ в мягком режиме. */}
+                  {!album.include_non_purchasers &&
+                    stats.total > 0 &&
+                    typeof stats.purchased === 'number' &&
+                    stats.purchased < stats.total && (
+                      <div className="bg-gray-50 rounded-xl p-4 mb-6">
+                        <div className="text-xs text-gray-500">Заказали альбом</div>
+                        <div className="text-lg font-semibold mt-1">
+                          {stats.purchased}
+                          <span className="text-gray-400"> / {stats.total}</span>
+                        </div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          {stats.total - stats.purchased} без личной страницы.
+                          Снять/поставить галки — на вкладке «Ученики».
+                        </div>
+                      </div>
+                    )}
 
                   {(stats.teachers_total > 0 || stats.surcharge_count > 0) && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
