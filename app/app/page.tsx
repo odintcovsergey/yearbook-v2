@@ -1315,7 +1315,10 @@ function AlbumDetailModal({
   }, [album.id])
 
   const runSmartFill = async () => {
-    if (!album.config_preset_id || smartFillBusy) return
+    // РЭ.30 hot-fix: после В.3 новые альбомы пишут только
+    // section_structure_preset_id; legacy-альбомы — config_preset_id.
+    // Сборка возможна при наличии любого из них.
+    if ((!album.config_preset_id && !album.section_structure_preset_id) || smartFillBusy) return
 
     // Защита: если в layout есть несохранённые ручные правки партнёра —
     // подтверждаем destructive-операцию. has_user_edits=true появляется
