@@ -90,12 +90,12 @@ BEGIN
   -- ─── 1. Найти альбом ───────────────────────────────────────────────────
   SELECT id, tenant_id INTO v_album_id, v_tenant_id
   FROM albums
-  WHERE name = v_album_name
+  WHERE title = v_album_name
   ORDER BY created_at DESC
   LIMIT 1;
 
   IF v_album_id IS NULL THEN
-    RAISE EXCEPTION 'Альбом "%" не найден. Проверь точное имя.', v_album_name;
+    RAISE EXCEPTION 'Альбом title="%" не найден. Проверь точное имя.', v_album_name;
   END IF;
 
   RAISE NOTICE '✓ Альбом: id=%, tenant=%', v_album_id, v_tenant_id;
@@ -228,19 +228,19 @@ END $$;
 --
 -- UPDATE albums
 -- SET section_structure_preset_id = 'maximum'
--- WHERE name = 'Тест2'
---   AND id = (SELECT id FROM albums WHERE name = 'Тест2' ORDER BY created_at DESC LIMIT 1);
+-- WHERE title = 'Тест2'
+--   AND id = (SELECT id FROM albums WHERE title = 'Тест2' ORDER BY created_at DESC LIMIT 1);
 --
 -- Проверка:
 -- SELECT id, name, section_structure_preset_id
--- FROM albums WHERE name = 'Тест2';
+-- FROM albums WHERE title = 'Тест2';
 
 -- ─── Чистка (если нужен полный rerun) ────────────────────────────────────
 -- Эти DELETE'ы убирают всё что seed создал. Раскомментируй ВСЁ если
 -- хочешь начать заново. Photos НЕ удаляются (они твои, загружены через UI).
 --
 -- WITH album AS (
---   SELECT id FROM albums WHERE name = 'Тест2' ORDER BY created_at DESC LIMIT 1
+--   SELECT id FROM albums WHERE title = 'Тест2' ORDER BY created_at DESC LIMIT 1
 -- )
 -- DELETE FROM selections WHERE child_id IN (
 --   SELECT id FROM children WHERE album_id IN (SELECT id FROM album)
@@ -248,20 +248,20 @@ END $$;
 --
 -- DELETE FROM photo_children WHERE child_id IN (
 --   SELECT id FROM children WHERE album_id IN (
---     SELECT id FROM albums WHERE name = 'Тест2'
+--     SELECT id FROM albums WHERE title = 'Тест2'
 --   )
 -- );
 --
 -- DELETE FROM photo_teachers WHERE teacher_id IN (
 --   SELECT id FROM teachers WHERE album_id IN (
---     SELECT id FROM albums WHERE name = 'Тест2'
+--     SELECT id FROM albums WHERE title = 'Тест2'
 --   )
 -- );
 --
 -- DELETE FROM teachers WHERE album_id IN (
---   SELECT id FROM albums WHERE name = 'Тест2'
+--   SELECT id FROM albums WHERE title = 'Тест2'
 -- );
 --
 -- DELETE FROM children WHERE album_id IN (
---   SELECT id FROM albums WHERE name = 'Тест2'
+--   SELECT id FROM albums WHERE title = 'Тест2'
 -- );
