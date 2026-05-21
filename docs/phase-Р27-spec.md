@@ -50,6 +50,29 @@
 
 ## 2. Модель данных
 
+### 2.0. Что уже было в коде до старта фазы (открыто 21.05.2026)
+
+**При планировании РЭ.27 считалось, что колонки `albums.print_type` ещё нет.** При проверке состояния прод-БД на старте подэтапа 27.1 выяснилось:
+
+1. **Колонка `albums.print_type TEXT NULL` СУЩЕСТВУЕТ с 8 мая 2026.** Добавлена миграцией 1.0 (`migrations/2026-05-08-album-config.sql`). Там же есть `CHECK constraint print_type IN ('layflat', 'soft')`.
+
+2. **API `create_album` УЖЕ копирует `preset.print_type` в `albums.print_type` при создании** (`app/api/tenant/route.ts` строка 3012, переменная `presetPrintType`). Это сделано в неизвестный момент после 8 мая, без явной привязки к РЭ.27.
+
+3. **Распределение значений на момент старта РЭ.27:**
+   - `layflat`: 4 альбома (новые, созданные после появления копирования из пресета)
+   - `soft`: 2 альбома (новые)
+   - `NULL`: 6 альбомов (старые, до появления копирования)
+
+4. **Engine ПРОДОЛЖАЕТ читать `print_type` из пресета**, а не из альбома. Это и есть основная работа подэтапа 27.3.
+
+5. **`update_album` НЕ позволяет менять `print_type` независимо от пресета** — это работа подэтапа 27.2.
+
+### Что меняет это открытие для плана фазы
+
+- **Подэтап 27.1 фактически уже сделан в части схемы** (колонка + CHECK constraint). Реальная работа 27.1 — это **только создание индекса** `idx_albums_print_type` (partial WHERE NOT NULL) и обновление COMMENT с привязкой к РЭ.27.
+- **Подэтап 27.2** становится точнее: не «добавить поле в payload» (оно уже принимается косвенно через копирование из пресета), а **«разрешить явно передавать `print_type` в `create_album` и `update_album`»**, чтобы фотограф мог сменить тип листов БЕЗ смены пресета.
+- **Подэтап 27.7** актуален: 6 альбомов с NULL нужно заполнить (UPDATE из preset), и слияние дубль-пресетов остаётся в силе.
+
 ### 2.1. Целевая
 
 ```
@@ -62,30 +85,31 @@
 
 АЛЬБОМ (albums)
   • config_preset_id → presets.id
-  • print_type ('layflat' | 'soft')  ← НОВОЕ ПОЛЕ
+  • print_type ('layflat' | 'soft')  ← УЖЕ ЕСТЬ В БД (с 8 мая 2026)
   • include_non_purchasers (из РЭ.25)
   • прочее
 ```
 
-### 2.2. Миграция 1 — схема (27.1)
+### 2.2. Миграция 1 — индекс + документирование (27.1)
+
+⚠️ **ПЕРЕОСМЫСЛЕНО после открытия в §2.0.** Изначально планировалось `ADD COLUMN`. После проверки прод-БД оказалось что колонка уже есть. Миграция сохранена (она идемпотентна) и выполняет реальную работу — **создаёт partial index**, которого раньше не было.
 
 ```sql
--- Новое поле в albums. NULL означает «использовать print_type из пресета»
--- (fallback на время миграции данных и для бэк-совместимости).
+-- Реальные действия миграции:
+
+-- 1. ADD COLUMN IF NOT EXISTS — no-op (колонка существует с 8 мая 2026).
 ALTER TABLE albums
-  ADD COLUMN print_type TEXT;
+  ADD COLUMN IF NOT EXISTS print_type TEXT;
 
-COMMENT ON COLUMN albums.print_type IS
-  'Тип переплёта альбома (РЭ.27). Значения: layflat | soft. '
-  'NULL = использовать print_type из связанного пресета (fallback).';
+-- 2. COMMENT — обновляет описание колонки с привязкой к РЭ.27.
+COMMENT ON COLUMN albums.print_type IS '...';
 
--- Индекс для агрегаций «сколько альбомов какого типа у партнёра»
--- и для будущих фильтров в /app.
+-- 3. CREATE INDEX IF NOT EXISTS — ✅ ПОЛЕЗНО, индекса не было.
 CREATE INDEX IF NOT EXISTS idx_albums_print_type
   ON albums(print_type) WHERE print_type IS NOT NULL;
 ```
 
-**Безопасность:** аддитивно, NULL допустим. Старый код игнорирует поле, engine читает с fallback.
+**Безопасность:** аддитивно, NULL допустим, CHECK constraint уже стоит из старой миграции. Старый код игнорирует поле, engine читает с fallback.
 
 ### 2.3. Миграция 2 — данные (27.7, после остальной логики)
 
@@ -292,13 +316,13 @@ ORDER BY slug;
 | # | Что | Файлы | Коммитов |
 |---|---|---|---|
 | 27.0 | Spec + контекст v126 | `docs/phase-Р27-spec.md`, `yearbook-context-v126.md` | 2 |
-| 27.1 | Миграция БД: схема (`albums.print_type`) | `migrations/2026-05-21-albums-print-type.sql` | 1 |
-| 27.2 | API + типы (`create_album`/`update_album` принимают `print_type`, SELECT'ы возвращают) | `app/api/tenant/route.ts`, `types/index.ts` | 1 |
+| 27.1 | Индекс `idx_albums_print_type` + документирование схемы (колонка уже была с 8 мая — см. §2.0) | `migrations/2026-05-21-albums-print-type.sql` | 1 |
+| 27.2 | API: разрешить явно передавать `print_type` в `create_album` (сейчас только копируется из пресета) и `update_album` (сейчас вообще нельзя менять) | `app/api/tenant/route.ts`, `types/index.ts` | 1 |
 | 27.3 | Engine: `resolvePrintType` + правила first/last + фильтр spread-мастера + unit-тесты | `lib/album-builder/*`, `lib/album-builder/__tests__/*` | 1 |
 | 27.4 | Превью SVG: водяной знак «Форзац» для soft | `lib/album-builder/render-preview-svg.ts` (и при необходимости PDF-экспорт) | 1 |
 | 27.5 | UI каталога мастеров: spread-мастера серые при soft + подсказка | `app/app/page.tsx` (или соответствующий компонент редактора) | 1 |
 | 27.6 | UI формы альбома: селект «Тип листов» + бейдж типа листов с карточек шаблонов | `app/app/page.tsx`, `app/app/templates/[designId]/page.tsx` | 1 |
-| 27.7 | Миграция данных: заполнение `albums.print_type` + слияние дубль-пресетов | `migrations/2026-05-21-albums-print-type-data-and-preset-merge.sql` | 1 |
+| 27.7 | Миграция данных: заполнение `albums.print_type` у 6 NULL-альбомов + слияние дубль-пресетов | `migrations/2026-05-21-albums-print-type-data-and-preset-merge.sql` | 1 |
 | 27.8 | Summary + закрытие фазы | `docs/phase-Р27-summary.md`, `yearbook-context-v(N+1).md` | 1 |
 
 **Итого:** 9-10 коммитов на main + 2 миграции БД, 1-2 дня работы.
