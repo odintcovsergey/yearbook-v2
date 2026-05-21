@@ -2835,18 +2835,29 @@ function AlbumFormModal({
       // template_set_id и print_type из preset'а.
       // При update_album ВСЕГДА отправляем section_structure_preset_id —
       // в т.ч. null, чтобы корректно снять шаблон с существующего альбома.
+      //
+      // РЭ.27.7: после слияния дубль-пресетов в БД остались только чистые
+      // slug'и без суффикса (-layflat / -soft). Раньше тут строилось
+      // '${form.config_type}-${form.print_type}' = 'standard-layflat',
+      // теперь — просто '${form.config_type}' = 'standard'. Тип переплёта
+      // партнёр выбирает в отдельном селекте «Тип листов» (print_type_override
+      // выше, из РЭ.27.6) — он пишется напрямую в albums.print_type.
+      // Поле form.print_type (legacy) оставлено как «гейт обязательности»:
+      // если оба config_type и print_type выбраны → отправляем preset_slug.
+      // Если хотя бы одно пусто → preset_slug не отправляем (бэкенд оставит
+      // config_preset_id=NULL и пользователь увидит ⚠).
       ...(mode === 'create'
         ? form.section_structure_preset_id
           ? { section_structure_preset_id: form.section_structure_preset_id }
           : form.config_type && form.print_type
-            ? { preset_slug: `${form.config_type}-${form.print_type}` }
+            ? { preset_slug: form.config_type }
             : {}
         : {
             section_structure_preset_id: form.section_structure_preset_id,
             ...(form.section_structure_preset_id
               ? {}
               : form.config_type && form.print_type
-                ? { preset_slug: `${form.config_type}-${form.print_type}` }
+                ? { preset_slug: form.config_type }
                 : {}),
           }),
     }
@@ -3224,7 +3235,9 @@ function AlbumFormModal({
                   </p>
                 )
               }
-              const slug = `${form.config_type}-${form.print_type}`
+              // РЭ.27.7: после слияния дубль-пресетов slug в БД — чистый
+              // (без суффикса -layflat / -soft), формируется из config_type.
+              const slug = form.config_type
               const matched = presets.find(p => p.slug === slug)
               return matched ? (
                 <p className="text-xs text-gray-500 mt-2">

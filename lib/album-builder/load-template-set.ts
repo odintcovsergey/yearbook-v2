@@ -45,7 +45,8 @@ export async function loadTemplateSet(
  *  - В app/api/layout/route.ts (action=build_album_test)
  *
  * @param supabase — клиент с правами SELECT на config_presets
- * @param slug — slug пресета (например 'standard-layflat', 'mini-soft')
+ * @param slug — slug пресета (например 'standard', 'mini', 'maximum'; до
+ *               слияния РЭ.27.7 формат был 'standard-layflat'/'mini-soft')
  */
 export async function loadPresetBySlug(
   supabase: SupabaseClient,
