@@ -211,8 +211,15 @@ export default function PresetEditorModal({
         action: 'rule_preset_update',
         preset_id: preset.id,
         display_name: displayName,
-        density,
-        sheet_type: sheetType,
+        // РЭ.30.2: density и sheet_type больше НЕ записываются при
+        // сохранении пресета. Тип переплёта живёт на уровне альбома
+        // (РЭ.27 — albums.print_type) и template_set, а density полностью
+        // заменён семантической моделью student_layout_mode + параметры.
+        // API делает partial update — при отсутствии ключей существующие
+        // значения в БД не трогаются (для legacy-пресетов остаются как
+        // были; чистка смешанных делается отдельной миграцией Б.3).
+        // UI селекты «Плотность портретов» и «Тип листов» ещё остаются —
+        // будут удалены в В.2 (этой же фазы).
         section_structure: sections,
         // Новые поля (РЭ.22.2).
         student_layout_mode: studentLayoutMode,
