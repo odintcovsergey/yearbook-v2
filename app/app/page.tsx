@@ -1872,6 +1872,7 @@ function AlbumDetailModal({
                           <tr className="text-left text-xs font-medium text-gray-500 uppercase">
                             <th className="px-4 py-2.5">ФИО</th>
                             <th className="px-4 py-2.5">Класс</th>
+                            <th className="px-4 py-2.5 text-center" title="Заказывает ли ученик альбом (РЭ.25)">Заказ</th>
                             <th className="px-4 py-2.5">Статус</th>
                             <th className="px-4 py-2.5">Телефон</th>
                             <th className="px-4 py-2.5 text-right">Обложка</th>
@@ -1916,6 +1917,54 @@ function AlbumDetailModal({
                                   )}
                                 </td>
                                 <td className="px-4 py-2.5 text-gray-500">{c.class}</td>
+                                <td className="px-4 py-2.5 text-center">
+                                  {canEdit ? (
+                                    <input
+                                      type="checkbox"
+                                      checked={c.is_purchased !== false}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onChange={async (e) => {
+                                        e.stopPropagation()
+                                        const newValue = e.target.checked
+                                        try {
+                                          const r = await apiVA('/api/tenant', {
+                                            method: 'POST',
+                                            body: JSON.stringify({
+                                              action: 'update_child',
+                                              child_id: c.id,
+                                              is_purchased: newValue,
+                                            }),
+                                          })
+                                          if (!r.ok) {
+                                            const err = await r.json().catch(() => ({ error: 'unknown' }))
+                                            onError(err.error ?? 'Ошибка обновления галки')
+                                            return
+                                          }
+                                          setChildren(prev => prev.map(ch =>
+                                            ch.id === c.id ? { ...ch, is_purchased: newValue } : ch
+                                          ))
+                                          onNotify(
+                                            newValue
+                                              ? `${c.full_name} — заказывает альбом`
+                                              : `${c.full_name} — не заказывает альбом`
+                                          )
+                                        } catch (err) {
+                                          onError(err instanceof Error ? err.message : 'network error')
+                                        }
+                                      }}
+                                      className="cursor-pointer"
+                                      title={
+                                        c.is_purchased === false
+                                          ? 'Не заказывает альбом (нет личной страницы)'
+                                          : 'Заказывает альбом'
+                                      }
+                                    />
+                                  ) : (
+                                    <span className={c.is_purchased === false ? 'text-gray-400' : 'text-green-600'}>
+                                      {c.is_purchased === false ? '—' : '✓'}
+                                    </span>
+                                  )}
+                                </td>
                                 <td className="px-4 py-2.5">
                                   {c.submitted_at ? (
                                     <span className="badge-green">Завершил</span>
@@ -1953,7 +2002,7 @@ function AlbumDetailModal({
                               </tr>
                               {selectedChild?.id === c.id && (
                                 <tr className="bg-gray-50">
-                                  <td colSpan={6} className="px-4 py-3 border-t border-gray-100">
+                                  <td colSpan={7} className="px-4 py-3 border-t border-gray-100">
                                     {/* Кнопки действий — только для canEdit */}
                                     {canEdit && (
                                       <div className="flex flex-wrap gap-2 items-center mb-3">
@@ -1987,52 +2036,8 @@ function AlbumDetailModal({
                                         </button>
                                       </div>
                                     )}
-                                    {/* РЭ.25: галка «Заказывает альбом» */}
-                                    {canEdit && (
-                                      <div className="flex items-center gap-2 mb-3 pt-3 border-t border-gray-200">
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                          <input
-                                            type="checkbox"
-                                            checked={c.is_purchased !== false}
-                                            onChange={async (e) => {
-                                              const newValue = e.target.checked
-                                              try {
-                                                const r = await apiVA('/api/tenant', {
-                                                  method: 'POST',
-                                                  body: JSON.stringify({
-                                                    action: 'update_child',
-                                                    child_id: c.id,
-                                                    is_purchased: newValue,
-                                                  }),
-                                                })
-                                                if (!r.ok) {
-                                                  const err = await r.json().catch(() => ({ error: 'unknown' }))
-                                                  onError(err.error ?? 'Ошибка обновления галки')
-                                                  return
-                                                }
-                                                setChildren(prev => prev.map(ch =>
-                                                  ch.id === c.id ? { ...ch, is_purchased: newValue } : ch
-                                                ))
-                                                onNotify(
-                                                  newValue
-                                                    ? `${c.full_name} — заказывает альбом`
-                                                    : `${c.full_name} — не заказывает альбом`
-                                                )
-                                              } catch (err) {
-                                                onError(err instanceof Error ? err.message : 'network error')
-                                              }
-                                            }}
-                                          />
-                                          <span className="text-sm text-gray-700">
-                                            Заказывает альбом
-                                          </span>
-                                        </label>
-                                        <span className="text-xs text-gray-400">
-                                          (если снять — личной страницы в альбоме не будет,
-                                          но останется в общих фото и виньетке)
-                                        </span>
-                                      </div>
-                                    )}
+                                    {/* РЭ.25: галка «Заказывает альбом» перенесена в столбец
+                                        таблицы (выше) для быстрого переключения без раскрытия строки. */}
                                     {/* Override пресета вёрстки для ученика */}
                                     {canEdit && (
                                       <div className="flex flex-wrap items-center gap-2 mb-3 pt-3 border-t border-gray-200">
