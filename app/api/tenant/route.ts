@@ -496,9 +496,15 @@ export async function GET(req: NextRequest) {
       if (albumPt === 'layflat' || albumPt === 'soft') {
         effectivePrintType = albumPt
       } else {
-        // Fallback: посмотреть в связанном пресете. Сначала пробуем
-        // section_structure_preset_id (новый путь), потом config_preset_id
-        // (legacy slug).
+        // Fallback: посмотреть в связанном пресете.
+        // - section_structure_preset_id → 'presets' таблица (РЭ.21+,
+        //   связь по uuid, БЕЗ slug-колонки).
+        // - config_preset_id → 'config_presets' таблица (legacy,
+        //   связь по slug-string).
+        // ⚠️ Это РАЗНЫЕ ТАБЛИЦЫ (открыто 21.05.2026 при работе над 27.7).
+        //   Раньше в этом блоке ошибочно стояло '.from(presets).eq(slug, ...)' —
+        //   запрос падал т.к. в 'presets' нет slug, и effectivePrintType
+        //   оставался 'layflat' независимо от реального значения.
         const ssId = (album as { section_structure_preset_id?: string | null })
           .section_structure_preset_id
         const cfgId = (album as { config_preset_id?: string | null })
@@ -513,7 +519,7 @@ export async function GET(req: NextRequest) {
           if (psPt === 'layflat' || psPt === 'soft') effectivePrintType = psPt
         } else if (cfgId) {
           const { data: ps } = await supabaseAdmin
-            .from('presets')
+            .from('config_presets')
             .select('print_type')
             .eq('slug', cfgId)
             .maybeSingle()
