@@ -2984,6 +2984,24 @@ export async function POST(req: NextRequest) {
     // fallback — единственный okeybook-default (для legacy/безпресетных).
     const templateSetId = resolvedTemplateSetId ?? (await getDefaultTemplateSetId())
 
+    // РЭ.27.2: print_type определяется в порядке приоритета:
+    //   1. body.print_type явно передан и валиден → используем его (партнёр
+    //      может создать альбом с типом листов, отличным от пресета).
+    //   2. иначе → presetPrintType (текущее поведение, копирование из пресета).
+    //   3. иначе → null (engine применит resolvePrintType с fallback на пресет,
+    //      см. подэтап 27.3).
+    let resolvedPrintType: string | null = presetPrintType
+    if (body.print_type !== undefined && body.print_type !== null) {
+      const pt = String(body.print_type)
+      if (pt !== 'layflat' && pt !== 'soft') {
+        return NextResponse.json(
+          { error: `print_type должен быть 'layflat' или 'soft', получено: ${pt}` },
+          { status: 400 },
+        )
+      }
+      resolvedPrintType = pt
+    }
+
     const { data, error } = await supabaseAdmin
       .from('albums')
       .insert({
@@ -3009,7 +3027,7 @@ export async function POST(req: NextRequest) {
         year: body.year ?? new Date().getFullYear(),
         config_preset_id: configPresetId,
         template_set_id: templateSetId,
-        print_type: presetPrintType,
+        print_type: resolvedPrintType,
         section_structure_preset_id: sectionStructurePresetId,
         // РЭ.25: переопределение фильтра не-заказчиков в личном разделе.
         // Default false (строгое поведение). Если фотограф хочет всем
@@ -3103,7 +3121,12 @@ export async function POST(req: NextRequest) {
         }
         // Подтягиваем из шаблона если в body не передано явно
         if (ps.template_set_id) body.template_set_id = ps.template_set_id
-        if (ps.print_type) body.print_type = ps.print_type
+        // РЭ.27.2: print_type подтягиваем из пресета ТОЛЬКО если в body
+        // не передан явно. Партнёр может через update_album поменять тип
+        // листов независимо от пресета (это и есть цель РЭ.27).
+        if (ps.print_type && body.print_type === undefined) {
+          body.print_type = ps.print_type
+        }
         // Legacy преcет очищаем — новый шаблон приоритетнее
         body.config_preset_id = null
         // preset_slug если пришёл одновременно — игнорируем
@@ -3111,6 +3134,19 @@ export async function POST(req: NextRequest) {
       } else {
         return NextResponse.json(
           { error: 'section_structure_preset_id должен быть string или null' },
+          { status: 400 },
+        )
+      }
+    }
+
+    // РЭ.27.2: явная валидация print_type до записи в БД.
+    // На уровне БД CHECK constraint уже работает (с 8 мая 2026), но
+    // 400 от API лучше чем 500 от Supabase.
+    if (body.print_type !== undefined && body.print_type !== null) {
+      const pt = String(body.print_type)
+      if (pt !== 'layflat' && pt !== 'soft') {
+        return NextResponse.json(
+          { error: `print_type должен быть 'layflat' или 'soft', получено: ${pt}` },
           { status: 400 },
         )
       }

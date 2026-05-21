@@ -3,6 +3,14 @@ export type PhotoType = 'portrait' | 'group' | 'teacher'
 export type SelectionType = 'portrait_page' | 'portrait_cover' | 'group'
 export type CoverOption = 'none' | 'same' | 'other'
 
+/**
+ * РЭ.27: тип переплёта альбома. Хранится в albums.print_type.
+ * - layflat — твёрдые листы (фото может идти на разворот, разворот плоский).
+ * - soft — мягкие листы (фото не пересекает корешок, первая страница
+ *   правая, последняя — левая).
+ */
+export type PrintType = 'layflat' | 'soft'
+
 export interface Album {
   id: string
   title: string
@@ -17,6 +25,13 @@ export interface Album {
    * Опциональное поле: старый код, не знающий о нём, продолжает работать.
    */
   include_non_purchasers?: boolean
+  /**
+   * РЭ.27: тип переплёта альбома. NULL означает «использовать
+   * print_type из связанного пресета» (fallback). Опциональное поле
+   * для бэк-совместимости — старые альбомы могут не иметь значения,
+   * engine применит resolvePrintType(album, preset).
+   */
+  print_type?: PrintType | null
 }
 
 export interface Child {
