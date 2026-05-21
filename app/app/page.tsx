@@ -1565,11 +1565,21 @@ function AlbumDetailModal({
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div>
                         <div className="text-xs text-gray-500 uppercase mb-1">Пресет вёрстки</div>
+                        {/* РЭ.30 hot-fix: после В.3 новые альбомы не пишут
+                            config_preset_id, а пишут section_structure_preset_id.
+                            Плашка и кнопка должны учитывать оба источника. */}
                         {album.config_preset_name ? (
                           <>
                             <div className="font-medium text-gray-900">{album.config_preset_name}</div>
                             <div className="text-xs text-gray-400 font-mono">{album.config_preset_slug}</div>
                           </>
+                        ) : album.section_structure_preset_id ? (
+                          <div className="text-gray-700">
+                            <span className="font-medium">Шаблон выбран</span>{' '}
+                            <span className="text-gray-400 text-xs font-mono">
+                              ({album.section_structure_preset_id.slice(0, 8)}…)
+                            </span>
+                          </div>
                         ) : (
                           <div className="text-amber-600">
                             Не выбран. Откройте «Редактировать» → выберите шаблон в каталоге.
@@ -1580,13 +1590,18 @@ function AlbumDetailModal({
                         <button
                           type="button"
                           onClick={runSmartFill}
-                          disabled={!album.config_preset_id || smartFillBusy}
+                          disabled={
+                            (!album.config_preset_id && !album.section_structure_preset_id) ||
+                            smartFillBusy
+                          }
                           className="btn-primary text-sm px-4 py-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                          title={!album.config_preset_id
-                            ? 'Сначала выберите шаблон в форме редактирования альбома'
-                            : layout
-                              ? 'Запустить сборку заново — текущий layout будет перезаписан'
-                              : 'Запустить автосборку альбома'}
+                          title={
+                            !album.config_preset_id && !album.section_structure_preset_id
+                              ? 'Сначала выберите шаблон в форме редактирования альбома'
+                              : layout
+                                ? 'Запустить сборку заново — текущий layout будет перезаписан'
+                                : 'Запустить автосборку альбома'
+                          }
                         >
                           {smartFillBusy
                             ? 'Сборка...'
