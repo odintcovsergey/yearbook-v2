@@ -10,6 +10,13 @@ export interface Album {
   cover_mode: CoverMode
   cover_price: number
   deadline: string | null
+  /**
+   * РЭ.25: включать ли не-заказчиков (children.is_purchased=false) в
+   * персональные страницы альбома. Default false (строгое поведение —
+   * не-заказчики без личной страницы). При true фильтр выключен.
+   * Опциональное поле: старый код, не знающий о нём, продолжает работать.
+   */
+  include_non_purchasers?: boolean
 }
 
 export interface Child {
@@ -19,6 +26,15 @@ export interface Child {
   class: string
   access_token: string
   submitted_at: string | null
+  /**
+   * РЭ.25: заказывает ли этот ребёнок альбом. По умолчанию true.
+   * Если false и albums.include_non_purchasers=false — ребёнок НЕ
+   * получает персональную страницу. Меняется фотографом в /app
+   * и родителем в /[token].
+   * Опциональное поле для бэк-совместимости с местами, где SELECT
+   * ещё не расширен.
+   */
+  is_purchased?: boolean
 }
 
 export interface Teacher {

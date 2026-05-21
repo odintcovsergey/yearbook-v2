@@ -70,6 +70,7 @@ type Album = {
   rules_preset_id?: string | null  // РЭ.21.8.чистка-1: deprecated, оставлено для совместимости со старыми ответами API
   section_structure_preset_id?: string | null  // РЭ.21.8.7: если задан, build_album использует
                                                 // buildFromSectionStructure
+  include_non_purchasers?: boolean  // РЭ.25: включать ли не-заказчиков в личный раздел
   stats: { total: number; submitted: number; in_progress: number }
   teacher_token: string | null
   teachers: { total: number; done: number } | null
@@ -97,6 +98,7 @@ type Child = {
   config_preset_id?: string | null
   config_preset_slug?: string | null
   config_preset_name?: string | null
+  is_purchased?: boolean  // РЭ.25: заказывает ли ребёнок альбом (default true)
 }
 
 type AlbumStats = {

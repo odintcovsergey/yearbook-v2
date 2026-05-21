@@ -5,14 +5,37 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 // PUT /api/select — временная блокировка/разблокировка фото в процессе выбора
+// + установка children.is_purchased (РЭ.25 — родитель может включать/выключать
+//   заказ альбома в любой момент, даже после submitted_at).
 export async function PUT(req: NextRequest) {
-  const { token, photoId, action } = await req.json()
-  // action: 'lock' | 'unlock'
+  const { token, photoId, action, value } = await req.json()
+  // action: 'lock' | 'unlock' | 'set_purchased'
 
   const { data: child } = await supabaseAdmin
     .from('children').select('id, submitted_at').eq('access_token', token).single()
 
   if (!child) return NextResponse.json({ error: 'Не найден' }, { status: 404 })
+
+  // РЭ.25: set_purchased доступен ВСЕГДА, даже при submitted_at !== null.
+  // Родитель может передумать после отбора фото — это нормальный сценарий.
+  if (action === 'set_purchased') {
+    if (typeof value !== 'boolean') {
+      return NextResponse.json(
+        { error: 'value должен быть true или false' },
+        { status: 400 },
+      )
+    }
+    const { error } = await supabaseAdmin
+      .from('children')
+      .update({ is_purchased: value })
+      .eq('id', child.id)
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true, is_purchased: value })
+  }
+
+  // lock/unlock — блокируется submitted_at (как до РЭ.25).
   if (child.submitted_at) return NextResponse.json({ error: 'Уже подтверждено' }, { status: 409 })
 
   if (action === 'lock') {

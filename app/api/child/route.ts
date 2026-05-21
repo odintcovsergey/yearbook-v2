@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
 
   const { data: child, error } = await supabaseAdmin
     .from('children')
-    .select('id, full_name, class, submitted_at, album_id')
+    .select('id, full_name, class, submitted_at, album_id, is_purchased')
     .eq('access_token', token)
     .single()
 

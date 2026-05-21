@@ -529,7 +529,7 @@ export async function GET(req: NextRequest) {
 
     const { data: children } = await supabaseAdmin
       .from('children')
-      .select('id, full_name, class, access_token, submitted_at, started_at, config_preset_id, config_presets(slug, name)')
+      .select('id, full_name, class, access_token, submitted_at, started_at, is_purchased, config_preset_id, config_presets(slug, name)')
       .eq('album_id', albumId)
       .order('class')
       .order('full_name')
@@ -2999,6 +2999,11 @@ export async function POST(req: NextRequest) {
         template_set_id: templateSetId,
         print_type: presetPrintType,
         section_structure_preset_id: sectionStructurePresetId,
+        // РЭ.25: переопределение фильтра не-заказчиков в личном разделе.
+        // Default false (строгое поведение). Если фотограф хочет всем
+        // ученикам персональную страницу — поднимает галку до true.
+        include_non_purchasers:
+          body.include_non_purchasers === true ? true : false,
       })
       .select()
       .single()
@@ -3116,6 +3121,8 @@ export async function POST(req: NextRequest) {
                                        // buildFromSectionStructure (РЭ.21.8.чистка-1:
                                        // раньше был промежуточный rules_preset_id движка 2,
                                        // удалён вместе с движком)
+      'include_non_purchasers',  // РЭ.25: включать ли не-заказчиков (children.is_purchased=false)
+                                  // в персональные страницы. Default false (строгое).
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {
@@ -3476,6 +3483,63 @@ export async function POST(req: NextRequest) {
     await logAction(auth, 'child.delete', 'child', child_id, {
       full_name: child?.full_name,
       class: child?.class,
+    })
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // update_child — патч-обновление ученика (РЭ.25)
+  // Принимает любую комбинацию: full_name?, class?, is_purchased?
+  // Если все поля undefined → 400.
+  // ----------------------------------------------------------
+  if (body.action === 'update_child') {
+    const { child_id } = body
+    if (!child_id) {
+      return NextResponse.json({ error: 'child_id обязателен' }, { status: 400 })
+    }
+
+    if (!(await assertChildAccess(auth, child_id))) {
+      return NextResponse.json({ error: 'Ученик не найден' }, { status: 404 })
+    }
+
+    const updates: Record<string, unknown> = {}
+
+    if (typeof body.full_name === 'string') {
+      const trimmed = body.full_name.trim()
+      if (!trimmed) {
+        return NextResponse.json({ error: 'ФИО не может быть пустым' }, { status: 400 })
+      }
+      updates.full_name = trimmed
+    }
+
+    if (typeof body.class === 'string') {
+      const trimmed = body.class.trim()
+      if (!trimmed) {
+        return NextResponse.json({ error: 'Класс не может быть пустым' }, { status: 400 })
+      }
+      updates.class = trimmed
+    }
+
+    if (typeof body.is_purchased === 'boolean') {
+      updates.is_purchased = body.is_purchased
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'Нет полей для обновления' }, { status: 400 })
+    }
+
+    const { error } = await supabaseAdmin
+      .from('children')
+      .update(updates)
+      .eq('id', child_id)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    await logAction(auth, 'child.update', 'child', child_id, {
+      fields: Object.keys(updates),
     })
 
     return NextResponse.json({ ok: true })
