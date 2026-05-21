@@ -1879,12 +1879,17 @@ function AlbumDetailModal({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {children.map(c => (
+                          {children.map(c => {
+                            // РЭ.25: визуальный маркер для не-заказчиков.
+                            // is_purchased===false → приглушённая строка
+                            // + бейдж рядом с ФИО.
+                            const isNonPurchaser = c.is_purchased === false
+                            return (
                             <React.Fragment key={c.id}>
                               <tr
                                 className={`hover:bg-gray-50 cursor-pointer ${
                                   selectedChild?.id === c.id ? 'bg-gray-50' : ''
-                                }`}
+                                } ${isNonPurchaser ? 'opacity-60' : ''}`}
                                 onClick={() => {
                                   const next = selectedChild?.id === c.id ? null : c
                                   setSelectedChild(next)
@@ -1893,6 +1898,14 @@ function AlbumDetailModal({
                               >
                                 <td className="px-4 py-2.5 font-medium text-gray-900">
                                   {c.full_name}
+                                  {isNonPurchaser && (
+                                    <span
+                                      className="ml-2 text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600 font-normal"
+                                      title="Этот ученик не заказывает альбом — в личном разделе его не будет"
+                                    >
+                                      не заказывает
+                                    </span>
+                                  )}
                                   {c.config_preset_name && (
                                     <span
                                       className="ml-2 text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 font-normal"
@@ -1972,6 +1985,52 @@ function AlbumDetailModal({
                                         >
                                           Удалить ученика
                                         </button>
+                                      </div>
+                                    )}
+                                    {/* РЭ.25: галка «Заказывает альбом» */}
+                                    {canEdit && (
+                                      <div className="flex items-center gap-2 mb-3 pt-3 border-t border-gray-200">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={c.is_purchased !== false}
+                                            onChange={async (e) => {
+                                              const newValue = e.target.checked
+                                              try {
+                                                const r = await apiVA('/api/tenant', {
+                                                  method: 'POST',
+                                                  body: JSON.stringify({
+                                                    action: 'update_child',
+                                                    child_id: c.id,
+                                                    is_purchased: newValue,
+                                                  }),
+                                                })
+                                                if (!r.ok) {
+                                                  const err = await r.json().catch(() => ({ error: 'unknown' }))
+                                                  onError(err.error ?? 'Ошибка обновления галки')
+                                                  return
+                                                }
+                                                setChildren(prev => prev.map(ch =>
+                                                  ch.id === c.id ? { ...ch, is_purchased: newValue } : ch
+                                                ))
+                                                onNotify(
+                                                  newValue
+                                                    ? `${c.full_name} — заказывает альбом`
+                                                    : `${c.full_name} — не заказывает альбом`
+                                                )
+                                              } catch (err) {
+                                                onError(err instanceof Error ? err.message : 'network error')
+                                              }
+                                            }}
+                                          />
+                                          <span className="text-sm text-gray-700">
+                                            Заказывает альбом
+                                          </span>
+                                        </label>
+                                        <span className="text-xs text-gray-400">
+                                          (если снять — личной страницы в альбоме не будет,
+                                          но останется в общих фото и виньетке)
+                                        </span>
                                       </div>
                                     )}
                                     {/* Override пресета вёрстки для ученика */}
@@ -2098,7 +2157,7 @@ function AlbumDetailModal({
                                 </tr>
                               )}
                             </React.Fragment>
-                          ))}
+                          )})}
                         </tbody>
                       </table>
                     </div>
@@ -2346,6 +2405,12 @@ type FormData = {
   section_structure_preset_name: string | null
   /** Для отображения в кнопке — название дизайна выбранного шаблона. */
   section_structure_design_name: string | null
+  /**
+   * РЭ.25: включать ли не-заказчиков (children.is_purchased=false) в
+   * персональные страницы альбома. По умолчанию false — строгое
+   * поведение. При true — все ученики получают личную страницу.
+   */
+  include_non_purchasers: boolean
 }
 
 const textTypeOptions = [
@@ -2382,6 +2447,7 @@ function emptyForm(): FormData {
     section_structure_preset_id: null,
     section_structure_preset_name: null,
     section_structure_design_name: null,
+    include_non_purchasers: false,  // РЭ.25: строгое поведение по умолчанию
   }
 }
 
@@ -2503,6 +2569,8 @@ function AlbumFormModal({
         section_structure_preset_id: (album as any).section_structure_preset_id ?? null,
         section_structure_preset_name: null,
         section_structure_design_name: null,
+        // РЭ.25: подхватываем галку «включить не-заказчиков» из БД.
+        include_non_purchasers: (album as any).include_non_purchasers === true,
       }
     }
     return emptyForm()
@@ -2681,6 +2749,8 @@ function AlbumFormModal({
       classes: form.class_name.trim()
         ? form.class_name.split(',').map(s => s.trim()).filter(Boolean)
         : [],
+      // РЭ.25: переопределение фильтра не-заказчиков для альбома.
+      include_non_purchasers: form.include_non_purchasers,
       // preset_slug отправляем только если оба поля выбраны. Иначе альбом
       // сохраняется с config_preset_id=NULL (sentinel-вариант для альбомов
       // без пресета — пользователь увидит ⚠ в карточке/обзоре до явного выбора).
@@ -2969,6 +3039,31 @@ function AlbumFormModal({
               секции + тип листов). Если шаблон не выбран — настройте
               старые поля «Комплектация» и «Тип печати» ниже.
             </p>
+          </div>
+
+          {/* РЭ.25: галка включить не-заказчиков в личный раздел */}
+          <div className="border border-gray-200 rounded-lg p-3">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.include_non_purchasers}
+                onChange={(e) => set('include_non_purchasers', e.target.checked)}
+                disabled={loading}
+                className="mt-0.5"
+              />
+              <div className="flex-1">
+                <span className="text-sm font-medium text-gray-700">
+                  Включить в личный раздел всех учеников
+                </span>
+                <p className="text-xs text-gray-500 mt-1">
+                  По умолчанию выключено — личную страницу получают только
+                  те ученики, у которых проставлена галка «Заказывает альбом».
+                  Включите, если хотите дать страницу всему классу
+                  независимо от заказа (например, не-заказчиков всего 1-2
+                  человека и не хочется делать в альбоме «дырки»).
+                </p>
+              </div>
+            </label>
           </div>
 
           {/* Пресет вёрстки — комплектация + тип печати (legacy) */}
