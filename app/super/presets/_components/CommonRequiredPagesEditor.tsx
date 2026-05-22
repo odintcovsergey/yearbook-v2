@@ -117,7 +117,13 @@ export default function CommonRequiredPagesEditor({
   //
   // Логика учитывает J-Spread мастер (is_spread=true в БД): он занимает
   // обе страницы разворота сам, после него обязательно начинается новый.
-  const positions = useMemo(() => {
+  //
+  // РЭ.32.Б.7: дополнительно собираем incompleteSpreads — номера разворотов
+  // у которых занята только левая (правая не заполнена). Это валидное
+  // состояние при редактировании (партнёр ещё не дописал список), но при
+  // сборке engine положит «висящую» страницу — это может быть нежелательно.
+  // UI показывает amber-подсказку под заголовком таких разворотов.
+  const { positions, incompleteSpreads } = useMemo(() => {
     type Pos = {
       spreadNum: number
       side: 'left' | 'right' | 'spread'
@@ -154,7 +160,13 @@ export default function CommonRequiredPagesEditor({
         nextSide = 'left'
       }
     }
-    return result
+    // Если nextSide остался 'right' — последний разворот недозаполнен.
+    const incomplete = new Set<number>()
+    if (nextSide === 'right' && result.length > 0) {
+      const last = result[result.length - 1]
+      incomplete.add(last.spreadNum)
+    }
+    return { positions: result, incompleteSpreads: incomplete }
   }, [pages, templateByName])
 
   return (
@@ -181,11 +193,20 @@ export default function CommonRequiredPagesEditor({
               {pages.map((p, idx) => {
                 const template = templateByName.get(p.master_name) ?? null
                 const pos = positions[idx]
+                const isIncomplete = incompleteSpreads.has(pos.spreadNum)
                 return (
                   <React.Fragment key={pageId(idx, p)}>
                     {pos.spreadStart && (
-                      <li className="text-xs font-medium text-gray-500 uppercase tracking-wide pt-2 pb-0.5">
-                        {pos.spreadNum}-й общий разворот
+                      <li className="pt-2 pb-0.5">
+                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                          {pos.spreadNum}-й общий разворот
+                        </div>
+                        {isIncomplete && (
+                          <div className="text-xs text-amber-700 mt-0.5">
+                            ⚠ Правая страница не заполнена — добавьте ещё одну
+                            страницу или удалите эту, чтобы разворот был целым.
+                          </div>
+                        )}
                       </li>
                     )}
                     <SortablePageRow
