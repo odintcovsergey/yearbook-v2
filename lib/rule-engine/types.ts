@@ -370,13 +370,54 @@ export type SectionType =
  *    в этом коммите не строится (требует комбо-мастеров, отложено в
  *    РЭ.21.8.11b).
  */
+/**
+ * РЭ.32: одна страница общего раздела, заданная партнёром в шаблоне.
+ *
+ * Партнёр в редакторе пресета собирает упорядоченный список таких записей.
+ * Engine при сборке альбома проходит по списку и для каждой записи
+ * пытается положить страницу с указанным мастером, потребляя фото из
+ * соответствующей категории (определяется автоматически по placeholders
+ * мастера).
+ *
+ * Имя мастера хранится **без суффикса -Right**. Engine при сборке смотрит
+ * позицию страницы (left/right по чётности pageInstances.length) и
+ * автоматически подставляет `<master_name>-Right` если такой мастер есть
+ * в template_set. Это позволяет дизайнеру опционально создавать
+ * зеркальные пары L/R для асимметричного дизайна (если в template_set
+ * только универсальный мастер — он же используется для обеих позиций).
+ */
+export interface CommonRequiredPage {
+  master_name: string;
+}
+
+/**
+ * Один элемент section_structure. Discriminated union по `type`:
+ *  - для большинства секций — только `type`;
+ *  - для секции `common` (legacy с РЭ.21.2) две формы:
+ *    - manual: `{ type: 'common', slots: SlotType[] }` — партнёр явно
+ *      описал какие слоты и в каком порядке.
+ *    - auto:   `{ type: 'common', mode: 'auto', max_spreads: N }` — engine
+ *      сам решает, лимит N разворотов.
+ *  - для секции `common_required` (РЭ.32): массив страниц `pages`. Партнёр
+ *    в редакторе шаблона выбирает мастера общего раздела и располагает их
+ *    в нужном порядке. Engine исполняет список без интерпретации.
+ *    Старые сохранённые пресеты (до РЭ.32) могут иметь `pages: []` или
+ *    отсутствие поля — engine выдаёт warning «общий раздел пуст», партнёр
+ *    заходит и заполняет.
+ *  - для секции `common_additional` (РЭ.21.8.10) обязателен `max_spreads`.
+ *  - для секции `transition` (РЭ.32 расширил РЭ.21.8.11): опциональный
+ *    `master_name`. Если задан — engine использует именно этот мастер для
+ *    переходной страницы. Если null/undefined — engine использует
+ *    встроенное правило по умолчанию (combined-tail поиск: combined-tail
+ *    мастер с photos_full=1 и students<=хвост).
+ */
 export type SectionStructureEntry =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
   | { type: 'common'; slots: SlotType[] }
   | { type: 'common'; mode: 'auto'; max_spreads: number }
-  | { type: 'common_required' }
+  | { type: 'common_required'; pages?: CommonRequiredPage[] }
   | { type: 'common_additional'; max_spreads: number }
-  | { type: 'transition' };
+  | { type: 'transition'; master_name?: string | null };
 
 /**
  * Полная структура альбома = массив секций в порядке появления.
