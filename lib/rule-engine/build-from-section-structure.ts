@@ -134,10 +134,11 @@ export function buildFromSectionStructure(
         }
         break;
       case 'common_required':
-        // РЭ.21.8.9: обязательный общий раздел по эталонной таблице OkeyBook.
-        // Параметров нет — engine сам выбирает строку таблицы по
-        // density × sheet_type × students_count.
-        fillCommonRequiredSection(ctx);
+        // РЭ.32: партнёр в редакторе шаблона задаёт упорядоченный массив
+        // pages (страницы общего раздела с именами мастеров). Engine
+        // исполняет список без интерпретации. Если pages отсутствует —
+        // секция пропускается с warning common_required_empty.
+        fillCommonRequiredSection(ctx, section.pages);
         break;
       case 'common_additional':
         // РЭ.21.8.10: дополнительный общий раздел (платная допуслуга).
@@ -146,10 +147,10 @@ export function buildFromSectionStructure(
         fillCommonAdditionalSection(ctx, section.max_spreads);
         break;
       case 'transition':
-        // РЭ.21.8.11 (вариант C): переходная правая страница.
-        // Строится только когда pageInstances нечётный после students.
-        // Левая сторона (комбо «N учеников + 1 общая») отложена в 11b.
-        fillTransitionSection(ctx);
+        // РЭ.32: опциональный master_name. Если задан — engine использует
+        // именно этот мастер; если null/undefined — встроенное правило
+        // по умолчанию (combined-tail поиск).
+        fillTransitionSection(ctx, section.master_name);
         break;
       case 'teachers':
         fillTeachersSection(ctx);

@@ -1,68 +1,119 @@
 /**
  * Заполнение секции type='transition' для buildFromSectionStructure.
  *
- * РЭ.21.8.11 (вариант C — упрощённый): достраивание правой страницы
- * переходного разворота когда личный раздел заканчивается на левой
- * странице (нечётное количество страниц перед).
- *
- * Контекст:
- * После секции `students` для density Standard/Medium/Light/Mini может
- * остаться «висящая» левая страница — последний ученик/группа учеников
- * на левой, а правая страница пустая. По таблице OkeyBook на этой
- * правой странице должен быть фрагмент общего раздела
- * («2×1/2 либо 6×1/6 либо 1 общая» — это тот же COLLAGE_OR_HALVES_OR_FULL
- * что в обязательном разделе).
- *
- * Левая сторона переходной (комбо «N учеников + 1 общая») в этом коммите
- * НЕ строится — там нужны комбо-мастера которых в template_set пока нет.
- * Отложено в РЭ.21.8.11b. См. master-cleanup-tz.md раздел H.
+ * РЭ.32 — переписано. Правая страница переходного разворота когда
+ * personal section закончился на левой (pageInstances.length нечётный).
  *
  * Алгоритм:
- *  1. Если pageInstances.length чётный → секция не нужна, выход без warnings.
- *  2. Берём row.transition_right из таблицы OkeyBook
- *     (по preset.density × preset.sheet_type × students.length).
- *  3. Если null → выход (для этой комбинации переходная не определена).
- *  4. Жадно пробуем попытки из PageDescriptor — берём первую где хватает фото.
- *  5. Строим страницу с bindings и декрементим available.
+ *   1. Если pageInstances.length чётный → секция не нужна, выход.
+ *   2. Если master_name задан партнёром в шаблоне → используем его.
+ *      Если в template_set этого мастера нет — warning + fallback на
+ *      встроенное правило.
+ *   3. Если master_name null/undefined → встроенное правило по умолчанию.
  *
- * Секция размещается между students и common_required в section_structure.
- * Партнёр явно добавляет её в редакторе (или дефолтная section_structure
- * автоматически её содержит для нужных пресетов).
+ * Встроенное правило по умолчанию (РЭ.32 пока): жадно ищем подходящий
+ * J-мастер в template_set:
+ *   - full_class: 1 фото → берём первый чистый мастер с classphotoframe
+ *   - half_class: 2 фото → первый с halfphoto_1/2
+ *   - quarter: 4 фото → первый с quarterphoto_1..4
+ *   - sixth: 6 фото → первый с collagephoto_1..6
+ * Чистый мастер = только J-категория, без studentportrait/teacherphoto.
+ * Берём первую категорию по приоритету full → half → quarter → sixth
+ * у которой одновременно (а) хватает фото и (б) есть подходящий мастер.
+ *
+ * Если ни одна категория не подходит → warning transition_skipped, секция
+ * пропускается, правая страница остаётся пустой.
  */
 
-import type { CommonPhotoCounts, SlotConsumes } from '../slot-chains';
-import type { Density } from '../types';
 import type { SpreadTemplate } from '@/lib/album-builder/types';
-import { pickRow } from '../album-structure-okeybook';
-import type {
-  CommonCategory,
-  PageAttempt,
-  PageDescriptor,
-} from '../album-structure-okeybook';
+import type { CommonPhotoCounts, SlotConsumes } from '../slot-chains';
 import { bindCommonPhotos, decrementAvailable } from './common';
 import type { SectionFillContext } from './shared';
 
-/** Зеркальные пары мастеров (та же логика что common-required.ts). */
-const MIRROR_RIGHT: Record<string, string> = {
-  'J-Quarter-Left': 'J-Quarter-Right',
+type Category = 'full_class' | 'half_class' | 'quarter' | 'sixth';
+
+const PHOTO_COUNT: Record<Category, number> = {
+  full_class: 1,
+  half_class: 2,
+  quarter: 4,
+  sixth: 6,
 };
 
-function pickRightVariant(masterName: string): string {
-  return MIRROR_RIGHT[masterName] ?? masterName;
-}
+const PRIORITY: Category[] = ['full_class', 'half_class', 'quarter', 'sixth'];
 
-function resolveDensityForTable(
-  presetDensity: Density | null | undefined,
-  presetId: string,
-): Density | null {
-  if (presetDensity) return presetDensity;
-  if (presetId === 'maximum' || presetId === 'individual') return 'maximum';
+/**
+ * Анализирует placeholders мастера и возвращает категории которые он
+ * умеет принять. Маппинг тот же что в common-required.ts:
+ *   classphotoframe → full_class
+ *   halfphoto_N (>=2) → half_class
+ *   quarterphoto_N (>=4) → quarter
+ *   collagephoto_N (6) → sixth
+ *   collagephoto_N (4) → quarter (мастер J-Collage-4)
+ * studentportrait_N / teacherphoto_N → не J-мастер, возвращаем null.
+ */
+function classifyMasterCategory(master: SpreadTemplate): Category | null {
+  let halfCount = 0;
+  let quarterCount = 0;
+  let collageCount = 0;
+  let hasFull = false;
+  for (const ph of master.placeholders ?? []) {
+    const label = ph.label.toLowerCase();
+    if (
+      label.match(/^studentportrait_\d+$/) ||
+      label.match(/^teacherphoto_\d+$/) ||
+      label === 'headteacherphoto'
+    ) {
+      return null; // не J-мастер
+    }
+    if (label === 'classphotoframe') hasFull = true;
+    else if (label.match(/^halfphoto_\d+$/)) halfCount++;
+    else if (label.match(/^quarterphoto_\d+$/)) quarterCount++;
+    else if (label.match(/^collagephoto_\d+$/)) collageCount++;
+  }
+  if (collageCount === 6) return 'sixth';
+  if (collageCount === 4) return 'quarter';
+  if (quarterCount >= 4) return 'quarter';
+  if (halfCount >= 2) return 'half_class';
+  if (hasFull) return 'full_class';
   return null;
 }
 
-export function fillTransitionSection(ctx: SectionFillContext): void {
-  // Шаг 1: проверка нечётности. Если предыдущая страница уже на правой
-  // (чётное общее количество страниц) → переходная не нужна.
+/**
+ * Найти первый чистый J-мастер для заданной категории. Если category
+ * = quarter и в template_set есть J-Quarter-Right — на позиции right
+ * берём его (зеркало).
+ */
+function findCommonMasterForCategory(
+  mastersByName: ReadonlyMap<string, SpreadTemplate>,
+  category: Category,
+  position: 'left' | 'right',
+): SpreadTemplate | null {
+  for (const m of Array.from(mastersByName.values())) {
+    if (m.name.endsWith('-Right')) continue; // зеркальные находим через base
+    const cat = classifyMasterCategory(m);
+    if (cat !== category) continue;
+    if (position === 'right') {
+      // Пробуем -Right вариант.
+      if (m.name.endsWith('-Left')) {
+        const right = mastersByName.get(m.name.replace(/-Left$/, '-Right'));
+        if (right) return right;
+      }
+      const rightAlt = mastersByName.get(m.name + '-Right');
+      if (rightAlt) return rightAlt;
+    }
+    return m;
+  }
+  return null;
+}
+
+/**
+ * Главная функция секции.
+ */
+export function fillTransitionSection(
+  ctx: SectionFillContext,
+  masterName: string | null | undefined,
+): void {
+  // 1. Чётность.
   if (ctx.pageInstances.length % 2 === 0) {
     ctx.decisionTrace.push({
       spread_index: Math.floor(ctx.pageInstances.length / 2),
@@ -71,136 +122,98 @@ export function fillTransitionSection(ctx: SectionFillContext): void {
       rule_id: 'skip:even_pages',
       inputs: {
         pages_so_far: ctx.pageInstances.length,
-        reason: 'нет висящей правой страницы (чётное количество страниц)',
+        reason: 'нет висящей правой страницы',
       },
     });
     return;
   }
 
-  // Шаг 2: ищем строку таблицы.
-  const presetDensity = ctx.bundle.preset.density;
-  const sheetType = ctx.bundle.preset.sheet_type;
-  const studentsCount = ctx.input.students.length;
-  const effectiveDensity = resolveDensityForTable(
-    presetDensity,
-    ctx.bundle.preset.id,
+  const pageIndex = ctx.pageInstances.length;
+  const position: 'right' = 'right'; // всегда правая по определению
+
+  // 2. Партнёр задал конкретный мастер?
+  if (masterName) {
+    const master = ctx.bundle.mastersByName.get(masterName);
+    if (!master) {
+      ctx.warnings.push(
+        `transition_master_missing: '${masterName}' не найден в template_set, применяю встроенное правило`,
+      );
+      // fallthrough на встроенное правило
+    } else {
+      const category = classifyMasterCategory(master);
+      if (category === null) {
+        ctx.warnings.push(
+          `transition_master_invalid: '${masterName}' не имеет J-категории placeholder'ов`,
+        );
+        return;
+      }
+      const need = PHOTO_COUNT[category];
+      const have = ctx.available[category];
+      if (have < need) {
+        ctx.warnings.push(
+          `transition_skipped: '${masterName}' (нужно ${need} фото ${category}, доступно ${have})`,
+        );
+        return;
+      }
+      placeTransitionPage(ctx, master, category, position, pageIndex);
+      return;
+    }
+  }
+
+  // 3. Встроенное правило по умолчанию.
+  for (const category of PRIORITY) {
+    if (ctx.available[category] < PHOTO_COUNT[category]) continue;
+    const master = findCommonMasterForCategory(
+      ctx.bundle.mastersByName,
+      category,
+      position,
+    );
+    if (!master) continue;
+    placeTransitionPage(ctx, master, category, position, pageIndex);
+    return;
+  }
+
+  // 4. Ничего не подошло.
+  ctx.warnings.push(
+    'transition_skipped: нет фото ни одной категории или подходящих J-мастеров для переходной страницы',
   );
+  ctx.decisionTrace.push({
+    spread_index: Math.floor(pageIndex / 2),
+    section_index: ctx.sectionIndex,
+    family_id: 'transition',
+    rule_id: 'skip:no_master_or_photos',
+    inputs: { available: { ...ctx.available } },
+  });
+}
 
-  if (!effectiveDensity || !sheetType) {
-    ctx.warnings.push(
-      `transition_no_density: preset.density=${String(presetDensity)}, ` +
-        `sheet_type=${String(sheetType)} — нельзя выбрать строку таблицы`,
-    );
-    return;
-  }
+function placeTransitionPage(
+  ctx: SectionFillContext,
+  master: SpreadTemplate,
+  category: Category,
+  position: 'right',
+  pageIndex: number,
+): void {
+  const bindings = bindCommonPhotos(master, ctx.input, ctx.available);
 
-  const row = pickRow(effectiveDensity, sheetType, studentsCount);
-  if (!row) {
-    ctx.warnings.push(
-      `transition_no_row: нет строки таблицы для density=${effectiveDensity}, ` +
-        `sheet_type=${sheetType}, students=${studentsCount}`,
-    );
-    return;
-  }
-
-  // Шаг 3: проверка transition_right.
-  if (row.transition_right === null) {
-    // Для этой комбинации переходная не определена в таблице.
-    // Это может быть потому что:
-    //  - вариант C: комбо-мастер нужен (Лайт 19-21, Медиум 13-14)
-    //  - переходная просто не предусмотрена (Максимум, Стандарт-чёт)
-    // Решение — не строим, без warning (это норма).
-    ctx.decisionTrace.push({
-      spread_index: Math.floor(ctx.pageInstances.length / 2),
-      section_index: ctx.sectionIndex,
-      family_id: 'transition',
-      rule_id: 'skip:no_transition_in_table',
-      inputs: {
-        density: effectiveDensity,
-        sheet_type: sheetType,
-        students_count: studentsCount,
-        reason: 'row.transition_right === null',
-      },
-    });
-    return;
-  }
-
-  // Шаг 4: жадная попытка построить правую страницу.
-  // pageInstances.length нечётный → следующая страница right.
-  const picked = tryPagePick(
-    row.transition_right,
-    ctx.available,
-    ctx.bundle.mastersByName,
-    'right',
-  );
-
-  if (!picked) {
-    const attemptNames = row.transition_right.map((a) => a.master).join(' / ');
-    ctx.warnings.push(
-      `transition_skipped: правая страница (${attemptNames}) пропущена — ` +
-        `недостаточно фото или нет мастеров`,
-    );
-    return;
-  }
-
-  // Шаг 5: bindings и pageInstance.
-  const bindings = bindCommonPhotos(picked.master, ctx.input, ctx.available);
-  decrementAvailable(ctx.available, picked.consumes);
+  const consumes: SlotConsumes = {};
+  consumes[category] = PHOTO_COUNT[category];
+  decrementAvailable(ctx.available, consumes);
 
   ctx.pageInstances.push({
-    master_id: picked.master.id,
+    master_id: master.id,
     bindings,
   });
 
   ctx.decisionTrace.push({
-    spread_index: Math.floor((ctx.pageInstances.length - 1) / 2),
+    spread_index: Math.floor(pageIndex / 2),
     section_index: ctx.sectionIndex,
     family_id: 'transition',
-    rule_id: `table:${row.density}:${row.sheet_type}:${picked.master.name}`,
+    rule_id: `semantic:${category}:${master.name}`,
     inputs: {
-      chosen_master: picked.master.name,
-      category: picked.attempt.category,
-      count: picked.attempt.count,
-      position: 'right',
-      students_count: studentsCount,
+      category,
+      count: PHOTO_COUNT[category],
+      master_name: master.name,
+      position,
     },
   });
-}
-
-// ─── Логика выбора мастера на странице (копия из common-required.ts) ────────
-
-interface PickedPage {
-  master: SpreadTemplate;
-  attempt: PageAttempt;
-  consumes: SlotConsumes;
-}
-
-function tryPagePick(
-  pageDesc: PageDescriptor,
-  available: CommonPhotoCounts,
-  mastersByName: ReadonlyMap<string, SpreadTemplate>,
-  position: 'left' | 'right',
-): PickedPage | null {
-  for (let i = 0; i < pageDesc.length; i++) {
-    const attempt = pageDesc[i];
-    if (!hasEnoughPhotos(available, attempt.category, attempt.count)) continue;
-    const effectiveName =
-      position === 'right' ? pickRightVariant(attempt.master) : attempt.master;
-    const master =
-      mastersByName.get(effectiveName) ??
-      (position === 'right' ? mastersByName.get(attempt.master) : undefined);
-    if (!master) continue;
-    const consumes: SlotConsumes = {};
-    consumes[attempt.category] = attempt.count;
-    return { master, attempt, consumes };
-  }
-  return null;
-}
-
-function hasEnoughPhotos(
-  available: CommonPhotoCounts,
-  category: CommonCategory,
-  count: number,
-): boolean {
-  return available[category] >= count;
 }
