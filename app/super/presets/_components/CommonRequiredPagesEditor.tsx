@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -108,6 +108,55 @@ export default function CommonRequiredPagesEditor({
     onChange(arrayMove(pages, oldIdx, newIdx))
   }
 
+  // Вычисляем «позицию» каждой страницы в общих разворотах:
+  //   spreadNum   — номер разворота (1, 2, 3, ...)
+  //   side        — 'left' / 'right' (для обычной страницы) или 'spread'
+  //                 для мастера на разворот
+  //   spreadStart — true если эта запись открывает новый разворот
+  //                 (для рендера заголовка «N-й общий разворот»)
+  //
+  // Логика учитывает J-Spread мастер (is_spread=true в БД): он занимает
+  // обе страницы разворота сам, после него обязательно начинается новый.
+  const positions = useMemo(() => {
+    type Pos = {
+      spreadNum: number
+      side: 'left' | 'right' | 'spread'
+      spreadStart: boolean
+    }
+    const result: Pos[] = []
+    let spreadNum = 1
+    let nextSide: 'left' | 'right' = 'left'
+    for (let i = 0; i < pages.length; i++) {
+      const p = pages[i]
+      const template = templateByName.get(p.master_name) ?? null
+      const isSpread = template?.is_spread === true
+      if (isSpread) {
+        // Если уже стояли на правой — текущий «полуразворот» закрываем,
+        // J-Spread идёт следующим целым разворотом.
+        if (nextSide === 'right') {
+          spreadNum++
+        }
+        result.push({ spreadNum, side: 'spread', spreadStart: true })
+        spreadNum++
+        nextSide = 'left'
+        continue
+      }
+      // Обычная страница.
+      result.push({
+        spreadNum,
+        side: nextSide,
+        spreadStart: nextSide === 'left',
+      })
+      if (nextSide === 'left') {
+        nextSide = 'right'
+      } else {
+        spreadNum++
+        nextSide = 'left'
+      }
+    }
+    return result
+  }, [pages, templateByName])
+
   return (
     <div className="space-y-2">
       <p className="text-xs text-gray-500">
@@ -131,16 +180,24 @@ export default function CommonRequiredPagesEditor({
             <ul className="space-y-1">
               {pages.map((p, idx) => {
                 const template = templateByName.get(p.master_name) ?? null
+                const pos = positions[idx]
                 return (
-                  <SortablePageRow
-                    key={pageId(idx, p)}
-                    id={pageId(idx, p)}
-                    position={idx + 1}
-                    page={p}
-                    template={template}
-                    onDelete={() => handleDelete(idx)}
-                    disabled={disabled}
-                  />
+                  <React.Fragment key={pageId(idx, p)}>
+                    {pos.spreadStart && (
+                      <li className="text-xs font-medium text-gray-500 uppercase tracking-wide pt-2 pb-0.5">
+                        {pos.spreadNum}-й общий разворот
+                      </li>
+                    )}
+                    <SortablePageRow
+                      id={pageId(idx, p)}
+                      position={idx + 1}
+                      side={pos.side}
+                      page={p}
+                      template={template}
+                      onDelete={() => handleDelete(idx)}
+                      disabled={disabled}
+                    />
+                  </React.Fragment>
                 )
               })}
             </ul>
@@ -174,13 +231,14 @@ export default function CommonRequiredPagesEditor({
 type RowProps = {
   id: string
   position: number
+  side: 'left' | 'right' | 'spread'
   page: CommonRequiredPage
   template: SpreadTemplate | null
   onDelete: () => void
   disabled: boolean
 }
 
-function SortablePageRow({ id, position, page, template, onDelete, disabled }: RowProps) {
+function SortablePageRow({ id, position, side, page, template, onDelete, disabled }: RowProps) {
   const {
     attributes,
     listeners,
@@ -245,6 +303,19 @@ function SortablePageRow({ id, position, page, template, onDelete, disabled }: R
 
       {/* Position */}
       <span className="text-xs text-gray-400 w-6 flex-shrink-0">{position}.</span>
+
+      {/* Side label (РЭ.32.Б.6) */}
+      <span
+        className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded flex-shrink-0 ${
+          side === 'spread'
+            ? 'bg-purple-100 text-purple-700'
+            : side === 'left'
+              ? 'bg-blue-50 text-blue-700'
+              : 'bg-pink-50 text-pink-700'
+        }`}
+      >
+        {side === 'spread' ? 'разворот' : side === 'left' ? 'левая' : 'правая'}
+      </span>
 
       {/* Master name + summary */}
       <div className="flex-1 min-w-0">
