@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useRef, Suspense } from 'react'
+import { useEffect, useState, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
@@ -1317,21 +1317,13 @@ function LayoutEditorPageInner({
   // is_spread мастеров (J-Spread занимает обе стороны разворота сразу).
   //
   // currentIdx (page-based) → currentPairIdx (визуальный разворот).
-  // Это computed-связь: при изменении currentIdx pairIdx пересчитывается.
-  const templatesById = useMemo(() => {
-    const m = new Map<string, SpreadTemplate>()
-    for (const t of templates) m.set(t.id, t)
-    return m
-  }, [templates])
-
-  const visualSpreads = useMemo(
-    () => segmentToSpreads(spreads, templatesById),
-    [spreads, templatesById],
-  )
-  const currentPairIdx = useMemo(
-    () => findVisualSpreadForPage(visualSpreads, currentIdx),
-    [visualSpreads, currentIdx],
-  )
+  // Это computed-связь, но НЕ через useMemo — useMemo здесь вызывался
+  // бы условно (после early returns выше), что нарушает Rules of Hooks.
+  // Расчёт дешёвый (Map + один проход), считаем при каждом ререндере.
+  const templatesById = new Map<string, SpreadTemplate>()
+  for (const t of templates) templatesById.set(t.id, t)
+  const visualSpreads = segmentToSpreads(spreads, templatesById)
+  const currentPairIdx = findVisualSpreadForPage(visualSpreads, currentIdx)
   const currentPair = visualSpreads[currentPairIdx] ?? null
   const leftPage =
     currentPair?.leftIdx !== undefined ? spreads[currentPair.leftIdx] : null
