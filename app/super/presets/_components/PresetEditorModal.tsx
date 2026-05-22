@@ -684,6 +684,29 @@ function SectionsEditor({
                 )}
               </div>
             )}
+            {/* РЭ.32.Б.4 — transition: опциональный мастер */}
+            {s.type === 'transition' && (
+              <div className="mt-3">
+                {!hasTemplateSet ? (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    Выберите дизайн (template_set) у шаблона, чтобы выбрать
+                    переходный мастер.
+                  </p>
+                ) : templatesLoading ? (
+                  <p className="text-xs text-gray-400 italic">
+                    Загрузка мастеров…
+                  </p>
+                ) : (
+                  <TransitionMasterSelector
+                    value={s.master_name ?? null}
+                    templates={templates}
+                    onChange={(name) =>
+                      onUpdate(idx, { master_name: name } as Partial<Section>)
+                    }
+                  />
+                )}
+              </div>
+            )}
             {/* common manual: slots — пока read-only (партнёры используют new секции) */}
             {s.type === 'common' && 'slots' in s && (
               <div className="mt-2">
@@ -756,6 +779,80 @@ function AddSectionPicker({
           </button>
         )
       })}
+    </div>
+  )
+}
+
+// ─── TransitionMasterSelector ────────────────────────────────────────────
+//
+// РЭ.32.Б.4 — выбор мастера для переходной страницы.
+//
+// Опциональный селект: «По умолчанию (engine решит)» или конкретный
+// J-мастер из template_set'а. Применяется когда у students секция
+// заканчивается нечётным количеством страниц — для достраивания правой
+// страницы переходного разворота.
+//
+// Фильтрация мастеров — та же что в JMasterPicker:
+//   - имеет J-категорию (classphotoframe / halfphoto_* / quarterphoto_* /
+//     collagephoto_* / spreadphoto) ИЛИ page_role='common'
+//   - НЕ -Right вариант (engine сам подставит при position='right')
+
+function TransitionMasterSelector({
+  value,
+  templates,
+  onChange,
+}: {
+  value: string | null
+  templates: SpreadTemplate[]
+  onChange: (masterName: string | null) => void
+}) {
+  // Фильтр — те же критерии что у JMasterPicker, но проще: просто
+  // классифицируем по placeholders и оставляем не-other без -Right.
+  const candidates = templates.filter((t) => {
+    if (t.name.endsWith('-Right')) return false
+    if (t.page_role === 'common') return true
+    let hasJCategory = false
+    for (const ph of t.placeholders ?? []) {
+      const l = ph.label.toLowerCase()
+      if (
+        l === 'classphotoframe' ||
+        l === 'spreadphoto' ||
+        l.match(/^halfphoto_\d+$/) ||
+        l.match(/^quarterphoto_\d+$/) ||
+        l.match(/^collagephoto_\d+$/)
+      ) {
+        hasJCategory = true
+        break
+      }
+    }
+    return hasJCategory
+  })
+
+  const selectedExists = value === null || candidates.some((t) => t.name === value)
+
+  return (
+    <div className="space-y-1">
+      <label className="text-xs text-gray-600">Мастер переходной страницы:</label>
+      <select
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
+        className="w-full border rounded px-2 py-1 text-sm"
+      >
+        <option value="">По умолчанию (engine решит)</option>
+        {candidates
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((t) => (
+            <option key={t.id} value={t.name}>
+              {t.name}
+            </option>
+          ))}
+      </select>
+      {!selectedExists && value && (
+        <p className="text-xs text-amber-600">
+          Мастер «{value}» не найден в текущем дизайне (был переименован
+          или удалён). Engine применит правило по умолчанию.
+        </p>
+      )}
     </div>
   )
 }
