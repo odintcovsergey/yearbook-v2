@@ -1,173 +1,243 @@
 /**
  * Заполнение секции type='common_required' для buildFromSectionStructure.
  *
- * РЭ.21.8.9: обязательный общий раздел по эталонной таблице OkeyBook.
+ * РЭ.31.Б.1: переписано на семантический поиск J-мастеров через
+ * slot_capacity. Старая legacy-ветка (`pickRow` из таблицы OkeyBook
+ * по density × sheet_type × students) удалена полностью — после РЭ.30
+ * у глобальных пресетов density=NULL и таблица возвращала null для всех
+ * новых пресетов, тихо ломая секцию.
  *
- * В отличие от type='common' (manual/auto) — здесь партнёр НЕ задаёт
- * параметры. Engine сам:
- *   1. Берёт `preset.density` × `preset.sheet_type` × `input.students.length`.
- *   2. Через pickRow() находит строку таблицы OkeyBook.
- *   3. Для каждой страницы в row.pages идёт по массиву попыток
- *      (PageAttempt[]) и берёт первую где хватает фото в пуле.
- *   4. Заполняет bindings placeholder-driven маппингом
- *      (общим с common.ts через bindCommonPhotos).
+ * Новый алгоритм
+ * ──────────────
+ * Engine сам решает что положить на страницы общего раздела, исходя
+ * только из доступных фото (`ctx.available`). Партнёр не указывает
+ * структуру — она вычисляется автоматически.
  *
- * Особые случаи:
- *   - Если pickRow вернул null — нет подходящей строки в таблице (например
- *     для пресета без density). Warning + секция пропускается.
- *   - Если row.pages пустой (Мини плотные 25+) — секция строится в 0
- *     страниц без warning (это норма по таблице).
- *   - Если для конкретной страницы ни одна попытка не подошла —
- *     `slot_skipped` warning, страница пропускается, но след страницы
- *     обрабатываются (cursor общих фото не съезжает).
+ * Сколько страниц строим:
+ *   • Если у пресета есть `preset.common_required_spreads` (РЭ.31.Д) —
+ *     ровно столько. Не реализовано в Б, добавится в Д.
+ *   • Сейчас: строим пока хватает фото на минимум 1 категорию.
+ *     Максимум 6 страниц (как в legacy-таблице) — чтобы не уйти в
+ *     бесконечный цикл при большом количестве sixth-фото.
  *
- * Зеркальные мастера J-Quarter-Left/-Right
- * ────────────────────────────────────────
- * В таблице хранится только Left-вариант (`J-Quarter-Left`). На правой
- * странице разворота имя автоматически заменяется на Right-вариант
- * через `pickRightVariant()`. Это упрощает таблицу и не дублирует строки.
+ * Для каждой страницы:
+ *   1. Определяем position (left/right) по чётности pageInstances.length.
+ *   2. Пробуем категории в порядке убывания площади:
+ *      • full_class (1 фото на страницу)
+ *      • half_class (2 фото на страницу — J-Half)
+ *      • quarter   (4 фото на страницу — J-Quarter-Left/Right)
+ *      • sixth     (6 фото на страницу — J-Collage-6)
+ *      • collage   (4 фото — J-Collage-4, если такой существует)
+ *   3. На первой категории где хватает фото И найден мастер — кладём
+ *      страницу, декрементим available, переходим к следующей странице.
+ *   4. Если ни одна категория не дала результат — выходим из цикла
+ *     (общие фото кончились).
  *
- * Bindings заполнения общими фото — переиспользуем `bindCommonPhotos` из
- * common.ts (она placeholder-driven и не зависит от способа выбора мастера).
+ * Зеркальные мастера
+ * ──────────────────
+ * Для quarter правый вариант J-Quarter-Right берётся через
+ * pickRightVariant() — та же логика что и в legacy. Если правого нет в
+ * template_set — fallback на левый.
+ *
+ * Семантический поиск мастера
+ * ───────────────────────────
+ * Мастер выбирается по slot_capacity, а не по имени. Конкретные имена
+ * J-Full / J-Half / J-Quarter-Left / J-Collage-6 — это лишь имена в
+ * okeybook-default; партнёр может назвать свои мастера иначе. Главное —
+ * чтобы slot_capacity показывал какие фото потребляет.
+ *
+ * Например, J-Half в okeybook-default имеет:
+ *   slot_capacity = { photos_half: 2 }
+ * Алгоритм ищет мастер где photos_half >= 2 (и другие категории = 0),
+ * берёт первый найденный. Имя при этом не проверяется.
  */
 
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import type { CommonPhotoCounts, SlotConsumes } from '../slot-chains';
-import type { Density } from '../types';
-import { pickRow } from '../album-structure-okeybook';
-import type {
-  CommonCategory,
-  PageAttempt,
-  TableRow,
-} from '../album-structure-okeybook';
 import { bindCommonPhotos, decrementAvailable } from './common';
 import type { SectionFillContext } from './shared';
 
+/** Категории общих фото — те что есть в CommonPhotoCounts. */
+type CommonCategory = 'full_class' | 'half_class' | 'quarter' | 'sixth';
+
 /**
- * Зеркальные пары мастеров. Когда страница позиционирована справа и в
- * описании страницы упомянут Left-мастер из этого мапа — заменяем на Right.
+ * Сопоставление категории → ключ в slot_capacity мастера.
+ * Категории common-фото в БД фото называются full_class/half_class/quarter/sixth.
+ * Соответствующие slot_capacity ключи мастеров: photos_full/half/quarter/sixth.
  */
-const MIRROR_RIGHT: Record<string, string> = {
-  'J-Quarter-Left': 'J-Quarter-Right',
+type SlotCapacityKey = 'photos_full' | 'photos_half' | 'photos_quarter' | 'photos_sixth';
+
+const SLOT_KEY_FOR_CATEGORY: Record<CommonCategory, SlotCapacityKey> = {
+  full_class: 'photos_full',
+  half_class: 'photos_half',
+  quarter: 'photos_quarter',
+  sixth: 'photos_sixth',
 };
 
-function pickRightVariant(masterName: string): string {
-  return MIRROR_RIGHT[masterName] ?? masterName;
+/**
+ * Сколько фото потребляет мастер каждой категории.
+ * Если мастер J-Half с photos_half=2 — мы по нему «трачу 2 half_class фото».
+ */
+const PHOTO_COUNT_FOR_CATEGORY: Record<CommonCategory, number> = {
+  full_class: 1,
+  half_class: 2,
+  quarter: 4,
+  sixth: 6,
+};
+
+/** Приоритет категорий — большие фото идут раньше. */
+const CATEGORY_PRIORITY: CommonCategory[] = ['full_class', 'half_class', 'quarter', 'sixth'];
+
+/** Максимум страниц общего раздела (страховка от бесконечного цикла). */
+const MAX_COMMON_REQUIRED_PAGES = 6;
+
+/**
+ * Зеркальные пары имён для правой позиции. Когда engine выбрал мастер
+ * по slot_capacity и обнаружил что position='right' — пробует найти
+ * мастер с именем base + '-Right' в template_set. Если есть — берёт его;
+ * если нет — оставляет исходный (левый).
+ */
+function tryRightMirror(
+  master: SpreadTemplate,
+  mastersByName: ReadonlyMap<string, SpreadTemplate>,
+): SpreadTemplate {
+  // Только J-Quarter-Left имеет известного зеркального брата.
+  // Если имя оканчивается на '-Left' — пробуем '-Right'.
+  if (master.name.endsWith('-Left')) {
+    const rightName = master.name.replace(/-Left$/, '-Right');
+    const right = mastersByName.get(rightName);
+    if (right) return right;
+  }
+  return master;
 }
 
 /**
- * Привести density пресета (PresetDensity) к расширенному Density для
- * запроса в таблицу. Для Максимум/Индивидуальной у presets.density сейчас
- * null (см. РЭ.20.5), но в section_structure обычно явно указан тип
- * комплектации через имя пресета. Без отдельной колонки в БД мы не можем
- * точно различить null=Максимум vs null=Индивидуальная — оба сейчас
- * мапятся на 'maximum' (решение Сергея 19.05.2026).
+ * Семантический поиск J-мастера для одной категории.
  *
- * В будущем если presets.density расширится включая 'maximum' (или появится
- * отдельная колонка `category`), эта функция перепишется тривиально.
+ * Ищет мастера у которого slot_capacity[slot_key] >= count, остальные
+ * фото-слоты = 0 (мастер «чистый» под одну категорию, без смешения).
+ *
+ * Если несколько подходящих мастеров — берёт с минимальным slot_capacity
+ * (нет смысла брать мастер на 6 sixth-фото когда нужно 6 — точное
+ * совпадение лучше).
  */
-function resolveDensityForTable(
-  presetDensity: Density | null | undefined,
-  presetId: string,
-): Density | null {
-  if (presetDensity) return presetDensity;
-  // Фолбэк: pickRow по имени пресета. Для пресетов 'maximum' и 'individual'
-  // используем 'maximum' (см. решение Сергея 19.05.2026).
-  if (presetId === 'maximum' || presetId === 'individual') return 'maximum';
-  return null;
+function findCommonMaster(
+  mastersByName: ReadonlyMap<string, SpreadTemplate>,
+  category: CommonCategory,
+  count: number,
+  position: 'left' | 'right',
+): SpreadTemplate | null {
+  const slotKey = SLOT_KEY_FOR_CATEGORY[category];
+
+  // Все мастера у которых нужная категория >= count.
+  const candidates: SpreadTemplate[] = [];
+  for (const master of Array.from(mastersByName.values())) {
+    const cap = master.slot_capacity ?? {};
+    const slotValue = (cap[slotKey] as number | undefined) ?? 0;
+    if (slotValue < count) continue;
+
+    // Отсеиваем мастера которые «смешанные» — содержат и студенческие
+    // слоты, и общие фото. Для общего раздела нужны чистые J-мастера.
+    // Чистый J-мастер: students=0 (или не задано) и нет других photos_*
+    // кроме нужной категории.
+    const students = (cap.students as number | undefined) ?? 0;
+    if (students > 0) continue;
+
+    // Проверяем что других категорий = 0 (мастер чистый).
+    let hasOtherCategory = false;
+    for (const cat of CATEGORY_PRIORITY) {
+      if (cat === category) continue;
+      const otherKey = SLOT_KEY_FOR_CATEGORY[cat];
+      const otherValue = (cap[otherKey] as number | undefined) ?? 0;
+      if (otherValue > 0) {
+        hasOtherCategory = true;
+        break;
+      }
+    }
+    if (hasOtherCategory) continue;
+
+    candidates.push(master);
+  }
+
+  if (candidates.length === 0) return null;
+
+  // Сортируем по slot_capacity[slot_key] возрастающе — берём минимально
+  // подходящий (точное совпадение в начале).
+  candidates.sort((a, b) => {
+    const va = (a.slot_capacity?.[slotKey] as number | undefined) ?? 0;
+    const vb = (b.slot_capacity?.[slotKey] as number | undefined) ?? 0;
+    return va - vb;
+  });
+
+  const chosen = candidates[0];
+  // Зеркальный мастер для правой позиции (если такой есть в template_set).
+  if (position === 'right') {
+    return tryRightMirror(chosen, mastersByName);
+  }
+  return chosen;
 }
 
+/**
+ * Имеется ли в `available` достаточно фото для одной страницы категории.
+ */
+function hasEnoughPhotos(
+  available: CommonPhotoCounts,
+  category: CommonCategory,
+): boolean {
+  return available[category] >= PHOTO_COUNT_FOR_CATEGORY[category];
+}
+
+/**
+ * Главная функция заполнения секции common_required.
+ *
+ * Жадно заполняет страницы общего раздела пока хватает фото или пока
+ * не достигнут максимум MAX_COMMON_REQUIRED_PAGES.
+ */
 export function fillCommonRequiredSection(ctx: SectionFillContext): void {
-  const presetDensity = ctx.bundle.preset.density;
-  const sheetType = ctx.bundle.preset.sheet_type;
-  const studentsCount = ctx.input.students.length;
-
-  const effectiveDensity = resolveDensityForTable(
-    presetDensity,
-    ctx.bundle.preset.id,
-  );
-
-  if (!effectiveDensity || !sheetType) {
-    ctx.warnings.push(
-      `common_required_no_density: preset.density=${String(
-        presetDensity,
-      )}, sheet_type=${String(sheetType)} — нельзя выбрать строку таблицы`,
-    );
-    return;
-  }
-
-  const row = pickRow(effectiveDensity, sheetType, studentsCount);
-  if (!row) {
-    ctx.warnings.push(
-      `common_required_no_row: нет строки таблицы для density=${effectiveDensity}, ` +
-        `sheet_type=${sheetType}, students=${studentsCount}`,
-    );
-    return;
-  }
-
-  // Пустой массив страниц — таблица говорит «обязательного раздела нет».
-  // Это норма для Мини плотные 25+. Декретируем decision_trace для
-  // отладки, но никаких страниц и warnings.
-  if (row.pages.length === 0) {
-    ctx.decisionTrace.push({
-      spread_index: Math.floor(ctx.pageInstances.length / 2),
-      section_index: ctx.sectionIndex,
-      family_id: 'common-required',
-      rule_id: 'empty:by_table',
-      inputs: {
-        density: effectiveDensity,
-        sheet_type: sheetType,
-        students_count: studentsCount,
-        reason: 'row.pages empty in OkeyBook table',
-      },
-    });
-    return;
-  }
-
-  // Заполняем страницы по описанию.
-  for (let pageIdx = 0; pageIdx < row.pages.length; pageIdx++) {
-    const pageDesc = row.pages[pageIdx];
+  for (let pageNum = 0; pageNum < MAX_COMMON_REQUIRED_PAGES; pageNum++) {
     const pageIndex = ctx.pageInstances.length;
     const position: 'left' | 'right' = pageIndex % 2 === 0 ? 'left' : 'right';
 
-    const picked = tryPagePick(
-      pageDesc,
-      ctx.available,
-      ctx.bundle.mastersByName,
-      position,
-    );
+    // Жадно идём по приоритетам категорий: full > half > quarter > sixth.
+    let pickedMaster: SpreadTemplate | null = null;
+    let pickedCategory: CommonCategory | null = null;
 
-    if (!picked) {
-      // Ни одна попытка не подошла (мало фото или мастеров нет в template_set).
-      const attemptNames = pageDesc.map((a) => a.master).join(' / ');
-      ctx.warnings.push(
-        `common_required_page_skipped: страница #${pageIdx + 1} ` +
-          `(${attemptNames}) пропущена — недостаточно фото или нет мастеров`,
-      );
+    for (const category of CATEGORY_PRIORITY) {
+      if (!hasEnoughPhotos(ctx.available, category)) continue;
+      const count = PHOTO_COUNT_FOR_CATEGORY[category];
+      const master = findCommonMaster(ctx.bundle.mastersByName, category, count, position);
+      if (!master) continue;
+      pickedMaster = master;
+      pickedCategory = category;
+      break;
+    }
+
+    if (!pickedMaster || !pickedCategory) {
+      // Нет подходящей категории на этой странице — заканчиваем секцию.
+      // Это не warning — норма для случаев когда общие фото кончились.
       ctx.decisionTrace.push({
         spread_index: Math.floor(pageIndex / 2),
         section_index: ctx.sectionIndex,
         family_id: 'common-required',
-        rule_id: `skip:${pageIdx}`,
+        rule_id: `stop:no_more_photos`,
         inputs: {
-          page_index_in_section: pageIdx,
-          attempts: pageDesc.map((a) => ({
-            master: a.master,
-            category: a.category,
-            count: a.count,
-          })),
-          position,
+          page_num: pageNum,
+          available: { ...ctx.available },
         },
       });
-      continue;
+      return;
     }
 
-    // Bindings ДО decrement available (cursor-логика как в common.ts).
-    const bindings = bindCommonPhotos(picked.master, ctx.input, ctx.available);
-    decrementAvailable(ctx.available, picked.consumes);
+    // Bindings — общим хелпером (placeholder-driven, не зависит от способа выбора мастера).
+    const bindings = bindCommonPhotos(pickedMaster, ctx.input, ctx.available);
+
+    // Декремент available на потреблённое количество.
+    const consumes: SlotConsumes = {};
+    consumes[pickedCategory] = PHOTO_COUNT_FOR_CATEGORY[pickedCategory];
+    decrementAvailable(ctx.available, consumes);
 
     ctx.pageInstances.push({
-      master_id: picked.master.id,
+      master_id: pickedMaster.id,
       bindings,
     });
 
@@ -175,63 +245,14 @@ export function fillCommonRequiredSection(ctx: SectionFillContext): void {
       spread_index: Math.floor(pageIndex / 2),
       section_index: ctx.sectionIndex,
       family_id: 'common-required',
-      rule_id: `table:${row.density}:${row.sheet_type}:${picked.master.name}`,
+      rule_id: `semantic:${pickedCategory}:${pickedMaster.name}`,
       inputs: {
-        page_index_in_section: pageIdx,
-        chosen_master: picked.master.name,
-        category: picked.attempt.category,
-        count: picked.attempt.count,
+        page_num: pageNum,
+        category: pickedCategory,
+        count: PHOTO_COUNT_FOR_CATEGORY[pickedCategory],
+        master_name: pickedMaster.name,
         position,
-        students_count: studentsCount,
       },
     });
   }
-}
-
-// ─── Логика выбора мастера на странице ──────────────────────────────────────
-
-interface PickedPage {
-  master: SpreadTemplate;
-  attempt: PageAttempt;
-  consumes: SlotConsumes;
-}
-
-/**
- * Перебрать попытки описания страницы. Вернуть первую где (а) хватает фото
- * в категории и (б) мастер существует в template_set.
- *
- * Зеркальный выбор: если попытка содержит мастер из MIRROR_RIGHT и position='right' —
- * подменяем имя на правый вариант. Если правый мастер отсутствует — пробуем
- * левый как фолбэк (на всякий случай).
- */
-function tryPagePick(
-  pageDesc: PageAttempt[],
-  available: CommonPhotoCounts,
-  mastersByName: ReadonlyMap<string, SpreadTemplate>,
-  position: 'left' | 'right',
-): PickedPage | null {
-  for (let i = 0; i < pageDesc.length; i++) {
-    const attempt = pageDesc[i];
-    if (!hasEnoughPhotos(available, attempt.category, attempt.count)) continue;
-    const effectiveName =
-      position === 'right'
-        ? pickRightVariant(attempt.master)
-        : attempt.master;
-    const master = mastersByName.get(effectiveName)
-      // Фолбэк на левый вариант если правый отсутствует в template_set.
-      ?? (position === 'right' ? mastersByName.get(attempt.master) : undefined);
-    if (!master) continue;
-    const consumes: SlotConsumes = {};
-    consumes[attempt.category] = attempt.count;
-    return { master, attempt, consumes };
-  }
-  return null;
-}
-
-function hasEnoughPhotos(
-  available: CommonPhotoCounts,
-  category: CommonCategory,
-  count: number,
-): boolean {
-  return available[category] >= count;
 }
