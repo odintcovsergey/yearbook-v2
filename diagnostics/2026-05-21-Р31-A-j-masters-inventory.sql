@@ -127,7 +127,7 @@ ORDER BY students, photos_full, name;
 SELECT
   ts.id,
   ts.slug,
-  ts.display_name,
+  ts.name,
   ts.tenant_id,
   ts.parent_template_set_id,
   ts.created_at,
