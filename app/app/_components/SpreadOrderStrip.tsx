@@ -18,6 +18,11 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { SpreadInstance, SpreadTemplate } from '@/lib/album-builder/types'
+import {
+  segmentToSpreads,
+  findVisualSpreadForPage,
+  type VisualSpread,
+} from '@/lib/album-builder/segment-to-spreads'
 
 // AlbumSpreadCanvas — Konva, SSR-incompatible
 const AlbumSpreadCanvas = dynamic(() => import('./AlbumSpreadCanvas'), {
@@ -27,18 +32,23 @@ const AlbumSpreadCanvas = dynamic(() => import('./AlbumSpreadCanvas'), {
 
 // ─── SpreadOrderStrip ─────────────────────────────────────────────────────
 //
-// М.1 — Горизонтальная strip миниатюр разворотов внизу редактора с
-// drag-and-drop переупорядочиванием.
+// РЭ.35.Д — Горизонтальная strip миниатюр РАЗВОРОТОВ внизу редактора.
 //
-// - Клик по миниатюре → переход к этому развороту (setCurrentIdx)
-// - Drag миниатюры → переупорядочивание spreads[]
-// - Активный разворот подсвечен синей рамкой
-// - Read-only режим: drag disabled, только клик-навигация
+// Под капотом: spreads[] это массив страниц (legacy формат, 1 элемент =
+// 1 страница). Здесь мы группируем их попарно в визуальные развороты
+// через segmentToSpreads helper и показываем каждый разворот как ОДНУ
+// карточку с двумя миниатюрами рядом (или одной для is_spread мастеров).
 //
-// ВАЖНО про spread_index: после reorder поле spread_index у каждого
-// SpreadInstance обновляется чтобы соответствовать новой позиции в
-// массиве (это нужно для backend'а который полагается на spread_index
-// для сортировки при render'е PDF и для следующей пересборки).
+// Операции:
+//  - Клик на левую/правую миниатюру → переключение currentIdx на
+//    соответствующую страницу
+//  - Drag&drop карточки → переупорядочивание пар страниц (обе двигаются
+//    вместе)
+//  - Удаление → удаление обеих страниц разворота (родитель решает что
+//    делать с висящими)
+//  - Активный разворот (тот в котором сейчас currentIdx) подсвечен синей
+//    рамкой; внутри него та страница которая currentIdx — отдельной
+//    светлой обводкой
 
 type Props = {
   spreads: SpreadInstance[]
@@ -46,16 +56,17 @@ type Props = {
   currentIdx: number
   onSelect: (idx: number) => void
   onReorder: (newSpreads: SpreadInstance[]) => void
-  // М.2 — удалить разворот по индексу. Parent отвечает за confirm и
-  // обновление layout.spreads. Если null — кнопка удаления скрыта.
-  onDelete?: (idx: number) => void
-  // М.2 — открыть picker для добавления нового разворота после indexAfter.
-  // Если null — кнопка добавления скрыта.
-  onAddRequest?: (insertAfterIdx: number) => void
+  // Удалить РАЗВОРОТ — родитель должен удалить все страницы разворота.
+  // pageIndices — массив индексов страниц в spreads[] (1 для is_spread,
+  // 1 для висящего, 2 для обычного).
+  onDelete?: (pageIndices: number[]) => void
+  // Добавить новый разворот после указанной страницы.
+  onAddRequest?: (insertAfterPageIdx: number) => void
   readOnly?: boolean
 }
 
-const THUMB_WIDTH = 96  // компактные миниатюры
+const PAGE_THUMB_WIDTH = 48 // одна страница (половина разворота)
+const SPREAD_THUMB_WIDTH = 96 // полный разворот (двух-страничный)
 
 export default function SpreadOrderStrip({
   spreads,
@@ -67,53 +78,65 @@ export default function SpreadOrderStrip({
   onAddRequest,
   readOnly = false,
 }: Props) {
-  // Map template_id → template для быстрого lookup'а
   const templateMap = useMemo(() => {
     const map = new Map<string, SpreadTemplate>()
     for (const t of templates) map.set(t.id, t)
     return map
   }, [templates])
 
+  // Сегментация страниц в визуальные развороты.
+  const visualSpreads = useMemo(
+    () => segmentToSpreads(spreads, templateMap),
+    [spreads, templateMap],
+  )
+
+  // Текущий активный разворот — pair в котором сейчас находится currentIdx.
+  const currentPairIdx = useMemo(
+    () => findVisualSpreadForPage(visualSpreads, currentIdx),
+    [visualSpreads, currentIdx],
+  )
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      // Drag активируется после смещения 5px — клик-навигация работает
-      // нормально (быстрый press → click handler), а drag нужно явно начать
       activationConstraint: { distance: 5 },
     }),
   )
 
-  // ID-based sortable: используем spread_index как стабильный ID.
-  // (template_id не уникален — несколько разворотов могут использовать
-  // один template, например портретные D-D-D.)
+  // ID-based sortable: используем pair-index. При reorder пары мы
+  // пересчитываем массив страниц с нуля.
   const itemIds = useMemo(
-    () => spreads.map((s) => `spread-${s.spread_index}`),
-    [spreads],
+    () => visualSpreads.map((_, i) => `pair-${i}`),
+    [visualSpreads],
   )
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
-    const oldIdx = spreads.findIndex((s) => `spread-${s.spread_index}` === active.id)
-    const newIdx = spreads.findIndex((s) => `spread-${s.spread_index}` === over.id)
-    if (oldIdx === -1 || newIdx === -1) return
-    const reordered = arrayMove(spreads, oldIdx, newIdx)
-    // Переписываем spread_index чтобы соответствовать новой позиции —
-    // backend ориентируется на это поле при render'е и пересборке.
-    const renumbered = reordered.map((s, i) => ({ ...s, spread_index: i }))
+    const oldPairIdx = visualSpreads.findIndex((_, i) => `pair-${i}` === active.id)
+    const newPairIdx = visualSpreads.findIndex((_, i) => `pair-${i}` === over.id)
+    if (oldPairIdx === -1 || newPairIdx === -1) return
+
+    // Переставляем pair'ы. Каждый pair → 1 или 2 страницы; собираем
+    // плоский массив страниц в новом порядке.
+    const reorderedPairs = arrayMove(visualSpreads, oldPairIdx, newPairIdx)
+    const newSpreads: SpreadInstance[] = []
+    for (const pair of reorderedPairs) {
+      if (pair.isSpread && pair.leftIdx !== undefined) {
+        // is_spread занимает оба места но в массиве это ОДИН элемент
+        // SpreadInstance (см. layout-to-buildresult adapter).
+        newSpreads.push(spreads[pair.leftIdx])
+      } else {
+        if (pair.leftIdx !== undefined) newSpreads.push(spreads[pair.leftIdx])
+        if (pair.rightIdx !== undefined) newSpreads.push(spreads[pair.rightIdx])
+      }
+    }
+    const renumbered = newSpreads.map((s, i) => ({ ...s, spread_index: i }))
     onReorder(renumbered)
 
-    // После reorder активный разворот может оказаться на другой позиции —
-    // сохраняем «преследование» того же разворота через onSelect.
-    // Если двигали именно активный — он теперь на newIdx.
-    // Если двигали другой, а активный сдвинулся — пересчитаем.
-    const currentSpreadIdx = spreads[currentIdx]?.spread_index
-    if (currentSpreadIdx !== undefined) {
-      const newPos = renumbered.findIndex((s) => {
-        // Найти тот же разворот по data (после ре-номерации spread_index
-        // изменён, поэтому ищем по комбинации template_id + старого data
-        // через reference equality — после arrayMove ссылки сохранены).
-        return s === reordered[oldIdx === currentIdx ? newIdx : currentIdx]
-      })
+    // Преследуем активную страницу (по reference equality).
+    const currentPage = spreads[currentIdx]
+    if (currentPage) {
+      const newPos = renumbered.findIndex((s) => s === currentPage)
       if (newPos !== -1 && newPos !== currentIdx) {
         onSelect(newPos)
       }
@@ -124,27 +147,48 @@ export default function SpreadOrderStrip({
     <div className="bg-white border-t border-gray-200 px-4 py-3">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs text-gray-500">
-          Развороты ({spreads.length}) {!readOnly && <span className="text-gray-400">— перетащите чтобы изменить порядок</span>}
+          Развороты ({visualSpreads.length}){' '}
+          {!readOnly && (
+            <span className="text-gray-400">— перетащите чтобы изменить порядок</span>
+          )}
         </p>
       </div>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={itemIds} strategy={horizontalListSortingStrategy}>
           <div className="flex gap-2 overflow-x-auto pb-1 items-stretch">
-            {spreads.map((spread, idx) => {
-              const template = templateMap.get(spread.template_id)
-              if (!template) return null
+            {visualSpreads.map((pair, pairIdx) => {
+              const leftPage =
+                pair.leftIdx !== undefined ? spreads[pair.leftIdx] : null
+              const rightPage =
+                pair.rightIdx !== undefined ? spreads[pair.rightIdx] : null
+              const leftTemplate = leftPage ? templateMap.get(leftPage.template_id) : null
+              const rightTemplate = rightPage ? templateMap.get(rightPage.template_id) : null
               return (
-                <SortableSpreadThumb
-                  key={`spread-${spread.spread_index}`}
-                  id={`spread-${spread.spread_index}`}
-                  spread={spread}
-                  template={template}
-                  position={idx + 1}
-                  isActive={idx === currentIdx}
-                  onClick={() => onSelect(idx)}
+                <SortablePairThumb
+                  key={`pair-${pairIdx}`}
+                  id={`pair-${pairIdx}`}
+                  pair={pair}
+                  leftPage={leftPage}
+                  rightPage={rightPage}
+                  leftTemplate={leftTemplate ?? null}
+                  rightTemplate={rightTemplate ?? null}
+                  position={pairIdx + 1}
+                  isActive={pairIdx === currentPairIdx}
+                  currentPageIdx={currentIdx}
+                  onSelect={onSelect}
                   onDelete={
-                    !readOnly && onDelete && spreads.length > 1
-                      ? () => onDelete(idx)
+                    !readOnly && onDelete && visualSpreads.length > 1
+                      ? () => {
+                          const indices: number[] = []
+                          if (pair.leftIdx !== undefined) indices.push(pair.leftIdx)
+                          if (
+                            pair.rightIdx !== undefined &&
+                            pair.rightIdx !== pair.leftIdx
+                          ) {
+                            indices.push(pair.rightIdx)
+                          }
+                          onDelete(indices)
+                        }
                       : undefined
                   }
                   disabled={readOnly}
@@ -152,13 +196,19 @@ export default function SpreadOrderStrip({
               )
             })}
 
-            {/* М.2 — кнопка «➕ Добавить разворот» в конце strip.
-                По клику открывает TemplatePickerModal. Вставляет новый
-                spread ПОСЛЕ текущего активного разворота. */}
+            {/* Кнопка «➕ Добавить разворот» в конце strip. Вставляет
+                новую страницу после текущего активного разворота. */}
             {!readOnly && onAddRequest && (
               <button
                 type="button"
-                onClick={() => onAddRequest(currentIdx)}
+                onClick={() => {
+                  const currentPair = visualSpreads[currentPairIdx]
+                  const insertAfter =
+                    currentPair?.rightIdx ??
+                    currentPair?.leftIdx ??
+                    spreads.length - 1
+                  onAddRequest(insertAfter)
+                }}
                 className="flex-shrink-0 flex flex-col items-center justify-center w-24 border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50/30 rounded text-gray-400 hover:text-blue-600 transition-colors"
                 title="Добавить разворот после текущего"
               >
@@ -173,26 +223,31 @@ export default function SpreadOrderStrip({
   )
 }
 
-// ─── SortableSpreadThumb — одна миниатюра ────────────────────────────────
-function SortableSpreadThumb({
+// ─── SortablePairThumb — карточка одного визуального разворота ──────────
+function SortablePairThumb({
   id,
-  spread,
-  template,
+  pair,
+  leftPage,
+  rightPage,
+  leftTemplate,
+  rightTemplate,
   position,
   isActive,
-  onClick,
+  currentPageIdx,
+  onSelect,
   onDelete,
   disabled,
 }: {
   id: string
-  spread: SpreadInstance
-  template: SpreadTemplate
+  pair: VisualSpread
+  leftPage: SpreadInstance | null
+  rightPage: SpreadInstance | null
+  leftTemplate: SpreadTemplate | null
+  rightTemplate: SpreadTemplate | null
   position: number
   isActive: boolean
-  onClick: () => void
-  // М.2 — если задан, показывается кнопка ✕ при hover.
-  // undefined для read-only режима и когда в альбоме остался последний
-  // разворот (нельзя удалить единственный).
+  currentPageIdx: number
+  onSelect: (idx: number) => void
   onDelete?: () => void
   disabled: boolean
 }) {
@@ -214,24 +269,84 @@ function SortableSpreadThumb({
           ? 'border-blue-500 ring-2 ring-blue-200'
           : 'border-gray-200 hover:border-gray-400'
       }`}
-      title={`Разворот ${position}: ${template.name}`}
+      title={`Разворот ${position}`}
     >
-      {/* Контент с drag listeners и click — отдельный div чтобы кнопка
-          удаления (поверх) могла перехватывать клики без триггера drag. */}
+      {/* Двойная миниатюра. attributes/listeners — на внешнем контейнере
+          чтобы drag начинался с любой стороны разворота; клики по
+          левой/правой направляют setCurrentIdx на нужную страницу. */}
       <div
         {...attributes}
         {...listeners}
-        onClick={onClick}
-        className={`cursor-pointer ${disabled ? 'cursor-default' : ''}`}
+        className={`flex ${disabled ? 'cursor-default' : 'cursor-grab'}`}
+        style={{ width: SPREAD_THUMB_WIDTH }}
       >
-        <div className="overflow-hidden rounded bg-white" style={{ width: THUMB_WIDTH }}>
-          <AlbumSpreadCanvas
-            instance={spread}
-            template={template}
-            containerWidth={THUMB_WIDTH}
-            mode="preview"
-          />
-        </div>
+        {pair.isSpread && leftPage && leftTemplate ? (
+          // Spread-мастер: один canvas на всю ширину
+          <div
+            onClick={(e) => {
+              e.stopPropagation()
+              if (pair.leftIdx !== undefined) onSelect(pair.leftIdx)
+            }}
+            className={`overflow-hidden rounded ${
+              currentPageIdx === pair.leftIdx ? 'ring-1 ring-blue-300' : ''
+            }`}
+            style={{ width: SPREAD_THUMB_WIDTH }}
+          >
+            <AlbumSpreadCanvas
+              instance={leftPage}
+              template={leftTemplate}
+              containerWidth={SPREAD_THUMB_WIDTH}
+              mode="preview"
+            />
+          </div>
+        ) : (
+          <>
+            {/* Левая половина */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation()
+                if (pair.leftIdx !== undefined) onSelect(pair.leftIdx)
+              }}
+              className={`overflow-hidden bg-white ${
+                currentPageIdx === pair.leftIdx ? 'ring-1 ring-blue-300' : ''
+              }`}
+              style={{ width: PAGE_THUMB_WIDTH }}
+            >
+              {leftPage && leftTemplate ? (
+                <AlbumSpreadCanvas
+                  instance={leftPage}
+                  template={leftTemplate}
+                  containerWidth={PAGE_THUMB_WIDTH}
+                  mode="preview"
+                />
+              ) : (
+                <EmptySideThumb width={PAGE_THUMB_WIDTH} />
+              )}
+            </div>
+            {/* Правая половина */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation()
+                if (pair.rightIdx !== undefined) onSelect(pair.rightIdx)
+              }}
+              className={`overflow-hidden bg-white ${
+                currentPageIdx === pair.rightIdx ? 'ring-1 ring-blue-300' : ''
+              }`}
+              style={{ width: PAGE_THUMB_WIDTH }}
+            >
+              {rightPage && rightTemplate ? (
+                <AlbumSpreadCanvas
+                  instance={rightPage}
+                  template={rightTemplate}
+                  containerWidth={PAGE_THUMB_WIDTH}
+                  mode="preview"
+                />
+              ) : (
+                <EmptySideThumb width={PAGE_THUMB_WIDTH} />
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Номер разворота — поверх в углу */}
@@ -243,7 +358,7 @@ function SortableSpreadThumb({
         {position}
       </span>
 
-      {/* М.2 — кнопка удаления (видна при hover) */}
+      {/* Кнопка удаления (видна при hover) */}
       {onDelete && (
         <button
           type="button"
@@ -258,5 +373,17 @@ function SortableSpreadThumb({
         </button>
       )}
     </div>
+  )
+}
+
+// Пустая половина миниатюры (для висящих разворотов с одной заполненной стороной).
+function EmptySideThumb({ width }: { width: number }) {
+  const height = width * 1.4
+  return (
+    <div
+      className="bg-gray-50 border border-dashed border-gray-300"
+      style={{ width, height }}
+      title="Пустая страница"
+    />
   )
 }

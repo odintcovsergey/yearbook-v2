@@ -929,27 +929,44 @@ function LayoutEditorPageInner({
     })
   }
 
-  // М.2 — удалить разворот по индексу. Защиты:
+  // М.2 + РЭ.35.Д: удалить РАЗВОРОТ (1-2 страницы по indices).
+  // Защиты:
   //   - confirm для подтверждения
-  //   - не позволяем удалить последний разворот (нужно хотя бы один)
-  //   - если удалили активный — переключаемся на предыдущий
+  //   - не позволяем удалить последний разворот (нужно хотя бы одна страница)
+  //   - если удалили страницу содержащую активный currentIdx — переключаем
+  //     на ближайшую существующую
   //   - реномерация spread_index у оставшихся
-  function handleDeleteSpread(idx: number) {
-    if (!layout || layout.spreads.length <= 1) return
-    const template = templates.find((t) => t.id === layout.spreads[idx]?.template_id)
-    const label = template?.name ?? `Разворот ${idx + 1}`
-    if (!confirm(`Удалить разворот «${label}»?\n\nЕго содержимое (фото и текст) будет потеряно — это действие можно отменить через Ctrl+Z.`)) {
+  function handleDeleteSpread(pageIndices: number[]) {
+    if (!layout || layout.spreads.length <= pageIndices.length) return
+    if (pageIndices.length === 0) return
+    const sortedIndices = [...pageIndices].sort((a, b) => a - b)
+    const firstIdx = sortedIndices[0]
+    const template = templates.find(
+      (t) => t.id === layout.spreads[firstIdx]?.template_id,
+    )
+    const label = template?.name ?? `Разворот`
+    if (
+      !confirm(
+        `Удалить разворот «${label}»?\n\nЕго содержимое (фото и текст) будет потеряно — это действие можно отменить через Ctrl+Z.`,
+      )
+    ) {
       return
     }
+    const toDelete = new Set(pageIndices)
     const newSpreads = layout.spreads
-      .filter((_, i) => i !== idx)
+      .filter((_, i) => !toDelete.has(i))
       .map((s, i) => ({ ...s, spread_index: i }))
     setLayout({ ...layout, spreads: newSpreads })
-    // Активный разворот сдвигается если удалили его или предшествующий
-    if (currentIdx >= newSpreads.length) {
-      setCurrentIdx(Math.max(0, newSpreads.length - 1))
-    } else if (currentIdx > idx) {
-      setCurrentIdx(currentIdx - 1)
+    // Корректируем currentIdx: сколько удалённых страниц стояли до него
+    const removedBefore = sortedIndices.filter((i) => i < currentIdx).length
+    const removedActive = toDelete.has(currentIdx)
+    if (removedActive) {
+      // активный удалён — переключаемся на следующую существующую страницу
+      // (или предыдущую если активный был последним)
+      const newIdx = Math.min(currentIdx - removedBefore, newSpreads.length - 1)
+      setCurrentIdx(Math.max(0, newIdx))
+    } else if (removedBefore > 0) {
+      setCurrentIdx(currentIdx - removedBefore)
     }
   }
 
