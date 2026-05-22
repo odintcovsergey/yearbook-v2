@@ -64,8 +64,8 @@ type Props = {
   readOnly?: boolean
 }
 
-const PAGE_THUMB_WIDTH = 48 // одна страница
-const SPREAD_THUMB_WIDTH = 96 // двух-страничный мастер (is_spread)
+const PAGE_THUMB_WIDTH = 96 // одна страница (~140px высоты для книжной пропорции)
+const SPREAD_THUMB_WIDTH = 192 // двух-страничный мастер (is_spread)
 
 export default function SpreadOrderStrip({
   spreads,
@@ -159,7 +159,12 @@ export default function SpreadOrderStrip({
           )}
         </p>
       </div>
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+        autoScroll={{ threshold: { x: 0.2, y: 0 } }}
+      >
         <SortableContext items={itemIds} strategy={horizontalListSortingStrategy}>
           <div className="flex gap-2 overflow-x-auto pb-1 items-stretch">
             {visualSpreads.map((pair, pairIdx) => {
