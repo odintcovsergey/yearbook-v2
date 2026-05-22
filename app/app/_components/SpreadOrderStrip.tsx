@@ -32,23 +32,22 @@ const AlbumSpreadCanvas = dynamic(() => import('./AlbumSpreadCanvas'), {
 
 // ─── SpreadOrderStrip ─────────────────────────────────────────────────────
 //
-// РЭ.35.Д — Горизонтальная strip миниатюр РАЗВОРОТОВ внизу редактора.
+// РЭ.35.Д.2 — Strip миниатюр с гибридной моделью «развороты + страницы»:
 //
-// Под капотом: spreads[] это массив страниц (legacy формат, 1 элемент =
-// 1 страница). Здесь мы группируем их попарно в визуальные развороты
-// через segmentToSpreads helper и показываем каждый разворот как ОДНУ
-// карточку с двумя миниатюрами рядом (или одной для is_spread мастеров).
+//  - Визуально страницы СГРУППИРОВАНЫ в карточки-развороты (тонкий
+//    разделитель между left/right, общая рамка-разворот)
+//  - Но DRAG&DROP работает ПОСТРАНИЧНО — каждая страница отдельный
+//    sortable item. Это даёт фотографу гибкость переставлять отдельные
+//    страницы внутри/между разворотов.
+//  - Удаление одиночной страницы (✕ на её половинке миниатюры) ведёт
+//    к СДВИГУ всех последующих страниц на одну — для этого confirm
+//    с предупреждением «это сместит весь дальнейший альбом».
+//  - Удаление целого разворота (✕ в углу карточки) удаляет обе
+//    страницы вместе — без сдвига.
 //
-// Операции:
-//  - Клик на левую/правую миниатюру → переключение currentIdx на
-//    соответствующую страницу
-//  - Drag&drop карточки → переупорядочивание пар страниц (обе двигаются
-//    вместе)
-//  - Удаление → удаление обеих страниц разворота (родитель решает что
-//    делать с висящими)
-//  - Активный разворот (тот в котором сейчас currentIdx) подсвечен синей
-//    рамкой; внутри него та страница которая currentIdx — отдельной
-//    светлой обводкой
+// Под капотом spreads[] остаётся плоским массивом страниц (legacy
+// формат). segmentToSpreads используется только для визуальной
+// группировки.
 
 type Props = {
   spreads: SpreadInstance[]
@@ -56,17 +55,17 @@ type Props = {
   currentIdx: number
   onSelect: (idx: number) => void
   onReorder: (newSpreads: SpreadInstance[]) => void
-  // Удалить РАЗВОРОТ — родитель должен удалить все страницы разворота.
-  // pageIndices — массив индексов страниц в spreads[] (1 для is_spread,
-  // 1 для висящего, 2 для обычного).
+  // Удалить страницы — родитель получает массив pageIndices и убирает их.
+  // При одной странице — confirm с предупреждением о сдвиге; при двух
+  // (целый разворот) — обычный confirm.
   onDelete?: (pageIndices: number[]) => void
-  // Добавить новый разворот после указанной страницы.
+  // Добавить новую страницу после указанной.
   onAddRequest?: (insertAfterPageIdx: number) => void
   readOnly?: boolean
 }
 
-const PAGE_THUMB_WIDTH = 48 // одна страница (половина разворота)
-const SPREAD_THUMB_WIDTH = 96 // полный разворот (двух-страничный)
+const PAGE_THUMB_WIDTH = 48 // одна страница
+const SPREAD_THUMB_WIDTH = 96 // двух-страничный мастер (is_spread)
 
 export default function SpreadOrderStrip({
   spreads,
@@ -84,13 +83,13 @@ export default function SpreadOrderStrip({
     return map
   }, [templates])
 
-  // Сегментация страниц в визуальные развороты.
+  // Сегментация — только для визуальной группировки.
   const visualSpreads = useMemo(
     () => segmentToSpreads(spreads, templateMap),
     [spreads, templateMap],
   )
 
-  // Текущий активный разворот — pair в котором сейчас находится currentIdx.
+  // Активный разворот — pair в котором сейчас currentIdx.
   const currentPairIdx = useMemo(
     () => findVisualSpreadForPage(visualSpreads, currentIdx),
     [visualSpreads, currentIdx],
@@ -102,35 +101,21 @@ export default function SpreadOrderStrip({
     }),
   )
 
-  // ID-based sortable: используем pair-index. При reorder пары мы
-  // пересчитываем массив страниц с нуля.
+  // ID-based sortable: каждая СТРАНИЦА — отдельный sortable item.
+  // ID = `page-${spread_index}` стабильное.
   const itemIds = useMemo(
-    () => visualSpreads.map((_, i) => `pair-${i}`),
-    [visualSpreads],
+    () => spreads.map((s) => `page-${s.spread_index}`),
+    [spreads],
   )
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
-    const oldPairIdx = visualSpreads.findIndex((_, i) => `pair-${i}` === active.id)
-    const newPairIdx = visualSpreads.findIndex((_, i) => `pair-${i}` === over.id)
-    if (oldPairIdx === -1 || newPairIdx === -1) return
-
-    // Переставляем pair'ы. Каждый pair → 1 или 2 страницы; собираем
-    // плоский массив страниц в новом порядке.
-    const reorderedPairs = arrayMove(visualSpreads, oldPairIdx, newPairIdx)
-    const newSpreads: SpreadInstance[] = []
-    for (const pair of reorderedPairs) {
-      if (pair.isSpread && pair.leftIdx !== undefined) {
-        // is_spread занимает оба места но в массиве это ОДИН элемент
-        // SpreadInstance (см. layout-to-buildresult adapter).
-        newSpreads.push(spreads[pair.leftIdx])
-      } else {
-        if (pair.leftIdx !== undefined) newSpreads.push(spreads[pair.leftIdx])
-        if (pair.rightIdx !== undefined) newSpreads.push(spreads[pair.rightIdx])
-      }
-    }
-    const renumbered = newSpreads.map((s, i) => ({ ...s, spread_index: i }))
+    const oldIdx = spreads.findIndex((s) => `page-${s.spread_index}` === active.id)
+    const newIdx = spreads.findIndex((s) => `page-${s.spread_index}` === over.id)
+    if (oldIdx === -1 || newIdx === -1) return
+    const reordered = arrayMove(spreads, oldIdx, newIdx)
+    const renumbered = reordered.map((s, i) => ({ ...s, spread_index: i }))
     onReorder(renumbered)
 
     // Преследуем активную страницу (по reference equality).
@@ -143,13 +128,34 @@ export default function SpreadOrderStrip({
     }
   }
 
+  function handleDeleteSinglePage(pageIdx: number) {
+    if (!onDelete) return
+    if (
+      !confirm(
+        `⚠ Удалить ОДНУ страницу?\n\nЭто сдвинет все последующие страницы на одну позицию. Левая страница следующего разворота станет правой текущего, и так далее. Композиция альбома может измениться.\n\nЕсли вы хотите удалить целый разворот (2 страницы), используйте кнопку ✕ в правом верхнем углу карточки.\n\nПродолжить?`,
+      )
+    ) {
+      return
+    }
+    onDelete([pageIdx])
+  }
+
+  function handleDeleteSpread(pageIndices: number[]) {
+    if (!onDelete || pageIndices.length === 0) return
+    if (!confirm(`Удалить разворот целиком (${pageIndices.length === 1 ? '1 страница' : '2 страницы'})?`)) {
+      return
+    }
+    onDelete(pageIndices)
+  }
+
   return (
     <div className="bg-white border-t border-gray-200 px-4 py-3">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs text-gray-500">
           Развороты ({visualSpreads.length}){' '}
+          <span className="text-gray-400">· страниц: {spreads.length}</span>{' '}
           {!readOnly && (
-            <span className="text-gray-400">— перетащите чтобы изменить порядок</span>
+            <span className="text-gray-400">— перетащите страницу чтобы изменить порядок</span>
           )}
         </p>
       </div>
@@ -163,10 +169,17 @@ export default function SpreadOrderStrip({
                 pair.rightIdx !== undefined ? spreads[pair.rightIdx] : null
               const leftTemplate = leftPage ? templateMap.get(leftPage.template_id) : null
               const rightTemplate = rightPage ? templateMap.get(rightPage.template_id) : null
+              const pairPageIndices: number[] = []
+              if (pair.leftIdx !== undefined) pairPageIndices.push(pair.leftIdx)
+              if (
+                pair.rightIdx !== undefined &&
+                pair.rightIdx !== pair.leftIdx
+              ) {
+                pairPageIndices.push(pair.rightIdx)
+              }
               return (
-                <SortablePairThumb
+                <SpreadCard
                   key={`pair-${pairIdx}`}
-                  id={`pair-${pairIdx}`}
                   pair={pair}
                   leftPage={leftPage}
                   rightPage={rightPage}
@@ -176,19 +189,10 @@ export default function SpreadOrderStrip({
                   isActive={pairIdx === currentPairIdx}
                   currentPageIdx={currentIdx}
                   onSelect={onSelect}
-                  onDelete={
-                    !readOnly && onDelete && visualSpreads.length > 1
-                      ? () => {
-                          const indices: number[] = []
-                          if (pair.leftIdx !== undefined) indices.push(pair.leftIdx)
-                          if (
-                            pair.rightIdx !== undefined &&
-                            pair.rightIdx !== pair.leftIdx
-                          ) {
-                            indices.push(pair.rightIdx)
-                          }
-                          onDelete(indices)
-                        }
+                  onDeletePage={!readOnly && onDelete ? handleDeleteSinglePage : undefined}
+                  onDeleteSpread={
+                    !readOnly && onDelete && spreads.length > pairPageIndices.length
+                      ? () => handleDeleteSpread(pairPageIndices)
                       : undefined
                   }
                   disabled={readOnly}
@@ -196,8 +200,6 @@ export default function SpreadOrderStrip({
               )
             })}
 
-            {/* Кнопка «➕ Добавить разворот» в конце strip. Вставляет
-                новую страницу после текущего активного разворота. */}
             {!readOnly && onAddRequest && (
               <button
                 type="button"
@@ -223,9 +225,9 @@ export default function SpreadOrderStrip({
   )
 }
 
-// ─── SortablePairThumb — карточка одного визуального разворота ──────────
-function SortablePairThumb({
-  id,
+// ─── SpreadCard — карточка-разворот с двумя draggable половинками ────────
+
+function SpreadCard({
   pair,
   leftPage,
   rightPage,
@@ -235,10 +237,10 @@ function SortablePairThumb({
   isActive,
   currentPageIdx,
   onSelect,
-  onDelete,
+  onDeletePage,
+  onDeleteSpread,
   disabled,
 }: {
-  id: string
   pair: VisualSpread
   leftPage: SpreadInstance | null
   rightPage: SpreadInstance | null
@@ -248,22 +250,17 @@ function SortablePairThumb({
   isActive: boolean
   currentPageIdx: number
   onSelect: (idx: number) => void
-  onDelete?: () => void
+  onDeletePage?: (pageIdx: number) => void
+  onDeleteSpread?: () => void
   disabled: boolean
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id, disabled })
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  }
+  // Является ли разворот двух-страничным мастером (J-Spread)?
+  // Тогда обе страницы — это ОДНА запись SpreadInstance с одним
+  // spread_index и одним sortable-item. Drag берёт всю карточку.
+  const isSpreadMaster = pair.isSpread && pair.leftIdx !== undefined
 
   return (
     <div
-      ref={setNodeRef}
-      style={style}
       className={`group flex-shrink-0 relative rounded border-2 transition-colors ${
         isActive
           ? 'border-blue-500 ring-2 ring-blue-200'
@@ -271,85 +268,58 @@ function SortablePairThumb({
       }`}
       title={`Разворот ${position}`}
     >
-      {/* Двойная миниатюра. attributes/listeners — на внешнем контейнере
-          чтобы drag начинался с любой стороны разворота; клики по
-          левой/правой направляют setCurrentIdx на нужную страницу. */}
-      <div
-        {...attributes}
-        {...listeners}
-        className={`flex ${disabled ? 'cursor-default' : 'cursor-grab'}`}
-        style={{ width: SPREAD_THUMB_WIDTH }}
-      >
-        {pair.isSpread && leftPage && leftTemplate ? (
-          // Spread-мастер: один canvas на всю ширину
-          <div
-            onClick={(e) => {
-              e.stopPropagation()
-              if (pair.leftIdx !== undefined) onSelect(pair.leftIdx)
-            }}
-            className={`overflow-hidden rounded ${
-              currentPageIdx === pair.leftIdx ? 'ring-1 ring-blue-300' : ''
-            }`}
-            style={{ width: SPREAD_THUMB_WIDTH }}
-          >
-            <AlbumSpreadCanvas
-              instance={leftPage}
-              template={leftTemplate}
-              containerWidth={SPREAD_THUMB_WIDTH}
-              mode="preview"
-            />
-          </div>
+      <div className="flex" style={{ width: SPREAD_THUMB_WIDTH }}>
+        {isSpreadMaster && leftPage && leftTemplate ? (
+          // Spread-мастер: одна draggable страница на всю ширину
+          <DraggablePage
+            pageIdx={pair.leftIdx!}
+            page={leftPage}
+            template={leftTemplate}
+            width={SPREAD_THUMB_WIDTH}
+            isCurrent={currentPageIdx === pair.leftIdx}
+            onSelect={onSelect}
+            onDeletePage={onDeletePage}
+            disabled={disabled}
+          />
         ) : (
           <>
             {/* Левая половина */}
-            <div
-              onClick={(e) => {
-                e.stopPropagation()
-                if (pair.leftIdx !== undefined) onSelect(pair.leftIdx)
-              }}
-              className={`overflow-hidden bg-white ${
-                currentPageIdx === pair.leftIdx ? 'ring-1 ring-blue-300' : ''
-              }`}
-              style={{ width: PAGE_THUMB_WIDTH }}
-            >
-              {leftPage && leftTemplate ? (
-                <AlbumSpreadCanvas
-                  instance={leftPage}
-                  template={leftTemplate}
-                  containerWidth={PAGE_THUMB_WIDTH}
-                  mode="preview"
-                />
-              ) : (
-                <EmptySideThumb width={PAGE_THUMB_WIDTH} />
-              )}
-            </div>
+            {leftPage && leftTemplate ? (
+              <DraggablePage
+                pageIdx={pair.leftIdx!}
+                page={leftPage}
+                template={leftTemplate}
+                width={PAGE_THUMB_WIDTH}
+                isCurrent={currentPageIdx === pair.leftIdx}
+                onSelect={onSelect}
+                onDeletePage={onDeletePage}
+                disabled={disabled}
+              />
+            ) : (
+              <EmptySideThumb width={PAGE_THUMB_WIDTH} />
+            )}
+            {/* Разделитель между страницами разворота */}
+            <div className="w-px bg-gray-300" />
             {/* Правая половина */}
-            <div
-              onClick={(e) => {
-                e.stopPropagation()
-                if (pair.rightIdx !== undefined) onSelect(pair.rightIdx)
-              }}
-              className={`overflow-hidden bg-white ${
-                currentPageIdx === pair.rightIdx ? 'ring-1 ring-blue-300' : ''
-              }`}
-              style={{ width: PAGE_THUMB_WIDTH }}
-            >
-              {rightPage && rightTemplate ? (
-                <AlbumSpreadCanvas
-                  instance={rightPage}
-                  template={rightTemplate}
-                  containerWidth={PAGE_THUMB_WIDTH}
-                  mode="preview"
-                />
-              ) : (
-                <EmptySideThumb width={PAGE_THUMB_WIDTH} />
-              )}
-            </div>
+            {rightPage && rightTemplate ? (
+              <DraggablePage
+                pageIdx={pair.rightIdx!}
+                page={rightPage}
+                template={rightTemplate}
+                width={PAGE_THUMB_WIDTH}
+                isCurrent={currentPageIdx === pair.rightIdx}
+                onSelect={onSelect}
+                onDeletePage={onDeletePage}
+                disabled={disabled}
+              />
+            ) : (
+              <EmptySideThumb width={PAGE_THUMB_WIDTH} />
+            )}
           </>
         )}
       </div>
 
-      {/* Номер разворота — поверх в углу */}
+      {/* Номер разворота — в углу */}
       <span
         className={`absolute top-0 left-0 px-1.5 py-0.5 text-[10px] font-medium rounded-br pointer-events-none ${
           isActive ? 'bg-blue-500 text-white' : 'bg-white/90 text-gray-700'
@@ -358,18 +328,94 @@ function SortablePairThumb({
         {position}
       </span>
 
-      {/* Кнопка удаления (видна при hover) */}
-      {onDelete && (
+      {/* Кнопка удаления ВСЕГО разворота (видна при hover) */}
+      {onDeleteSpread && (
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation()
-            onDelete()
+            onDeleteSpread()
           }}
           className="absolute top-0 right-0 w-5 h-5 flex items-center justify-center bg-red-500 text-white rounded-bl opacity-0 group-hover:opacity-100 transition-opacity text-xs hover:bg-red-600"
-          title="Удалить разворот"
+          title="Удалить разворот целиком"
         >
           ✕
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ─── DraggablePage — одна draggable страница в карточке-развороте ────────
+
+function DraggablePage({
+  pageIdx,
+  page,
+  template,
+  width,
+  isCurrent,
+  onSelect,
+  onDeletePage,
+  disabled,
+}: {
+  pageIdx: number
+  page: SpreadInstance
+  template: SpreadTemplate
+  width: number
+  isCurrent: boolean
+  onSelect: (idx: number) => void
+  onDeletePage?: (pageIdx: number) => void
+  disabled: boolean
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: `page-${page.spread_index}`, disabled })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`relative group/page overflow-hidden bg-white ${
+        isCurrent ? 'ring-1 ring-blue-300' : ''
+      }`}
+    >
+      {/* Drag-handle на всей странице. Click переключает currentIdx. */}
+      <div
+        {...attributes}
+        {...listeners}
+        onClick={(e) => {
+          e.stopPropagation()
+          onSelect(pageIdx)
+        }}
+        className={disabled ? 'cursor-default' : 'cursor-grab'}
+        style={{ width }}
+      >
+        <AlbumSpreadCanvas
+          instance={page}
+          template={template}
+          containerWidth={width}
+          mode="preview"
+        />
+      </div>
+
+      {/* Маленькая кнопка удаления одной страницы — нижний правый угол.
+          Видна при hover именно на странице (group/page). */}
+      {onDeletePage && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onDeletePage(pageIdx)
+          }}
+          className="absolute bottom-0 right-0 w-4 h-4 flex items-center justify-center bg-gray-600 text-white rounded-tl opacity-0 group-hover/page:opacity-100 transition-opacity text-[9px] hover:bg-red-600"
+          title="Удалить только эту страницу (сместит остальные)"
+        >
+          –
         </button>
       )}
     </div>
