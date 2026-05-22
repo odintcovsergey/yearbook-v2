@@ -80,14 +80,57 @@ function classifyMaster(master: SpreadTemplate): Capacity {
 }
 
 /**
+ * Роли мастеров которые точно НЕ относятся к общему разделу.
+ * Жёсткий blacklist для page_role: даже если у мастера внутри есть
+ * classphotoframe (как в учительских F-Head-WithClassPhoto или в
+ * combined-tail M/L/N-Combined-Page), он не должен попадать в пикер
+ * общего раздела.
+ */
+const NON_COMMON_PAGE_ROLES = new Set<string>([
+  'student',
+  'student_grid',
+  'student_grid_left',
+  'student_grid_right',
+  'student_left',
+  'student_right',
+  'student_overflow',
+  'student_last',
+  'teacher_left',
+  'teacher_right',
+  'intro',
+  'cover',
+])
+
+/**
  * Определяет является ли мастер «общим» (подходит для общего раздела).
- * Гибридный фильтр согласно решению Q1: page_role='common' OR placeholders
- * содержит J-категории.
+ * Решение Q1 spec'а РЭ.32 — гибридный фильтр с приоритетом negative-match.
+ *
+ * Логика (РЭ.32.Б.5 — fix после фидбэка Сергея 22.05):
+ *   1. page_role в blacklist → отсекаем сразу.
+ *   2. Есть studentportrait_N / studentname_N / teacherphoto_N /
+ *      teachername_N / headteacher* → отсекаем (не J-мастер).
+ *   3. page_role='common' → считаем общим.
+ *   4. Иначе — определяем по placeholders (classifyMaster).
  */
 function isCommonMaster(master: SpreadTemplate): boolean {
+  if (master.page_role && NON_COMMON_PAGE_ROLES.has(master.page_role)) {
+    return false
+  }
+  for (const ph of master.placeholders ?? []) {
+    const l = ph.label.toLowerCase()
+    if (
+      l.startsWith('studentportrait_') ||
+      l.startsWith('studentname_') ||
+      l.startsWith('teacherphoto_') ||
+      l.startsWith('teachername_') ||
+      l === 'headteacherphoto' ||
+      l === 'headteachername'
+    ) {
+      return false
+    }
+  }
   if (master.page_role === 'common') return true
   const cap = classifyMaster(master)
-  // 'other' = не J-мастер. Все остальные категории — общие.
   return cap !== 'other'
 }
 

@@ -806,14 +806,34 @@ function TransitionMasterSelector({
   templates: SpreadTemplate[]
   onChange: (masterName: string | null) => void
 }) {
-  // Фильтр — те же критерии что у JMasterPicker, но проще: просто
-  // классифицируем по placeholders и оставляем не-other без -Right.
+  // Тот же фильтр что в JMasterPicker (РЭ.32.Б.5):
+  //   1. blacklist по page_role (студенческие/учительские/обложечные)
+  //   2. отсекаем мастера с studentportrait_*/teacherphoto_*
+  //   3. оставляем только page_role='common' или с J-категорией
+  //   4. без -Right вариантов
+  const NON_COMMON_ROLES = new Set([
+    'student', 'student_grid', 'student_grid_left', 'student_grid_right',
+    'student_left', 'student_right', 'student_overflow', 'student_last',
+    'teacher_left', 'teacher_right', 'intro', 'cover',
+  ])
   const candidates = templates.filter((t) => {
     if (t.name.endsWith('-Right')) return false
-    if (t.page_role === 'common') return true
+    if (t.page_role && NON_COMMON_ROLES.has(t.page_role)) return false
     let hasJCategory = false
+    let hasNonCommonPlaceholder = false
     for (const ph of t.placeholders ?? []) {
       const l = ph.label.toLowerCase()
+      if (
+        l.match(/^studentportrait_\d+$/) ||
+        l.match(/^studentname_\d+$/) ||
+        l.match(/^teacherphoto_\d+$/) ||
+        l.match(/^teachername_\d+$/) ||
+        l === 'headteacherphoto' ||
+        l === 'headteachername'
+      ) {
+        hasNonCommonPlaceholder = true
+        break
+      }
       if (
         l === 'classphotoframe' ||
         l === 'spreadphoto' ||
@@ -822,10 +842,10 @@ function TransitionMasterSelector({
         l.match(/^collagephoto_\d+$/)
       ) {
         hasJCategory = true
-        break
       }
     }
-    return hasJCategory
+    if (hasNonCommonPlaceholder) return false
+    return t.page_role === 'common' || hasJCategory
   })
 
   const selectedExists = value === null || candidates.some((t) => t.name === value)
