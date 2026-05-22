@@ -1,21 +1,22 @@
 /**
- * Тесты для эталонной таблицы OkeyBook + fillCommonRequiredSection (РЭ.21.8.9).
+ * Тесты для fillCommonRequiredSection (РЭ.32).
  *
- * Покрывают:
- *  - matchStudents: ranges (один интервал, несколько), parity (even/odd), any
- *  - pickRow: разные комбинации density × sheet_type × students_count
- *  - fillCommonRequiredSection: bindings, страницы, mirror Quarter Left/Right
- *  - Пустая таблица (Мини плотные 25+) — 0 страниц без warnings
- *  - skip страницы при недостатке фото
- *  - density=null без resolveDensityForTable → warning
+ * Покрывают новый формат:
+ *   { type: 'common_required', pages: [{ master_name: '...' }] }
+ *
+ * Сценарии:
+ *  - pages пуст / отсутствует → warning common_required_empty
+ *  - 1 страница full_class, фото есть → 1 SpreadInstance, classphotoframe bound
+ *  - 2 страницы quarter (left + right) → J-Quarter-Left на левой,
+ *    J-Quarter-Right на правой (зеркало)
+ *  - master_name не найден → warning common_required_master_missing
+ *  - фото не хватает → warning common_required_page_skipped, остальные продолжают
+ *  - J-Spread (is_spread=true) → одна запись pages → 2 pageInstances →
+ *    SpreadInstance.is_spread=true
+ *  - смешанная последовательность с разными категориями
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  matchStudents,
-  pickRow,
-  OKEYBOOK_TABLE,
-} from '../album-structure-okeybook';
 import { buildFromSectionStructure } from '../build-from-section-structure';
 import type { Preset, RulesAlbumInput } from '../types';
 import type { RuleEngineBundle } from '../loaders';
@@ -24,125 +25,6 @@ import type {
   SpreadTemplate,
   TemplateSet,
 } from '@/lib/album-builder/types';
-
-// ─── Тесты matchStudents ────────────────────────────────────────────────────
-
-describe('matchStudents', () => {
-  it('any — подходит для любого количества', () => {
-    expect(matchStudents({ kind: 'any' }, 0)).toBe(true);
-    expect(matchStudents({ kind: 'any' }, 1)).toBe(true);
-    expect(matchStudents({ kind: 'any' }, 100)).toBe(true);
-  });
-
-  it('ranges один интервал', () => {
-    const m = { kind: 'ranges' as const, ranges: [[1, 24]] as [number, number][] };
-    expect(matchStudents(m, 0)).toBe(false);
-    expect(matchStudents(m, 1)).toBe(true);
-    expect(matchStudents(m, 12)).toBe(true);
-    expect(matchStudents(m, 24)).toBe(true);
-    expect(matchStudents(m, 25)).toBe(false);
-  });
-
-  it('ranges несколько интервалов', () => {
-    const m = {
-      kind: 'ranges' as const,
-      ranges: [
-        [13, 15],
-        [25, 28],
-      ] as [number, number][],
-    };
-    expect(matchStudents(m, 12)).toBe(false);
-    expect(matchStudents(m, 13)).toBe(true);
-    expect(matchStudents(m, 15)).toBe(true);
-    expect(matchStudents(m, 16)).toBe(false);
-    expect(matchStudents(m, 24)).toBe(false);
-    expect(matchStudents(m, 25)).toBe(true);
-    expect(matchStudents(m, 28)).toBe(true);
-    expect(matchStudents(m, 29)).toBe(false);
-  });
-
-  it('parity even', () => {
-    expect(matchStudents({ kind: 'parity', parity: 'even' }, 0)).toBe(true);
-    expect(matchStudents({ kind: 'parity', parity: 'even' }, 2)).toBe(true);
-    expect(matchStudents({ kind: 'parity', parity: 'even' }, 3)).toBe(false);
-  });
-
-  it('parity odd', () => {
-    expect(matchStudents({ kind: 'parity', parity: 'odd' }, 0)).toBe(false);
-    expect(matchStudents({ kind: 'parity', parity: 'odd' }, 1)).toBe(true);
-    expect(matchStudents({ kind: 'parity', parity: 'odd' }, 21)).toBe(true);
-  });
-});
-
-// ─── Тесты pickRow ──────────────────────────────────────────────────────────
-
-describe('pickRow', () => {
-  it('Лайт плотные 16 учеников → 4 страницы', () => {
-    const row = pickRow('light', 'hard', 16);
-    expect(row).not.toBeNull();
-    expect(row!.pages.length).toBe(4);
-  });
-
-  it('Лайт плотные 24 ученика → 6 страниц', () => {
-    const row = pickRow('light', 'hard', 24);
-    expect(row).not.toBeNull();
-    expect(row!.pages.length).toBe(6);
-  });
-
-  it('Мини плотные 28 учеников → 0 страниц (нет обязательного раздела)', () => {
-    const row = pickRow('mini', 'hard', 28);
-    expect(row).not.toBeNull();
-    expect(row!.pages.length).toBe(0);
-  });
-
-  it('Мини мягкие 24 ученика → 3 страницы', () => {
-    const row = pickRow('mini', 'soft', 24);
-    expect(row).not.toBeNull();
-    expect(row!.pages.length).toBe(3);
-  });
-
-  it('Стандарт плотные чётное → 6 страниц', () => {
-    const row = pickRow('standard', 'hard', 20);
-    expect(row).not.toBeNull();
-    expect(row!.pages.length).toBe(6);
-  });
-
-  it('Стандарт плотные нечётное → 4 страницы', () => {
-    const row = pickRow('standard', 'hard', 19);
-    expect(row).not.toBeNull();
-    expect(row!.pages.length).toBe(4);
-  });
-
-  it('Максимум плотные любое количество → 6 страниц', () => {
-    expect(pickRow('maximum', 'hard', 10)!.pages.length).toBe(6);
-    expect(pickRow('maximum', 'hard', 30)!.pages.length).toBe(6);
-  });
-
-  it('Максимум мягкие → 5 страниц', () => {
-    expect(pickRow('maximum', 'soft', 15)!.pages.length).toBe(5);
-  });
-
-  it('density=null → null', () => {
-    expect(pickRow(null, 'hard', 20)).toBeNull();
-  });
-
-  it('sheet_type=null → null', () => {
-    expect(pickRow('light', null, 20)).toBeNull();
-  });
-
-  it('Лайт плотные несовпадающий интервал (50 учеников) → null', () => {
-    expect(pickRow('light', 'hard', 50)).toBeNull();
-  });
-
-  it('Все строки таблицы валидны — pages.length 0..6', () => {
-    for (const row of OKEYBOOK_TABLE) {
-      expect(row.pages.length).toBeGreaterThanOrEqual(0);
-      expect(row.pages.length).toBeLessThanOrEqual(6);
-    }
-  });
-});
-
-// ─── Тесты fillCommonRequiredSection ────────────────────────────────────────
 
 function photoSlot(label: string): Placeholder {
   return {
@@ -157,7 +39,11 @@ function photoSlot(label: string): Placeholder {
   };
 }
 
-function makeMaster(name: string, placeholders: Placeholder[] = []): SpreadTemplate {
+function makeMaster(
+  name: string,
+  placeholders: Placeholder[] = [],
+  overrides: Partial<SpreadTemplate> = {},
+): SpreadTemplate {
   return {
     id: `id-${name}`,
     name,
@@ -175,6 +61,7 @@ function makeMaster(name: string, placeholders: Placeholder[] = []): SpreadTempl
     is_fallback: false,
     mirror_for_soft: false,
     audit_notes: null,
+    ...overrides,
   };
 }
 
@@ -186,17 +73,33 @@ const J_HALF = makeMaster('J-Half', [
 const J_QUARTER_LEFT = makeMaster('J-Quarter-Left', [
   photoSlot('quarterphoto_1'),
   photoSlot('quarterphoto_2'),
+  photoSlot('quarterphoto_3'),
+  photoSlot('quarterphoto_4'),
 ]);
 const J_QUARTER_RIGHT = makeMaster('J-Quarter-Right', [
   photoSlot('quarterphoto_1'),
   photoSlot('quarterphoto_2'),
+  photoSlot('quarterphoto_3'),
+  photoSlot('quarterphoto_4'),
 ]);
 const J_COLLAGE_6 = makeMaster(
   'J-Collage-6',
   Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
 );
+const J_SPREAD = makeMaster(
+  'J-Spread',
+  [photoSlot('spreadphoto')],
+  { is_spread: true, width_mm: 400 },
+);
 
-const ALL_J_MASTERS = [J_FULL, J_HALF, J_QUARTER_LEFT, J_QUARTER_RIGHT, J_COLLAGE_6];
+const ALL_J_MASTERS = [
+  J_FULL,
+  J_HALF,
+  J_QUARTER_LEFT,
+  J_QUARTER_RIGHT,
+  J_COLLAGE_6,
+  J_SPREAD,
+];
 
 function makePreset(opts: Partial<Preset> & Pick<Preset, 'id'>): Preset {
   return {
@@ -245,229 +148,185 @@ function makeBundle(opts: {
 }
 
 function makeInput(opts: {
-  students_count?: number;
   full_class?: number;
   half_class?: number;
   quarter?: number;
   sixth?: number;
-}): RulesAlbumInput {
+  spread?: number;
+} = {}): RulesAlbumInput {
   const urls = (n: number, label: string) =>
     Array.from({ length: n }, (_, i) => `https://cdn/${label}_${i}.jpg`);
   return {
-    students: Array.from({ length: opts.students_count ?? 0 }, (_, i) => ({
-      full_name: `S${i}`,
-      quote: '',
-      portrait: `https://cdn/p${i}.jpg`,
-      friend_photos: [],
-    })),
+    students: [],
     subjects: [],
     head_teacher: { photo: null, name: '', role: '', text: '' },
     common_photos: {
       full_class: urls(opts.full_class ?? 0, 'full'),
       half_class: urls(opts.half_class ?? 0, 'half'),
-      spread: [],
+      spread: urls(opts.spread ?? 0, 'spread'),
       quarter: urls(opts.quarter ?? 0, 'q'),
       sixth: urls(opts.sixth ?? 0, 'sixth'),
     },
   };
 }
 
-describe('fillCommonRequiredSection: основные сценарии', () => {
-  it('Лайт плотные 16 уч → 4 страницы, мирор Quarter L/R', () => {
+// ─── Тесты ──────────────────────────────────────────────────────────────────
+
+describe('fillCommonRequiredSection (РЭ.32): новый формат pages', () => {
+  it('pages отсутствует → warning common_required_empty, секция пропускается', () => {
     const bundle = makeBundle({
       preset: makePreset({
-        id: 'light',
-        density: 'light',
-        sheet_type: 'hard',
+        id: 'test',
         section_structure: [{ type: 'common_required' }],
       }),
     });
-    // Фото: 2 quarter (на 2 страницы по 2 шт = но нам нужно 4 quarter на
-    // 2 страницы по 2 = 4 шт), 2 half (на 1 стр J-Half = 2 шт),
-    // и 6 sixth (на стр 4 — flex). Итого должно влезть 4 страницы.
-    const result = buildFromSectionStructure(
-      bundle,
-      makeInput({
-        students_count: 16,
-        quarter: 4, // 2 страницы × 2 = 4
-        half_class: 2, // 1 страница × 2
-        sixth: 6, // 1 страница × 6
+    const result = buildFromSectionStructure(bundle, makeInput({ full_class: 5 }));
+    expect(result.spreads).toHaveLength(0);
+    expect(result.warnings.some((w) => w.startsWith('common_required_empty'))).toBe(true);
+  });
+
+  it('pages пуст → warning common_required_empty', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'test',
+        section_structure: [{ type: 'common_required', pages: [] }],
       }),
-    );
-    expect(result.spreads).toHaveLength(2);
-    // Page 0 (left) — J-Quarter-Left
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ full_class: 5 }));
+    expect(result.warnings.some((w) => w.startsWith('common_required_empty'))).toBe(true);
+  });
+
+  it('1 страница J-Full → 1 разворот, левая страница занята, правая пустая', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [{ master_name: 'J-Full' }],
+          },
+        ],
+      }),
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ full_class: 1 }));
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Full');
+    expect(result.spreads[0].left?.bindings.classphotoframe).toBe('https://cdn/full_0.jpg');
+    expect(result.spreads[0].right).toBeUndefined();
+  });
+
+  it('Зеркальный мастер: 2 страницы J-Quarter-Left → на правой автоматически J-Quarter-Right', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [
+              { master_name: 'J-Quarter-Left' },
+              { master_name: 'J-Quarter-Left' },
+            ],
+          },
+        ],
+      }),
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ quarter: 8 }));
+    expect(result.spreads).toHaveLength(1);
     expect(result.spreads[0].left?.master_id).toBe('id-J-Quarter-Left');
-    // Page 1 (right) — J-Quarter-Right (мирор)
     expect(result.spreads[0].right?.master_id).toBe('id-J-Quarter-Right');
-    // Page 2 (left) — J-Half
-    expect(result.spreads[1].left?.master_id).toBe('id-J-Half');
-    // Page 3 (right) — J-Collage-6 (первая попытка для «либо 6 1/6, ...»)
-    expect(result.spreads[1].right?.master_id).toBe('id-J-Collage-6');
   });
 
-  it('Лайт плотные 16 уч, нет sixth → fallback на J-Half для page 4', () => {
+  it('master_name не найден → warning, остальные продолжают', () => {
     const bundle = makeBundle({
       preset: makePreset({
-        id: 'light',
-        density: 'light',
-        sheet_type: 'hard',
-        section_structure: [{ type: 'common_required' }],
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [
+              { master_name: 'J-NonExistent' },
+              { master_name: 'J-Full' },
+            ],
+          },
+        ],
       }),
     });
-    const result = buildFromSectionStructure(
-      bundle,
-      makeInput({
-        students_count: 16,
-        quarter: 4,
-        half_class: 4, // достаточно для J-Half x2 (page 3 и page 4)
-      }),
-    );
-    expect(result.spreads).toHaveLength(2);
-    expect(result.spreads[1].left?.master_id).toBe('id-J-Half'); // page 3
-    expect(result.spreads[1].right?.master_id).toBe('id-J-Half'); // page 4 fallback
+    const result = buildFromSectionStructure(bundle, makeInput({ full_class: 1 }));
+    expect(result.warnings.some((w) => w.includes('master_missing'))).toBe(true);
+    // J-Full должен сработать несмотря на пропущенный мастер.
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Full');
   });
 
-  it('Лайт плотные 16 уч, нет sixth/half → fallback на J-Full', () => {
+  it('фото не хватает → warning common_required_page_skipped, остальные продолжают', () => {
     const bundle = makeBundle({
       preset: makePreset({
-        id: 'light',
-        density: 'light',
-        sheet_type: 'hard',
-        section_structure: [{ type: 'common_required' }],
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [
+              { master_name: 'J-Collage-6' }, // нужно 6 sixth-фото
+              { master_name: 'J-Full' }, // нужно 1 full
+            ],
+          },
+        ],
       }),
     });
-    const result = buildFromSectionStructure(
-      bundle,
-      makeInput({
-        students_count: 16,
-        quarter: 4,
-        half_class: 2, // на 1 J-Half (page 3)
-        full_class: 1, // на 1 J-Full (page 4 — 3-я попытка)
+    // sixth=0, full_class=1 → первая страница пропускается, вторая строится
+    const result = buildFromSectionStructure(bundle, makeInput({ full_class: 1, sixth: 0 }));
+    expect(result.warnings.some((w) => w.includes('page_skipped'))).toBe(true);
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Full');
+  });
+
+  it('J-Spread (is_spread=true) → 1 запись pages → SpreadInstance.is_spread=true', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [{ master_name: 'J-Spread' }],
+          },
+        ],
       }),
-    );
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ spread: 1 }));
+    expect(result.spreads).toHaveLength(1);
+    const spread = result.spreads[0];
+    // SpreadInstance.is_spread должен быть true (через детектор is_spread пары в orchestrator)
+    expect((spread as unknown as { is_spread?: boolean }).is_spread).toBe(true);
+    expect(spread.left?.master_id).toBe('id-J-Spread');
+    expect(spread.right?.master_id).toBe('id-J-Spread');
+  });
+
+  it('Смешанная последовательность: 4 страницы разных категорий', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [
+              { master_name: 'J-Quarter-Left' }, // page 1 (left): quarter
+              { master_name: 'J-Quarter-Left' }, // page 2 (right): → J-Quarter-Right
+              { master_name: 'J-Half' }, // page 3 (left): half
+              { master_name: 'J-Full' }, // page 4 (right): full
+            ],
+          },
+        ],
+      }),
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({
+      quarter: 8,
+      half_class: 2,
+      full_class: 1,
+    }));
     expect(result.spreads).toHaveLength(2);
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Quarter-Left');
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Quarter-Right');
     expect(result.spreads[1].left?.master_id).toBe('id-J-Half');
     expect(result.spreads[1].right?.master_id).toBe('id-J-Full');
-  });
-
-  it('Лайт плотные 16 уч, недостаточно фото → skipped + warning', () => {
-    const bundle = makeBundle({
-      preset: makePreset({
-        id: 'light',
-        density: 'light',
-        sheet_type: 'hard',
-        section_structure: [{ type: 'common_required' }],
-      }),
-    });
-    const result = buildFromSectionStructure(
-      bundle,
-      makeInput({
-        students_count: 16,
-        quarter: 4,
-        half_class: 2,
-        // На page 4 нет ни sixth, ни half (уже потратили), ни full — skip
-      }),
-    );
-    // 3 страницы (page 0,1,2), page 3 пропущена
-    expect(result.spreads).toHaveLength(2);
-    expect(result.spreads[1].right).toBeUndefined();
-    expect(
-      result.warnings.some((w) => w.startsWith('common_required_page_skipped')),
-    ).toBe(true);
-  });
-
-  it('Мини плотные 28 уч → 0 страниц без warnings', () => {
-    const bundle = makeBundle({
-      preset: makePreset({
-        id: 'mini-hard',
-        density: 'mini',
-        sheet_type: 'hard',
-        section_structure: [{ type: 'common_required' }],
-      }),
-    });
-    const result = buildFromSectionStructure(
-      bundle,
-      makeInput({ students_count: 28, full_class: 10, half_class: 10, sixth: 30 }),
-    );
-    expect(result.spreads).toHaveLength(0);
-    expect(
-      result.warnings.filter((w) => w.startsWith('common_required_')),
-    ).toEqual([]);
-  });
-
-  it('density=null + неизвестное имя пресета → warning common_required_no_density', () => {
-    const bundle = makeBundle({
-      preset: makePreset({
-        id: 'unknown',
-        density: null,
-        sheet_type: 'hard',
-        section_structure: [{ type: 'common_required' }],
-      }),
-    });
-    const result = buildFromSectionStructure(
-      bundle,
-      makeInput({ students_count: 16 }),
-    );
-    expect(result.spreads).toHaveLength(0);
-    // Может быть либо no_density (если фолбэк по preset.id не сработал),
-    // либо no_row (если density резолвится но строки нет). Проверяем что
-    // хоть какой-то common_required warning есть.
-    expect(
-      result.warnings.some((w) => w.startsWith('common_required_')),
-    ).toBe(true);
-  });
-
-  it('density=null + preset.id=maximum → таблица Максимум используется', () => {
-    const bundle = makeBundle({
-      preset: makePreset({
-        id: 'maximum',
-        density: null,
-        sheet_type: 'hard',
-        section_structure: [{ type: 'common_required' }],
-      }),
-    });
-    const result = buildFromSectionStructure(
-      bundle,
-      makeInput({
-        students_count: 20,
-        quarter: 4,
-        half_class: 4,
-        sixth: 12,
-        full_class: 2,
-      }),
-    );
-    // Максимум плотные = 6 страниц = 3 разворота, все должны построиться
-    expect(result.spreads).toHaveLength(3);
-  });
-
-  it('Bindings: classphotoframe заполняется из full_class', () => {
-    const bundle = makeBundle({
-      preset: makePreset({
-        id: 'maximum',
-        density: null,
-        sheet_type: 'hard',
-        section_structure: [{ type: 'common_required' }],
-      }),
-    });
-    const result = buildFromSectionStructure(
-      bundle,
-      makeInput({
-        // Для теста bindings — упрощённый сценарий: только full фото
-        // Чтобы первая попытка J-Quarter-Left отвалилась, не даём quarter
-        quarter: 0,
-        half_class: 0,
-        sixth: 0,
-        full_class: 6,
-      }),
-    );
-    // Все 6 страниц попадут на 3-ю попытку (J-Full), но 1-я page это
-    // 2 по 1/4 — отвалится → skipped. Идём 1-2 skip, 3-я page это
-    // J-Half→J-Full = J-Full сработает.
-    // Проверяем что хоть какие-то страницы J-Full вышли с classphotoframe
-    const fullPages = result.spreads
-      .flatMap((s) => [s.left, s.right])
-      .filter((p) => p?.master_id === 'id-J-Full');
-    expect(fullPages.length).toBeGreaterThan(0);
-    expect(fullPages[0]!.bindings.classphotoframe).toBe('https://cdn/full_0.jpg');
   });
 });
