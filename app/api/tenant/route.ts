@@ -133,9 +133,9 @@ type ValidatedSection =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
   | { type: 'common'; slots: string[] }
   | { type: 'common'; mode: 'auto'; max_spreads: number }  // РЭ.21.8.8
-  | { type: 'common_required' }                            // РЭ.21.8.9
+  | { type: 'common_required'; pages?: { master_name: string }[] }  // РЭ.32: конструктор страниц
   | { type: 'common_additional'; max_spreads: number }     // РЭ.21.8.10
-  | { type: 'transition' }                                 // РЭ.21.8.11
+  | { type: 'transition'; master_name?: string | null }    // РЭ.32: опциональный мастер
 
 function validateSectionStructure(
   raw: unknown,
@@ -206,14 +206,64 @@ function validateSectionStructure(
         result.push({ type: 'common', slots: validSlots })
       }
     } else if (type === 'common_required') {
-      // РЭ.21.8.9: обязательный общий раздел по таблице OkeyBook.
-      // Параметров нет — engine читает таблицу автоматически.
-      result.push({ type: 'common_required' })
+      // РЭ.32: партнёр в шаблоне задаёт упорядоченный список страниц
+      // общего раздела. Engine исполняет список без интерпретации.
+      // Поле pages опциональное (старые пресеты без него — engine
+      // выдаёт warning 'общий раздел пуст').
+      const pages = (s as { pages?: unknown }).pages
+      if (pages === undefined || pages === null) {
+        result.push({ type: 'common_required' })
+      } else {
+        if (!Array.isArray(pages)) {
+          return {
+            ok: false,
+            error: `Секция #${i + 1} (common_required): pages должен быть массивом или отсутствовать`,
+          }
+        }
+        if (pages.length > 50) {
+          return {
+            ok: false,
+            error: `Секция #${i + 1} (common_required): слишком много страниц (максимум 50)`,
+          }
+        }
+        const validPages: { master_name: string }[] = []
+        for (let j = 0; j < pages.length; j++) {
+          const p = pages[j] as { master_name?: unknown }
+          if (
+            !p ||
+            typeof p !== 'object' ||
+            typeof p.master_name !== 'string' ||
+            p.master_name.length === 0 ||
+            p.master_name.length > 200
+          ) {
+            return {
+              ok: false,
+              error: `Секция #${i + 1}, страница #${j + 1}: ожидается { master_name: string }`,
+            }
+          }
+          validPages.push({ master_name: p.master_name })
+        }
+        result.push({ type: 'common_required', pages: validPages })
+      }
     } else if (type === 'transition') {
-      // РЭ.21.8.11: переходная страница. Параметров нет — engine
-      // читает row.transition_right из таблицы и строит правую страницу,
-      // если pageInstances нечётный после students секции.
-      result.push({ type: 'transition' })
+      // РЭ.32: опциональный master_name. Если задан — engine использует
+      // именно этот мастер. Если null/undefined — встроенное правило по
+      // умолчанию (combined-tail поиск).
+      const masterName = (s as { master_name?: unknown }).master_name
+      if (masterName === undefined || masterName === null) {
+        result.push({ type: 'transition' })
+      } else if (
+        typeof masterName !== 'string' ||
+        masterName.length === 0 ||
+        masterName.length > 200
+      ) {
+        return {
+          ok: false,
+          error: `Секция #${i + 1} (transition): master_name должен быть непустой строкой или null`,
+        }
+      } else {
+        result.push({ type: 'transition', master_name: masterName })
+      }
     } else if (type === 'common_additional') {
       // РЭ.21.8.10: дополнительный общий раздел (платная допуслуга).
       // Параметр max_spreads — целое 0..20.
