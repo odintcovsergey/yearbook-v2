@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import type { SpreadTemplate } from '@/lib/album-builder/types'
+import CommonRequiredPagesEditor from './CommonRequiredPagesEditor'
 
 // ─── Типы ────────────────────────────────────────────────────────────────
 
@@ -35,9 +37,9 @@ export type Section =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
   | { type: 'common'; slots: string[] }
   | { type: 'common'; mode: 'auto'; max_spreads: number }
-  | { type: 'common_required' }
+  | { type: 'common_required'; pages?: { master_name: string }[] }
   | { type: 'common_additional'; max_spreads: number }
-  | { type: 'transition' }
+  | { type: 'transition'; master_name?: string | null }
 
 const ALL_SECTION_TYPES: Section['type'][] = [
   'soft_intro',
@@ -65,11 +67,11 @@ const SECTION_LABELS: Record<Section['type'], string> = {
 
 const SECTION_DESCRIPTIONS: Partial<Record<Section['type'], string>> = {
   common_required:
-    'Структура по эталонной таблице OkeyBook. Параметров нет — engine выбирает страницы по числу учеников и параметрам шаблона (Режим + grid_size + friends).',
+    'Партнёр сам собирает упорядоченный список страниц общего раздела из доступных в шаблоне J-мастеров. Engine при сборке альбома кладёт страницы строго по этому списку (если фото не хватает — страница пропускается с предупреждением).',
   common_additional:
     'Платная допуслуга. Партнёр выставляет max_spreads — сколько доп. разворотов готов добавить (0 = не строить).',
   transition:
-    'Достраивает правую страницу переходного разворота когда у students нечётное количество страниц.',
+    'Достраивает правую страницу переходного разворота когда у students нечётное количество страниц. По умолчанию engine выбирает мастер по своим правилам.',
   common:
     'Старая форма с явным указанием слотов H/Q/FULL/flex_A/B/C или mode=auto. Используйте common_required/additional.',
 }
@@ -158,6 +160,41 @@ export default function PresetEditorModal({
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // РЭ.32.Б.3 — templates для конструктора общего раздела.
+  // Загружаются один раз при открытии модалки если template_set_id задан.
+  // Если template_set_id NULL — массив пустой (партнёр не выбрал дизайн —
+  // CommonRequiredPagesEditor покажет «выберите дизайн чтобы добавить мастера»).
+  const [templates, setTemplates] = useState<SpreadTemplate[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  useEffect(() => {
+    if (!preset.template_set_id) {
+      setTemplates([])
+      return
+    }
+    let cancelled = false
+    setTemplatesLoading(true)
+    fetch(
+      `/api/tenant?action=template_set_masters&template_set_id=${encodeURIComponent(preset.template_set_id)}`,
+      { credentials: 'include' },
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return
+        if (Array.isArray(data?.masters)) {
+          setTemplates(data.masters as SpreadTemplate[])
+        }
+      })
+      .catch(() => {
+        // Молча — UI покажет пустой список
+      })
+      .finally(() => {
+        if (!cancelled) setTemplatesLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [preset.template_set_id])
 
   // ─── Сохранить ─────────────────────────────────────────────
   const save = async () => {
@@ -505,6 +542,9 @@ export default function PresetEditorModal({
 
             <SectionsEditor
               sections={sections}
+              templates={templates}
+              templatesLoading={templatesLoading}
+              hasTemplateSet={preset.template_set_id !== null}
               onUpdate={updateSection}
               onRemove={removeSection}
               onMove={moveSection}
@@ -550,11 +590,17 @@ export default function PresetEditorModal({
 
 function SectionsEditor({
   sections,
+  templates,
+  templatesLoading,
+  hasTemplateSet,
   onUpdate,
   onRemove,
   onMove,
 }: {
   sections: Section[]
+  templates: SpreadTemplate[]
+  templatesLoading: boolean
+  hasTemplateSet: boolean
   onUpdate: (idx: number, patch: Partial<Section>) => void
   onRemove: (idx: number) => void
   onMove: (idx: number, dir: -1 | 1) => void
@@ -613,6 +659,29 @@ function SectionsEditor({
                   }
                   className="border rounded px-2 py-0.5 text-xs w-20"
                 />
+              </div>
+            )}
+            {/* РЭ.32.Б.3 — common_required: конструктор страниц */}
+            {s.type === 'common_required' && (
+              <div className="mt-3">
+                {!hasTemplateSet ? (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    Выберите дизайн (template_set) у шаблона, чтобы добавлять
+                    мастера общего раздела.
+                  </p>
+                ) : templatesLoading ? (
+                  <p className="text-xs text-gray-400 italic">
+                    Загрузка мастеров…
+                  </p>
+                ) : (
+                  <CommonRequiredPagesEditor
+                    pages={Array.isArray(s.pages) ? s.pages : []}
+                    templates={templates}
+                    onChange={(newPages) =>
+                      onUpdate(idx, { pages: newPages } as Partial<Section>)
+                    }
+                  />
+                )}
               </div>
             )}
             {/* common manual: slots — пока read-only (партнёры используют new секции) */}

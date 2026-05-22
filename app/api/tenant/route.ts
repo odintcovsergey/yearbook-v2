@@ -737,6 +737,68 @@ export async function GET(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
+  // РЭ.32.Б.3 — template_set_masters — список мастеров указанного
+  // template_set'а. Используется в PresetEditorModal для конструктора
+  // общего раздела (JMasterPicker + CommonRequiredPagesEditor).
+  //
+  // Доступ:
+  //   - global template_sets (tenant_id IS NULL) — все
+  //   - tenant template_sets — только если tenant_id совпадает
+  //
+  // Возвращает [{ id, name, page_role, is_spread, width_mm, height_mm,
+  //               placeholders, slot_capacity, applies_to_configs,
+  //               default_for_configs, mirror_for_soft, type, sort_order,
+  //               is_fallback, audit_notes, display_label, rules }]
+  // (полный SpreadTemplate, как ожидает AlbumSpreadCanvas).
+  // ----------------------------------------------------------
+  if (action === 'template_set_masters') {
+    const tsId = req.nextUrl.searchParams.get('template_set_id')
+    if (!tsId) {
+      return NextResponse.json(
+        { error: 'template_set_id required' },
+        { status: 400 },
+      )
+    }
+
+    // 1) Проверка доступа
+    const { data: ts, error: tsErr } = await supabaseAdmin
+      .from('template_sets')
+      .select('id, tenant_id')
+      .eq('id', tsId)
+      .single()
+    if (tsErr || !ts) {
+      return NextResponse.json(
+        { error: 'template_set не найден' },
+        { status: 404 },
+      )
+    }
+    const tsTenantId = (ts as { tenant_id: string | null }).tenant_id
+    if (tsTenantId !== null && tsTenantId !== tid && auth.role !== 'superadmin') {
+      return NextResponse.json(
+        { error: 'нет доступа к этому template_set' },
+        { status: 403 },
+      )
+    }
+
+    // 2) Список мастеров
+    const { data: masters, error: mErr } = await supabaseAdmin
+      .from('spread_templates')
+      .select(
+        'id, name, display_label, template_set_id, page_role, slot_capacity, ' +
+          'is_spread, width_mm, height_mm, placeholders, rules, sort_order, ' +
+          'applies_to_configs, default_for_configs, is_fallback, mirror_for_soft, audit_notes, type',
+      )
+      .eq('template_set_id', tsId)
+      .order('name')
+
+    if (mErr) {
+      return NextResponse.json({ error: mErr.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ masters: masters ?? [] })
+  }
+
+  // ----------------------------------------------------------
   // presets_list — глобальные config_presets для UI dropdown'ов
   // ----------------------------------------------------------
   if (action === 'presets_list') {
