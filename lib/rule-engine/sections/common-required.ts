@@ -61,6 +61,20 @@ import type { SectionFillContext } from './shared';
 type CommonCategory = 'full_class' | 'half_class' | 'quarter' | 'sixth';
 
 /**
+ * Сопоставление категории → ключ в slot_capacity мастера.
+ * Категории common-фото в БД фото называются full_class/half_class/quarter/sixth.
+ * Соответствующие slot_capacity ключи мастеров: photos_full/half/quarter/sixth.
+ */
+type SlotCapacityKey = 'photos_full' | 'photos_half' | 'photos_quarter' | 'photos_sixth';
+
+const SLOT_KEY_FOR_CATEGORY: Record<CommonCategory, SlotCapacityKey> = {
+  full_class: 'photos_full',
+  half_class: 'photos_half',
+  quarter: 'photos_quarter',
+  sixth: 'photos_sixth',
+};
+
+/**
  * Сколько фото потребляет мастер каждой категории.
  * Если мастер J-Half с photos_half=2 — мы по нему «трачу 2 half_class фото».
  */
@@ -98,71 +112,14 @@ function tryRightMirror(
 }
 
 /**
- * Возможности мастера, выведенные из placeholders.
- * Используется вместо slot_capacity которое у J-мастеров okeybook-default
- * сейчас не заполнено ({} у всех 7 мастеров). Placeholders — надёжный
- * источник правды о том, что мастер умеет.
- */
-type MasterCapability = {
-  full_class: number;
-  half_class: number;
-  quarter: number;
-  sixth: number;
-  is_student_master: boolean;
-};
-
-/**
- * Анализ placeholders → categories. Маппинг:
- *   classphotoframe          → full_class (1)
- *   halfphoto_N              → half_class (count)
- *   quarterphoto_N           → quarter (count)
- *   collagephoto_N (6 шт.)   → sixth (6)
- *   collagephoto_N (4 шт.)   → quarter (4)
- *   studentportrait_N        → не J-мастер (ученический)
- */
-function analyzeMasterPlaceholders(master: SpreadTemplate): MasterCapability {
-  const result: MasterCapability = {
-    full_class: 0,
-    half_class: 0,
-    quarter: 0,
-    sixth: 0,
-    is_student_master: false,
-  };
-  let collagePhotoCount = 0;
-
-  for (const ph of master.placeholders) {
-    const label = ph.label.toLowerCase();
-    if (label === 'classphotoframe') {
-      result.full_class += 1;
-    } else if (label.match(/^halfphoto_\d+$/)) {
-      result.half_class += 1;
-    } else if (label.match(/^quarterphoto_\d+$/)) {
-      result.quarter += 1;
-    } else if (label.match(/^collagephoto_\d+$/)) {
-      collagePhotoCount += 1;
-    } else if (
-      label.match(/^studentportrait_\d+$/) ||
-      label.match(/^studentname_\d+$/)
-    ) {
-      result.is_student_master = true;
-    }
-  }
-
-  if (collagePhotoCount === 6) {
-    result.sixth = 6;
-  } else if (collagePhotoCount === 4) {
-    result.quarter = Math.max(result.quarter, 4);
-  }
-
-  return result;
-}
-
-/**
  * Семантический поиск J-мастера для одной категории.
  *
- * Использует анализ placeholders (т.к. slot_capacity у J-мастеров пуст).
- * Отсеивает ученические мастера. Берёт чистый мастер под одну категорию,
- * с минимальным числом слотов для лучшего совпадения.
+ * Ищет мастера у которого slot_capacity[slot_key] >= count, остальные
+ * фото-слоты = 0 (мастер «чистый» под одну категорию, без смешения).
+ *
+ * Если несколько подходящих мастеров — берёт с минимальным slot_capacity
+ * (нет смысла брать мастер на 6 sixth-фото когда нужно 6 — точное
+ * совпадение лучше).
  */
 function findCommonMaster(
   mastersByName: ReadonlyMap<string, SpreadTemplate>,
@@ -170,38 +127,50 @@ function findCommonMaster(
   count: number,
   position: 'left' | 'right',
 ): SpreadTemplate | null {
-  const candidates: Array<{ master: SpreadTemplate; cap: number }> = [];
+  const slotKey = SLOT_KEY_FOR_CATEGORY[category];
 
+  // Все мастера у которых нужная категория >= count.
+  const candidates: SpreadTemplate[] = [];
   for (const master of Array.from(mastersByName.values())) {
-    const ability = analyzeMasterPlaceholders(master);
-    if (ability.is_student_master) continue;
+    const cap = master.slot_capacity ?? {};
+    const slotValue = (cap[slotKey] as number | undefined) ?? 0;
+    if (slotValue < count) continue;
 
-    const slotsInCategory = ability[category];
-    if (slotsInCategory < count) continue;
+    // Отсеиваем мастера которые «смешанные» — содержат и студенческие
+    // слоты, и общие фото. Для общего раздела нужны чистые J-мастера.
+    // Чистый J-мастер: students=0 (или не задано) и нет других photos_*
+    // кроме нужной категории.
+    const students = (cap.students as number | undefined) ?? 0;
+    if (students > 0) continue;
 
-    // Чистый мастер: другие категории = 0.
+    // Проверяем что других категорий = 0 (мастер чистый).
     let hasOtherCategory = false;
     for (const cat of CATEGORY_PRIORITY) {
       if (cat === category) continue;
-      if (ability[cat] > 0) {
+      const otherKey = SLOT_KEY_FOR_CATEGORY[cat];
+      const otherValue = (cap[otherKey] as number | undefined) ?? 0;
+      if (otherValue > 0) {
         hasOtherCategory = true;
         break;
       }
     }
     if (hasOtherCategory) continue;
 
-    candidates.push({ master, cap: slotsInCategory });
+    candidates.push(master);
   }
 
   if (candidates.length === 0) return null;
 
-  // Сортировка: минимальный cap, потом по имени (детерминированность).
+  // Сортируем по slot_capacity[slot_key] возрастающе — берём минимально
+  // подходящий (точное совпадение в начале).
   candidates.sort((a, b) => {
-    if (a.cap !== b.cap) return a.cap - b.cap;
-    return a.master.name.localeCompare(b.master.name);
+    const va = (a.slot_capacity?.[slotKey] as number | undefined) ?? 0;
+    const vb = (b.slot_capacity?.[slotKey] as number | undefined) ?? 0;
+    return va - vb;
   });
 
-  const chosen = candidates[0].master;
+  const chosen = candidates[0];
+  // Зеркальный мастер для правой позиции (если такой есть в template_set).
   if (position === 'right') {
     return tryRightMirror(chosen, mastersByName);
   }
