@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, Suspense } from 'react'
+import { useEffect, useMemo, useState, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
@@ -16,6 +16,7 @@ import type {
   SpreadInstance,
   SpreadTemplate,
 } from '@/lib/album-builder/types'
+import { segmentToSpreads, findVisualSpreadForPage } from '@/lib/album-builder/segment-to-spreads'
 import PhotoPalette from '../../../_components/PhotoPalette'
 import SpreadOrderStrip from '../../../_components/SpreadOrderStrip'
 import TemplatePickerModal from '../../../_components/TemplatePickerModal'
@@ -159,6 +160,37 @@ function EndpaperPlaceholder({
         style={{ fontSize: `${Math.max(16, height * 0.06)}px`, letterSpacing: '0.05em' }}
       >
         Форзац
+      </span>
+    </div>
+  )
+}
+
+/**
+ * РЭ.35.Б: placeholder для пустой страницы разворота (когда у разворота
+ * только одна сторона заполнена — «висящая» страница). Серый блок с
+ * подписью о причине.
+ */
+function EmptyPagePlaceholder({
+  width,
+  aspectRatio,
+  label,
+}: {
+  width: number
+  aspectRatio: number
+  label: string
+}) {
+  const height = width / aspectRatio
+  return (
+    <div
+      className="rounded border border-dashed border-gray-300 bg-gray-50/60 flex items-center justify-center select-none"
+      style={{ width: `${width}px`, height: `${height}px` }}
+      title={label}
+    >
+      <span
+        className="text-gray-400 text-center px-4"
+        style={{ fontSize: `${Math.max(11, height * 0.025)}px` }}
+      >
+        {label}
       </span>
     </div>
   )
@@ -1277,13 +1309,52 @@ function LayoutEditorPageInner({
     (t) => t.id === currentSpread?.template_id,
   )
 
-  // Динамический расчёт canvas: вписываем spread в доступное пространство
-  // с сохранением аспекта. Если по ширине шире чем доступно (двустраничный
-  // на узком окне) — limiting factor становится ширина.
+  // ─── РЭ.35.Б/В — Визуальные развороты ────────────────────────────────────
+  //
+  // layout.spreads хранит МАССИВ СТРАНИЦ (legacy формат, 1 элемент = 1 стр).
+  // Партнёр в UI хочет видеть РАЗВОРОТЫ — пары страниц как раскрытая книга.
+  // segmentToSpreads сегментирует страницы в VisualSpread[] с учётом
+  // is_spread мастеров (J-Spread занимает обе стороны разворота сразу).
+  //
+  // currentIdx (page-based) → currentPairIdx (визуальный разворот).
+  // Это computed-связь: при изменении currentIdx pairIdx пересчитывается.
+  const templatesById = useMemo(() => {
+    const m = new Map<string, SpreadTemplate>()
+    for (const t of templates) m.set(t.id, t)
+    return m
+  }, [templates])
+
+  const visualSpreads = useMemo(
+    () => segmentToSpreads(spreads, templatesById),
+    [spreads, templatesById],
+  )
+  const currentPairIdx = useMemo(
+    () => findVisualSpreadForPage(visualSpreads, currentIdx),
+    [visualSpreads, currentIdx],
+  )
+  const currentPair = visualSpreads[currentPairIdx] ?? null
+  const leftPage =
+    currentPair?.leftIdx !== undefined ? spreads[currentPair.leftIdx] : null
+  const rightPage =
+    currentPair?.rightIdx !== undefined ? spreads[currentPair.rightIdx] : null
+  const leftTemplate = leftPage ? templatesById.get(leftPage.template_id) : null
+  const rightTemplate = rightPage
+    ? templatesById.get(rightPage.template_id)
+    : null
+
+  // Динамический расчёт canvas: вписываем РАЗВОРОТ в доступное пространство
+  // с сохранением аспекта. Для is_spread мастера ширина = ширина одной
+  // страницы (потому что мастер уже двухстраничный, у него width_mm
+  // = ширина всего разворота). Для обычного разворота = ширина двух
+  // страниц рядом (basePage * 2).
   const availableWidth = Math.max(400, viewport.width * 0.7 - 80)
   const availableHeight = Math.max(400, viewport.height * 0.7)
-  const aspectRatio = currentTemplate
-    ? currentTemplate.width_mm / currentTemplate.height_mm
+  const basePageTemplate = leftTemplate ?? rightTemplate ?? currentTemplate ?? null
+  const isPairSpread = currentPair?.isSpread === true
+  const aspectRatio = basePageTemplate
+    ? (isPairSpread
+        ? basePageTemplate.width_mm / basePageTemplate.height_mm
+        : (basePageTemplate.width_mm * 2) / basePageTemplate.height_mm)
     : 1
   const widthByHeight = availableHeight * aspectRatio
   const canvasContainerWidth = Math.min(widthByHeight, availableWidth)
@@ -1410,88 +1481,198 @@ function LayoutEditorPageInner({
             </div>
           )}
 
-          {currentSpread && currentTemplate ? (
+          {currentPair && (leftTemplate || rightTemplate) ? (
             <>
-              {/* РЭ.27.4: канвас + опциональные визуальные заглушки «Форзац»
-                  для soft-альбомов на первом/последнем развороте.
-                  Это чисто визуальная подсказка — в данных layout'а
-                  заглушек нет, существующая логика не задета. */}
+              {/* РЭ.35.Б: рендер разворота.
+                  - isSpread → один canvas во всю ширину (J-Spread)
+                  - иначе → две canvas рядом (left + right), каждая половина ширины
+                  - если одна сторона пуста → placeholder (висящий разворот) */}
               {(() => {
                 const isSoftAlbum = effectivePrintType === 'soft'
-                const isFirstSpread = currentIdx === 0
-                const isLastSpread = currentIdx === spreads.length - 1
-                const showEndpaperBefore = isSoftAlbum && isFirstSpread
-                const showEndpaperAfter = isSoftAlbum && isLastSpread
-                // Размер заглушки = одной странице canvas'а. Для одностраничного
-                // мастера containerWidth = ширина одной страницы. Для двухстраничного
-                // (is_spread=true) containerWidth = ширина двух страниц + сгиб, но
-                // в soft первый/последний spread фактически одностраничный (см. spec
-                // §3.5 — фильтр spread-мастера для soft).
-                const isSpreadMaster = currentTemplate.is_spread === true
-                const endpaperWidth = isSpreadMaster
-                  ? canvasContainerWidth / 2
-                  : canvasContainerWidth
+                const isFirstPair = currentPairIdx === 0
+                const isLastPair = currentPairIdx === visualSpreads.length - 1
+                const showEndpaperBefore = isSoftAlbum && isFirstPair
+                const showEndpaperAfter = isSoftAlbum && isLastPair
+                const endpaperWidth = canvasContainerWidth / 2
+                const halfWidth = currentPair.isSpread
+                  ? canvasContainerWidth
+                  : canvasContainerWidth / 2
                 return (
                   <div className="flex items-stretch gap-1">
-                    {showEndpaperBefore && (
+                    {showEndpaperBefore && leftTemplate && (
                       <EndpaperPlaceholder
                         width={endpaperWidth}
-                        aspectRatio={
-                          currentTemplate.width_mm / currentTemplate.height_mm
-                        }
+                        aspectRatio={leftTemplate.width_mm / leftTemplate.height_mm}
                       />
                     )}
-                    <div className="bg-white rounded shadow-sm border border-gray-200">
-                      <AlbumSpreadCanvas
-                        instance={currentSpread}
-                        template={currentTemplate}
-                        containerWidth={canvasContainerWidth}
-                        mode={isReadOnly ? 'preview' : 'edit'}
-                        draggingLabel={dragState?.mode === 'swap' ? dragState.label : null}
-                        editingTextLabel={editingTextLabel}
-                        onTextClick={isReadOnly ? undefined : handleTextClick}
-                        onTextSubmit={isReadOnly ? undefined : handleTextSubmit}
-                        onTextCancel={isReadOnly ? undefined : handleTextCancel}
-                        onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
-                        onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
-                      />
-                    </div>
-                    {showEndpaperAfter && (
+                    {currentPair.isSpread && leftPage && leftTemplate ? (
+                      // Spread-мастер: один canvas, полная ширина
+                      <div
+                        className={`bg-white rounded shadow-sm border ${
+                          currentIdx === currentPair.leftIdx
+                            ? 'border-blue-400 ring-2 ring-blue-200'
+                            : 'border-gray-200'
+                        }`}
+                        onClick={() => {
+                          if (currentPair.leftIdx !== undefined)
+                            setCurrentIdx(currentPair.leftIdx)
+                        }}
+                      >
+                        <AlbumSpreadCanvas
+                          instance={leftPage}
+                          template={leftTemplate}
+                          containerWidth={halfWidth}
+                          mode={isReadOnly ? 'preview' : 'edit'}
+                          draggingLabel={dragState?.mode === 'swap' ? dragState.label : null}
+                          editingTextLabel={editingTextLabel}
+                          onTextClick={isReadOnly ? undefined : handleTextClick}
+                          onTextSubmit={isReadOnly ? undefined : handleTextSubmit}
+                          onTextCancel={isReadOnly ? undefined : handleTextCancel}
+                          onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
+                          onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
+                        />
+                      </div>
+                    ) : (
+                      // Обычный разворот: две страницы рядом
+                      <>
+                        {leftPage && leftTemplate ? (
+                          <div
+                            className={`bg-white rounded shadow-sm border cursor-pointer ${
+                              currentIdx === currentPair.leftIdx
+                                ? 'border-blue-400 ring-2 ring-blue-200'
+                                : 'border-gray-200'
+                            }`}
+                            onClick={() => {
+                              if (currentPair.leftIdx !== undefined)
+                                setCurrentIdx(currentPair.leftIdx)
+                            }}
+                          >
+                            <AlbumSpreadCanvas
+                              instance={leftPage}
+                              template={leftTemplate}
+                              containerWidth={halfWidth}
+                              mode={isReadOnly ? 'preview' : 'edit'}
+                              draggingLabel={
+                                dragState?.mode === 'swap' &&
+                                currentIdx === currentPair.leftIdx
+                                  ? dragState.label
+                                  : null
+                              }
+                              editingTextLabel={
+                                currentIdx === currentPair.leftIdx ? editingTextLabel : null
+                              }
+                              onTextClick={isReadOnly ? undefined : handleTextClick}
+                              onTextSubmit={isReadOnly ? undefined : handleTextSubmit}
+                              onTextCancel={isReadOnly ? undefined : handleTextCancel}
+                              onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
+                              onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
+                            />
+                          </div>
+                        ) : (
+                          <EmptyPagePlaceholder
+                            width={halfWidth}
+                            aspectRatio={
+                              rightTemplate
+                                ? rightTemplate.width_mm / rightTemplate.height_mm
+                                : 0.7
+                            }
+                            label="Левая страница пуста"
+                          />
+                        )}
+                        {rightPage && rightTemplate ? (
+                          <div
+                            className={`bg-white rounded shadow-sm border cursor-pointer ${
+                              currentIdx === currentPair.rightIdx
+                                ? 'border-blue-400 ring-2 ring-blue-200'
+                                : 'border-gray-200'
+                            }`}
+                            onClick={() => {
+                              if (currentPair.rightIdx !== undefined)
+                                setCurrentIdx(currentPair.rightIdx)
+                            }}
+                          >
+                            <AlbumSpreadCanvas
+                              instance={rightPage}
+                              template={rightTemplate}
+                              containerWidth={halfWidth}
+                              mode={isReadOnly ? 'preview' : 'edit'}
+                              draggingLabel={
+                                dragState?.mode === 'swap' &&
+                                currentIdx === currentPair.rightIdx
+                                  ? dragState.label
+                                  : null
+                              }
+                              editingTextLabel={
+                                currentIdx === currentPair.rightIdx ? editingTextLabel : null
+                              }
+                              onTextClick={isReadOnly ? undefined : handleTextClick}
+                              onTextSubmit={isReadOnly ? undefined : handleTextSubmit}
+                              onTextCancel={isReadOnly ? undefined : handleTextCancel}
+                              onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
+                              onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
+                            />
+                          </div>
+                        ) : (
+                          <EmptyPagePlaceholder
+                            width={halfWidth}
+                            aspectRatio={
+                              leftTemplate
+                                ? leftTemplate.width_mm / leftTemplate.height_mm
+                                : 0.7
+                            }
+                            label="Правая страница пуста"
+                          />
+                        )}
+                      </>
+                    )}
+                    {showEndpaperAfter && rightTemplate && (
                       <EndpaperPlaceholder
                         width={endpaperWidth}
-                        aspectRatio={
-                          currentTemplate.width_mm / currentTemplate.height_mm
-                        }
+                        aspectRatio={rightTemplate.width_mm / rightTemplate.height_mm}
                       />
                     )}
                   </div>
                 )
               })()}
 
-              {/* Навигация */}
+              {/* Навигация — теперь по разворотам, а не по страницам */}
               <div className="mt-4 flex items-center gap-3 flex-wrap">
                 <button
                   type="button"
-                  onClick={() => setCurrentIdx((i) => Math.max(0, i - 1))}
-                  disabled={currentIdx === 0}
+                  onClick={() => {
+                    // Прыжок на предыдущий разворот: на его leftIdx (или rightIdx если левая пуста)
+                    const prevPair = visualSpreads[currentPairIdx - 1]
+                    if (prevPair) {
+                      const targetIdx = prevPair.leftIdx ?? prevPair.rightIdx
+                      if (targetIdx !== undefined) setCurrentIdx(targetIdx)
+                    }
+                  }}
+                  disabled={currentPairIdx <= 0}
                   className="px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   ◀ Назад
                 </button>
                 <span className="text-sm text-gray-600">
-                  Разворот {currentIdx + 1} из {spreads.length}
+                  Разворот {currentPairIdx + 1} из {visualSpreads.length}
                 </span>
                 <button
                   type="button"
-                  onClick={() =>
-                    setCurrentIdx((i) => Math.min(spreads.length - 1, i + 1))
-                  }
-                  disabled={currentIdx >= spreads.length - 1}
+                  onClick={() => {
+                    const nextPair = visualSpreads[currentPairIdx + 1]
+                    if (nextPair) {
+                      const targetIdx = nextPair.leftIdx ?? nextPair.rightIdx
+                      if (targetIdx !== undefined) setCurrentIdx(targetIdx)
+                    }
+                  }}
+                  disabled={currentPairIdx >= visualSpreads.length - 1}
                   className="px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Вперёд ▶
                 </button>
-                {/* М.3 — заменить шаблон текущего разворота */}
+                {/* РЭ.35.Г — заменить шаблон выделенной страницы разворота.
+                    Если выделена левая — заменяем left, если правая — right.
+                    Visual cue: синяя обводка показывает какую страницу
+                    редактируем. */}
                 {!isReadOnly && currentTemplate && (
                   <button
                     type="button"
@@ -1499,7 +1680,12 @@ function LayoutEditorPageInner({
                     className="ml-auto px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
                     title={`Текущий шаблон: ${currentTemplate.name}. Заменить на другой.`}
                   >
-                    🔄 Заменить шаблон
+                    🔄 Заменить шаблон{' '}
+                    {currentPair && !currentPair.isSpread
+                      ? currentIdx === currentPair.leftIdx
+                        ? '(левой страницы)'
+                        : '(правой страницы)'
+                      : ''}
                   </button>
                 )}
               </div>
