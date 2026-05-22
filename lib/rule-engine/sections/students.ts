@@ -1060,8 +1060,12 @@ function pushCombinedTailPage(
  *   studentname_N     → students[N-1].full_name
  *   studentquote_N    → students[N-1].quote
  *
- * Слоты с индексом > students.length — null (Konva canvas скроет
- * placeholder через __hidden__N логику фазы Л/М).
+ * РЭ.31.3: для слотов с индексом > students.length теперь пишется
+ * __hidden__<label>='1' вместо null. Раньше docstring обещал «Konva
+ * canvas скроет через __hidden__N логику», но эта логика никогда не
+ * писала __hidden__ — placeholder'ы оставались видимыми с пустотой.
+ * Теперь combined-tail страница (хвост 1 ученика в 2-слотном мастере)
+ * корректно показывает только Фёдорову Варвару без пустой колонки.
  *
  * classphotoframe (для combined-pages) обрабатывается в pushCombinedTailPage,
  * не здесь.
@@ -1080,21 +1084,33 @@ function bindGridStudents(
     if (portraitMatch) {
       const n = parseInt(portraitMatch[1], 10);
       const s = students[n - 1];
-      bindings[ph.label] = s ? s.portrait : null;
+      if (s) {
+        bindings[ph.label] = s.portrait;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
       continue;
     }
     const nameMatch = label.match(/^studentname_(\d+)$/);
     if (nameMatch) {
       const n = parseInt(nameMatch[1], 10);
       const s = students[n - 1];
-      bindings[ph.label] = s ? s.full_name : null;
+      if (s) {
+        bindings[ph.label] = s.full_name;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
       continue;
     }
     const quoteMatch = label.match(/^studentquote_(\d+)$/);
     if (quoteMatch) {
       const n = parseInt(quoteMatch[1], 10)
       const s = students[n - 1];
-      bindings[ph.label] = s ? (s.quote ?? null) : null;
+      if (s) {
+        bindings[ph.label] = s.quote ?? null;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
       continue;
     }
   }
