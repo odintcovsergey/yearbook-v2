@@ -201,6 +201,42 @@ describe('segmentToSpreads', () => {
     const result = segmentToSpreads([], new Map(), { softShift: true });
     expect(result).toEqual([]);
   });
+
+  // ─── section_start (РЭ.35.Ж.4) ──────────────────────────────────────────
+
+  it('section_start на 3-й странице → разрыв: 1 висящий + 1 пара', () => {
+    const templates = new Map([['A', makeTemplate('A')]]);
+    const pages: SpreadInstance[] = [
+      { spread_index: 0, template_id: 'A', template_name: 'A', data: {} },
+      { spread_index: 1, template_id: 'A', template_name: 'A', data: {} },
+      // 3-я страница помечена section_start — должна начать новый разворот
+      { spread_index: 2, template_id: 'A', template_name: 'A', data: {}, section_start: true },
+      { spread_index: 3, template_id: 'A', template_name: 'A', data: {} },
+    ];
+    const result = segmentToSpreads(pages, templates);
+    // Ожидаем 2 разворота: {0,1} полный, {2,3} полный — section_start
+    // не разрывает потому что предыдущий уже закрыт
+    expect(result).toEqual([
+      { leftIdx: 0, rightIdx: 1, isSpread: false },
+      { leftIdx: 2, rightIdx: 3, isSpread: false },
+    ]);
+  });
+
+  it('section_start закрывает висящий: 3 страницы, 3-я с флагом → 2 разворота (1 висящий + 1 висящий)', () => {
+    const templates = new Map([['A', makeTemplate('A')]]);
+    const pages: SpreadInstance[] = [
+      { spread_index: 0, template_id: 'A', template_name: 'A', data: {} },
+      // 2-я помечена section_start — закрывает разворот с 1-й висящим
+      { spread_index: 1, template_id: 'A', template_name: 'A', data: {}, section_start: true },
+      { spread_index: 2, template_id: 'A', template_name: 'A', data: {} },
+    ];
+    const result = segmentToSpreads(pages, templates);
+    // Ожидаем: {0,undef} висящий, {1,2} полный
+    expect(result).toEqual([
+      { leftIdx: 0, isSpread: false },
+      { leftIdx: 1, rightIdx: 2, isSpread: false },
+    ]);
+  });
 });
 
 describe('findVisualSpreadForPage', () => {

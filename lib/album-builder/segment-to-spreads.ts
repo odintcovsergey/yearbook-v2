@@ -77,6 +77,14 @@ export function segmentToSpreads(
     const template = templatesById.get(page.template_id);
     const isSpread = template?.is_spread === true;
 
+    // РЭ.35.Ж.4: если страница помечена как начало нового разворота,
+    // закрываем текущий открытый разворот (он остаётся с висящей левой)
+    // и эта страница станет левой нового разворота.
+    if (page.section_start && current) {
+      result.push(current);
+      current = null;
+    }
+
     if (isSpread) {
       // Spread-мастер занимает весь разворот. Если уже есть open разворот
       // с одной страницей — закрываем его (висит).

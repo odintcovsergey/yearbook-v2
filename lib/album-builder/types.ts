@@ -366,6 +366,16 @@ export type SpreadInstance = {
   template_id: string;
   template_name: string;
   data: Record<string, string | null>;
+  /**
+   * РЭ.35.Ж.4: страница помечена как «начало нового разворота».
+   * Используется UI-сегментацией (segmentToSpreads) чтобы закрыть
+   * предыдущий разворот с пустой правой и эта страница стала
+   * левой нового. Передаётся через adapter из rule-engine
+   * (PageInstance.section_start).
+   *
+   * Если флага нет — поведение как раньше (попарная группировка).
+   */
+  section_start?: boolean;
 };
 
 /**

@@ -182,6 +182,11 @@ function pageToLegacy(
     template_id: page.master_id,
     template_name: masterName,
     data: normalizeBindings(page.bindings),
+    // РЭ.35.Ж.4: пробрасываем флаг начала нового разворота из rule engine
+    // в legacy формат. UI segmentToSpreads читает его чтобы корректно
+    // сгруппировать страницы (закрыть предыдущий разворот висящим если
+    // эта страница помечена как начало секции).
+    ...(page.section_start ? { section_start: true } : {}),
   };
 }
 
