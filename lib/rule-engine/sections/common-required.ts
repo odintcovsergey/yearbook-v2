@@ -209,31 +209,40 @@ export function fillCommonRequiredSection(
     // с одинаковым master_id (как у E-Student-Standard и других spread-
     // мастеров). Build engine при группировке pageInstances → SpreadInstance
     // детектирует пару через is_spread флаг.
+    //
+    // РЭ.35.Ж.2 (фидбэк Сергея 23.05): если предыдущая позиция нечётна
+    // (висящий разворот открыт от хвоста students или предыдущей
+    // common-required страницы), помечаем первую запись J-Spread флагом
+    // section_start=true. Шаг 6 группировки тогда закроет предыдущий
+    // разворот пустой правой и начнёт новый — J-Spread сам займёт
+    // целый разворот.
+    //
+    // Раньше при misaligned состоянии J-Spread пропускался полностью
+    // с warning. Это ломало структуру: целая страница из шаблона
+    // терялась, все последующие смещались. Сергей видел дыру на
+    // 6-м развороте; удаление J-Spread из шаблона убирало баг
+    // (потому что misaligned-check больше не срабатывал).
     if (baseMaster.is_spread === true) {
-      // Если pageInstances нечётный — выравниваем (добавим placeholder?
-      // нет, такой ситуации не должно быть, потому что в UI J-Spread
-      // открывает новый разворот. Если всё-таки случилось — warning и
-      // пропускаем).
-      if (ctx.pageInstances.length % 2 !== 0) {
-        ctx.warnings.push(
-          `common_required_spread_misaligned: '${masterName}' (J-Spread) попал на нечётную позицию — engine ожидал начало разворота. Страница пропущена.`,
-        );
-        continue;
-      }
       const bindings = bindCommonPhotos(baseMaster, ctx.input, ctx.available);
-      ctx.pageInstances.push({ master_id: baseMaster.id, bindings });
+      const startNewSpread = ctx.pageInstances.length % 2 !== 0;
+      ctx.pageInstances.push({
+        master_id: baseMaster.id,
+        bindings,
+        ...(startNewSpread ? { section_start: true } : {}),
+      });
       ctx.pageInstances.push({ master_id: baseMaster.id, bindings: {} });
       spreadConsumed += 1;
       ctx.decisionTrace.push({
         spread_index: Math.floor((ctx.pageInstances.length - 2) / 2),
         section_index: ctx.sectionIndex,
         family_id: 'common-required',
-        rule_id: `pages:${i + 1}:${masterName}:spread`,
+        rule_id: `pages:${i + 1}:${masterName}:spread${startNewSpread ? ':forced_new' : ''}`,
         inputs: {
           page_num: i + 1,
           master_name: masterName,
           category: 'spread',
           count: 1,
+          forced_new_spread: startNewSpread,
         },
       });
       continue;

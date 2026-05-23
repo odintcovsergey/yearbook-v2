@@ -329,4 +329,42 @@ describe('fillCommonRequiredSection (РЭ.32): новый формат pages', (
     expect(result.spreads[1].left?.master_id).toBe('id-J-Half');
     expect(result.spreads[1].right?.master_id).toBe('id-J-Full');
   });
+
+  it('РЭ.35.Ж.2: J-Spread после нечётной J-Full → новый разворот, не пропуск', () => {
+    // Сценарий: партнёр в шаблоне положил J-Full (1 страница) перед
+    // J-Spread (на разворот). До фикса J-Spread пропускался с warning
+    // misaligned. После фикса первая запись J-Spread получает
+    // section_start → шаг 6 закрывает разворот с J-Full висящей правой
+    // и J-Spread занимает целый следующий разворот.
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [
+              { master_name: 'J-Full' },     // 1 страница (left)
+              { master_name: 'J-Spread' },   // занимает целый разворот
+            ],
+          },
+        ],
+      }),
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({
+      full_class: 1,
+      spread: 1,
+    }));
+    // Должно: 2 разворота. Первый — J-Full на left, правая пуста.
+    // Второй — J-Spread целиком.
+    expect(result.spreads).toHaveLength(2);
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Full');
+    expect(result.spreads[0].right).toBeUndefined(); // висящий
+    expect((result.spreads[1] as unknown as { is_spread?: boolean }).is_spread).toBe(true);
+    expect(result.spreads[1].left?.master_id).toBe('id-J-Spread');
+    expect(result.spreads[1].right?.master_id).toBe('id-J-Spread');
+    // Нет warning про misaligned
+    expect(
+      result.warnings.some((w) => w.includes('spread_misaligned')),
+    ).toBe(false);
+  });
 });
