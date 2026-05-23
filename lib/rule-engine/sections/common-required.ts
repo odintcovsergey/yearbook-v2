@@ -146,9 +146,24 @@ export function fillCommonRequiredSection(
   // decrementAvailable).
   let spreadConsumed = 0;
 
+  // РЭ.35.Ж.3: счётчик «виртуальной позиции» в общем разделе.
+  // Партнёр в UI видит каждую страницу как ЛЕВАЯ / ПРАВАЯ / РАЗВОРОТ.
+  // Engine обязан уважать эту разметку.
+  //
+  // virtualPos:
+  //   - чётный (0, 2, 4) → партнёр ожидает ЛЕВАЯ
+  //   - нечётный (1, 3, 5) → партнёр ожидает ПРАВАЯ
+  //   - после J-Spread (разворот) — пропускается на 2 (J-Spread занимает
+  //     обе позиции одного разворота)
+  //   - skipped страницы НЕ продвигают virtualPos (партнёр всё равно
+  //     ожидает что СЛЕДУЮЩАЯ страница ляжет на ту же позицию, что
+  //     skipped была бы)
+  let virtualPos = 0;
+
   for (let i = 0; i < pages.length; i++) {
     const pageEntry = pages[i];
     const masterName = pageEntry.master_name;
+    const expectedSide: 'left' | 'right' = virtualPos % 2 === 0 ? 'left' : 'right';
 
     // 1. Находим мастер в template_set.
     const baseMaster = ctx.bundle.mastersByName.get(masterName);
@@ -206,22 +221,13 @@ export function fillCommonRequiredSection(
 
     // 4. Особый случай — J-Spread (is_spread=true).
     // Занимает оба места разворота. Кладём ДВЕ записи pageInstances
-    // с одинаковым master_id (как у E-Student-Standard и других spread-
-    // мастеров). Build engine при группировке pageInstances → SpreadInstance
-    // детектирует пару через is_spread флаг.
+    // с одинаковым master_id. Build engine при группировке
+    // pageInstances → SpreadInstance детектирует пару через is_spread флаг.
     //
-    // РЭ.35.Ж.2 (фидбэк Сергея 23.05): если предыдущая позиция нечётна
-    // (висящий разворот открыт от хвоста students или предыдущей
-    // common-required страницы), помечаем первую запись J-Spread флагом
-    // section_start=true. Шаг 6 группировки тогда закроет предыдущий
-    // разворот пустой правой и начнёт новый — J-Spread сам займёт
-    // целый разворот.
-    //
-    // Раньше при misaligned состоянии J-Spread пропускался полностью
-    // с warning. Это ломало структуру: целая страница из шаблона
-    // терялась, все последующие смещались. Сергей видел дыру на
-    // 6-м развороте; удаление J-Spread из шаблона убирало баг
-    // (потому что misaligned-check больше не срабатывал).
+    // РЭ.35.Ж.3: J-Spread всегда начинает новый разворот. Помечаем
+    // первую запись section_start=true если фактическая позиция
+    // в pageInstances нечётна (висит разворот). virtualPos после
+    // J-Spread продвигается на 2 (он занял оба слота разворота).
     if (baseMaster.is_spread === true) {
       const bindings = bindCommonPhotos(baseMaster, ctx.input, ctx.available);
       const startNewSpread = ctx.pageInstances.length % 2 !== 0;
@@ -232,6 +238,7 @@ export function fillCommonRequiredSection(
       });
       ctx.pageInstances.push({ master_id: baseMaster.id, bindings: {} });
       spreadConsumed += 1;
+      virtualPos += 2; // J-Spread занял две виртуальные позиции
       ctx.decisionTrace.push({
         spread_index: Math.floor((ctx.pageInstances.length - 2) / 2),
         section_index: ctx.sectionIndex,
@@ -248,9 +255,23 @@ export function fillCommonRequiredSection(
       continue;
     }
 
-    // 5. Обычная страница. Определяем позицию (left/right) и зеркальный мастер.
-    const position: 'left' | 'right' =
+    // 5. Обычная страница. РЭ.35.Ж.3: жёсткая привязка к ожидаемой
+    // стороне. Если expectedSide='left' но фактическая позиция
+    // (по pageInstances.length) нечётна (то есть страница попала бы
+    // на ПРАВУЮ предыдущего разворота) — помечаем section_start=true,
+    // шаг 6 группировки закроет предыдущий разворот висящим и
+    // эта страница станет left нового разворота.
+    //
+    // Аналогично для expectedSide='right' и чётной позиции: висит
+    // открытый разворот без правой — это редкий случай, может
+    // возникнуть когда предыдущая страница была skipped. В этом случае
+    // добавляем «пустую» страницу-плейсхолдер (master_id=null не делаем,
+    // а пометить пустой записью невозможно в текущей архитектуре —
+    // оставляем как warning).
+    const actualSide: 'left' | 'right' =
       ctx.pageInstances.length % 2 === 0 ? 'left' : 'right';
+    const sideMismatch = actualSide !== expectedSide;
+    const position: 'left' | 'right' = expectedSide;
     const master =
       position === 'right'
         ? tryRightMirror(baseMaster, ctx.bundle.mastersByName)
@@ -266,7 +287,14 @@ export function fillCommonRequiredSection(
     ctx.pageInstances.push({
       master_id: master.id,
       bindings,
+      // Если ожидается LEFT, а фактически нечётно (попадёт на правую) —
+      // section_start закроет предыдущий висящим, страница встанет на левую.
+      // Если ожидается RIGHT, а фактически чётно (попадёт на левую) —
+      // section_start тоже закроет (но мы потеряем парность — это уже
+      // глубже, и означает что один из предыдущих pages был skipped).
+      ...(sideMismatch && expectedSide === 'left' ? { section_start: true } : {}),
     });
+    virtualPos += 1;
 
     ctx.decisionTrace.push({
       spread_index: Math.floor((ctx.pageInstances.length - 1) / 2),
