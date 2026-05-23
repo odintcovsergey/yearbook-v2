@@ -228,7 +228,14 @@ function LayoutEditorPageInner({
   //   отображения).
   type DragState =
     | { mode: 'palette'; photo: AlbumPhoto }
-    | { mode: 'swap'; photo: AlbumPhoto; label: string }
+    | {
+        mode: 'swap'
+        photo: AlbumPhoto
+        label: string
+        // РЭ.35.Е.3: spread_index страницы откуда тащат — чтобы скрывать
+        // Konva-копию только на ней, а не на обеих сторонах разворота.
+        instanceKey: number
+      }
     | null
   const [dragState, setDragState] = useState<DragState>(null)
   // Фаза Л.1 — редактирование текста.
@@ -666,13 +673,20 @@ function LayoutEditorPageInner({
       // курсором (базовое поведение translate).
       //
       // draggingLabel передаётся в AlbumSpreadCanvas чтобы скрыть
-      // Konva-копию фото и избежать двойного отображения.
+      // Konva-копию фото и избежать двойного отображения. РЭ.35.Е.3:
+      // вместе с label передаётся instanceKey — какой spread_index
+      // страницы является источником.
       const photo = photos.find((p) => p.url === sourceData.url)
       if (!photo) return
+      const sIK =
+        typeof (sourceData as { instanceKey?: number }).instanceKey === 'number'
+          ? (sourceData as { instanceKey?: number }).instanceKey!
+          : currentIdx
       setDragState({
         mode: 'swap',
         photo,
         label: sourceData.label,
+        instanceKey: sIK,
       })
     }
   }
@@ -684,40 +698,82 @@ function LayoutEditorPageInner({
     if (!over) return  // drop вне drop-зоны
 
     const sourceData = active.data.current as
-      | { type?: string; photo?: AlbumPhoto; label?: string; url?: string | null }
+      | {
+          type?: string
+          photo?: AlbumPhoto
+          label?: string
+          url?: string | null
+          instanceKey?: number
+        }
       | undefined
-    const targetLabel = String(over.id)
+    // РЭ.35.Е.3 — id формата 'label@spreadIndex'. Парсим обратно
+    // чтобы знать на какую страницу разворота дропнули. Если '@' нет —
+    // legacy id (только label), instanceKey = currentIdx как раньше.
+    const rawOverId = String(over.id)
+    const atIdx = rawOverId.lastIndexOf('@')
+    const targetLabel = atIdx === -1 ? rawOverId : rawOverId.slice(0, atIdx)
+    const targetInstanceKey =
+      atIdx === -1 ? currentIdx : Number(rawOverId.slice(atIdx + 1))
 
     if (sourceData?.type === 'palette') {
-      // Палитра → placeholder: вставить URL фото
+      // Палитра → placeholder: вставить URL фото на ту страницу
+      // куда был дроп (учитываем targetInstanceKey, не только currentIdx).
       const photo = sourceData.photo
       if (!photo) return
       setLayout((prev) => {
         if (!prev) return prev
         const newSpreads = prev.spreads.map((s, idx) =>
-          idx === currentIdx
+          idx === targetInstanceKey
             ? { ...s, data: { ...s.data, [targetLabel]: photo.url } }
             : s,
         )
         return { ...prev, spreads: newSpreads }
       })
+      // Активируем страницу куда добавили
+      if (targetInstanceKey !== currentIdx) setCurrentIdx(targetInstanceKey)
       return
     }
 
     if (sourceData?.type === 'placeholder') {
-      // Swap между placeholder'ами в текущем спреде
+      // Swap между placeholder'ами.
       const sourceLabel = sourceData.label
-      if (!sourceLabel || sourceLabel === targetLabel) return
+      const sourceInstanceKey = sourceData.instanceKey ?? currentIdx
+      if (!sourceLabel) return
+      // Тот же placeholder на той же странице — drop отменён
+      if (sourceLabel === targetLabel && sourceInstanceKey === targetInstanceKey) {
+        return
+      }
       setLayout((prev) => {
         if (!prev) return prev
         const newSpreads = prev.spreads.map((s, idx) => {
-          if (idx !== currentIdx) return s
-          const valueA = s.data[sourceLabel] ?? null
-          const valueB = s.data[targetLabel] ?? null
-          return {
-            ...s,
-            data: { ...s.data, [sourceLabel]: valueB, [targetLabel]: valueA },
+          // Swap внутри одной страницы
+          if (sourceInstanceKey === targetInstanceKey && idx === sourceInstanceKey) {
+            const valueA = s.data[sourceLabel] ?? null
+            const valueB = s.data[targetLabel] ?? null
+            return {
+              ...s,
+              data: { ...s.data, [sourceLabel]: valueB, [targetLabel]: valueA },
+            }
           }
+          // Swap МЕЖДУ страницами разворота (баг 4.A от Сергея 23.05)
+          if (sourceInstanceKey !== targetInstanceKey) {
+            if (idx === sourceInstanceKey) {
+              // Со страницы-источника забираем targetValue (пришёл от target)
+              const targetValueRaw = prev.spreads[targetInstanceKey]?.data[targetLabel] ?? null
+              return {
+                ...s,
+                data: { ...s.data, [sourceLabel]: targetValueRaw },
+              }
+            }
+            if (idx === targetInstanceKey) {
+              const sourceValueRaw = prev.spreads[sourceInstanceKey]?.data[sourceLabel] ?? null
+              return {
+                ...s,
+                data: { ...s.data, [targetLabel]: sourceValueRaw },
+              }
+            }
+          }
+          return s
         })
         return { ...prev, spreads: newSpreads }
       })
@@ -1532,7 +1588,12 @@ function LayoutEditorPageInner({
                           template={leftTemplate}
                           containerWidth={halfWidth}
                           mode={isReadOnly ? 'preview' : 'edit'}
-                          draggingLabel={dragState?.mode === 'swap' ? dragState.label : null}
+                          draggingLabel={
+                            dragState?.mode === 'swap' &&
+                            dragState.instanceKey === leftPage.spread_index
+                              ? dragState.label
+                              : null
+                          }
                           editingTextLabel={editingTextLabel}
                           onTextClick={isReadOnly ? undefined : handleTextClick}
                           onTextSubmit={isReadOnly ? undefined : handleTextSubmit}
@@ -1563,7 +1624,7 @@ function LayoutEditorPageInner({
                               mode={isReadOnly ? 'preview' : 'edit'}
                               draggingLabel={
                                 dragState?.mode === 'swap' &&
-                                currentIdx === currentPair.leftIdx
+                                dragState.instanceKey === leftPage.spread_index
                                   ? dragState.label
                                   : null
                               }
@@ -1607,7 +1668,7 @@ function LayoutEditorPageInner({
                               mode={isReadOnly ? 'preview' : 'edit'}
                               draggingLabel={
                                 dragState?.mode === 'swap' &&
-                                currentIdx === currentPair.rightIdx
+                                dragState.instanceKey === rightPage.spread_index
                                   ? dragState.label
                                   : null
                               }

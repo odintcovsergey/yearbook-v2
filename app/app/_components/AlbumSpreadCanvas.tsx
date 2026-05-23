@@ -510,6 +510,7 @@ function DropZone({
   placeholder,
   scale,
   url,
+  instanceKey,
   onContextMenu,
   onClick,
   hasCustomTransform: hasCustomTransformProp = false,
@@ -517,6 +518,13 @@ function DropZone({
   placeholder: PhotoPlaceholder
   scale: number
   url: string | null
+  // РЭ.35.Е.3 — уникальный ключ инстанса (= spread_index страницы).
+  // Когда на развороте слева+справа стоят canvas с ОДИНАКОВЫМ шаблоном
+  // (например M-Grid-Page+M-Grid-Page), у placeholder'ов одинаковые
+  // label. Без instanceKey dnd-kit считает их одним droppable/draggable
+  // → drag на правой странице регистрируется и на левой (баг 3 от
+  // Сергея 23.05).
+  instanceKey: string | number
   // Л.2 — правый клик на photo слот открывает popover с действиями
   // (Очистить / Заменить оригинал). Координаты клика передаются parent'у
   // чтобы он мог позиционировать popover.
@@ -531,8 +539,11 @@ function DropZone({
   hasCustomTransform?: boolean
 }) {
   const hasValue = !!url
+  // ID droppable/draggable: label@instanceKey. Парсер в parent
+  // handleDragEnd разбирает обратно.
+  const dropId = `${placeholder.label}@${instanceKey}`
   const { setNodeRef: setDropRef, isOver } = useDroppable({
-    id: placeholder.label,
+    id: dropId,
   })
   const {
     attributes,
@@ -541,8 +552,13 @@ function DropZone({
     isDragging,
     transform,
   } = useDraggable({
-    id: `placeholder-${placeholder.label}`,
-    data: { type: 'placeholder', label: placeholder.label, url },
+    id: `placeholder-${placeholder.label}@${instanceKey}`,
+    data: {
+      type: 'placeholder',
+      label: placeholder.label,
+      instanceKey,
+      url,
+    },
     disabled: !hasValue,
   })
 
@@ -760,6 +776,7 @@ export default function AlbumSpreadCanvas({
                   placeholder={p}
                   scale={scale}
                   url={instance.data[p.label] ?? null}
+                  instanceKey={instance.spread_index}
                   onContextMenu={onPhotoContextMenu}
                   onClick={onPhotoClick}
                   hasCustomTransform={hasCustom}
