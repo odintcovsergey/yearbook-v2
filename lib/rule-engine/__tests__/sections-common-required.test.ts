@@ -86,6 +86,10 @@ const J_COLLAGE_6 = makeMaster(
   'J-Collage-6',
   Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
 );
+const J_COLLAGE_4 = makeMaster(
+  'J-Collage-4',
+  Array.from({ length: 4 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
+);
 const J_SPREAD = makeMaster(
   'J-Spread',
   [photoSlot('spreadphoto')],
@@ -98,6 +102,7 @@ const ALL_J_MASTERS = [
   J_QUARTER_LEFT,
   J_QUARTER_RIGHT,
   J_COLLAGE_6,
+  J_COLLAGE_4,
   J_SPREAD,
 ];
 
@@ -330,12 +335,13 @@ describe('fillCommonRequiredSection (РЭ.32): новый формат pages', (
     expect(result.spreads[1].right?.master_id).toBe('id-J-Full');
   });
 
-  it('РЭ.35.Ж.2: J-Spread после нечётной J-Full → новый разворот, не пропуск', () => {
-    // Сценарий: партнёр в шаблоне положил J-Full (1 страница) перед
-    // J-Spread (на разворот). До фикса J-Spread пропускался с warning
-    // misaligned. После фикса первая запись J-Spread получает
-    // section_start → шаг 6 закрывает разворот с J-Full висящей правой
-    // и J-Spread занимает целый следующий разворот.
+  it('РЭ.36 (фикс дублирования): 2 J-Collage-4 подряд с 8 sixth-фото → берут разные фото', () => {
+    // Регрессионный тест: до фикса J-Collage-4 классифицировался как
+    // category='quarter', но bindCommonPhotos читал из sixth-пула.
+    // decrementAvailable снимал с quarter (не с sixth), cursor sixthUsed
+    // не сдвигался → вторая J-Collage-4 брала те же sixth[0..3].
+    // После фикса (collageCount > 0 → 'sixth'): первая берёт sixth[0..3],
+    // вторая берёт sixth[4..7].
     const bundle = makeBundle({
       preset: makePreset({
         id: 'test',
@@ -343,28 +349,102 @@ describe('fillCommonRequiredSection (РЭ.32): новый формат pages', (
           {
             type: 'common_required',
             pages: [
-              { master_name: 'J-Full' },     // 1 страница (left)
-              { master_name: 'J-Spread' },   // занимает целый разворот
+              { master_name: 'J-Collage-4' }, // left
+              { master_name: 'J-Collage-4' }, // right
             ],
           },
         ],
       }),
     });
+    const result = buildFromSectionStructure(bundle, makeInput({ sixth: 8 }));
+    expect(result.spreads).toHaveLength(1);
+
+    const left = result.spreads[0].left;
+    const right = result.spreads[0].right;
+    expect(left?.master_id).toBe('id-J-Collage-4');
+    expect(right?.master_id).toBe('id-J-Collage-4');
+
+    // Левая страница: первые 4 фото из sixth-пула.
+    expect(left?.bindings.collagephoto_1).toBe('https://cdn/sixth_0.jpg');
+    expect(left?.bindings.collagephoto_2).toBe('https://cdn/sixth_1.jpg');
+    expect(left?.bindings.collagephoto_3).toBe('https://cdn/sixth_2.jpg');
+    expect(left?.bindings.collagephoto_4).toBe('https://cdn/sixth_3.jpg');
+
+    // Правая страница: следующие 4 фото из sixth-пула. КЛЮЧЕВАЯ
+    // проверка — не повторяются с левой.
+    expect(right?.bindings.collagephoto_1).toBe('https://cdn/sixth_4.jpg');
+    expect(right?.bindings.collagephoto_2).toBe('https://cdn/sixth_5.jpg');
+    expect(right?.bindings.collagephoto_3).toBe('https://cdn/sixth_6.jpg');
+    expect(right?.bindings.collagephoto_4).toBe('https://cdn/sixth_7.jpg');
+
+    // Глобально: все 8 фото уникальны.
+    const allUsed = [
+      left?.bindings.collagephoto_1,
+      left?.bindings.collagephoto_2,
+      left?.bindings.collagephoto_3,
+      left?.bindings.collagephoto_4,
+      right?.bindings.collagephoto_1,
+      right?.bindings.collagephoto_2,
+      right?.bindings.collagephoto_3,
+      right?.bindings.collagephoto_4,
+    ];
+    expect(new Set(allUsed).size).toBe(8);
+  });
+
+  it('РЭ.36: J-Collage-4 при пустом sixth но полном quarter → page_skipped (а не пустые bindings)', () => {
+    // Регрессионный тест: до фикса при sixth=0, quarter=8 проверка
+    // availablePhotos(category=quarter) проходила, страница «строилась»,
+    // но bindings.collagephoto_N = undefined (читались из пустого sixth).
+    // После фикса проверка идёт по правильному пулу sixth → warning.
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [{ master_name: 'J-Collage-4' }],
+          },
+        ],
+      }),
+    });
     const result = buildFromSectionStructure(bundle, makeInput({
-      full_class: 1,
-      spread: 1,
+      sixth: 0,
+      quarter: 8,
     }));
-    // Должно: 2 разворота. Первый — J-Full на left, правая пуста.
-    // Второй — J-Spread целиком.
-    expect(result.spreads).toHaveLength(2);
-    expect(result.spreads[0].left?.master_id).toBe('id-J-Full');
-    expect(result.spreads[0].right).toBeUndefined(); // висящий
-    expect((result.spreads[1] as unknown as { is_spread?: boolean }).is_spread).toBe(true);
-    expect(result.spreads[1].left?.master_id).toBe('id-J-Spread');
-    expect(result.spreads[1].right?.master_id).toBe('id-J-Spread');
-    // Нет warning про misaligned
+    expect(result.spreads).toHaveLength(0);
     expect(
-      result.warnings.some((w) => w.includes('spread_misaligned')),
-    ).toBe(false);
+      result.warnings.some(
+        (w) => w.includes('page_skipped') && w.includes('J-Collage-4'),
+      ),
+    ).toBe(true);
+  });
+
+  it('РЭ.36: J-Collage-N универсальный (на примере 5 collage-плейсхолдеров) → sixth-пул, count=5', () => {
+    // Обобщённое поведение: любой мастер с N collagephoto-плейсхолдерами
+    // (не только 4 или 6) корректно работает через sixth-пул.
+    // Это снимает необходимость править код при появлении J-Collage-3,
+    // J-Collage-5, J-Collage-8 и т.п.
+    const J_COLLAGE_5 = makeMaster(
+      'J-Collage-5',
+      Array.from({ length: 5 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
+    );
+    const bundle = makeBundle({
+      masters: [...ALL_J_MASTERS, J_COLLAGE_5],
+      preset: makePreset({
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [{ master_name: 'J-Collage-5' }],
+          },
+        ],
+      }),
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ sixth: 5 }));
+    expect(result.spreads).toHaveLength(1);
+    const left = result.spreads[0].left;
+    expect(left?.master_id).toBe('id-J-Collage-5');
+    expect(left?.bindings.collagephoto_1).toBe('https://cdn/sixth_0.jpg');
+    expect(left?.bindings.collagephoto_5).toBe('https://cdn/sixth_4.jpg');
   });
 });

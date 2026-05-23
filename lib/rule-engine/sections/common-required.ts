@@ -50,9 +50,17 @@ type MasterCapability = {
  *   classphotoframe      → full_class (count=1)
  *   halfphoto_N (2 шт.)  → half_class (count=2)
  *   quarterphoto_N (4)   → quarter (count=4)
- *   collagephoto_N (6)   → sixth (count=6)
- *   collagephoto_N (4)   → quarter (count=4) — мастер J-Collage-4
+ *   collagephoto_N (N>0) → sixth (count=N) — любой J-Collage-N мастер
  *   spreadphoto          → spread (count=1)
+ *
+ * РЭ.36 (фикс дублирования): collage-placeholders ВСЕГДА читаются
+ * bindCommonPhotos из пула common_photos.sixth (по конвенции labels).
+ * Поэтому category должна быть 'sixth' для любого collageCount > 0.
+ * Раньше для collageCount === 4 возвращалась 'quarter' — рассинхрон с
+ * bindCommonPhotos: фото брались из sixth, а decrementAvailable снимал
+ * с quarter, cursor sixthUsed не сдвигался → две соседние J-Collage-4
+ * брали одни и те же фото. Сейчас единое правило: «есть collagephoto_N
+ * → бери N фото из sixth».
  *
  * Возвращает null если мастер не имеет ни одной J-категории. Это
  * означает что в `pages` пресета указан некорректный мастер (например
@@ -76,8 +84,7 @@ function analyzeMasterCapability(master: SpreadTemplate): MasterCapability {
   }
 
   if (hasSpread) return { category: 'spread', count: 1 };
-  if (collageCount === 6) return { category: 'sixth', count: 6 };
-  if (collageCount === 4) return { category: 'quarter', count: 4 };
+  if (collageCount > 0) return { category: 'sixth', count: collageCount };
   if (quarterCount >= 4) return { category: 'quarter', count: 4 };
   if (halfCount >= 2) return { category: 'half_class', count: 2 };
   if (hasFull) return { category: 'full_class', count: 1 };
