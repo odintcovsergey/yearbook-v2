@@ -114,19 +114,31 @@ export function buildFromSectionStructure(
   };
 
   // 5. Обход секций. Каждая функция мутирует ctx.
+  //
+  // РЭ.35.Ж: секции которые СЕМАНТИЧЕСКИ отдельные от предыдущих
+  // (партнёр явно положил их как отдельные блоки в шаблоне) помечаются
+  // флагом section_start у первой добавленной страницы. В шаге 6
+  // (группировка) это превращается в принудительное закрытие предыдущего
+  // разворота с пустой правой.
+  //
+  // Список НАМЕРЕННО узкий: только common_required и soft_final.
+  // - transition — продолжает students, НЕ помечаем
+  // - teachers, students, soft_intro — обычно идут с начала альбома или
+  //   в начале своего раздела, legacy-поведение «правая прошлой секции
+  //   = левая текущей» зашито в тестах и используется в плотностных
+  //   пресетах; не трогаем чтобы не сломать обратную совместимость
+  // - common (legacy slots-режим), common_additional — те же причины
+  const SECTIONS_THAT_START_NEW_SPREAD = new Set([
+    'common_required',
+    'soft_final',
+  ]);
   for (let sIdx = 0; sIdx < sectionStructure.length; sIdx++) {
     ctx.sectionIndex = sIdx;
     const section = sectionStructure[sIdx];
+    const startCountBeforeSection = pageInstances.length;
 
     switch (section.type) {
       case 'common':
-        // РЭ.21.8.8: две формы common-секции.
-        //   { type: 'common', slots: [...] }                       — manual
-        //   { type: 'common', mode: 'auto', max_spreads: N }       — auto
-        // Различаем явной проверкой поля mode. TS не умеет сужать
-        // discriminated union по 'mode' in section когда оба варианта
-        // имеют один и тот же type — поэтому используем if/else с явной
-        // type assertion.
         if ('mode' in section) {
           fillCommonAutoSection(ctx, section.max_spreads);
         } else {
@@ -134,22 +146,12 @@ export function buildFromSectionStructure(
         }
         break;
       case 'common_required':
-        // РЭ.32: партнёр в редакторе шаблона задаёт упорядоченный массив
-        // pages (страницы общего раздела с именами мастеров). Engine
-        // исполняет список без интерпретации. Если pages отсутствует —
-        // секция пропускается с warning common_required_empty.
         fillCommonRequiredSection(ctx, section.pages);
         break;
       case 'common_additional':
-        // РЭ.21.8.10: дополнительный общий раздел (платная допуслуга).
-        // max_spreads берётся из секции — партнёр в редакторе альбома
-        // выставляет сколько разворотов готов добавить.
         fillCommonAdditionalSection(ctx, section.max_spreads);
         break;
       case 'transition':
-        // РЭ.32: опциональный master_name. Если задан — engine использует
-        // именно этот мастер; если null/undefined — встроенное правило
-        // по умолчанию (combined-tail поиск).
         fillTransitionSection(ctx, section.master_name);
         break;
       case 'teachers':
@@ -168,6 +170,15 @@ export function buildFromSectionStructure(
       case 'vignette':
         warnings.push(`section_${section.type}_not_implemented`);
         break;
+    }
+
+    // Помечаем первую добавленную секцией страницу флагом section_start
+    // если секция требует начать новый разворот.
+    if (
+      SECTIONS_THAT_START_NEW_SPREAD.has(section.type) &&
+      pageInstances.length > startCountBeforeSection
+    ) {
+      pageInstances[startCountBeforeSection].section_start = true;
     }
   }
 
@@ -210,24 +221,38 @@ export function buildFromSectionStructure(
   // и помечаем SpreadInstance.is_spread=true, чтобы adapter
   // layout-to-buildresult сделал 1 legacy SpreadInstance вместо 2.
   // Для остальных случаев — обычная попарная группировка.
+  //
+  // РЭ.35.Ж: учитываем флаг section_start. Если страница помечена как
+  // начало новой секции, а текущий разворот ещё открыт (висит left без
+  // right) — закрываем его пустым right и начинаем новый разворот с
+  // этой страницы как left. Это создаёт «висящий» разворот после хвоста
+  // students когда transition пропустила страницу — и common_required
+  // начинается с нового разворота, как и должно быть.
   const mastersById = new Map<string, SpreadTemplate>();
   bundle.mastersByName.forEach((m) => mastersById.set(m.id, m));
 
   const spreads: SpreadInstance[] = [];
-  for (let i = 0; i < pageInstances.length; i += 2) {
+  let i = 0;
+  while (i < pageInstances.length) {
     const left = pageInstances[i];
-    const right = i + 1 < pageInstances.length ? pageInstances[i + 1] : undefined;
+    const next = i + 1 < pageInstances.length ? pageInstances[i + 1] : undefined;
+    // Если следующая страница помечена section_start — она не должна
+    // быть правой текущего разворота. Закрываем разворот с right=undefined.
+    const useRight =
+      next && !next.section_start ? next : undefined;
     let isSpread = false;
-    if (right && left.master_id === right.master_id) {
+    if (useRight && left.master_id === useRight.master_id) {
       const master = mastersById.get(left.master_id);
       if (master && master.is_spread === true) isSpread = true;
     }
     spreads.push({
-      spread_index: Math.floor(i / 2),
+      spread_index: spreads.length,
       left,
-      right,
+      right: useRight,
       ...(isSpread ? { is_spread: true } : {}),
     });
+    // Если right взят — двинулись на 2, иначе на 1 (висящий разворот).
+    i += useRight ? 2 : 1;
   }
 
   // 7. Статус.

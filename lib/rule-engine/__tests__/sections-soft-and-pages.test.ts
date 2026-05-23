@@ -315,13 +315,18 @@ describe('soft_final', () => {
       bundle,
       makeInput({ full_class: 2 }),
     );
-    expect(result.spreads).toHaveLength(1);
+    // РЭ.35.Ж: soft_final помечается section_start → отдельный разворот.
+    // soft_intro на висящей правой первого разворота, soft_final на
+    // висящей левой второго (правые пусты в обоих случаях).
+    expect(result.spreads).toHaveLength(2);
     expect(result.spreads[0].left?.bindings.classphotoframe).toBe(
       'https://cdn/full_0.jpg',
     );
-    expect(result.spreads[0].right?.bindings.classphotoframe).toBe(
+    expect(result.spreads[0].right).toBeUndefined();
+    expect(result.spreads[1].left?.bindings.classphotoframe).toBe(
       'https://cdn/full_1.jpg',
     );
+    expect(result.spreads[1].right).toBeUndefined();
   });
 });
 
