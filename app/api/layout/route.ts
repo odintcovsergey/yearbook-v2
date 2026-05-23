@@ -93,6 +93,19 @@ const WARNING_LEVELS: Record<string, WarningLevel> = {
   students_too_few: 'degraded',
   adaptive_grid_fallback: 'degraded',
 
+  // РЭ.32 (конструктор общего раздела) + РЭ.35.Ж — common_required коды
+  common_required_master_missing: 'degraded',
+  common_required_no_category: 'degraded',
+  common_required_page_skipped: 'degraded',
+  common_required_empty: 'info',
+  common_required_spread_misaligned: 'info',
+
+  // РЭ.21.8 — common (auto/manual) коды
+  slot_skipped: 'degraded',
+  common_no_spread_master: 'info',
+  common_autopack_underflow: 'info',
+  common_autopack_disabled: 'info',
+
   // Builder — info
   no_head_teacher: 'info',
 

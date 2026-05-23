@@ -27,6 +27,9 @@ import TextStylePanel from '../../../_components/TextStylePanel'
 import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform'
 import { parseFontSizeMult, parseColor } from '@/lib/text-style'
 import { remapData } from '@/lib/template-replace'
+import WarningsPill, {
+  type EnrichedWarning,
+} from './_components/WarningsPill'
 
 // Konva-компонент: SSR-incompatible (использует window.Image).
 const AlbumSpreadCanvas = dynamic(
@@ -39,6 +42,10 @@ type LayoutData = {
   layout_id: string
   template_set_id: string
   spreads: SpreadInstance[]
+  // РЭ.36.UI: предупреждения автосборки. Показываются в UI плашкой
+  // WarningsPill под навигацией разворотов. Партнёр видит причины
+  // пропущенных страниц / неподобранных мастеров / переполнений.
+  warnings: EnrichedWarning[]
 }
 
 // ─── Тип фото для палитры (соответствует 2.4 endpoint response) ──────────
@@ -394,6 +401,10 @@ function LayoutEditorPageInner({
           layout_id: layoutJson.layout.layout_id,
           template_set_id: layoutJson.layout.template_set_id,
           spreads: layoutJson.layout.spreads as SpreadInstance[],
+          // РЭ.36.UI: warnings из album_layouts.warnings (см.
+          // app/api/layout/route.ts handleGetAlbumLayout). API уже
+          // возвращает их в формате EnrichedWarning.
+          warnings: (layoutJson.layout.warnings ?? []) as EnrichedWarning[],
         }
 
         // 2. Параллельно: template_set_detail + album_photos + album title
@@ -1537,31 +1548,39 @@ function LayoutEditorPageInner({
       <div className="flex-1 flex overflow-hidden">
         {/* ─── Левая колонка: canvas + навигация ─── */}
         <main className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto">
-          {/* РЭ.35.Е.4: компактный info-бейдж для soft-альбомов вместо
-              полной плашки. Раньше большая amber-плашка занимала
-              место под навигацией и съедала рабочую зону canvas
-              (Сергей 23.05). Теперь иконка с tooltip-разворачиванием
-              на hover/focus. */}
-          {effectivePrintType === 'soft' && (
-            <div className="mb-2 flex justify-center">
-              <button
-                type="button"
-                className="group inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-900 hover:bg-amber-100 cursor-help relative"
-                tabIndex={0}
-              >
-                <span>📖</span>
-                <span className="font-medium">Мягкий переплёт</span>
-                <span className="text-amber-700 text-[10px]">подробнее</span>
-                <span
-                  className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 transition-opacity absolute left-1/2 top-full mt-1 -translate-x-1/2 z-20 w-80 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-lg"
-                  role="tooltip"
+          {/* РЭ.35.Е.4 + РЭ.36.UI: компактные pill-индикаторы под навигацией
+              разворотов — «Мягкий переплёт» (для soft-альбомов) и
+              «N предупреждений» (если engine при сборке оставил warnings).
+              Обе плашки в одном ряду, рендерятся только при наличии
+              соответствующего условия — если ничего нет, ряд не виден.
+              Раньше большая amber-плашка занимала место под навигацией и
+              съедала рабочую зону canvas (Сергей 23.05). */}
+          {(effectivePrintType === 'soft' ||
+            (layout && layout.warnings.length > 0)) && (
+            <div className="mb-2 flex justify-center items-start gap-2">
+              {effectivePrintType === 'soft' && (
+                <button
+                  type="button"
+                  className="group inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-900 hover:bg-amber-100 cursor-help relative"
+                  tabIndex={0}
                 >
-                  На первом и последнем разворотах одна страница — это физический
-                  форзац типографии (показан как «Форзац» с водяным знаком).
-                  Содержательная вёрстка начинается с правой страницы первого
-                  разворота и заканчивается на левой странице последнего.
-                </span>
-              </button>
+                  <span>📖</span>
+                  <span className="font-medium">Мягкий переплёт</span>
+                  <span className="text-amber-700 text-[10px]">подробнее</span>
+                  <span
+                    className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 transition-opacity absolute left-1/2 top-full mt-1 -translate-x-1/2 z-20 w-80 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-lg"
+                    role="tooltip"
+                  >
+                    На первом и последнем разворотах одна страница — это физический
+                    форзац типографии (показан как «Форзац» с водяным знаком).
+                    Содержательная вёрстка начинается с правой страницы первого
+                    разворота и заканчивается на левой странице последнего.
+                  </span>
+                </button>
+              )}
+              {layout && layout.warnings.length > 0 && (
+                <WarningsPill warnings={layout.warnings} />
+              )}
             </div>
           )}
 

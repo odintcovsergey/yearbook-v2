@@ -129,11 +129,27 @@ export function adaptAlbumLayoutToBuildResult(layout: AlbumLayout): AdaptedResul
   }
 
   // Конвертируем warnings rule engine в BuildWarning.
+  //
+  // РЭ.36.UI: engine отдаёт warnings как строки формата
+  // `<code>: <detail>` (например: `common_required_page_skipped: 'J-Collage-4' (...)`).
+  // Раньше всё попадало в общий код 'rule_engine_warning' — UI не мог
+  // их различать. Теперь извлекаем реальный код через regex; если паттерн
+  // не совпал (свободная строка типа 'something happened') — fallback
+  // на 'rule_engine_warning' как раньше.
+  const CODE_PREFIX_RE = /^([a-z][a-z0-9_]*):\s*/;
   for (const w of layout.warnings) {
-    warnings.push({
-      code: 'rule_engine_warning' as never,
-      detail: w,
-    });
+    const match = w.match(CODE_PREFIX_RE);
+    if (match) {
+      warnings.push({
+        code: match[1] as never,
+        detail: w.slice(match[0].length),
+      });
+    } else {
+      warnings.push({
+        code: 'rule_engine_warning' as never,
+        detail: w,
+      });
+    }
   }
 
   if (layout.status === 'partial') {
