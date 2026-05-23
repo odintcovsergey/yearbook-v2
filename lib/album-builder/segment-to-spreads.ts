@@ -46,9 +46,31 @@ export type VisualSpread = {
 export function segmentToSpreads(
   spreads: SpreadInstance[],
   templatesById: ReadonlyMap<string, SpreadTemplate>,
+  options?: {
+    /**
+     * РЭ.35.Е.5 — режим soft-альбома. Когда true, первая страница
+     * массива становится ПРАВОЙ первого визуального разворота (левая
+     * остаётся undefined — там форзац), последняя страница становится
+     * ЛЕВОЙ последнего разворота (правая undefined — форзац).
+     *
+     * Это отражает реальность soft-альбома: первая физическая страница
+     * — внутренняя сторона мягкой обложки (форзац), содержательная
+     * вёрстка начинается со 2-й страницы (= правая 1-го разворота).
+     *
+     * Если false (default) — обычная сегментация для hard/layflat.
+     */
+    softShift?: boolean;
+  },
 ): VisualSpread[] {
   const result: VisualSpread[] = [];
   let current: VisualSpread | null = null;
+
+  // РЭ.35.Е.5: для soft первая страница → правая первого разворота.
+  // Открываем первый разворот сразу с занятой левой (форзац) — стартуем
+  // с nextSide='right'.
+  if (options?.softShift && spreads.length > 0) {
+    current = { leftIdx: undefined, isSpread: false };
+  }
 
   for (let i = 0; i < spreads.length; i++) {
     const page = spreads[i];
@@ -62,10 +84,6 @@ export function segmentToSpreads(
         result.push(current);
         current = null;
       }
-      // Сам spread-мастер: в legacy формате обычно занимает одну запись
-      // SpreadInstance (см. layout-to-buildresult.ts:113 — для is_spread
-      // делается 1 SpreadInstance). Кладём его и на left, и на right
-      // одного и того же VisualSpread.
       result.push({
         leftIdx: i,
         rightIdx: i,

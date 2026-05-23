@@ -149,6 +149,58 @@ describe('segmentToSpreads', () => {
       { leftIdx: 0, rightIdx: 1, isSpread: false },
     ]);
   });
+
+  // ─── softShift (soft-альбомы) ───────────────────────────────────────────
+
+  it('softShift: 14 страниц soft → 8 разворотов, первый/последний с форзацами', () => {
+    const templates = new Map([['A', makeTemplate('A')]]);
+    const pages = Array.from({ length: 14 }, (_, i) => makePage('A', i));
+    const result = segmentToSpreads(pages, templates, { softShift: true });
+    expect(result.length).toBe(8);
+    // Первый разворот: пустая левая (форзац), первая страница как правая
+    expect(result[0]).toEqual({
+      leftIdx: undefined,
+      rightIdx: 0,
+      isSpread: false,
+    });
+    // Развороты 2-7: обычные пары
+    expect(result[1]).toEqual({ leftIdx: 1, rightIdx: 2, isSpread: false });
+    expect(result[6]).toEqual({ leftIdx: 11, rightIdx: 12, isSpread: false });
+    // Последний: только левая (правая = форзац)
+    expect(result[7]).toEqual({ leftIdx: 13, isSpread: false });
+  });
+
+  it('softShift: 2 страницы → 2 разворота (по форзацу с обеих сторон)', () => {
+    const templates = new Map([['A', makeTemplate('A')]]);
+    const result = segmentToSpreads(
+      [makePage('A', 0), makePage('A', 1)],
+      templates,
+      { softShift: true },
+    );
+    expect(result).toEqual([
+      { leftIdx: undefined, rightIdx: 0, isSpread: false },
+      { leftIdx: 1, isSpread: false },
+    ]);
+  });
+
+  it('softShift: 1 страница → 1 разворот { rightIdx: 0 }', () => {
+    const templates = new Map([['A', makeTemplate('A')]]);
+    const result = segmentToSpreads(
+      [makePage('A', 0)],
+      templates,
+      { softShift: true },
+    );
+    // У single-страничного soft-альбома последний разворот не успевает
+    // открыться (current уже закрылся когда rightIdx был установлен)
+    expect(result).toEqual([
+      { leftIdx: undefined, rightIdx: 0, isSpread: false },
+    ]);
+  });
+
+  it('softShift: пустой массив → пустой результат', () => {
+    const result = segmentToSpreads([], new Map(), { softShift: true });
+    expect(result).toEqual([]);
+  });
 });
 
 describe('findVisualSpreadForPage', () => {

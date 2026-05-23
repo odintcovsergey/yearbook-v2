@@ -62,6 +62,12 @@ type Props = {
   // Добавить новую страницу после указанной.
   onAddRequest?: (insertAfterPageIdx: number) => void
   readOnly?: boolean
+  /**
+   * РЭ.35.Е.5: для soft-альбомов сдвиг визуальной нумерации так, чтобы
+   * первая физическая страница массива стала ПРАВОЙ первого разворота
+   * (левая = форзац), а последняя — ЛЕВОЙ последнего (правая = форзац).
+   */
+  softShift?: boolean
 }
 
 const PAGE_THUMB_WIDTH = 96 // одна страница (~140px высоты для книжной пропорции)
@@ -76,6 +82,7 @@ export default function SpreadOrderStrip({
   onDelete,
   onAddRequest,
   readOnly = false,
+  softShift = false,
 }: Props) {
   const templateMap = useMemo(() => {
     const map = new Map<string, SpreadTemplate>()
@@ -85,8 +92,8 @@ export default function SpreadOrderStrip({
 
   // Сегментация — только для визуальной группировки.
   const visualSpreads = useMemo(
-    () => segmentToSpreads(spreads, templateMap),
-    [spreads, templateMap],
+    () => segmentToSpreads(spreads, templateMap, { softShift }),
+    [spreads, templateMap, softShift],
   )
 
   // Активный разворот — pair в котором сейчас currentIdx.

@@ -1395,7 +1395,14 @@ function LayoutEditorPageInner({
   // Расчёт дешёвый (Map + один проход), считаем при каждом ререндере.
   const templatesById = new Map<string, SpreadTemplate>()
   for (const t of templates) templatesById.set(t.id, t)
-  const visualSpreads = segmentToSpreads(spreads, templatesById)
+  // РЭ.35.Е.5: для soft-альбомов первая страница массива становится
+  // ПРАВОЙ первого визуального разворота (левая = форзац типографии),
+  // последняя — ЛЕВОЙ последнего разворота (правая = форзац). Это
+  // соответствует физической реальности мягкого переплёта.
+  const isSoftAlbum = effectivePrintType === 'soft'
+  const visualSpreads = segmentToSpreads(spreads, templatesById, {
+    softShift: isSoftAlbum,
+  })
   const currentPairIdx = findVisualSpreadForPage(visualSpreads, currentIdx)
   const currentPair = visualSpreads[currentPairIdx] ?? null
   const leftPage =
@@ -1530,19 +1537,31 @@ function LayoutEditorPageInner({
       <div className="flex-1 flex overflow-hidden">
         {/* ─── Левая колонка: canvas + навигация ─── */}
         <main className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto">
-          {/* РЭ.27.4: информационная плашка для soft-альбомов.
-              Объясняет фотографу что в реальной книге первая страница
-              будет правой (титульной), последняя — левой, а между
-              ними физический форзац от типографии. */}
+          {/* РЭ.35.Е.4: компактный info-бейдж для soft-альбомов вместо
+              полной плашки. Раньше большая amber-плашка занимала
+              место под навигацией и съедала рабочую зону canvas
+              (Сергей 23.05). Теперь иконка с tooltip-разворачиванием
+              на hover/focus. */}
           {effectivePrintType === 'soft' && (
-            <div className="mb-4 max-w-2xl rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              <p className="font-medium">📖 Мягкий переплёт</p>
-              <p className="text-xs text-amber-800 mt-1">
-                На первом и последнем разворотах одна страница — это физический
-                форзац типографии (показан как «Форзац» с водяным знаком).
-                Содержательная вёрстка начинается с правой страницы первого
-                разворота и заканчивается на левой странице последнего.
-              </p>
+            <div className="mb-2 flex justify-center">
+              <button
+                type="button"
+                className="group inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-900 hover:bg-amber-100 cursor-help relative"
+                tabIndex={0}
+              >
+                <span>📖</span>
+                <span className="font-medium">Мягкий переплёт</span>
+                <span className="text-amber-700 text-[10px]">подробнее</span>
+                <span
+                  className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 transition-opacity absolute left-1/2 top-full mt-1 -translate-x-1/2 z-20 w-80 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-lg"
+                  role="tooltip"
+                >
+                  На первом и последнем разворотах одна страница — это физический
+                  форзац типографии (показан как «Форзац» с водяным знаком).
+                  Содержательная вёрстка начинается с правой страницы первого
+                  разворота и заканчивается на левой странице последнего.
+                </span>
+              </button>
             </div>
           )}
 
@@ -1553,23 +1572,21 @@ function LayoutEditorPageInner({
                   - иначе → две canvas рядом (left + right), каждая половина ширины
                   - если одна сторона пуста → placeholder (висящий разворот) */}
               {(() => {
-                const isSoftAlbum = effectivePrintType === 'soft'
                 const isFirstPair = currentPairIdx === 0
                 const isLastPair = currentPairIdx === visualSpreads.length - 1
-                const showEndpaperBefore = isSoftAlbum && isFirstPair
-                const showEndpaperAfter = isSoftAlbum && isLastPair
-                const endpaperWidth = canvasContainerWidth / 2
+                // РЭ.35.Е.5: для soft форзацы рисуем НЕ как дополнительные
+                // блоки рядом, а ВМЕСТО пустых страниц первого/последнего
+                // разворота (через softShift segmentToSpreads уже сделал
+                // leftIdx=undefined в первом и rightIdx=undefined в
+                // последнем для soft). Это убирает «3-страничный» вид
+                // первого разворота и делает его симметричным с финальным.
+                const showLeftEndpaper = isSoftAlbum && isFirstPair
+                const showRightEndpaper = isSoftAlbum && isLastPair
                 const halfWidth = currentPair.isSpread
                   ? canvasContainerWidth
                   : canvasContainerWidth / 2
                 return (
                   <div className="flex items-stretch gap-1">
-                    {showEndpaperBefore && leftTemplate && (
-                      <EndpaperPlaceholder
-                        width={endpaperWidth}
-                        aspectRatio={leftTemplate.width_mm / leftTemplate.height_mm}
-                      />
-                    )}
                     {currentPair.isSpread && leftPage && leftTemplate ? (
                       // Spread-мастер: один canvas, полная ширина
                       <div
@@ -1638,6 +1655,15 @@ function LayoutEditorPageInner({
                               onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
                             />
                           </div>
+                        ) : showLeftEndpaper ? (
+                          <EndpaperPlaceholder
+                            width={halfWidth}
+                            aspectRatio={
+                              rightTemplate
+                                ? rightTemplate.width_mm / rightTemplate.height_mm
+                                : 0.7
+                            }
+                          />
                         ) : (
                           <EmptyPagePlaceholder
                             width={halfWidth}
@@ -1682,6 +1708,15 @@ function LayoutEditorPageInner({
                               onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
                             />
                           </div>
+                        ) : showRightEndpaper ? (
+                          <EndpaperPlaceholder
+                            width={halfWidth}
+                            aspectRatio={
+                              leftTemplate
+                                ? leftTemplate.width_mm / leftTemplate.height_mm
+                                : 0.7
+                            }
+                          />
                         ) : (
                           <EmptyPagePlaceholder
                             width={halfWidth}
@@ -1694,12 +1729,6 @@ function LayoutEditorPageInner({
                           />
                         )}
                       </>
-                    )}
-                    {showEndpaperAfter && rightTemplate && (
-                      <EndpaperPlaceholder
-                        width={endpaperWidth}
-                        aspectRatio={rightTemplate.width_mm / rightTemplate.height_mm}
-                      />
                     )}
                   </div>
                 )
@@ -1800,6 +1829,7 @@ function LayoutEditorPageInner({
           onDelete={isReadOnly ? undefined : handleDeleteSpread}
           onAddRequest={isReadOnly ? undefined : handleAddRequest}
           readOnly={isReadOnly}
+          softShift={isSoftAlbum}
         />
       )}
 
