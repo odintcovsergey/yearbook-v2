@@ -129,13 +129,99 @@ function validateDensity(
   return { ok: true, value: raw }
 }
 
+type ValidatedTransitionCustom = {
+  tail_left: {
+    left: { master_name: string }
+    right: { master_name: string }
+  }
+  tail_right: {
+    right: { master_name: string }
+  }
+}
+
 type ValidatedSection =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
   | { type: 'common'; slots: string[] }
   | { type: 'common'; mode: 'auto'; max_spreads: number }  // РЭ.21.8.8
   | { type: 'common_required'; pages?: { master_name: string }[] }  // РЭ.32: конструктор страниц
   | { type: 'common_additional'; max_spreads: number }     // РЭ.21.8.10
-  | { type: 'transition'; master_name?: string | null }    // РЭ.32: опциональный мастер
+  // РЭ.32 legacy: { type: 'transition', master_name?: string | null }
+  // РЭ.37: { type: 'transition', mode: 'okeybook_default' }
+  //   | { type: 'transition', mode: 'custom', custom: ValidatedTransitionCustom }
+  | { type: 'transition'; master_name?: string | null }
+  | { type: 'transition'; mode: 'okeybook_default' }
+  | { type: 'transition'; mode: 'custom'; custom: ValidatedTransitionCustom }
+
+// РЭ.37: валидатор custom-сценария transition. Используется только когда
+// section_structure[i] = { type: 'transition', mode: 'custom', custom }.
+// Структура: { tail_left: { left, right }, tail_right: { right } } — каждый
+// из left/right — это { master_name: string } (имя без суффикса '-Right').
+function validateTransitionCustom(
+  raw: unknown,
+  sectionIdx: number,
+): { ok: true; value: ValidatedTransitionCustom } | { ok: false; error: string } {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      ok: false,
+      error: `Секция #${sectionIdx + 1} (transition, custom): ожидался объект`,
+    }
+  }
+  const r = raw as Record<string, unknown>
+  const tlRaw = r.tail_left
+  const trRaw = r.tail_right
+  if (!tlRaw || typeof tlRaw !== 'object') {
+    return {
+      ok: false,
+      error: `Секция #${sectionIdx + 1} (transition, custom): tail_left отсутствует или не объект`,
+    }
+  }
+  if (!trRaw || typeof trRaw !== 'object') {
+    return {
+      ok: false,
+      error: `Секция #${sectionIdx + 1} (transition, custom): tail_right отсутствует или не объект`,
+    }
+  }
+  const tl = tlRaw as Record<string, unknown>
+  const tr = trRaw as Record<string, unknown>
+  const tlLeft = validateTransitionMasterRef(tl.left, sectionIdx, 'tail_left.left')
+  if (!tlLeft.ok) return tlLeft
+  const tlRight = validateTransitionMasterRef(tl.right, sectionIdx, 'tail_left.right')
+  if (!tlRight.ok) return tlRight
+  const trRight = validateTransitionMasterRef(tr.right, sectionIdx, 'tail_right.right')
+  if (!trRight.ok) return trRight
+  return {
+    ok: true,
+    value: {
+      tail_left: { left: tlLeft.value, right: tlRight.value },
+      tail_right: { right: trRight.value },
+    },
+  }
+}
+
+function validateTransitionMasterRef(
+  raw: unknown,
+  sectionIdx: number,
+  path: string,
+): { ok: true; value: { master_name: string } } | { ok: false; error: string } {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      ok: false,
+      error: `Секция #${sectionIdx + 1} (transition, custom.${path}): ожидался объект { master_name }`,
+    }
+  }
+  const r = raw as { master_name?: unknown }
+  if (
+    typeof r.master_name !== 'string' ||
+    r.master_name.length === 0 ||
+    r.master_name.length > 200
+  ) {
+    return {
+      ok: false,
+      error: `Секция #${sectionIdx + 1} (transition, custom.${path}): master_name должен быть непустой строкой`,
+    }
+  }
+  return { ok: true, value: { master_name: r.master_name } }
+}
 
 function validateSectionStructure(
   raw: unknown,
@@ -246,23 +332,70 @@ function validateSectionStructure(
         result.push({ type: 'common_required', pages: validPages })
       }
     } else if (type === 'transition') {
-      // РЭ.32: опциональный master_name. Если задан — engine использует
-      // именно этот мастер. Если null/undefined — встроенное правило по
-      // умолчанию (combined-tail поиск).
+      // РЭ.37: переходный раздел может быть в одной из трёх форм:
+      //   (a) legacy РЭ.32:    { type: 'transition', master_name?: string|null }
+      //   (b) РЭ.37 default:   { type: 'transition', mode: 'okeybook_default' }
+      //   (c) РЭ.37 custom:    { type: 'transition', mode: 'custom', custom: {...} }
+      //
+      // Различаем по наличию поля mode. master_name и mode одновременно
+      // не допускаются (явный конфликт legacy и нового формата).
       const masterName = (s as { master_name?: unknown }).master_name
-      if (masterName === undefined || masterName === null) {
-        result.push({ type: 'transition' })
-      } else if (
-        typeof masterName !== 'string' ||
-        masterName.length === 0 ||
-        masterName.length > 200
-      ) {
-        return {
-          ok: false,
-          error: `Секция #${i + 1} (transition): master_name должен быть непустой строкой или null`,
+      const mode = (s as { mode?: unknown }).mode
+      const customRaw = (s as { custom?: unknown }).custom
+
+      if (mode !== undefined && mode !== null) {
+        // РЭ.37 форма (b) или (c).
+        if (
+          typeof mode !== 'string' ||
+          (mode !== 'okeybook_default' && mode !== 'custom')
+        ) {
+          return {
+            ok: false,
+            error: `Секция #${i + 1} (transition): недопустимый mode '${String(mode)}'. Допустимы: okeybook_default, custom`,
+          }
+        }
+        if (masterName !== undefined && masterName !== null) {
+          return {
+            ok: false,
+            error: `Секция #${i + 1} (transition): нельзя одновременно задавать master_name (legacy РЭ.32) и mode (РЭ.37). Используйте только mode.`,
+          }
+        }
+        if (mode === 'okeybook_default') {
+          if (customRaw !== undefined && customRaw !== null) {
+            return {
+              ok: false,
+              error: `Секция #${i + 1} (transition): поле custom задаётся только при mode='custom'`,
+            }
+          }
+          result.push({ type: 'transition', mode: 'okeybook_default' })
+        } else {
+          // mode === 'custom' — custom обязателен
+          const v = validateTransitionCustom(customRaw, i)
+          if (!v.ok) return v
+          result.push({ type: 'transition', mode: 'custom', custom: v.value })
         }
       } else {
-        result.push({ type: 'transition', master_name: masterName })
+        // legacy форма РЭ.32 (master_name? — опциональный)
+        if (customRaw !== undefined && customRaw !== null) {
+          return {
+            ok: false,
+            error: `Секция #${i + 1} (transition): поле custom требует mode='custom'`,
+          }
+        }
+        if (masterName === undefined || masterName === null) {
+          result.push({ type: 'transition' })
+        } else if (
+          typeof masterName !== 'string' ||
+          masterName.length === 0 ||
+          masterName.length > 200
+        ) {
+          return {
+            ok: false,
+            error: `Секция #${i + 1} (transition): master_name должен быть непустой строкой или null`,
+          }
+        } else {
+          result.push({ type: 'transition', master_name: masterName })
+        }
       }
     } else if (type === 'common_additional') {
       // РЭ.21.8.10: дополнительный общий раздел (платная допуслуга).
@@ -829,7 +962,7 @@ export async function GET(req: NextRequest) {
   if (action === 'rule_presets_list') {
     const { data, error } = await supabaseAdmin
       .from('presets')
-      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, template_set_id, section_structure, student_pages_per_student, student_friend_photos, student_has_quote, student_layout_mode, student_grid_size, tenant_id, version, is_recommended')
+      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, template_set_id, section_structure, student_pages_per_student, student_friend_photos, student_has_quote, student_layout_mode, student_grid_size, symmetrize_students_tail, tenant_id, version, is_recommended')
       .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
       .order('display_name')
 
@@ -2679,6 +2812,21 @@ export async function POST(req: NextRequest) {
         }
         patch.student_grid_size = n
       }
+    }
+
+    // РЭ.37.1: симметризация хвоста students-секции (boolean).
+    // Engine применяет только для комплектаций Мини/Лайт (см. РЭ.37.4),
+    // но валидация на уровне API проста — это просто boolean. Cross-field
+    // согласованность с layout_mode/grid_size — забота UI РЭ.37.5
+    // (галочка скрыта/disabled когда комплектация не Мини/Лайт).
+    if (body.symmetrize_students_tail !== undefined) {
+      if (typeof body.symmetrize_students_tail !== 'boolean') {
+        return NextResponse.json(
+          { error: 'symmetrize_students_tail должен быть boolean' },
+          { status: 400 },
+        )
+      }
+      patch.symmetrize_students_tail = body.symmetrize_students_tail
     }
 
     // РЭ.24.7: галка «рекомендовать в каталоге партнёров».

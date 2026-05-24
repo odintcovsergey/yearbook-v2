@@ -201,6 +201,13 @@ function presetRowToPreset(row: Record<string, unknown>): Preset {
       row.student_grid_size === null || row.student_grid_size === undefined
         ? null
         : Number(row.student_grid_size),
+    // РЭ.37.1: симметризация хвоста students-секции. БД-default = false.
+    // Если по какой-то причине столбца ещё нет в строке (например,
+    // тестовый стенд до миграции) — безопасный фолбэк на false.
+    symmetrize_students_tail:
+      typeof row.symmetrize_students_tail === 'boolean'
+        ? row.symmetrize_students_tail
+        : false,
   };
 }
 

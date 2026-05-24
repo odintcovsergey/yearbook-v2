@@ -391,6 +391,38 @@ export interface CommonRequiredPage {
 }
 
 /**
+ * РЭ.37: пользовательский сценарий переходного раздела.
+ *
+ * Партнёр в конструкторе шаблона (TransitionScenarioPicker, реализуется
+ * в РЭ.37.6) заранее задаёт мастера на каждый из двух возможных случаев
+ * хвоста students-секции:
+ *
+ *  - `tail_left` — хвост из 1-N учеников остался на ЛЕВОЙ странице
+ *    разворота личного раздела. Build engine достраивает низ левой
+ *    страницы combo-мастером (`left.master_name`) и всю правую — другим
+ *    мастером (`right.master_name`).
+ *
+ *  - `tail_right` — хвост из 1-N учеников остался на ПРАВОЙ странице.
+ *    Левая остаётся как есть (последняя полная страница students),
+ *    правую достраиваем combo-мастером (`right.master_name`).
+ *
+ * Названия мастеров — без суффикса `-Right` (та же конвенция, что у
+ * CommonRequiredPage). Engine при сборке смотрит позицию и подставляет
+ * зеркальный мастер, если он есть в template_set.
+ *
+ * См. docs/transition-section-spec.md §4.2, §5.1.
+ */
+export interface TransitionCustomScenario {
+  tail_left: {
+    left: { master_name: string };
+    right: { master_name: string };
+  };
+  tail_right: {
+    right: { master_name: string };
+  };
+}
+
+/**
  * Один элемент section_structure. Discriminated union по `type`:
  *  - для большинства секций — только `type`;
  *  - для секции `common` (legacy с РЭ.21.2) две формы:
@@ -405,11 +437,16 @@ export interface CommonRequiredPage {
  *    отсутствие поля — engine выдаёт warning «общий раздел пуст», партнёр
  *    заходит и заполняет.
  *  - для секции `common_additional` (РЭ.21.8.10) обязателен `max_spreads`.
- *  - для секции `transition` (РЭ.32 расширил РЭ.21.8.11): опциональный
- *    `master_name`. Если задан — engine использует именно этот мастер для
- *    переходной страницы. Если null/undefined — engine использует
- *    встроенное правило по умолчанию (combined-tail поиск: combined-tail
- *    мастер с photos_full=1 и students<=хвост).
+ *  - для секции `transition` (РЭ.37 расширил РЭ.32 и РЭ.21.8.11):
+ *      • `mode: 'okeybook_default'` — engine применяет встроенную таблицу
+ *        правил OkeyBook (см. docs/transition-section-spec.xlsx). Дефолт
+ *        для всех новых пресетов с РЭ.37.6.
+ *      • `mode: 'custom'` — engine использует сценарий из `custom`
+ *        (см. TransitionCustomScenario), партнёр задал мастера вручную.
+ *      • LEGACY (РЭ.32): `mode` отсутствует, `master_name` опционально
+ *        задаёт один мастер для правой страницы переходного. Старые
+ *        пресеты до РЭ.37.6 будут в этой форме. Валидатор API запрещает
+ *        одновременное наличие `mode` и `master_name`.
  */
 export type SectionStructureEntry =
   | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
@@ -417,7 +454,19 @@ export type SectionStructureEntry =
   | { type: 'common'; mode: 'auto'; max_spreads: number }
   | { type: 'common_required'; pages?: CommonRequiredPage[] }
   | { type: 'common_additional'; max_spreads: number }
-  | { type: 'transition'; master_name?: string | null };
+  | {
+      type: 'transition';
+      /**
+       * РЭ.32, DEPRECATED с РЭ.37: один мастер для правой страницы.
+       * Поддерживается для обратной совместимости со старыми пресетами.
+       * Новые пресеты используют `mode`. Валидатор запрещает одновременно.
+       */
+      master_name?: string | null;
+      /** РЭ.37: режим работы переходного раздела. */
+      mode?: 'okeybook_default' | 'custom';
+      /** Заполняется только когда mode='custom'. */
+      custom?: TransitionCustomScenario;
+    };
 
 /**
  * Полная структура альбома = массив секций в порядке появления.
@@ -538,6 +587,23 @@ export interface Preset {
    */
   student_layout_mode?: 'page' | 'spread' | 'grid' | null;
   student_grid_size?: number | null;
+
+  /**
+   * РЭ.37: симметризация хвоста students-секции.
+   *
+   * Когда true, и комплектация = Мини/Лайт (определяется по наличию
+   * N-Grid-12 / N-Grid-6 в template_set), и хвост = 1 ученик — engine
+   * забирает 1 ученика с предыдущей полной страницы. Теперь на хвостовой
+   * странице 2 ученика, на предыдущей — на 1 меньше. Оба «дефицита»
+   * центрируются через placeholder_centering (см. BalanceClause).
+   *
+   * Для других комплектаций (Медиум / Стандарт / Универсал / Максимум)
+   * флаг игнорируется engine'ом — UI его скрывает / disabled (РЭ.37.5).
+   *
+   * Источник: presets.symmetrize_students_tail BOOLEAN NOT NULL DEFAULT FALSE.
+   * Дефолт false (опт-ин). Engine логика реализуется в РЭ.37.4.
+   */
+  symmetrize_students_tail?: boolean | null;
 
   /**
    * РЭ.21.8: высокоуровневая структура альбома, редактируемая партнёром
