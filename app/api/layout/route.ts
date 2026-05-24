@@ -108,6 +108,9 @@ const WARNING_LEVELS: Record<string, WarningLevel> = {
   // (когда students.ts кладёт мастер с именем, которое engine не распознаёт).
   // Разворот при этом всё равно корректно закрывается через J-цепочку.
   transition_complectation_unknown: 'info',
+  // РЭ.37.4: симметризация хвоста выполнена (опт-ин фича) — это успешный
+  // info-исход, не сбой.
+  transition_symmetrized: 'info',
   // transition_skipped — настоящая проблема (правая страница не закрылась)
   transition_skipped: 'degraded',
   // transition_combo_master_missing — combo не найден в template_set, но

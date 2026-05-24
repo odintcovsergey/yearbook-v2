@@ -982,7 +982,12 @@ function slotsFromName(name: string): number | null {
  * Положить grid-страницу: формирует bindings (studentportrait_N + name + quote),
  * добавляет PageInstance и decision_trace.
  */
-function pushGridPage(
+/**
+ * Положить grid-страницу: bindings grid (с __hidden__ для пустых слотов),
+ * без classphotoframe. Используется как для основной students-логики,
+ * так и для симметризации хвоста из transition.ts (РЭ.37.4).
+ */
+export function pushGridPage(
   ctx: SectionFillContext,
   master: SpreadTemplate,
   students: RulesStudentInput[],

@@ -61,7 +61,7 @@ import {
   type TransitionLayout,
 } from '../transition-cases';
 import { detectComplectationFromLastPage } from '../detect-complectation';
-import { pushCombinedTailPage } from './students';
+import { pushCombinedTailPage, pushGridPage } from './students';
 import type { SectionFillContext } from './shared';
 import type { SectionStructureEntry } from '../types';
 
@@ -613,9 +613,18 @@ function fillOkeybookDefault(ctx: SectionFillContext): void {
     },
   });
 
+  // РЭ.37.4: симметризация хвоста (опт-ин через preset.symmetrize_students_tail).
+  // Применяется только для Mini/Light с tail=1: забирает 1 ученика с
+  // предыдущей полной страницы, на хвостовой combo с 2 учениками вместо 1.
+  // Если симметризация сработала — combo уже положен, обычный шаг А
+  // пропускается. Closing через J-цепочку запускается как обычно.
+  const symmetrized = trySymmetrizeTail(ctx, complectation, layout);
+
   // 2. Шаг А: если tail_page='combo' — заменить хвостовую страницу
-  //    students на combo-мастер. POP + PUSH.
+  //    students на combo-мастер. POP + PUSH. Пропускается если уже
+  //    применена симметризация — она положила combo сама.
   if (
+    !symmetrized &&
     layout.tail_page === 'combo' &&
     layout.combo_master_base !== null &&
     layout.combo_capacity !== null
@@ -806,6 +815,198 @@ function tryJChainClosing(ctx: SectionFillContext): void {
     rule_id: 'skip:no_j_master_or_photos',
     inputs: { available: { ...ctx.available } },
   });
+}
+
+// ─── РЭ.37.4: симметризация хвоста (опт-ин) ─────────────────────────────
+
+/**
+ * РЭ.37.4: симметризация хвоста students-секции.
+ *
+ * Условия применения (все должны быть выполнены):
+ *   1. preset.symmetrize_students_tail === true (опт-ин, по умолчанию false)
+ *   2. complectation ∈ {'mini', 'light'} — для медиум/стандарт/унив/максимум
+ *      симметризация не применяется (см. spec §3.4)
+ *   3. layout.tail === 1 — на хвостовой странице один одинокий ученик
+ *   4. layout.combo_master_base !== null — есть на что класть combo
+ *   5. pageInstances содержит минимум 2 страницы students (хвостовая +
+ *      предыдущая полная сетка)
+ *
+ * Что делает:
+ *   • POP хвостовой страницы (combined-tail с 1 учеником + classphoto)
+ *   • POP предыдущей полной страницы (grid с N учениками)
+ *   • Восстанавливает ctx.available.full_class (хвостовая потребила 1)
+ *   • PUSH предыдущей страницы заново — с (N-1) учениками, последний слот
+ *     останется __hidden__
+ *   • PUSH хвостовой combo-страницы с 2 учениками + classphoto, лишние
+ *     слоты __hidden__
+ *
+ * После симметризации обычная combo-replacement-логика НЕ запускается
+ * (combo уже положен). Closing через J-цепочку — запускается отдельно
+ * вызывающим кодом (fillOkeybookDefault).
+ *
+ * Returns:
+ *   true если симметризация успешно применена.
+ *   false если условия не выполнены или что-то пошло не так (combo не
+ *   найден, grid-мастер не найден — в таком случае POP'ы откатываются).
+ *
+ * АРХИТЕКТУРНОЕ ЗАМЕЧАНИЕ — placeholder_centering:
+ *   Spec §3.4 описывает что после перераспределения учеников оба
+ *   «дефицита» (предыдущая страница с 5/6 и хвостовая с 2/3) должны
+ *   центрироваться (placeholder_centering). Сейчас это НЕ реализовано —
+ *   только перераспределение + __hidden__. Реальное центрирование
+ *   через __pos__ ключи требует знать геометрию мастера и пересчитать
+ *   позиции — отдельная задача (см. spec §7 «Открытые риски»). Можно
+ *   решить через РЭ.37.8 (Сергей нарисует мастера сразу с правильным
+ *   расположением слотов для типичных tail-cases) или отдельной фазой
+ *   автоцентрирования.
+ */
+function trySymmetrizeTail(
+  ctx: SectionFillContext,
+  complectation: Complectation,
+  layout: TransitionLayout,
+): boolean {
+  // 1. Проверка флага.
+  if (ctx.bundle.preset.symmetrize_students_tail !== true) return false;
+
+  // 2. Только Mini / Light.
+  if (complectation !== 'mini' && complectation !== 'light') return false;
+
+  // 3. Только tail=1 и combo-master известен.
+  if (layout.tail !== 1) return false;
+  if (layout.combo_master_base === null) return false;
+  if (layout.combo_capacity === null) return false;
+
+  // 4. Нужно минимум 2 страницы students (хвостовая + предпоследняя полная).
+  if (ctx.pageInstances.length < 2) return false;
+
+  // 5. POP хвостовой страницы + восстановление classphoto если был.
+  const tailPage = ctx.pageInstances.pop();
+  if (!tailPage) return false;
+  const hadClassphoto =
+    typeof tailPage.bindings?.classphotoframe === 'string' &&
+    tailPage.bindings.classphotoframe.length > 0;
+  if (hadClassphoto) ctx.available.full_class += 1;
+
+  // 6. POP предыдущей полной страницы.
+  const previousPage = ctx.pageInstances.pop();
+  if (!previousPage) {
+    // Защита: откат + return.
+    ctx.pageInstances.push(tailPage);
+    if (hadClassphoto) ctx.available.full_class -= 1;
+    return false;
+  }
+
+  // 7. Найти grid-мастер из id предыдущей страницы.
+  let gridMaster: SpreadTemplate | undefined;
+  for (const m of Array.from(ctx.bundle.mastersByName.values())) {
+    if (m.id === previousPage.master_id) {
+      gridMaster = m;
+      break;
+    }
+  }
+  if (!gridMaster) {
+    // Откат: страницы не нашлись — симметризация невозможна.
+    ctx.pageInstances.push(previousPage);
+    ctx.pageInstances.push(tailPage);
+    if (hadClassphoto) ctx.available.full_class -= 1;
+    return false;
+  }
+
+  // 8. Узнать число slot'ов в grid-мастере (количество studentportrait_*).
+  let gridSize = 0;
+  for (const ph of gridMaster.placeholders ?? []) {
+    if (/^studentportrait_\d+$/i.test(ph.label)) gridSize++;
+  }
+  if (gridSize < 2) {
+    // Не похоже на grid — откат.
+    ctx.pageInstances.push(previousPage);
+    ctx.pageInstances.push(tailPage);
+    if (hadClassphoto) ctx.available.full_class -= 1;
+    return false;
+  }
+
+  // 9. Найти combo-мастер для текущей комплектации с учётом позиции.
+  // После двух POP'ов combo ляжет на ctx.pageInstances.length + 1
+  // (previousPage сначала запушится, затем combo).
+  const newComboIndex = ctx.pageInstances.length + 1;
+  const positionForCombo = positionOfIndex(ctx, newComboIndex);
+  const combo = findComboMaster(
+    ctx.bundle.mastersByName,
+    layout.combo_master_base,
+    positionForCombo,
+  );
+  if (!combo) {
+    // Combo не найден — откат.
+    ctx.pageInstances.push(previousPage);
+    ctx.pageInstances.push(tailPage);
+    if (hadClassphoto) ctx.available.full_class -= 1;
+    return false;
+  }
+
+  // 10. Вычислить новые наборы учеников.
+  // students input layout до симметризации:
+  //   previous (полная сетка): students[N-1-gridSize .. N-2]   (gridSize шт)
+  //   tail (1 ученик):         students[N-1]                   (1 шт)
+  // После:
+  //   previous: students[N-1-gridSize .. N-3]                  (gridSize-1 шт)
+  //   combo:    students[N-2 .. N-1]                           (2 шт)
+  const N = ctx.input.students.length;
+  if (N < gridSize + 1) {
+    // Учеников мало — откат (защита от edge case).
+    ctx.pageInstances.push(previousPage);
+    ctx.pageInstances.push(tailPage);
+    if (hadClassphoto) ctx.available.full_class -= 1;
+    return false;
+  }
+  const prevStudents = ctx.input.students.slice(N - 1 - gridSize, N - 2);
+  const tailStudents = ctx.input.students.slice(N - 2, N);
+
+  // 11. PUSH предыдущей страницы с gridSize-1 учениками. Последний слот
+  // останется __hidden__ через стандартный bindGridStudents.
+  pushGridPage(
+    ctx,
+    gridMaster,
+    prevStudents,
+    gridSize,
+    `transition:symmetrized:prev:${gridMaster.name}`,
+  );
+
+  // 12. PUSH combo-страницы с 2 учениками + classphoto. comboSlots —
+  // ёмкость combo по spec (combo-3 для light, combo-4 для mini).
+  pushCombinedTailPage(
+    ctx,
+    combo,
+    tailStudents,
+    layout.combo_capacity,
+    complectation,
+  );
+
+  // 13. Decision trace + info-warning.
+  ctx.decisionTrace.push({
+    spread_index: Math.floor((ctx.pageInstances.length - 1) / 2),
+    section_index: ctx.sectionIndex,
+    family_id: 'transition',
+    rule_id: `symmetrize:${complectation}:${combo.name}`,
+    inputs: {
+      complectation,
+      combo_master: combo.name,
+      grid_master: gridMaster.name,
+      grid_size: gridSize,
+      students_total: N,
+      prev_students_count: prevStudents.length,
+      tail_students_count: tailStudents.length,
+      combo_position: positionForCombo,
+    },
+  });
+
+  ctx.warnings.push(
+    `transition_symmetrized: хвост распределён симметрично — на предыдущей ` +
+      `странице ${prevStudents.length} учеников вместо ${gridSize}, на ` +
+      `хвостовой ${tailStudents.length} вместо 1. Включено флагом ` +
+      `«симметризировать хвост» в шаблоне.`,
+  );
+
+  return true;
 }
 
 // ─── Ветка 2: legacy РЭ.32 (master_name явно задан) ─────────────────────

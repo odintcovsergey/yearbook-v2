@@ -228,6 +228,7 @@ function makePreset(opts: Partial<Preset> & Pick<Preset, 'id'>): Preset {
     sheet_type: opts.sheet_type ?? null,
     student_layout_mode: opts.student_layout_mode ?? null,
     student_grid_size: opts.student_grid_size ?? null,
+    symmetrize_students_tail: opts.symmetrize_students_tail ?? null,
   };
 }
 
@@ -1076,5 +1077,197 @@ describe('РЭ.37.3.b.1: закрытие разворота при unknown ко
     // (result используется выше но мы про второй вариант — оставим первый
     // как контрольный без assertions.)
     void result;
+  });
+});
+
+// ─── РЭ.37.4: симметризация хвоста ──────────────────────────────────────
+//
+// Опт-ин фича: preset.symmetrize_students_tail = true.
+// Применяется только для Mini/Light с tail=1.
+// Забирает 1 ученика с предыдущей полной страницы → на хвостовой combo
+// с 2 учениками вместо 1. Цель — визуальная симметрия (избежать
+// одинокого портрета на странице).
+
+describe('РЭ.37.4: симметризация хвоста', () => {
+  it('Light 13 учеников + symmetrize=true → combo с 2 учениками, prev grid с 5', () => {
+    // 13 учеников Light (grid_size=6): full_pages=2, tail=1
+    // Без симметризации: [grid6: 0..5], [grid6: 6..11], [combo: 12]
+    // С симметризацией:  [grid6: 0..5], [grid6: 6..10 + hidden],
+    //                    [combo-3: 11, 12 + 1 hidden + classphoto]
+    //
+    // pageInstances после симметризации = 3 entries (длина та же), затем
+    // closing на R → 4 entries. Парная группировка:
+    //   spread 0: [grid6(0..5), grid6(6..10 + hidden)]
+    //   spread 1: [combo-3, J-Half]
+    //
+    // То есть combo попадает на ЛЕВУЮ второго разворота (positionOfIndex(2)=left).
+    // Closing — J-Half (half=2).
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'light',
+        density: 'light',
+        sheet_type: 'hard',
+        symmetrize_students_tail: true,
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 13, half_class: 2, full_class: 1 }),
+    );
+
+    // Trace: symmetrize:light:J-Combined-Tail-3 должна быть
+    const symmTrace = result.decision_trace.find((t) =>
+      t.rule_id.startsWith('symmetrize:light:'),
+    );
+    expect(symmTrace).toBeDefined();
+    expect(symmTrace?.inputs.prev_students_count).toBe(5);
+    expect(symmTrace?.inputs.tail_students_count).toBe(2);
+    expect(symmTrace?.inputs.combo_master).toBe('J-Combined-Tail-3');
+    expect(symmTrace?.inputs.combo_position).toBe('left');
+
+    // Warning info
+    expect(
+      result.warnings.some((w) => w.startsWith('transition_symmetrized')),
+    ).toBe(true);
+
+    // 2 разворота
+    expect(result.spreads).toHaveLength(2);
+
+    // Spread 0: левая = grid6 с учениками 0..5, правая = grid6 с 5 учениками + hidden
+    const first = result.spreads[0];
+    expect(first.left?.master_id).toBe('id-L-Grid-Page');
+    expect(first.left?.bindings.studentportrait_1).toBe('https://cdn/p0.jpg');
+    expect(first.left?.bindings.studentportrait_6).toBe('https://cdn/p5.jpg');
+    expect(first.right?.master_id).toBe('id-L-Grid-Page');
+    // На правой 5 учеников (6..10) + 1 hidden
+    expect(first.right?.bindings.studentportrait_1).toBe('https://cdn/p6.jpg');
+    expect(first.right?.bindings.studentportrait_5).toBe('https://cdn/p10.jpg');
+    expect(first.right?.bindings.__hidden__studentportrait_6).toBe('1');
+
+    // Spread 1: левая = combo-3 с 2 учениками + classphoto, правая = J-Half closing
+    const second = result.spreads[1];
+    expect(second.left?.master_id).toBe('id-J-Combined-Tail-3');
+    expect(second.left?.bindings.studentportrait_1).toBe('https://cdn/p11.jpg');
+    expect(second.left?.bindings.studentportrait_2).toBe('https://cdn/p12.jpg');
+    expect(second.left?.bindings.__hidden__studentportrait_3).toBe('1');
+    expect(second.left?.bindings.classphotoframe).toBe('https://cdn/full_0.jpg');
+    expect(second.right?.master_id).toBe('id-J-Half');
+  });
+
+  it('Light 13 + symmetrize=false → обычная combo с 1 учеником (контроль)', () => {
+    // Контрольный тест: тот же сценарий, но флаг false.
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'light',
+        density: 'light',
+        sheet_type: 'hard',
+        symmetrize_students_tail: false,
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 13, half_class: 2, full_class: 1 }),
+    );
+
+    // НЕТ trace symmetrize
+    expect(
+      result.decision_trace.some((t) => t.rule_id.startsWith('symmetrize:')),
+    ).toBe(false);
+    // НЕТ warning
+    expect(
+      result.warnings.some((w) => w.startsWith('transition_symmetrized')),
+    ).toBe(false);
+    // Combo с 1 учеником + 2 hidden (обычный сценарий из РЭ.37.2)
+    const second = result.spreads[1];
+    expect(second.left?.master_id).toBe('id-J-Combined-Tail-3');
+    expect(second.left?.bindings.studentportrait_1).toBe('https://cdn/p12.jpg');
+    expect(second.left?.bindings.__hidden__studentportrait_2).toBe('1');
+    expect(second.left?.bindings.__hidden__studentportrait_3).toBe('1');
+  });
+
+  it('Light 14 учеников (tail=2) + symmetrize=true → симметризация НЕ срабатывает', () => {
+    // tail=2, не 1 → условие симметризации не выполнено.
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'light',
+        density: 'light',
+        sheet_type: 'hard',
+        symmetrize_students_tail: true,
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 14, half_class: 2, full_class: 1 }),
+    );
+    expect(
+      result.decision_trace.some((t) => t.rule_id.startsWith('symmetrize:')),
+    ).toBe(false);
+  });
+
+  it('Light 19 учеников (tail=1, full_pages=3 нечёт) + symmetrize=true → combo на R', () => {
+    // 19 учеников: full=3, tail=1
+    // Без симметризации: [grid×3], [grid+combo-1ученик] (combo на R разворот 4)
+    // С симметризацией: [grid×2], [grid+grid с 5+hidden], [combo с 2+classphoto]
+    //                                                       это новый разворот с
+    //                                                       combo на LEFT
+    //
+    // hmm wait: 19 - 1 - 6 = 12. prevStudents.slice(12, 17) = 5 учеников (12..16).
+    // tailStudents.slice(17, 19) = 2 ученика (17..18). ОК.
+    //
+    // После симметризации pageInstances:
+    //   [0]: grid6 (0..5)
+    //   [1]: grid6 (6..11)
+    //   [2]: grid6 (12..16 + 1 hidden) ← новая
+    //   [3]: combo-3 (17..18 + 1 hidden + classphoto) ← новая
+    // 4 entries, разворот 2 = [grid, grid], разворот 3 = [grid, combo].
+    // Combo на index 3 = RIGHT для hard.
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'light',
+        density: 'light',
+        sheet_type: 'hard',
+        symmetrize_students_tail: true,
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 19, half_class: 2, full_class: 1 }),
+    );
+
+    const symmTrace = result.decision_trace.find((t) =>
+      t.rule_id.startsWith('symmetrize:light:'),
+    );
+    expect(symmTrace).toBeDefined();
+    expect(symmTrace?.inputs.combo_position).toBe('right');
+    // Combo на R = -Right версия
+    expect(symmTrace?.inputs.combo_master).toBe('J-Combined-Tail-3-Right');
+  });
+
+  it('Standard + symmetrize=true → симметризация игнорируется (только Mini/Light)', () => {
+    // Standard плотность → симметризация не применяется по spec.
+    // Здесь сложно проверить через layflat-bundle (нужны E-Standard мастера),
+    // проверим через прямую трассировку: для Standard layout.tail!==1
+    // потому что комплектация другая. Хорошо хотя бы убедиться что НЕТ
+    // trace 'symmetrize:'.
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'std',
+        density: 'standard', // не Light
+        sheet_type: 'hard',
+        symmetrize_students_tail: true,
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 13, half_class: 2, full_class: 1 }),
+    );
+    expect(
+      result.decision_trace.some((t) => t.rule_id.startsWith('symmetrize:')),
+    ).toBe(false);
   });
 });
