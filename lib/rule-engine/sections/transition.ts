@@ -1,57 +1,104 @@
 /**
- * Заполнение секции type='transition' для buildFromSectionStructure.
+ * РЭ.37.2.b — переходный раздел с использованием classifyTransitionLayout.
  *
- * РЭ.32 — переписано. Правая страница переходного разворота когда
- * personal section закончился на левой (pageInstances.length нечётный).
+ * АРХИТЕКТУРА (по решению Сергея от 24.05.2026):
  *
- * Алгоритм:
- *   1. Если pageInstances.length чётный → секция не нужна, выход.
- *   2. Если master_name задан партнёром в шаблоне → используем его.
- *      Если в template_set этого мастера нет — warning + fallback на
- *      встроенное правило.
- *   3. Если master_name null/undefined → встроенное правило по умолчанию.
+ * Раздел учеников (sections/students.ts) — «Лёша» — кладёт все страницы
+ * как обычно, включая хвостовую (с placeholder-padding если неполная).
+ * Этот код менять НЕ нужно (он стабильно работает в проде).
  *
- * Встроенное правило по умолчанию (РЭ.32 пока): жадно ищем подходящий
- * J-мастер в template_set:
- *   - full_class: 1 фото → берём первый чистый мастер с classphotoframe
- *   - half_class: 2 фото → первый с halfphoto_1/2
- *   - quarter: 4 фото → первый с quarterphoto_1..4
- *   - sixth: 6 фото → первый с collagephoto_1..6
- * Чистый мастер = только J-категория, без studentportrait/teacherphoto.
- * Берём первую категорию по приоритету full → half → quarter → sixth
- * у которой одновременно (а) хватает фото и (б) есть подходящий мастер.
+ * Переходный раздел (sections/transition.ts) — «Боря» — приходит после
+ * и решает что делать:
  *
- * Если ни одна категория не подходит → warning transition_skipped, секция
- * пропускается, правая страница остаётся пустой.
+ *   1. Если в шаблоне партнёром явно задан master_name (legacy РЭ.32) →
+ *      использовать его. Поведение не отличается от прежнего РЭ.32.
+ *
+ *   2. Если mode='okeybook_default' (или mode не задан в новых пресетах
+ *      без master_name) → применять стандартную логику OkeyBook:
+ *       • определить комплектацию по последней странице students
+ *       • вызвать classifyTransitionLayout для расчёта раскладки
+ *       • если tail_page='combo' → POP последней (хвостовой) страницы
+ *         students и PUSH combo-мастер с tail портретами + (M-tail)
+ *         скрытых слотов + classphoto снизу
+ *       • если общая длина pageInstances осталась нечётной → PUSH
+ *         закрывающую страницу через J-цепочку (half→sixth→full)
+ *
+ *   3. Если mode='custom' → партнёр задал сценарий вручную. Реализация
+ *      в РЭ.37.2.c (этот коммит — стаб с warning).
+ *
+ * ПОЗИЦИИ L/R: определяются по чётности индекса в pageInstances.
+ *   Index 0 = page 1 (левая, нечётная по типографии)
+ *   Index 1 = page 2 (правая, чётная)
+ *   Index N: L если N % 2 == 0, R если N % 2 == 1
+ *
+ * ПОИСК ЗЕРКАЛЬНЫХ -RIGHT ВАРИАНТОВ. Combo-мастера в InDesign по
+ * решению Сергея делаются ВСЕГДА в двух версиях: J-Combined-Tail-4 (для
+ * левой страницы) и J-Combined-Tail-4-Right (для правой). Поиск:
+ *   • L (index чёт) → ищем base, fallback на -Right если base нет
+ *   • R (index нечёт) → ищем -Right, fallback на base
+ * Аналогично для J-Half / J-Full / J-Collage-6 — там зеркальные варианты
+ * могут отсутствовать (симметричные мастера), движок справится с base.
  */
 
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import type { CommonPhotoCounts, SlotConsumes } from '../slot-chains';
 import { bindCommonPhotos, decrementAvailable } from './common';
+import {
+  classifyTransitionLayout,
+  type Complectation,
+  type TransitionLayout,
+} from '../transition-cases';
+import { detectComplectationFromLastPage } from '../detect-complectation';
+import { pushCombinedTailPage } from './students';
 import type { SectionFillContext } from './shared';
+import type { SectionStructureEntry } from '../types';
 
-type Category = 'full_class' | 'half_class' | 'quarter' | 'sixth';
+// ─── J-цепочка (закрывающие страницы переходного раздела) ───────────────
 
-const PHOTO_COUNT: Record<Category, number> = {
+/**
+ * Категории для J-цепочки (правая закрывающая страница). По решению
+ * Сергея от 24.05.2026 порядок — half → sixth → full, выбор первой
+ * категории с достаточным количеством фото в пуле (не жёсткий
+ * приоритет — пропускаем недоступные).
+ *
+ * РЭ.32 использовала порядок (full, half, quarter, sixth). Новый порядок
+ * убирает quarter (он используется только в common_required) и ставит
+ * half первым — по умолчанию OkeyBook для переходного.
+ */
+type JCategory = 'half_class' | 'sixth' | 'full_class';
+
+const J_PHOTO_COUNT: Record<JCategory, number> = {
+  half_class: 2,
+  sixth: 6,
+  full_class: 1,
+};
+
+const J_PRIORITY_OKEYBOOK_DEFAULT: JCategory[] = [
+  'half_class',
+  'sixth',
+  'full_class',
+];
+
+// ─── Хелперы для классификации мастеров (для legacy и анализа) ──────────
+
+type LegacyCategory = 'full_class' | 'half_class' | 'quarter' | 'sixth';
+
+const LEGACY_PHOTO_COUNT: Record<LegacyCategory, number> = {
   full_class: 1,
   half_class: 2,
   quarter: 4,
   sixth: 6,
 };
 
-const PRIORITY: Category[] = ['full_class', 'half_class', 'quarter', 'sixth'];
-
 /**
- * Анализирует placeholders мастера и возвращает категории которые он
- * умеет принять. Маппинг тот же что в common-required.ts:
- *   classphotoframe → full_class
- *   halfphoto_N (>=2) → half_class
- *   quarterphoto_N (>=4) → quarter
- *   collagephoto_N (6) → sixth
- *   collagephoto_N (4) → quarter (мастер J-Collage-4)
- * studentportrait_N / teacherphoto_N → не J-мастер, возвращаем null.
+ * Определить какая J-категория «подходит» мастеру: по его placeholder'ам.
+ * Используется legacy-веткой (master_name явно задан) для решения,
+ * сколько фото мастер ожидает.
+ *
+ * Возвращает null если мастер — не чистый J-вариант (содержит portrait
+ * слоты учеников/учителей или ничего из J-набора).
  */
-function classifyMasterCategory(master: SpreadTemplate): Category | null {
+function classifyMasterCategory(master: SpreadTemplate): LegacyCategory | null {
   let halfCount = 0;
   let quarterCount = 0;
   let collageCount = 0;
@@ -63,7 +110,7 @@ function classifyMasterCategory(master: SpreadTemplate): Category | null {
       label.match(/^teacherphoto_\d+$/) ||
       label === 'headteacherphoto'
     ) {
-      return null; // не J-мастер
+      return null;
     }
     if (label === 'classphotoframe') hasFull = true;
     else if (label.match(/^halfphoto_\d+$/)) halfCount++;
@@ -79,21 +126,19 @@ function classifyMasterCategory(master: SpreadTemplate): Category | null {
 }
 
 /**
- * Найти первый чистый J-мастер для заданной категории. Если category
- * = quarter и в template_set есть J-Quarter-Right — на позиции right
- * берём его (зеркало).
+ * Найти первый чистый J-мастер заданной категории, с зеркалом для R.
+ * Поведение РЭ.32 — оставлено для legacy ветки master_name.
  */
 function findCommonMasterForCategory(
   mastersByName: ReadonlyMap<string, SpreadTemplate>,
-  category: Category,
+  category: LegacyCategory,
   position: 'left' | 'right',
 ): SpreadTemplate | null {
   for (const m of Array.from(mastersByName.values())) {
-    if (m.name.endsWith('-Right')) continue; // зеркальные находим через base
+    if (m.name.endsWith('-Right')) continue;
     const cat = classifyMasterCategory(m);
     if (cat !== category) continue;
     if (position === 'right') {
-      // Пробуем -Right вариант.
       if (m.name.endsWith('-Left')) {
         const right = mastersByName.get(m.name.replace(/-Left$/, '-Right'));
         if (right) return right;
@@ -107,13 +152,294 @@ function findCommonMasterForCategory(
 }
 
 /**
- * Главная функция секции.
+ * РЭ.37.2.b: поиск combo-мастера по базовому имени с учётом позиции.
+ * Combo всегда асимметричен → ищем -Right для R, fallback на base.
+ *
+ * Возвращает null если ни base, ни -Right не найдены — это сигнал
+ * что combo в template_set отсутствует (партнёр не нарисовал его в
+ * InDesign), нужно сгенерировать warning.
+ */
+function findComboMaster(
+  mastersByName: ReadonlyMap<string, SpreadTemplate>,
+  baseName: string,
+  position: 'left' | 'right',
+): SpreadTemplate | null {
+  if (position === 'right') {
+    const right = mastersByName.get(`${baseName}-Right`);
+    if (right) return right;
+    // fallback на base — это норма, если мастер симметричный
+    return mastersByName.get(baseName) ?? null;
+  }
+  return mastersByName.get(baseName) ?? null;
+}
+
+// ─── Главная экспортная функция ─────────────────────────────────────────
+
+/**
+ * Заполнение секции type='transition'.
+ *
+ * sectionEntry — элемент section_structure (форма transition: либо
+ * legacy master_name, либо новые mode='okeybook_default' / 'custom').
  */
 export function fillTransitionSection(
   ctx: SectionFillContext,
-  masterName: string | null | undefined,
+  sectionEntry: Extract<SectionStructureEntry, { type: 'transition' }>,
 ): void {
-  // 1. Чётность.
+  // ─── РЭ.37.2.c stub ────────────────────────────────────────────────
+  if (sectionEntry.mode === 'custom') {
+    ctx.warnings.push(
+      'transition_custom_mode_not_implemented: РЭ.37.2.c (фолбэк на okeybook_default)',
+    );
+    fillOkeybookDefault(ctx);
+    return;
+  }
+
+  // ─── Legacy РЭ.32 (master_name задан) ──────────────────────────────
+  // Партнёр явно зафиксировал мастер. Используем РЭ.32 ветку без
+  // изменений (классификатор не применяется).
+  const masterName =
+    'master_name' in sectionEntry ? sectionEntry.master_name : null;
+  if (masterName) {
+    fillLegacyMasterName(ctx, masterName);
+    return;
+  }
+
+  // ─── По умолчанию: okeybook_default ────────────────────────────────
+  fillOkeybookDefault(ctx);
+}
+
+// ─── Ветка 1: новая логика OkeyBook ─────────────────────────────────────
+
+function fillOkeybookDefault(ctx: SectionFillContext): void {
+  // 1. Определить комплектацию по последней положенной странице.
+  const lastPage = ctx.pageInstances[ctx.pageInstances.length - 1];
+  const complectation = detectComplectationFromLastPage(
+    lastPage?.master_id,
+    ctx.bundle.mastersByName,
+  );
+
+  // Если students-секции вообще не было (например, в шаблоне нет students)
+  // или последний мастер неопознан — просто пропускаем с warning. Без
+  // пустых страниц.
+  if (!complectation) {
+    if (ctx.pageInstances.length % 2 === 1) {
+      ctx.warnings.push(
+        'transition_complectation_unknown: не удалось определить комплектацию ' +
+          'по последней странице — переходный пропущен (висит правая страница)',
+      );
+    }
+    ctx.decisionTrace.push({
+      spread_index: Math.floor(ctx.pageInstances.length / 2),
+      section_index: ctx.sectionIndex,
+      family_id: 'transition',
+      rule_id: 'skip:complectation_unknown',
+      inputs: { last_master_id: lastPage?.master_id ?? null },
+    });
+    return;
+  }
+
+  const studentsCount = ctx.input.students.length;
+  const layout = classifyTransitionLayout(complectation, studentsCount);
+
+  ctx.decisionTrace.push({
+    spread_index: Math.floor(ctx.pageInstances.length / 2),
+    section_index: ctx.sectionIndex,
+    family_id: 'transition',
+    rule_id: 'okeybook_default:classify',
+    inputs: {
+      complectation,
+      students_count: studentsCount,
+      full_pages: layout.full_pages,
+      tail: layout.tail,
+      tail_page: layout.tail_page,
+      closing_page: layout.closing_page,
+    },
+  });
+
+  // 2. Шаг А: если tail_page='combo' — заменить хвостовую страницу
+  //    students на combo-мастер. POP + PUSH.
+  if (
+    layout.tail_page === 'combo' &&
+    layout.combo_master_base !== null &&
+    layout.combo_capacity !== null
+  ) {
+    const replaced = tryReplaceTailWithCombo(ctx, layout, complectation);
+    if (!replaced) {
+      // Combo-мастер не найден в template_set (партнёр не нарисовал).
+      // Warning уже добавлен внутри try. Продолжаем — может быть J на R
+      // всё ещё поможет.
+    }
+  }
+
+  // 3. Шаг B: если общая длина после возможной замены нечётная — нужна
+  //    закрывающая страница через J-цепочку на правой.
+  if (ctx.pageInstances.length % 2 === 1) {
+    tryJChainClosing(ctx);
+  }
+}
+
+/**
+ * Шаг А — заменить хвостовую (неполную) страницу students-секции на
+ * combo-мастер.
+ *
+ * Алгоритм:
+ *   1. Найти combo-мастер с учётом позиции (где сейчас лежит хвост).
+ *   2. Прочитать bindings последней страницы — извлечь учеников хвоста
+ *      и фото full_class (если оно там было — для случая combined_tail).
+ *   3. POP последней страницы.
+ *   4. PUSH combo-мастера через pushCombinedTailPage (из students.ts).
+ *      Это автоматически даст __hidden__ для (M - tail) слотов + classphoto.
+ *
+ * Returns true если замена прошла успешно.
+ */
+function tryReplaceTailWithCombo(
+  ctx: SectionFillContext,
+  layout: TransitionLayout,
+  complectation: Complectation,
+): boolean {
+  if (
+    layout.combo_master_base === null ||
+    layout.combo_capacity === null ||
+    layout.tail === 0
+  ) {
+    return false;
+  }
+
+  // Хвостовая страница на текущей позиции pageInstances.length - 1.
+  const tailIndex = ctx.pageInstances.length - 1;
+  if (tailIndex < 0) {
+    ctx.warnings.push(
+      'transition_no_tail_page: ожидалась хвостовая страница students, но pageInstances пуст',
+    );
+    return false;
+  }
+
+  // Позиция combo = там же, где была хвостовая страница.
+  const position: 'left' | 'right' = tailIndex % 2 === 0 ? 'left' : 'right';
+
+  const combo = findComboMaster(
+    ctx.bundle.mastersByName,
+    layout.combo_master_base,
+    position,
+  );
+  if (!combo) {
+    ctx.warnings.push(
+      `transition_combo_master_missing: '${layout.combo_master_base}' ` +
+        `(или -Right) не найден в template_set — хвостовая страница ` +
+        `students оставлена как есть`,
+    );
+    return false;
+  }
+
+  // Берём последних `tail` учеников из входного списка — они на
+  // хвостовой странице. (students.ts размещает учеников по порядку
+  // через bindGridStudents, см. lib/rule-engine/sections/students.ts.)
+  const tailStudents = ctx.input.students.slice(
+    ctx.input.students.length - layout.tail,
+  );
+
+  // Хвостовая страница students могла быть combined_tail (с classphoto)
+  // или обычная N-Grid (без). Если combined_tail — full_class уже был
+  // потреблён внутри students.ts. Чтобы pushCombinedTailPage снова
+  // взял full_class, нам нужно либо НЕ декрементить (восстановить
+  // available.full_class), либо использовать другую функцию.
+  //
+  // Простое решение: если хвостовая страница содержала classphotoframe
+  // (combined_tail) — мы её замещаем тем же мастером логически
+  // (combo тоже содержит classphoto), full_class остаётся
+  // декрементированным правильно. POP не вернёт фото обратно. Чтобы
+  // pushCombinedTailPage не потребил вторую фотку, нужно вернуть 1
+  // в available перед вызовом (но только если оно было потреблено).
+  //
+  // Проверяем bindings popнутой страницы — если там есть classphotoframe,
+  // фото уже было потреблено и его надо вернуть, чтобы pushCombinedTailPage
+  // не съел вторую копию.
+  const popped = ctx.pageInstances.pop()!;
+  const hadClassphoto =
+    typeof popped.bindings?.classphotoframe === 'string' &&
+    popped.bindings.classphotoframe.length > 0;
+  if (hadClassphoto) {
+    ctx.available.full_class += 1;
+  }
+
+  // pushCombinedTailPage ждёт slotsPerPage = capacity мастера (M) и
+  // students[] длиной от 1 до M.
+  // density — используется только в decisionTrace.rule_id как метка.
+  // Для combo это совпадает с грид-комплектацией (mini/light/medium).
+  // Combo не определён для standard/universal/maximum — туда tryReplace
+  // не дойдёт (combo_capacity=null), но для type safety ставим fallback.
+  const density: 'mini' | 'light' | 'medium' =
+    complectation === 'mini' || complectation === 'light' || complectation === 'medium'
+      ? complectation
+      : 'mini';
+  pushCombinedTailPage(
+    ctx,
+    combo,
+    tailStudents,
+    layout.combo_capacity,
+    density,
+  );
+
+  ctx.decisionTrace.push({
+    spread_index: Math.floor((ctx.pageInstances.length - 1) / 2),
+    section_index: ctx.sectionIndex,
+    family_id: 'transition',
+    rule_id: `combo_replace:${combo.name}`,
+    inputs: {
+      combo_master: combo.name,
+      tail_students: layout.tail,
+      combo_capacity: layout.combo_capacity,
+      position,
+      previous_classphoto_returned: hadClassphoto,
+    },
+  });
+
+  return true;
+}
+
+/**
+ * Шаг B — закрывающая страница через J-цепочку.
+ * Идём по J_PRIORITY_OKEYBOOK_DEFAULT, для каждой категории проверяем
+ * доступность фото И наличие мастера в template_set. Первое совпадение
+ * — кладём, выходим.
+ */
+function tryJChainClosing(ctx: SectionFillContext): void {
+  const pageIndex = ctx.pageInstances.length;
+  const position: 'left' | 'right' = pageIndex % 2 === 0 ? 'left' : 'right';
+
+  for (const category of J_PRIORITY_OKEYBOOK_DEFAULT) {
+    const need = J_PHOTO_COUNT[category];
+    if (ctx.available[category] < need) continue;
+
+    // J-Half / J-Collage-6 / J-Full ищем через классификатор мастеров.
+    const legacyCat: LegacyCategory = category;
+    const master = findCommonMasterForCategory(
+      ctx.bundle.mastersByName,
+      legacyCat,
+      position,
+    );
+    if (!master) continue;
+
+    placeJChainPage(ctx, master, legacyCat, position, pageIndex);
+    return;
+  }
+
+  ctx.warnings.push(
+    'transition_skipped: нет фото ни одной J-категории (half/sixth/full) ' +
+      'или подходящих мастеров для закрытия переходного разворота',
+  );
+  ctx.decisionTrace.push({
+    spread_index: Math.floor(pageIndex / 2),
+    section_index: ctx.sectionIndex,
+    family_id: 'transition',
+    rule_id: 'skip:no_j_master_or_photos',
+    inputs: { available: { ...ctx.available } },
+  });
+}
+
+// ─── Ветка 2: legacy РЭ.32 (master_name явно задан) ─────────────────────
+
+function fillLegacyMasterName(ctx: SectionFillContext, masterName: string): void {
   if (ctx.pageInstances.length % 2 === 0) {
     ctx.decisionTrace.push({
       spread_index: Math.floor(ctx.pageInstances.length / 2),
@@ -129,74 +455,48 @@ export function fillTransitionSection(
   }
 
   const pageIndex = ctx.pageInstances.length;
-  const position: 'right' = 'right'; // всегда правая по определению
-
-  // 2. Партнёр задал конкретный мастер?
-  if (masterName) {
-    const master = ctx.bundle.mastersByName.get(masterName);
-    if (!master) {
-      ctx.warnings.push(
-        `transition_master_missing: '${masterName}' не найден в template_set, применяю встроенное правило`,
-      );
-      // fallthrough на встроенное правило
-    } else {
-      const category = classifyMasterCategory(master);
-      if (category === null) {
-        ctx.warnings.push(
-          `transition_master_invalid: '${masterName}' не имеет J-категории placeholder'ов`,
-        );
-        return;
-      }
-      const need = PHOTO_COUNT[category];
-      const have = ctx.available[category];
-      if (have < need) {
-        ctx.warnings.push(
-          `transition_skipped: '${masterName}' (нужно ${need} фото ${category}, доступно ${have})`,
-        );
-        return;
-      }
-      placeTransitionPage(ctx, master, category, position, pageIndex);
-      return;
-    }
-  }
-
-  // 3. Встроенное правило по умолчанию.
-  for (const category of PRIORITY) {
-    if (ctx.available[category] < PHOTO_COUNT[category]) continue;
-    const master = findCommonMasterForCategory(
-      ctx.bundle.mastersByName,
-      category,
-      position,
+  const master = ctx.bundle.mastersByName.get(masterName);
+  if (!master) {
+    ctx.warnings.push(
+      `transition_master_missing: '${masterName}' не найден в template_set, ` +
+        `применяю встроенное правило`,
     );
-    if (!master) continue;
-    placeTransitionPage(ctx, master, category, position, pageIndex);
+    // fallback на новую логику okeybook_default
+    fillOkeybookDefault(ctx);
     return;
   }
-
-  // 4. Ничего не подошло.
-  ctx.warnings.push(
-    'transition_skipped: нет фото ни одной категории или подходящих J-мастеров для переходной страницы',
-  );
-  ctx.decisionTrace.push({
-    spread_index: Math.floor(pageIndex / 2),
-    section_index: ctx.sectionIndex,
-    family_id: 'transition',
-    rule_id: 'skip:no_master_or_photos',
-    inputs: { available: { ...ctx.available } },
-  });
+  const category = classifyMasterCategory(master);
+  if (category === null) {
+    ctx.warnings.push(
+      `transition_master_invalid: '${masterName}' не имеет J-категории placeholder'ов`,
+    );
+    return;
+  }
+  const need = LEGACY_PHOTO_COUNT[category];
+  const have = ctx.available[category];
+  if (have < need) {
+    ctx.warnings.push(
+      `transition_skipped: '${masterName}' (нужно ${need} фото ${category}, ` +
+        `доступно ${have})`,
+    );
+    return;
+  }
+  placeJChainPage(ctx, master, category, 'right', pageIndex);
 }
 
-function placeTransitionPage(
+// ─── Общая функция размещения J-страницы ────────────────────────────────
+
+function placeJChainPage(
   ctx: SectionFillContext,
   master: SpreadTemplate,
-  category: Category,
-  position: 'right',
+  category: LegacyCategory,
+  position: 'left' | 'right',
   pageIndex: number,
 ): void {
   const bindings = bindCommonPhotos(master, ctx.input, ctx.available);
 
   const consumes: SlotConsumes = {};
-  consumes[category] = PHOTO_COUNT[category];
+  consumes[category] = LEGACY_PHOTO_COUNT[category];
   decrementAvailable(ctx.available, consumes);
 
   ctx.pageInstances.push({
@@ -208,10 +508,10 @@ function placeTransitionPage(
     spread_index: Math.floor(pageIndex / 2),
     section_index: ctx.sectionIndex,
     family_id: 'transition',
-    rule_id: `semantic:${category}:${master.name}`,
+    rule_id: `j_chain:${category}:${master.name}`,
     inputs: {
       category,
-      count: PHOTO_COUNT[category],
+      count: LEGACY_PHOTO_COUNT[category],
       master_name: master.name,
       position,
     },

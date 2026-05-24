@@ -1010,8 +1010,13 @@ function pushGridPage(
  * Положить combined-tail страницу: bindings grid + classphotoframe (общее фото),
  * декремент ctx.available.full_class. Порядок важен: bindings ДО decrement,
  * чтобы used-index был корректным.
+ *
+ * РЭ.37.2.b: экспортирована для переиспользования из sections/transition.ts —
+ * combo-мастера в переходном разделе используют ту же логику (grid +
+ * classphoto + __hidden__ для лишних слотов). Поведение функции не
+ * изменилось, только видимость.
  */
-function pushCombinedTailPage(
+export function pushCombinedTailPage(
   ctx: SectionFillContext,
   master: SpreadTemplate,
   students: RulesStudentInput[],

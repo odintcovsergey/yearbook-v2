@@ -152,7 +152,8 @@ export function buildFromSectionStructure(
         fillCommonAdditionalSection(ctx, section.max_spreads);
         break;
       case 'transition':
-        fillTransitionSection(ctx, section.master_name);
+        // РЭ.37.2.b: передаём весь section entry (нужны mode/custom/master_name).
+        fillTransitionSection(ctx, section);
         break;
       case 'teachers':
         fillTeachersSection(ctx);
