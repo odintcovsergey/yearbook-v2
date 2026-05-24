@@ -185,12 +185,9 @@ export function fillTransitionSection(
   ctx: SectionFillContext,
   sectionEntry: Extract<SectionStructureEntry, { type: 'transition' }>,
 ): void {
-  // ─── РЭ.37.2.c stub ────────────────────────────────────────────────
+  // ─── РЭ.37.2.c: явный custom-сценарий партнёра ─────────────────────
   if (sectionEntry.mode === 'custom') {
-    ctx.warnings.push(
-      'transition_custom_mode_not_implemented: РЭ.37.2.c (фолбэк на okeybook_default)',
-    );
-    fillOkeybookDefault(ctx);
+    fillCustomMode(ctx, sectionEntry);
     return;
   }
 
@@ -206,6 +203,275 @@ export function fillTransitionSection(
 
   // ─── По умолчанию: okeybook_default ────────────────────────────────
   fillOkeybookDefault(ctx);
+}
+
+// ─── Ветка 0: РЭ.37.2.c — кастомный сценарий партнёра ───────────────────
+
+/**
+ * Заполнение transition в режиме mode='custom'. Партнёр через UI
+ * (РЭ.37.6) явно задал combo-мастера для двух кейсов:
+ *
+ *   tail_left:  combo на L + закрывающий мастер на R   (хвост сел на L)
+ *   tail_right: combo на R                              (хвост сел на R)
+ *
+ * Engine определяет КАКОЙ из двух сценариев применить по чётности
+ * числа полных страниц students:
+ *
+ *   full_pages чёт + tail > 0 → tail_left  (хвост на L нового разворота)
+ *   full_pages нечёт + tail > 0 → tail_right (хвост на R того же разворота)
+ *
+ * Custom применяется ТОЛЬКО для combo-кейсов (tail ≤ M). В остальных
+ * ситуациях — grid_padded (tail > M), tail = 0 + full нечёт (нужно
+ * закрыть последний полный разворот), и т.д. — engine падает на
+ * fillOkeybookDefault. Это разумно с точки зрения UX: партнёр в UI
+ * настраивает только combo-кейсы, всё остальное идёт по стандартной
+ * логике OkeyBook. (Если нужна полная переопределяемость — добавим
+ * новые поля в TransitionCustomScenario в будущей фазе.)
+ */
+function fillCustomMode(
+  ctx: SectionFillContext,
+  sectionEntry: Extract<SectionStructureEntry, { type: 'transition' }>,
+): void {
+  // 1. Базовая валидация
+  if (!sectionEntry.custom) {
+    ctx.warnings.push(
+      'transition_custom_missing: mode=custom, но поле custom отсутствует — фолбэк на okeybook_default',
+    );
+    fillOkeybookDefault(ctx);
+    return;
+  }
+  const custom = sectionEntry.custom;
+
+  // 2. Определение комплектации и расчёт раскладки (так же как в okeybook_default).
+  const lastPage = ctx.pageInstances[ctx.pageInstances.length - 1];
+  const complectation = detectComplectationFromLastPage(
+    lastPage?.master_id,
+    ctx.bundle.mastersByName,
+  );
+  if (!complectation) {
+    ctx.warnings.push(
+      'transition_complectation_unknown (custom): не удалось определить комплектацию — фолбэк на okeybook_default',
+    );
+    fillOkeybookDefault(ctx);
+    return;
+  }
+
+  const studentsCount = ctx.input.students.length;
+  const layout = classifyTransitionLayout(complectation, studentsCount);
+
+  ctx.decisionTrace.push({
+    spread_index: Math.floor(ctx.pageInstances.length / 2),
+    section_index: ctx.sectionIndex,
+    family_id: 'transition',
+    rule_id: 'custom:classify',
+    inputs: {
+      complectation,
+      students_count: studentsCount,
+      full_pages: layout.full_pages,
+      tail: layout.tail,
+      tail_page: layout.tail_page,
+    },
+  });
+
+  // 3. Custom применяется только для combo-кейсов.
+  if (layout.tail_page !== 'combo' || layout.combo_capacity === null) {
+    // Не combo → fallback на дефолт (J-цепочка закрытия / off).
+    fillOkeybookDefault(ctx);
+    return;
+  }
+
+  // 4. Выбор сценария: чётность full_pages → где сел хвост.
+  const tailIsOnLeft = layout.full_pages % 2 === 0;
+  if (tailIsOnLeft) {
+    applyCustomTailLeft(ctx, custom, layout, complectation);
+  } else {
+    applyCustomTailRight(ctx, custom, layout, complectation);
+  }
+}
+
+/**
+ * Сценарий A — хвост сел на L нового разворота:
+ *   POP хвостовой страницы students
+ *   PUSH custom.tail_left.left как combo на L (с tail портретами + __hidden__ + classphoto)
+ *   PUSH custom.tail_left.right (или -Right) как закрывающий мастер на R
+ */
+function applyCustomTailLeft(
+  ctx: SectionFillContext,
+  custom: NonNullable<
+    Extract<SectionStructureEntry, { type: 'transition' }>['custom']
+  >,
+  layout: TransitionLayout,
+  complectation: Complectation,
+): void {
+  // Восстановить available если хвостовая students-страница была combined_tail.
+  const popped = ctx.pageInstances.pop();
+  if (!popped) {
+    ctx.warnings.push(
+      'transition_custom_no_tail_page (tail_left): pageInstances пуст — пропуск',
+    );
+    return;
+  }
+  const hadClassphoto =
+    typeof popped.bindings?.classphotoframe === 'string' &&
+    popped.bindings.classphotoframe.length > 0;
+  if (hadClassphoto) {
+    ctx.available.full_class += 1;
+  }
+
+  // Combo на L (позиция чёт = L → base без -Right).
+  const leftName = custom.tail_left.left.master_name;
+  const leftMaster = ctx.bundle.mastersByName.get(leftName);
+  if (!leftMaster) {
+    // Если custom-мастер не найден — отложили POP, нужно вернуть страницу
+    // обратно, чтобы хотя бы остался хвост students. Симметрично с
+    // hadClassphoto reversal.
+    ctx.pageInstances.push(popped);
+    if (hadClassphoto) ctx.available.full_class -= 1;
+    ctx.warnings.push(
+      `transition_custom_master_missing (tail_left.left): '${leftName}' не найден в template_set`,
+    );
+    return;
+  }
+
+  const tailStudents = ctx.input.students.slice(
+    ctx.input.students.length - layout.tail,
+  );
+
+  const density: 'mini' | 'light' | 'medium' =
+    complectation === 'mini' || complectation === 'light' || complectation === 'medium'
+      ? complectation
+      : 'mini';
+  pushCombinedTailPage(
+    ctx,
+    leftMaster,
+    tailStudents,
+    layout.combo_capacity!,
+    density,
+  );
+
+  ctx.decisionTrace.push({
+    spread_index: Math.floor((ctx.pageInstances.length - 1) / 2),
+    section_index: ctx.sectionIndex,
+    family_id: 'transition',
+    rule_id: `custom:tail_left:combo:${leftMaster.name}`,
+    inputs: {
+      master_name: leftMaster.name,
+      tail_students: layout.tail,
+      combo_capacity: layout.combo_capacity,
+    },
+  });
+
+  // Закрывающий мастер на R (custom.tail_left.right). Ищем -Right
+  // вариант, fallback на base.
+  const rightBaseName = custom.tail_left.right.master_name;
+  const rightMaster =
+    ctx.bundle.mastersByName.get(`${rightBaseName}-Right`) ??
+    ctx.bundle.mastersByName.get(rightBaseName);
+  if (!rightMaster) {
+    ctx.warnings.push(
+      `transition_custom_master_missing (tail_left.right): '${rightBaseName}' не найден в template_set`,
+    );
+    return;
+  }
+
+  // Размещаем как J-page. classifyMasterCategory отдаёт корректную
+  // category (half_class / sixth / full_class / quarter) — для всех
+  // консумируем правильное количество фото.
+  const category = classifyMasterCategory(rightMaster);
+  if (category === null) {
+    ctx.warnings.push(
+      `transition_custom_master_invalid (tail_left.right): '${rightMaster.name}' ` +
+        `не имеет J-категории placeholder'ов`,
+    );
+    return;
+  }
+  const need = LEGACY_PHOTO_COUNT[category];
+  if (ctx.available[category] < need) {
+    ctx.warnings.push(
+      `transition_custom_skipped (tail_left.right): '${rightMaster.name}' ` +
+        `нужно ${need} фото ${category}, доступно ${ctx.available[category]}`,
+    );
+    return;
+  }
+  placeJChainPage(
+    ctx,
+    rightMaster,
+    category,
+    'right',
+    ctx.pageInstances.length,
+  );
+}
+
+/**
+ * Сценарий B — хвост сел на R того же разворота:
+ *   POP хвостовой страницы students
+ *   PUSH custom.tail_right.right (или -Right) как combo на R
+ *
+ * Закрывающий мастер на L НЕ нужен — там уже лежит последняя полная
+ * сетка students.
+ */
+function applyCustomTailRight(
+  ctx: SectionFillContext,
+  custom: NonNullable<
+    Extract<SectionStructureEntry, { type: 'transition' }>['custom']
+  >,
+  layout: TransitionLayout,
+  complectation: Complectation,
+): void {
+  const popped = ctx.pageInstances.pop();
+  if (!popped) {
+    ctx.warnings.push(
+      'transition_custom_no_tail_page (tail_right): pageInstances пуст — пропуск',
+    );
+    return;
+  }
+  const hadClassphoto =
+    typeof popped.bindings?.classphotoframe === 'string' &&
+    popped.bindings.classphotoframe.length > 0;
+  if (hadClassphoto) {
+    ctx.available.full_class += 1;
+  }
+
+  // Combo на R: ищем -Right, fallback на base.
+  const baseName = custom.tail_right.right.master_name;
+  const comboMaster =
+    ctx.bundle.mastersByName.get(`${baseName}-Right`) ??
+    ctx.bundle.mastersByName.get(baseName);
+  if (!comboMaster) {
+    ctx.pageInstances.push(popped);
+    if (hadClassphoto) ctx.available.full_class -= 1;
+    ctx.warnings.push(
+      `transition_custom_master_missing (tail_right.right): '${baseName}' не найден в template_set`,
+    );
+    return;
+  }
+
+  const tailStudents = ctx.input.students.slice(
+    ctx.input.students.length - layout.tail,
+  );
+  const density: 'mini' | 'light' | 'medium' =
+    complectation === 'mini' || complectation === 'light' || complectation === 'medium'
+      ? complectation
+      : 'mini';
+  pushCombinedTailPage(
+    ctx,
+    comboMaster,
+    tailStudents,
+    layout.combo_capacity!,
+    density,
+  );
+
+  ctx.decisionTrace.push({
+    spread_index: Math.floor((ctx.pageInstances.length - 1) / 2),
+    section_index: ctx.sectionIndex,
+    family_id: 'transition',
+    rule_id: `custom:tail_right:combo:${comboMaster.name}`,
+    inputs: {
+      master_name: comboMaster.name,
+      tail_students: layout.tail,
+      combo_capacity: layout.combo_capacity,
+    },
+  });
 }
 
 // ─── Ветка 1: новая логика OkeyBook ─────────────────────────────────────

@@ -493,14 +493,46 @@ describe('transition okeybook_default vs legacy master_name', () => {
     expect(result.spreads[1].left?.master_id).toBe('id-J-Combined-Tail-3');
   });
 
-  it('mode=custom → warning + fallback на okeybook_default', () => {
+  it('mode=custom без custom-поля → warning + fallback на okeybook_default', () => {
     const bundle = makeLightBundle(
       makePreset({
         id: 'light',
         density: 'light',
         sheet_type: 'hard',
+        section_structure: [
+          { type: 'students' },
+          // Без поля custom — этот случай в проде не должен случаться
+          // (валидатор API запретит), но движок должен grаmotно обработать.
+          { type: 'transition', mode: 'custom' } as never,
+        ],
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 13, half_class: 2, full_class: 1 }),
+    );
+    expect(
+      result.warnings.some((w) =>
+        w.startsWith('transition_custom_missing'),
+      ),
+    ).toBe(true);
+    // Fallback на okeybook_default → стандартный combo + J.
+    expect(result.spreads[1].left?.master_id).toBe('id-J-Combined-Tail-3');
+    expect(result.spreads[1].right?.master_id).toBe('id-J-Half');
+  });
+});
 
+// ─── РЭ.37.2.c: custom-режим (партнёр явно задал мастера) ──────────────
 
+describe('transition custom mode (Light, M=3)', () => {
+  it('Light 13 (tail_left case) + custom: combo-3 на L + J-Full на R', () => {
+    // Хвост 1, full_pages=2 (чёт) → tail_left сценарий.
+    // Партнёр указал J-Combined-Tail-3 для combo + J-Full для закрытия.
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'light',
+        density: 'light',
+        sheet_type: 'hard',
         section_structure: [
           { type: 'students' },
           {
@@ -509,9 +541,149 @@ describe('transition okeybook_default vs legacy master_name', () => {
             custom: {
               tail_left: {
                 left: { master_name: 'J-Combined-Tail-3' },
-                right: { master_name: 'J-Half' },
+                right: { master_name: 'J-Full' },
               },
-              tail_right: { right: { master_name: 'J-Combined-Tail-3-Right' } },
+              tail_right: { right: { master_name: 'J-Combined-Tail-3' } },
+            },
+          },
+        ],
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      // full_class: 2 — combo съест 1 (classphoto), J-Full возьмёт 1.
+      makeInput({ students_count: 13, half_class: 2, full_class: 2 }),
+    );
+    expect(result.spreads).toHaveLength(2);
+    // L = указанный combo (с 1 портретом + 2 hidden + classphoto).
+    expect(result.spreads[1].left?.master_id).toBe('id-J-Combined-Tail-3');
+    expect(result.spreads[1].left?.bindings.studentportrait_1).toBe('https://cdn/p12.jpg');
+    expect(result.spreads[1].left?.bindings.__hidden__studentportrait_2).toBe('1');
+    // R = J-Full (не J-Half как было бы в okeybook_default).
+    expect(result.spreads[1].right?.master_id).toBe('id-J-Full');
+  });
+
+  it('Light 19 (tail_right case) + custom: combo-3-Right на R, разворот закрыт', () => {
+    // Хвост 1, full_pages=3 (нечёт) → tail_right сценарий.
+    // Партнёр указал J-Combined-Tail-3 (базу) — движок берёт -Right.
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'light',
+        density: 'light',
+        sheet_type: 'hard',
+        section_structure: [
+          { type: 'students' },
+          {
+            type: 'transition',
+            mode: 'custom',
+            custom: {
+              tail_left: {
+                left: { master_name: 'J-Combined-Tail-3' },
+                right: { master_name: 'J-Full' },
+              },
+              tail_right: { right: { master_name: 'J-Combined-Tail-3' } },
+            },
+          },
+        ],
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 19, half_class: 2, full_class: 1 }),
+    );
+    expect(result.spreads).toHaveLength(2);
+    // L = последняя полная сетка (от students, не трогаем).
+    expect(result.spreads[1].left?.master_id).toBe('id-L-Grid-Page');
+    // R = combo-3-Right (зеркало!).
+    expect(result.spreads[1].right?.master_id).toBe('id-J-Combined-Tail-3-Right');
+    expect(result.spreads[1].right?.bindings.studentportrait_1).toBe('https://cdn/p18.jpg');
+  });
+
+  it('Light 18 (tail=0, full=3 нечёт) + custom: fallback на okeybook_default (J на R)', () => {
+    // Нет хвоста — custom не применяется. Engine закрывает разворот
+    // через J-цепочку okeybook_default.
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'light',
+        density: 'light',
+        sheet_type: 'hard',
+        section_structure: [
+          { type: 'students' },
+          {
+            type: 'transition',
+            mode: 'custom',
+            custom: {
+              tail_left: {
+                left: { master_name: 'J-Combined-Tail-3' },
+                right: { master_name: 'J-Full' },
+              },
+              tail_right: { right: { master_name: 'J-Combined-Tail-3' } },
+            },
+          },
+        ],
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 18, half_class: 2, full_class: 1 }),
+    );
+    expect(result.spreads).toHaveLength(2);
+    expect(result.spreads[1].left?.master_id).toBe('id-L-Grid-Page');
+    // По дефолту half первый в J-цепочке → J-Half (не J-Full из custom).
+    expect(result.spreads[1].right?.master_id).toBe('id-J-Half');
+  });
+
+  it('Light 16 (tail=4 > M=3) + custom: fallback на okeybook_default', () => {
+    // tail > M → custom не применяется (combo не подходит).
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'light',
+        density: 'light',
+        sheet_type: 'hard',
+        section_structure: [
+          { type: 'students' },
+          {
+            type: 'transition',
+            mode: 'custom',
+            custom: {
+              tail_left: {
+                left: { master_name: 'J-Combined-Tail-3' },
+                right: { master_name: 'J-Full' },
+              },
+              tail_right: { right: { master_name: 'J-Combined-Tail-3' } },
+            },
+          },
+        ],
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 16, half_class: 2, full_class: 1 }),
+    );
+    expect(result.spreads).toHaveLength(2);
+    // L = students grid_padded (4 портрета + 2 пустых).
+    expect(result.spreads[1].left?.master_id).toBe('id-L-Grid-Page');
+    // R = J-Half (дефолтный приоритет).
+    expect(result.spreads[1].right?.master_id).toBe('id-J-Half');
+  });
+
+  it('Light 13 + custom с несуществующим мастером (tail_left.left) → warning, хвост остаётся', () => {
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'light',
+        density: 'light',
+        sheet_type: 'hard',
+        section_structure: [
+          { type: 'students' },
+          {
+            type: 'transition',
+            mode: 'custom',
+            custom: {
+              tail_left: {
+                left: { master_name: 'NonExistentMaster' },
+                right: { master_name: 'J-Full' },
+              },
+              tail_right: { right: { master_name: 'J-Combined-Tail-3' } },
             },
           },
         ],
@@ -521,15 +693,49 @@ describe('transition okeybook_default vs legacy master_name', () => {
       bundle,
       makeInput({ students_count: 13, half_class: 2, full_class: 1 }),
     );
-    // Warning про non-implemented custom.
     expect(
       result.warnings.some((w) =>
-        w.startsWith('transition_custom_mode_not_implemented'),
+        w.startsWith('transition_custom_master_missing (tail_left.left)'),
       ),
     ).toBe(true);
-    // Fallback на okeybook_default → combo + J.
+    // POP отменён — хвостовая страница students осталась.
+    expect(result.spreads[1].left?.master_id).toBe('id-L-Grid-Page');
+  });
+
+  it('Light 13 + custom с несуществующим мастером (tail_left.right) → combo есть, J нет, warning', () => {
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'light',
+        density: 'light',
+        sheet_type: 'hard',
+        section_structure: [
+          { type: 'students' },
+          {
+            type: 'transition',
+            mode: 'custom',
+            custom: {
+              tail_left: {
+                left: { master_name: 'J-Combined-Tail-3' },
+                right: { master_name: 'NonExistentRight' },
+              },
+              tail_right: { right: { master_name: 'J-Combined-Tail-3' } },
+            },
+          },
+        ],
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 13, half_class: 2, full_class: 1 }),
+    );
+    expect(
+      result.warnings.some((w) =>
+        w.startsWith('transition_custom_master_missing (tail_left.right)'),
+      ),
+    ).toBe(true);
+    // Combo поставлен, но R не закрыта.
     expect(result.spreads[1].left?.master_id).toBe('id-J-Combined-Tail-3');
-    expect(result.spreads[1].right?.master_id).toBe('id-J-Half');
+    expect(result.spreads[1].right).toBeUndefined();
   });
 });
 
