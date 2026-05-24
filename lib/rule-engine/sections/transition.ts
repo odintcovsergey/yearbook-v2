@@ -26,16 +26,28 @@
  *   3. Если mode='custom' → партнёр задал сценарий вручную. Реализация
  *      в РЭ.37.2.c (этот коммит — стаб с warning).
  *
- * ПОЗИЦИИ L/R: определяются по чётности индекса в pageInstances.
- *   Index 0 = page 1 (левая, нечётная по типографии)
- *   Index 1 = page 2 (правая, чётная)
- *   Index N: L если N % 2 == 0, R если N % 2 == 1
+ * ПОЗИЦИИ L/R: определяются по ФИЗИЧЕСКОЙ странице через positionOfIndex().
+ *   Для layflat (sheet_type='hard'): pageInstances[0] = physical page 1 = L.
+ *   Для soft   (sheet_type='soft'): pageInstances[0] = physical page 2 = R
+ *     (page 1 у мягкого переплёта физически отсутствует — это лист обложки,
+ *     первая внутренняя страница сразу правая первого разворота).
+ *
+ *   Формулы:
+ *     hard:  index N → physical page (N+1) → L iff N%2==0
+ *     soft:  index N → physical page (N+2) → L iff N%2==1   (инвертировано)
+ *
+ *   Тот же сдвиг влияет на «висит ли правая страница» (hasVacantRight) —
+ *   для soft нужна закрывающая правая при ЧЁТНОМ pageInstances.length,
+ *   для hard — при НЕЧЁТНОМ.
+ *
+ *   РЭ.37.3.b (25.05.2026): до этой даты transition работал в layflat-логике
+ *   для обоих типов листов, и для soft хвостовые развороты не закрывались.
  *
  * ПОИСК ЗЕРКАЛЬНЫХ -RIGHT ВАРИАНТОВ. Combo-мастера в InDesign по
  * решению Сергея делаются ВСЕГДА в двух версиях: J-Combined-Tail-4 (для
  * левой страницы) и J-Combined-Tail-4-Right (для правой). Поиск:
- *   • L (index чёт) → ищем base, fallback на -Right если base нет
- *   • R (index нечёт) → ищем -Right, fallback на base
+ *   • L (positionOfIndex==left)  → ищем base, fallback на -Right если base нет
+ *   • R (positionOfIndex==right) → ищем -Right, fallback на base
  * Аналогично для J-Half / J-Full / J-Collage-6 — там зеркальные варианты
  * могут отсутствовать (симметричные мастера), движок справится с base.
  */
@@ -150,6 +162,55 @@ function findCommonMasterForCategory(
   }
   return null;
 }
+
+/**
+ * РЭ.37.3.b: helpers для физической чётности страниц с учётом sheet_type.
+ *
+ * Engine работает с pageInstances как с flat-списком, индексация начинается
+ * с 0 для первой записи. Физическая страница (1-based, та что номер на
+ * обложке/типографском листе) зависит от типа переплёта:
+ *
+ *   • layflat (hard): physical page = index + 1
+ *     (pageInstances[0] = page 1 = LEFT первого разворота)
+ *
+ *   • soft: physical page = index + 2
+ *     (page 1 у soft — обложка/forzac, она не входит в pageInstances;
+ *      pageInstances[0] = page 2 = RIGHT первого разворота)
+ *
+ * Конвенция типографии: левые страницы НЕЧЁТНЫЕ (1, 3, 5...), правые ЧЁТНЫЕ
+ * (2, 4, 6...).
+ */
+function softOffset(ctx: SectionFillContext): 0 | 1 {
+  return ctx.bundle.preset.sheet_type === 'soft' ? 1 : 0;
+}
+
+/**
+ * Возвращает 'left' или 'right' для записи pageInstances[index] с учётом
+ * физических страниц. Не требует чтобы запись уже существовала — годится
+ * также для index = pageInstances.length (определить позицию следующей
+ * добавляемой страницы).
+ */
+function positionOfIndex(
+  ctx: SectionFillContext,
+  index: number,
+): 'left' | 'right' {
+  const physicalPage = index + 1 + softOffset(ctx);
+  return physicalPage % 2 === 1 ? 'left' : 'right';
+}
+
+/**
+ * Возвращает true если последняя положенная страница занимает LEFT и
+ * соседняя RIGHT висит пустой — значит нужна закрывающая страница на R.
+ *
+ * Для пустого pageInstances возвращает false (закрывать нечего).
+ */
+function hasVacantRight(ctx: SectionFillContext): boolean {
+  if (ctx.pageInstances.length === 0) return false;
+  const lastIndex = ctx.pageInstances.length - 1;
+  return positionOfIndex(ctx, lastIndex) === 'left';
+}
+
+// ─── Поиск combo-мастера (РЭ.37.2.b) ────────────────────────────────────
 
 /**
  * РЭ.37.2.b: поиск combo-мастера по базовому имени с учётом позиции.
@@ -488,7 +549,7 @@ function fillOkeybookDefault(ctx: SectionFillContext): void {
   // или последний мастер неопознан — просто пропускаем с warning. Без
   // пустых страниц.
   if (!complectation) {
-    if (ctx.pageInstances.length % 2 === 1) {
+    if (hasVacantRight(ctx)) {
       ctx.warnings.push(
         'transition_complectation_unknown: не удалось определить комплектацию ' +
           'по последней странице — переходный пропущен (висит правая страница)',
@@ -537,9 +598,10 @@ function fillOkeybookDefault(ctx: SectionFillContext): void {
     }
   }
 
-  // 3. Шаг B: если общая длина после возможной замены нечётная — нужна
-  //    закрывающая страница через J-цепочку на правой.
-  if (ctx.pageInstances.length % 2 === 1) {
+  // 3. Шаг B: если последняя страница висит на LEFT — нужна закрывающая
+  //    страница через J-цепочку на правой. РЭ.37.3.b: учитываем sheet_type
+  //    через hasVacantRight (для soft binding формула чётности инвертирована).
+  if (hasVacantRight(ctx)) {
     tryJChainClosing(ctx);
   }
 }
@@ -581,7 +643,8 @@ function tryReplaceTailWithCombo(
   }
 
   // Позиция combo = там же, где была хвостовая страница.
-  const position: 'left' | 'right' = tailIndex % 2 === 0 ? 'left' : 'right';
+  // РЭ.37.3.b: считаем по физической странице с учётом sheet_type.
+  const position: 'left' | 'right' = positionOfIndex(ctx, tailIndex);
 
   const combo = findComboMaster(
     ctx.bundle.mastersByName,
@@ -671,7 +734,12 @@ function tryReplaceTailWithCombo(
  */
 function tryJChainClosing(ctx: SectionFillContext): void {
   const pageIndex = ctx.pageInstances.length;
-  const position: 'left' | 'right' = pageIndex % 2 === 0 ? 'left' : 'right';
+  // РЭ.37.3.b: физическая позиция следующей страницы с учётом sheet_type.
+  // tryJChainClosing вызывается из fillOkeybookDefault только если
+  // hasVacantRight(ctx) — то есть position здесь всегда 'right'. Считаем
+  // явно для symmetry с tryReplaceTailWithCombo и на случай если функция
+  // будет переиспользована из других callsite в будущем.
+  const position: 'left' | 'right' = positionOfIndex(ctx, pageIndex);
 
   for (const category of J_PRIORITY_OKEYBOOK_DEFAULT) {
     const need = J_PHOTO_COUNT[category];
@@ -706,7 +774,10 @@ function tryJChainClosing(ctx: SectionFillContext): void {
 // ─── Ветка 2: legacy РЭ.32 (master_name явно задан) ─────────────────────
 
 function fillLegacyMasterName(ctx: SectionFillContext, masterName: string): void {
-  if (ctx.pageInstances.length % 2 === 0) {
+  // РЭ.37.3.b: учитываем sheet_type. Legacy РЭ.32 кладёт мастер только
+  // если висит правая (left занят, right пустой). Для hard это длина
+  // нечётная, для soft — чётная (см. positionOfIndex / hasVacantRight).
+  if (!hasVacantRight(ctx)) {
     ctx.decisionTrace.push({
       spread_index: Math.floor(ctx.pageInstances.length / 2),
       section_index: ctx.sectionIndex,
@@ -714,6 +785,7 @@ function fillLegacyMasterName(ctx: SectionFillContext, masterName: string): void
       rule_id: 'skip:even_pages',
       inputs: {
         pages_so_far: ctx.pageInstances.length,
+        sheet_type: ctx.bundle.preset.sheet_type ?? null,
         reason: 'нет висящей правой страницы',
       },
     });

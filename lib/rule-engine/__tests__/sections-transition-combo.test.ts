@@ -208,7 +208,11 @@ const J_COLLAGE_6 = makeMaster(
   Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
 );
 
-const ALL_LIGHT_MASTERS = [L_GRID_PAGE, COMBO_3, COMBO_3_RIGHT, J_HALF, J_FULL, J_COLLAGE_6];
+// РЭ.37.3.b: S-Intro для soft-тестов. Первая правая страница soft-альбома
+// с общим фото класса.
+const S_INTRO = makeMaster('S-Intro', [photoSlot('classphotoframe')]);
+
+const ALL_LIGHT_MASTERS = [L_GRID_PAGE, COMBO_3, COMBO_3_RIGHT, J_HALF, J_FULL, J_COLLAGE_6, S_INTRO];
 
 function makePreset(opts: Partial<Preset> & Pick<Preset, 'id'>): Preset {
   return {
@@ -833,5 +837,144 @@ describe('transition J-цепочка порядок (half → sixth → full)',
     expect(
       result.warnings.some((w) => w.startsWith('transition_skipped')),
     ).toBe(true);
+  });
+});
+
+// ─── РЭ.37.3.b: soft binding для combo + closing ────────────────────────
+//
+// До РЭ.37.3.b формула чётности в transition.ts работала только для
+// layflat (где pageInstances[0] = physical page 1 = LEFT). Для soft
+// pageInstances[0] = physical page 2 = RIGHT (page 1 — это обложка/forzac,
+// в pageInstances не входит). После фикса positionOfIndex и hasVacantRight
+// учитывают sheet_type через softOffset(ctx).
+//
+// Тесты проверяют decision_trace (явные rule_id от transition), а не
+// spreads — потому что группировка pageInstances→spreads пока в
+// layflat-логике (баг будет починен в РЭ.37.3.c, см. context-v159).
+// decision_trace отражает РЕШЕНИЯ engine напрямую и не зависит от
+// группировки.
+
+describe('РЭ.37.3.b transition + soft binding (Light, M=3, S-Intro первой)', () => {
+  function softLightBundle() {
+    return makeLightBundle(
+      makePreset({
+        id: 'light',
+        density: 'light',
+        sheet_type: 'soft',
+        section_structure: [
+          { type: 'soft_intro' },
+          { type: 'students' },
+          { type: 'transition' },
+        ],
+      }),
+    );
+  }
+
+  it('Soft + 13 учеников (full=2 чёт, tail=1) → Combo-3 на L (база) + J-Half на R', () => {
+    // pageInstances:
+    //   [0]: S-Intro       — physical page 2 (RIGHT разворот 1)
+    //   [1]: L-Grid-Page   — physical page 3 (LEFT разворот 2)
+    //   [2]: L-Grid-Page   — physical page 4 (RIGHT разворот 2)
+    //   [3]: tail (POP)    — physical page 5 (LEFT разворот 3)
+    //   → POP, positionOfIndex(soft, 3)=LEFT → PUSH Combo-3 (база, не -Right)
+    //   → After combo length=4. hasVacantRight: positionOfIndex(soft, 3)=LEFT → true
+    //   → tryJChainClosing: pageIndex=4, positionOfIndex(soft, 4)=RIGHT → J-Half
+    const result = buildFromSectionStructure(
+      softLightBundle(),
+      makeInput({ students_count: 13, half_class: 2, full_class: 2 }),
+    );
+
+    // Главная проверка фикса: combo выбрал БАЗОВУЮ версию (не -Right),
+    // потому что physical page 5 = LEFT. До РЭ.37.3.b формула idx 3 → RIGHT
+    // дала бы -Right версию — это и был баг.
+    const comboTrace = result.decision_trace.find((t) =>
+      t.rule_id.includes('light:combined_tail:J-Combined-Tail-3'),
+    );
+    expect(comboTrace).toBeDefined();
+    expect(comboTrace?.rule_id).toBe('light:combined_tail:J-Combined-Tail-3');
+
+    // Главная проверка #2: closing-страница на J-Half положена.
+    // До фикса closing вообще не вызывалось (length=4 % 2 == 0).
+    const closingTrace = result.decision_trace.find((t) =>
+      t.rule_id.startsWith('j_chain:half_class:J-Half'),
+    );
+    expect(closingTrace).toBeDefined();
+
+    // 0 warnings от transition
+    expect(
+      result.warnings.filter((w) => w.startsWith('transition_')),
+    ).toHaveLength(0);
+  });
+
+  it('Soft + 6 учеников (full=1, tail=0) → разворот 2 висит left → closing J-Half', () => {
+    // pageInstances:
+    //   [0]: S-Intro     — physical page 2 (RIGHT разворот 1)
+    //   [1]: L-Grid-Page — physical page 3 (LEFT разворот 2) — висит!
+    //   hasVacantRight(soft, idx 1): physical page 3 = LEFT → true → closing
+    //
+    // В layflat-логике (старой) length=2 → 2%2==0 → закрыт → НЕ вызвался.
+    // Это и был баг.
+    const result = buildFromSectionStructure(
+      softLightBundle(),
+      makeInput({ students_count: 6, half_class: 2, full_class: 2 }),
+    );
+
+    const closingTrace = result.decision_trace.find((t) =>
+      t.rule_id.startsWith('j_chain:half_class:J-Half'),
+    );
+    expect(closingTrace).toBeDefined();
+    expect(
+      result.warnings.filter((w) => w.startsWith('transition_')),
+    ).toHaveLength(0);
+  });
+
+  it('Soft + 12 учеников (full=2 чёт, tail=0) → разворот 2 закрыт, closing НЕ нужен', () => {
+    // pageInstances:
+    //   [0]: S-Intro     — physical page 2 (RIGHT разворот 1)
+    //   [1]: L-Grid-Page — physical page 3 (LEFT разворот 2)
+    //   [2]: L-Grid-Page — physical page 4 (RIGHT разворот 2) — закрыт
+    //   hasVacantRight(soft, idx 2): physical page 4 = RIGHT → false → НЕТ closing
+    //
+    // В layflat-логике (старой) length=3 → 3%2==1 → ошибочно ТРИГГЕРИЛО
+    // closing → лишняя страница. После фикса — корректно нет.
+    const result = buildFromSectionStructure(
+      softLightBundle(),
+      makeInput({ students_count: 12, half_class: 2, full_class: 2 }),
+    );
+
+    // Ни одного j_chain в trace
+    expect(
+      result.decision_trace.filter((t) => t.rule_id.startsWith('j_chain:')),
+    ).toHaveLength(0);
+    // Ни одного combo (tail=0)
+    expect(
+      result.decision_trace.filter((t) => t.rule_id.includes('combined_tail')),
+    ).toHaveLength(0);
+  });
+
+  it('Soft + 19 учеников (full=3 нечёт, tail=1) → Combo-3-Right на R, closing НЕ нужен', () => {
+    // pageInstances:
+    //   [0]: S-Intro     — physical page 2 (RIGHT разворот 1)
+    //   [1]: L-Grid      — page 3 LEFT разворот 2
+    //   [2]: L-Grid      — page 4 RIGHT разворот 2
+    //   [3]: L-Grid      — page 5 LEFT разворот 3
+    //   [4]: tail (POP)  — page 6 RIGHT разворот 3
+    //   POP, positionOfIndex(soft, 4)=RIGHT → ищем Combo-3-Right
+    //   After combo length=5. hasVacantRight(soft, idx 4): RIGHT → false
+    //   → closing НЕ вызван (combo закрыло разворот собой)
+    const result = buildFromSectionStructure(
+      softLightBundle(),
+      makeInput({ students_count: 19, half_class: 2, full_class: 2 }),
+    );
+
+    // Combo лёг — есть combined_tail trace
+    const comboTrace = result.decision_trace.find((t) =>
+      t.rule_id.includes('combined_tail'),
+    );
+    expect(comboTrace).toBeDefined();
+    // Closing НЕ был вызван
+    expect(
+      result.decision_trace.filter((t) => t.rule_id.startsWith('j_chain:')),
+    ).toHaveLength(0);
   });
 });
