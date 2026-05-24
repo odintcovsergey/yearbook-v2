@@ -1270,4 +1270,152 @@ describe('РЭ.37.4: симметризация хвоста', () => {
       result.decision_trace.some((t) => t.rule_id.startsWith('symmetrize:')),
     ).toBe(false);
   });
+
+  // ─── Фикс 25.05.2026 (РЭ.37.4.b): симметризация через preset, ──────────
+  // когда detectComplectationFromLastPage не распознала комплектацию по
+  // мастеру (legacy L-Combined-Page и аналоги).
+  //
+  // Тест2 case: Light 25 учеников, semantic-grid режим — students.ts кладёт
+  // L-Combined-Page (вместо J-Combined-Tail-3). detectComplectationFromLastPage
+  // возвращает null. До фикса симметризация не запускалась → хвост оставался
+  // с 1 учеником несмотря на включённую галку. После фикса transition.ts
+  // пробует определить комплектацию через preset.student_grid_size:
+  //   grid_size=12 → mini
+  //   grid_size=6  → light
+  // И уже симметризация работает.
+
+  it('Light 25 + legacy L-Combined-Page + symmetrize=true → симметризация через preset', () => {
+    // Создаём bundle с legacy L-Combined-Page (имя которого НЕ
+    // распознаётся detectComplectationFromLastPage).
+    const L_COMBINED_PAGE = makeMaster(
+      'L-Combined-Page',
+      [
+        ...Array.from({ length: 3 }, (_, i) => photoSlot(`studentportrait_${i + 1}`)),
+        photoSlot('classphotoframe'),
+      ],
+      { students: 3, photos_full: 1 },
+    );
+    const masters = [L_GRID_PAGE, L_COMBINED_PAGE, COMBO_3, COMBO_3_RIGHT, J_HALF];
+    const mastersByName = new Map<string, SpreadTemplate>();
+    for (const m of masters) mastersByName.set(m.name, m);
+    const bundle: RuleEngineBundle = {
+      preset: makePreset({
+        id: 'light',
+        density: 'light', // ← через density, без student_layout_mode (legacy-style)
+        sheet_type: 'hard',
+        symmetrize_students_tail: true,
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+      }),
+      rules: [],
+      families: [],
+      templateSet: {
+        id: 'ts',
+        tenant_id: null,
+        name: 't',
+        slug: 't',
+        print_type: 'layflat',
+        page_width_mm: 200,
+        page_height_mm: 280,
+        spread_width_mm: 400,
+        spread_height_mm: 280,
+        bleed_mm: 0,
+        facing_pages: true,
+        page_binding: 'LeftToRight',
+        spreads: masters,
+      },
+      mastersByName,
+    };
+
+    // 25 учеников: full=4, tail=1
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 25, half_class: 2, full_class: 1 }),
+    );
+
+    // Trace симметризации должен присутствовать (через preset path)
+    const symmTraceFromPreset = result.decision_trace.find(
+      (t) => t.rule_id === 'okeybook_default:symmetrize_from_preset',
+    );
+    expect(symmTraceFromPreset).toBeDefined();
+    // grid_size в пресете не задан, density='light' использован как fallback
+    expect(symmTraceFromPreset?.inputs.preset_density).toBe('light');
+    expect(symmTraceFromPreset?.inputs.inferred_complectation).toBe('light');
+
+    // Сама симметризация (после)
+    const symmTrace = result.decision_trace.find((t) =>
+      t.rule_id.startsWith('symmetrize:light:'),
+    );
+    expect(symmTrace).toBeDefined();
+    expect(symmTrace?.inputs.prev_students_count).toBe(5);
+    expect(symmTrace?.inputs.tail_students_count).toBe(2);
+
+    // Warning info
+    expect(
+      result.warnings.some((w) => w.startsWith('transition_symmetrized')),
+    ).toBe(true);
+    // Старого warning о unknown быть НЕ должно — мы решили вопрос через preset
+    expect(
+      result.warnings.some((w) =>
+        w.startsWith('transition_complectation_unknown'),
+      ),
+    ).toBe(false);
+  });
+
+  it('Light 25 + legacy + symmetrize=false → старое поведение (unknown warning)', () => {
+    // Контрольный тест: при symmetrize=false для legacy мастера остаётся
+    // старое поведение — transition_complectation_unknown + closing.
+    const L_COMBINED_PAGE = makeMaster(
+      'L-Combined-Page',
+      [
+        ...Array.from({ length: 3 }, (_, i) => photoSlot(`studentportrait_${i + 1}`)),
+        photoSlot('classphotoframe'),
+      ],
+      { students: 3, photos_full: 1 },
+    );
+    const masters = [L_GRID_PAGE, L_COMBINED_PAGE, J_HALF];
+    const mastersByName = new Map<string, SpreadTemplate>();
+    for (const m of masters) mastersByName.set(m.name, m);
+    const bundle: RuleEngineBundle = {
+      preset: makePreset({
+        id: 'light',
+        density: 'light',
+        sheet_type: 'hard',
+        symmetrize_students_tail: false, // ← выключено
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+      }),
+      rules: [],
+      families: [],
+      templateSet: {
+        id: 'ts',
+        tenant_id: null,
+        name: 't',
+        slug: 't',
+        print_type: 'layflat',
+        page_width_mm: 200,
+        page_height_mm: 280,
+        spread_width_mm: 400,
+        spread_height_mm: 280,
+        bleed_mm: 0,
+        facing_pages: true,
+        page_binding: 'LeftToRight',
+        spreads: masters,
+      },
+      mastersByName,
+    };
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 25, half_class: 2, full_class: 1 }),
+    );
+
+    // Симметризация НЕ срабатывает
+    expect(
+      result.decision_trace.some((t) => t.rule_id.startsWith('symmetrize:')),
+    ).toBe(false);
+    // Возвращается старое info-warning
+    expect(
+      result.warnings.some((w) =>
+        w.startsWith('transition_complectation_unknown'),
+      ),
+    ).toBe(true);
+  });
 });

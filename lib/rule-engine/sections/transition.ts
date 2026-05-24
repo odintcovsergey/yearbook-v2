@@ -572,6 +572,70 @@ function fillOkeybookDefault(ctx: SectionFillContext): void {
   // и N-Grid-N). До этого фикса transition пропускался и правая висела
   // пустой. Теперь хотя бы закроем разворот.
   if (!complectation) {
+    // РЭ.37.4 (фикс 25.05.2026): если detectComplectationFromLastPage не
+    // распознала мастер (legacy L-Combined-Page / M-Combined-Page и т.д.) —
+    // ПОПРОБУЕМ всё-таки симметризацию через preset параметры. Партнёр в
+    // редакторе шаблона явно указал student_grid_size — это надёжный
+    // источник информации о комплектации, даже если последний мастер
+    // legacy и его имя engine не знает.
+    //
+    // Маппинг preset → комплектация:
+    //   1) student_layout_mode='grid' + student_grid_size=12 → mini
+    //      student_layout_mode='grid' + student_grid_size=6  → light
+    //   2) Fallback для legacy-пресетов (где новые поля не заданы):
+    //      density='mini'  → mini
+    //      density='light' → light
+    //
+    // Для других значений симметризация не применяется (по spec §3.4).
+    const presetMode = ctx.bundle.preset.student_layout_mode;
+    const presetGrid = ctx.bundle.preset.student_grid_size;
+    const presetDensity = ctx.bundle.preset.density;
+    let presetComplectation: Complectation | null = null;
+    if (presetMode === 'grid') {
+      if (presetGrid === 12) presetComplectation = 'mini';
+      else if (presetGrid === 6) presetComplectation = 'light';
+    }
+    // Fallback на density если новые поля не заданы.
+    if (presetComplectation === null) {
+      if (presetDensity === 'mini') presetComplectation = 'mini';
+      else if (presetDensity === 'light') presetComplectation = 'light';
+    }
+
+    if (presetComplectation !== null) {
+      const studentsCount = ctx.input.students.length;
+      const layoutFromPreset = classifyTransitionLayout(
+        presetComplectation,
+        studentsCount,
+      );
+      const symmetrized = trySymmetrizeTail(
+        ctx,
+        presetComplectation,
+        layoutFromPreset,
+      );
+      if (symmetrized) {
+        ctx.decisionTrace.push({
+          spread_index: Math.floor(ctx.pageInstances.length / 2),
+          section_index: ctx.sectionIndex,
+          family_id: 'transition',
+          rule_id: 'okeybook_default:symmetrize_from_preset',
+          inputs: {
+            preset_grid_size: presetGrid,
+            preset_density: presetDensity,
+            inferred_complectation: presetComplectation,
+            students_count: studentsCount,
+          },
+        });
+        // Симметризация сработала: combo уже на хвосте. Если правая
+        // висит — закрываем через J-цепочку как обычно.
+        if (hasVacantRight(ctx)) {
+          tryJChainClosing(ctx);
+        }
+        return;
+      }
+      // Симметризация не сработала (например tail≠1) — продолжим со
+      // старым поведением для legacy-комплектации.
+    }
+
     if (hasVacantRight(ctx)) {
       ctx.warnings.push(
         'transition_complectation_unknown: переходный разворот закрыт ' +
