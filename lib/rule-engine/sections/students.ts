@@ -38,7 +38,7 @@
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import { findStudentMaster, findStudentGridMaster } from '../master-finder';
 import type { RulesStudentInput } from '../types';
-import type { SectionFillContext } from './shared';
+import { centerLastRowSlots, type SectionFillContext } from './shared';
 
 export function fillStudentsSection(ctx: SectionFillContext): void {
   const preset = ctx.bundle.preset;
@@ -1124,5 +1124,10 @@ function bindGridStudents(
       continue;
     }
   }
+  // РЭ.37.5.b (25.05.2026): если часть слотов в ряду скрыта через
+  // __hidden__ (адаптивный хвост сетки или симметризованная страница
+  // из РЭ.37.4), центрируем оставшиеся видимые в этом ряду через
+  // __pos__<label>. Для полных страниц (без __hidden__) — no-op.
+  centerLastRowSlots(master, bindings);
   return bindings;
 }

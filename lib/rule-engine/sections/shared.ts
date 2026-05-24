@@ -70,3 +70,118 @@ export function humanPhotoCategory(category: string): string {
       return category;
   }
 }
+
+/**
+ * РЭ.37.5.b (25.05.2026): автоцентрирование видимых слотов в последнем
+ * ряду grid/combo-страницы.
+ *
+ * Когда страница имеет N слотов в ряд (например studentportrait_1..6),
+ * и последние K скрыты через __hidden__<label>, оставшиеся N-K слотов
+ * по умолчанию остаются на своих исходных координатах — то есть «прижаты
+ * к левому краю», а правая часть ряда выглядит пусто. Это визуальная
+ * проблема симметризованного хвоста (РЭ.37.4) и адаптивного хвоста сетки
+ * (когда учеников меньше чем слотов).
+ *
+ * Эта функция вычисляет геометрический shift и записывает в `bindings`
+ * ключи __pos__<label>='<x_mm>,<y_mm>' для каждого видимого portrait
+ * (и связанного с ним studentname/studentquote) — так renderer
+ * (Canvas/PDF, через parseBalanceOverrides) разместит слоты по центру
+ * фактической ширины ряда.
+ *
+ * Алгоритм:
+ *   1. Найти studentportrait_* placeholder'ы мастера.
+ *   2. Сгруппировать в строки по y_mm (с допуском 5 мм).
+ *   3. Для каждой строки где есть hidden — посчитать shift и применить.
+ *      Условия применения:
+ *        - в строке ≥2 слота (есть шаг dx между соседними)
+ *        - hidden идут «с конца» (защита от mixed-pattern)
+ *
+ * Связь portrait ↔ name ↔ quote: по числовому индексу в label. Если в
+ * мастере есть studentportrait_5 + studentname_5 + studentquote_5 — все
+ * три получают одинаковый shift и записываются под __pos__.
+ *
+ * Эффект на полные страницы grid (когда hidden нет): no-op — ни одной
+ * __pos__ записи не добавляется, центрирование не нужно.
+ */
+export function centerLastRowSlots(
+  master: { placeholders?: ReadonlyArray<{ label: string; x_mm: number; y_mm: number }> },
+  bindings: Record<string, unknown>,
+): void {
+  const placeholders = master.placeholders ?? [];
+  if (placeholders.length === 0) return;
+
+  type Slot = { label: string; n: number; x_mm: number; y_mm: number };
+  const portraits: Slot[] = [];
+  for (const ph of placeholders) {
+    const m = ph.label.toLowerCase().match(/^studentportrait_(\d+)$/);
+    if (!m) continue;
+    portraits.push({
+      label: ph.label,
+      n: parseInt(m[1], 10),
+      x_mm: ph.x_mm,
+      y_mm: ph.y_mm,
+    });
+  }
+  if (portraits.length < 2) return;
+
+  // Группируем в строки по y (tolerance 5 мм).
+  const Y_TOL = 5;
+  const rows: Slot[][] = [];
+  for (const slot of [...portraits].sort((a, b) => a.y_mm - b.y_mm || a.x_mm - b.x_mm)) {
+    const row = rows.find((r) => Math.abs(r[0].y_mm - slot.y_mm) < Y_TOL);
+    if (row) row.push(slot);
+    else rows.push([slot]);
+  }
+  for (const row of rows) row.sort((a, b) => a.x_mm - b.x_mm);
+
+  function relatedLabels(n: number): string[] {
+    const out: string[] = [];
+    for (const ph of placeholders) {
+      const lower = ph.label.toLowerCase();
+      if (lower === `studentname_${n}` || lower === `studentquote_${n}`) {
+        out.push(ph.label);
+      }
+    }
+    return out;
+  }
+
+  for (const row of rows) {
+    if (row.length < 2) continue;
+    const hidden = row.filter((s) => bindings[`__hidden__${s.label}`] != null);
+    const filled = row.filter((s) => bindings[`__hidden__${s.label}`] == null);
+    if (hidden.length === 0 || filled.length === 0) continue;
+
+    // Защита: hidden идут «с конца» (paтерн bindGridStudents).
+    const maxFilledN = Math.max(...filled.map((s) => s.n));
+    const minHiddenN = Math.min(...hidden.map((s) => s.n));
+    if (minHiddenN <= maxFilledN) continue;
+
+    // Шаг dx — среднее расстояние между соседними слотами в строке.
+    let dxSum = 0;
+    let dxCount = 0;
+    for (let i = 1; i < row.length; i++) {
+      const d = row[i].x_mm - row[i - 1].x_mm;
+      if (d > 0) {
+        dxSum += d;
+        dxCount++;
+      }
+    }
+    if (dxCount === 0) continue;
+    const dx = dxSum / dxCount;
+
+    // Сдвиг: половина суммарной ширины скрытых слотов.
+    const shift = (hidden.length * dx) / 2;
+    if (shift <= 0) continue;
+
+    for (const slot of filled) {
+      const newX = slot.x_mm + shift;
+      bindings[`__pos__${slot.label}`] = `${newX},${slot.y_mm}`;
+      for (const relLabel of relatedLabels(slot.n)) {
+        const relPh = placeholders.find((p) => p.label === relLabel);
+        if (!relPh) continue;
+        const newRelX = relPh.x_mm + shift;
+        bindings[`__pos__${relLabel}`] = `${newRelX},${relPh.y_mm}`;
+      }
+    }
+  }
+}
