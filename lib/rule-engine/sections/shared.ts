@@ -44,3 +44,29 @@ export interface SectionFillContext {
   /** Индекс текущей секции в preset.section_structure (для decision_trace.section_index). */
   sectionIndex: number;
 }
+
+/**
+ * РЭ.37.3.b.2 (25.05.2026): человекочитаемое имя категории фото для warning'ов,
+ * адресованных партнёру (не разработчику). Используется в формулировках
+ * вроде "не хватило фото типа …", чтобы было понятно куда докинуть фото
+ * в UI Окейбуки.
+ *
+ * Категории соответствуют ярлыкам в UI загрузки: common_full, common_half,
+ * common_sixth, common_quarter, common_spread.
+ */
+export function humanPhotoCategory(category: string): string {
+  switch (category) {
+    case 'full_class':
+      return 'общие фото класса (на всю страницу)';
+    case 'half_class':
+      return 'общие половинные фото (две на разворот)';
+    case 'sixth':
+      return 'общие фото для коллажа (шесть на страницу)';
+    case 'quarter':
+      return 'общие четвертные фото (четыре на страницу)';
+    case 'spread':
+      return 'общие фото на разворот';
+    default:
+      return category;
+  }
+}

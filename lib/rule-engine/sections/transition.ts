@@ -85,9 +85,22 @@ const J_PHOTO_COUNT: Record<JCategory, number> = {
   full_class: 1,
 };
 
+// РЭ.37.3.b.2 (25.05.2026): порядок sixth → half_class → full_class.
+//
+// Раньше было half → sixth → full (порядок задал Сергей 24.05.2026 в РЭ.37.2),
+// но в практике оказалось что closing-страница transition'а конкурирует с
+// common_required за фото half_class: партнёры загружают много фото sixth
+// под коллажи (обычно ≥6), а half_class и full_class — единицы. После
+// transition closing на J-Half пул half_class опустошался, и последняя
+// страница общего раздела (тоже часто J-Half) пропускалась с warning.
+//
+// sixth-first снижает этот конфликт: closing transition'а берёт J-Collage-6
+// (4 sixth-фото у J-Collage-6, или 6 у Collage-6 в зависимости от мастера),
+// half_class остаётся для общего раздела, full_class остаётся как последний
+// fallback. См. Тест2 case (25.05.2026, JSON layout_id 1d2387c6).
 const J_PRIORITY_OKEYBOOK_DEFAULT: JCategory[] = [
-  'half_class',
   'sixth',
+  'half_class',
   'full_class',
 ];
 
@@ -561,9 +574,11 @@ function fillOkeybookDefault(ctx: SectionFillContext): void {
   if (!complectation) {
     if (hasVacantRight(ctx)) {
       ctx.warnings.push(
-        'transition_complectation_unknown: не удалось определить комплектацию ' +
-          'по последней странице — combo replacement пропущен, закрываю ' +
-          'разворот через J-цепочку',
+        'transition_complectation_unknown: переходный разворот закрыт ' +
+          'запасным шаблоном (combo-замена пропущена, потому что комплектацию ' +
+          'учеников не удалось определить по последней странице раздела). ' +
+          'Это нормально для legacy-шаблонов; если хотите явный combo — ' +
+          'обновите шаблон в /super.',
       );
     }
     ctx.decisionTrace.push({
@@ -773,9 +788,16 @@ function tryJChainClosing(ctx: SectionFillContext): void {
     return;
   }
 
+  // РЭ.37.3.b.2: формулировка для партнёра. Указываем что именно не нашлось
+  // и какое действие предпринять. Перечисляем доступность всех 3 категорий
+  // J-цепочки чтобы партнёр сразу видел сколько каких фото есть.
+  const av = ctx.available;
   ctx.warnings.push(
-    'transition_skipped: нет фото ни одной J-категории (half/sixth/full) ' +
-      'или подходящих мастеров для закрытия переходного разворота',
+    `transition_skipped: правая страница переходного разворота не закрыта — ` +
+      `не нашлось ни одной комбинации мастер+фото. Доступно: ` +
+      `${av.sixth} фото для коллажа, ${av.half_class} половинных, ` +
+      `${av.full_class} общих. Загрузите ещё фото в любую из этих категорий, ` +
+      `либо замените шаблон вручную в редакторе.`,
   );
   ctx.decisionTrace.push({
     spread_index: Math.floor(pageIndex / 2),

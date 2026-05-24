@@ -31,7 +31,7 @@
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import type { SlotConsumes } from '../slot-chains';
 import { bindCommonPhotos, decrementAvailable } from './common';
-import type { SectionFillContext } from './shared';
+import { humanPhotoCategory, type SectionFillContext } from './shared';
 
 /** Категории общих фото — соответствуют полям CommonPhotoCounts. */
 type CommonCategory = 'full_class' | 'half_class' | 'quarter' | 'sixth' | 'spread';
@@ -207,8 +207,16 @@ export function fillCommonRequiredSection(
     // 3. Хватает ли фото в категории.
     const haveCount = availablePhotos(ctx, ability.category, spreadConsumed);
     if (haveCount < ability.count) {
+      const needMore = ability.count - haveCount;
+      const categoryRu = humanPhotoCategory(ability.category);
+      // РЭ.37.3.b.2 (25.05.2026): формулировка для партнёра, не разработчика.
+      // Указываем номер страницы в общем разделе (1-based), категорию по-русски,
+      // сколько именно фото докинуть, и куда дальше идти если фото нет.
       ctx.warnings.push(
-        `common_required_page_skipped: '${masterName}' (нужно ${ability.count} фото категории ${ability.category}, доступно ${haveCount})`,
+        `common_required_page_skipped: страница ${i + 1} общего раздела — ` +
+          `шаблон «${masterName}» пропущен. Нужно ${ability.count} фото типа ` +
+          `«${categoryRu}», загружено ${haveCount}. Загрузите ещё ${needMore} ` +
+          `или замените шаблон вручную в редакторе.`,
       );
       ctx.decisionTrace.push({
         spread_index: Math.floor(ctx.pageInstances.length / 2),

@@ -743,8 +743,8 @@ describe('transition custom mode (Light, M=3)', () => {
   });
 });
 
-describe('transition J-цепочка порядок (half → sixth → full)', () => {
-  it('доступны и half и sixth и full → выбран J-Half (первый в новом порядке)', () => {
+describe('transition J-цепочка порядок (sixth → half → full, РЭ.37.3.b.2)', () => {
+  it('доступны и half и sixth и full → выбран J-Collage-6 (первый в порядке)', () => {
     const bundle = makeLightBundle(
       makePreset({
         id: 'light',
@@ -765,10 +765,11 @@ describe('transition J-цепочка порядок (half → sixth → full)',
       }),
     );
     expect(result.spreads).toHaveLength(2);
-    expect(result.spreads[1].right?.master_id).toBe('id-J-Half');
+    // РЭ.37.3.b.2: sixth-first → J-Collage-6 имеет приоритет над J-Half
+    expect(result.spreads[1].right?.master_id).toBe('id-J-Collage-6');
   });
 
-  it('нет half, есть sixth и full → выбран J-Collage-6 (sixth)', () => {
+  it('нет sixth, есть half и full → выбран J-Half (второй в порядке)', () => {
     const bundle = makeLightBundle(
       makePreset({
         id: 'light',
@@ -783,12 +784,12 @@ describe('transition J-цепочка порядок (half → sixth → full)',
       bundle,
       makeInput({
         students_count: 18,
-        half_class: 0,
-        sixth: 6,
+        half_class: 2,
+        sixth: 0,
         full_class: 1,
       }),
     );
-    expect(result.spreads[1].right?.master_id).toBe('id-J-Collage-6');
+    expect(result.spreads[1].right?.master_id).toBe('id-J-Half');
   });
 
   it('только full → выбран J-Full', () => {
