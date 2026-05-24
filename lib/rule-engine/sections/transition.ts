@@ -546,22 +546,37 @@ function fillOkeybookDefault(ctx: SectionFillContext): void {
   );
 
   // Если students-секции вообще не было (например, в шаблоне нет students)
-  // или последний мастер неопознан — просто пропускаем с warning. Без
-  // пустых страниц.
+  // или последний мастер неопознан — combo replacement не делаем (нечего
+  // заменять или непонятно на что). Но если разворот висит без правой —
+  // закрываем его через J-цепочку, даже без знания комплектации.
+  //
+  // РЭ.37.3.b.1 (25.05.2026): typical случай где это срабатывает —
+  // students.ts (semantic-grid режим) кладёт legacy combined-tail мастер
+  // (L-Combined-Page / M-Combined-Page / N-Combined-Page) через
+  // findStudentGridMaster, потому что эти мастера матчатся по семантике
+  // (students=remainder, photos_full=1). Их имена не распознаются
+  // detectComplectationFromLastPage (которая знает только J-Combined-Tail-N
+  // и N-Grid-N). До этого фикса transition пропускался и правая висела
+  // пустой. Теперь хотя бы закроем разворот.
   if (!complectation) {
     if (hasVacantRight(ctx)) {
       ctx.warnings.push(
         'transition_complectation_unknown: не удалось определить комплектацию ' +
-          'по последней странице — переходный пропущен (висит правая страница)',
+          'по последней странице — combo replacement пропущен, закрываю ' +
+          'разворот через J-цепочку',
       );
     }
     ctx.decisionTrace.push({
       spread_index: Math.floor(ctx.pageInstances.length / 2),
       section_index: ctx.sectionIndex,
       family_id: 'transition',
-      rule_id: 'skip:complectation_unknown',
+      rule_id: 'skip:complectation_unknown_combo',
       inputs: { last_master_id: lastPage?.master_id ?? null },
     });
+    // Закрываем правую если висит — combo не сделали, но closing нужен.
+    if (hasVacantRight(ctx)) {
+      tryJChainClosing(ctx);
+    }
     return;
   }
 
