@@ -178,8 +178,12 @@ describe('soft_intro', () => {
     );
     expect(result.status).toBe('ok');
     expect(result.spreads).toHaveLength(1);
-    expect(result.spreads[0].left?.master_id).toBe('id-S-Intro');
-    expect(result.spreads[0].left?.bindings.classphotoframe).toBe(
+    // РЭ.37.3.c: для soft binding page 1 (LEFT первого разворота) — это
+    // обложка/forzac, физически отсутствует в pageInstances. Первый
+    // PageInstance ложится на RIGHT первого разворота.
+    expect(result.spreads[0].left).toBeUndefined();
+    expect(result.spreads[0].right?.master_id).toBe('id-S-Intro');
+    expect(result.spreads[0].right?.bindings.classphotoframe).toBe(
       'https://cdn/full_0.jpg',
     );
   });
@@ -212,8 +216,9 @@ describe('soft_intro', () => {
     });
     const result = buildFromSectionStructure(bundle, makeInput({}));
     expect(result.spreads).toHaveLength(1);
-    expect(result.spreads[0].left?.master_id).toBe('id-S-Intro');
-    expect(result.spreads[0].left?.bindings.classphotoframe).toBeUndefined();
+    // РЭ.37.3.c: S-Intro на RIGHT первого разворота для soft.
+    expect(result.spreads[0].right?.master_id).toBe('id-S-Intro');
+    expect(result.spreads[0].right?.bindings.classphotoframe).toBeUndefined();
   });
 
   it('S-Intro отсутствует → warning soft_intro_master_not_found', () => {
@@ -315,14 +320,18 @@ describe('soft_final', () => {
       bundle,
       makeInput({ full_class: 2 }),
     );
-    // РЭ.35.Ж: soft_final помечается section_start → отдельный разворот.
-    // soft_intro на висящей правой первого разворота, soft_final на
-    // висящей левой второго (правые пусты в обоих случаях).
+    // РЭ.37.3.c: для soft binding pageInstances = [S-Intro (no section_start),
+    // S-Final (section_start=true из SECTIONS_THAT_START_NEW_SPREAD)].
+    // Группировка:
+    //   spread 0 = { right: S-Intro }              (soft-сдвиг: первая на right)
+    //   spread 1 = { left: S-Final, right: undef } (section_start → новый разворот, S-Final на L)
     expect(result.spreads).toHaveLength(2);
-    expect(result.spreads[0].left?.bindings.classphotoframe).toBe(
+    // S-Intro на правой первого разворота, classphoto из cursor=0
+    expect(result.spreads[0].left).toBeUndefined();
+    expect(result.spreads[0].right?.bindings.classphotoframe).toBe(
       'https://cdn/full_0.jpg',
     );
-    expect(result.spreads[0].right).toBeUndefined();
+    // S-Final на левой второго разворота, classphoto из cursor=1
     expect(result.spreads[1].left?.bindings.classphotoframe).toBe(
       'https://cdn/full_1.jpg',
     );

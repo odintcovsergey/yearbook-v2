@@ -229,11 +229,42 @@ export function buildFromSectionStructure(
   // этой страницы как left. Это создаёт «висящий» разворот после хвоста
   // students когда transition пропустила страницу — и common_required
   // начинается с нового разворота, как и должно быть.
+  //
+  // РЭ.37.3.c: для sheet_type='soft' page 1 физически отсутствует (это
+  // обложка/forzac мягкого переплёта, не входит в pageInstances). Первый
+  // разворот альбома при soft binding состоит из {left: undefined,
+  // right: pageInstances[0]}. Далее парная группировка идёт от индекса 1.
+  // Без этой правки UI Обзор показывал «layflat-группировку» для soft
+  // (S-Intro попадал на левую первого разворота, что неверно — у мягкого
+  // переплёта page 1 это обложка), а UI Редактор делал свой pre-processing
+  // и показывал правду — отсюда расхождение «Обзор vs Редактор».
   const mastersById = new Map<string, SpreadTemplate>();
   bundle.mastersByName.forEach((m) => mastersById.set(m.id, m));
 
   const spreads: SpreadInstance[] = [];
   let i = 0;
+
+  // РЭ.37.3.c: soft binding — первый разворот это [обложка (нет в pageInstances),
+  // pageInstances[0] как right]. Дальше парная группировка с индекса 1.
+  //
+  // Исключение: если pageInstances[0].section_start=true (это бывает когда
+  // первой секцией стоит common_required или soft_final — секции из
+  // SECTIONS_THAT_START_NEW_SPREAD), значит первая страница СЕМАНТИЧЕСКИ
+  // требует быть LEFT нового разворота. Тогда soft-сдвиг НЕ применяется —
+  // страница ложится на LEFT первого разворота как при layflat.
+  const isSoft = bundle.preset.sheet_type === 'soft';
+  if (
+    isSoft &&
+    pageInstances.length > 0 &&
+    !pageInstances[0].section_start
+  ) {
+    spreads.push({
+      spread_index: 0,
+      right: pageInstances[0],
+    });
+    i = 1;
+  }
+
   while (i < pageInstances.length) {
     const left = pageInstances[i];
     const next = i + 1 < pageInstances.length ? pageInstances[i + 1] : undefined;

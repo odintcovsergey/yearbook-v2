@@ -147,7 +147,7 @@ describe('soft_intro семантический поиск (РЭ.22.8.2)', () =>
       masters: [introMaster],
     });
     const result = buildFromSectionStructure(bundle, makeInput(1));
-    expect(result.spreads[0].left?.master_id).toBe('id-S-Intro');
+    expect(result.spreads[0].right?.master_id).toBe('id-S-Intro');
     const trace = result.decision_trace.find((t) =>
       t.rule_id?.startsWith('soft_intro:'),
     );
@@ -173,7 +173,7 @@ describe('soft_intro семантический поиск (РЭ.22.8.2)', () =>
       masters: [customIntro],
     });
     const result = buildFromSectionStructure(bundle, makeInput(1));
-    expect(result.spreads[0].left?.master_id).toBe('id-Partner-Intro-2026');
+    expect(result.spreads[0].right?.master_id).toBe('id-Partner-Intro-2026');
     const trace = result.decision_trace.find((t) =>
       t.rule_id?.startsWith('soft_intro:'),
     );
@@ -196,7 +196,7 @@ describe('soft_intro семантический поиск (РЭ.22.8.2)', () =>
       masters: [legacyIntro],
     });
     const result = buildFromSectionStructure(bundle, makeInput(1));
-    expect(result.spreads[0].left?.master_id).toBe('id-S-Intro');
+    expect(result.spreads[0].right?.master_id).toBe('id-S-Intro');
     const trace = result.decision_trace.find((t) =>
       t.rule_id?.startsWith('soft_intro:'),
     );
@@ -219,7 +219,7 @@ describe('soft_intro семантический поиск (РЭ.22.8.2)', () =>
       masters: [noPhoto],
     });
     const result = buildFromSectionStructure(bundle, makeInput(1));
-    expect(result.spreads[0].left?.master_id).toBe('id-S-Intro');
+    expect(result.spreads[0].right?.master_id).toBe('id-S-Intro');
     const trace = result.decision_trace.find((t) =>
       t.rule_id?.startsWith('soft_intro:'),
     );

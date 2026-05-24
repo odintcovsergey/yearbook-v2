@@ -216,17 +216,22 @@ describe('common_additional: основные сценарии', () => {
         quarter: 4,
       }),
     );
-    // 3 страницы = 1 разворот + 1 одинокая (нечёт). По адаптеру
-    // layout-to-buildresult одинокая страница попадает на следующий разворот
-    // как left. Итого 2 разворота: первый full, второй half (только left).
+    // РЭ.37.3.c: для soft binding pageInstances[0] идёт на RIGHT первого
+    // разворота. Затем парная группировка с индекса 1:
+    //   spread 0 = { right: J-Collage-6 }
+    //   spread 1 = { left: J-Quarter-Right, right: J-Quarter-Left }
+    //
+    // Имена J-Quarter-Right / -Left наследуются от common_additional table,
+    // которая сейчас нумерует мастера по index pageInstances (в layflat-логике).
+    // Это известный side-effect — common_additional ещё не учитывает soft
+    // adjustment, но физическая раскладка соответствует именам:
+    // J-Quarter-Right на L разворот 2, J-Quarter-Left на R разворот 2.
+    // Семантическая правка common_additional — отдельная фаза.
     expect(result.spreads).toHaveLength(2);
-    // Первая страница доп. раздела = COLLAGE_OR_HALVES_OR_FULL → J-Collage-6
-    // Позиция страниц с самого начала альбома: page 0 = left.
-    expect(result.spreads[0].left?.master_id).toBe('id-J-Collage-6');
-    // Page 1 = right → QUARTERS_OR_... → J-Quarter-Right
-    expect(result.spreads[0].right?.master_id).toBe('id-J-Quarter-Right');
-    // Page 2 = left (новый разворот) → QUARTERS_OR_... → J-Quarter-Left
-    expect(result.spreads[1].left?.master_id).toBe('id-J-Quarter-Left');
+    expect(result.spreads[0].left).toBeUndefined();
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Collage-6');
+    expect(result.spreads[1].left?.master_id).toBe('id-J-Quarter-Right');
+    expect(result.spreads[1].right?.master_id).toBe('id-J-Quarter-Left');
   });
 
   it('Light hard 16 учеников → доп раздела нет (additional_pages пустой)', () => {
