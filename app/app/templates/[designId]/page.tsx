@@ -284,6 +284,7 @@ export default function TemplatesPage() {
         student_has_quote: full.student_has_quote ?? null,
         student_layout_mode: full.student_layout_mode ?? null,
         student_grid_size: full.student_grid_size ?? null,
+        symmetrize_students_tail: full.symmetrize_students_tail ?? null,
         version: full.version ?? '1.0',
         is_recommended: full.is_recommended ?? false,
       })

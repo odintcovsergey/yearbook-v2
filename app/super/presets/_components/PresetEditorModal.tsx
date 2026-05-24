@@ -24,6 +24,13 @@ export interface Preset {
   /** РЭ.22.1: двух-осевая модель. См. docs/phase-Р22-spec.md §3. */
   student_layout_mode: 'page' | 'spread' | 'grid' | null
   student_grid_size: number | null
+  /**
+   * РЭ.37.5: симметризация хвоста students-секции.
+   * Когда true И комплектация = Мини (grid=12) / Лайт (grid=6) И хвост=1
+   * — engine забирает 1 ученика с предыдущей полной страницы. Для других
+   * комплектаций (grid≠6,12) флаг игнорируется. По умолчанию false (опт-ин).
+   */
+  symmetrize_students_tail: boolean | null
   version: string
   /**
    * РЭ.24.7: показывать ли шаблон в каталоге /app/templates для партнёров.
@@ -151,6 +158,12 @@ export default function PresetEditorModal({
   const [studentHasQuote, setStudentHasQuote] = useState<boolean>(
     preset.student_has_quote ?? false
   )
+  // РЭ.37.5: галка «симметризировать хвост». Активна (enabled в UI) только
+  // когда mode='grid' И grid_size ∈ {6, 12} — соответствует Light/Mini
+  // комплектациям. Для остальных значений UI показывает её disabled.
+  const [symmetrizeStudentsTail, setSymmetrizeStudentsTail] = useState<boolean>(
+    preset.symmetrize_students_tail ?? false
+  )
 
   // РЭ.24.7: галка «рекомендовать в каталоге партнёров».
   // Применима только к глобальным пресетам — для тенантских скрыта в UI.
@@ -246,6 +259,9 @@ export default function PresetEditorModal({
         // Новые поля (РЭ.22.2).
         student_layout_mode: studentLayoutMode,
         student_grid_size: effectiveGridSize,
+        // РЭ.37.5: симметризация хвоста. Сохраняем фактическое значение
+        // галки — engine сам игнорирует флаг если комплектация не Mini/Light.
+        symmetrize_students_tail: symmetrizeStudentsTail,
         // Legacy (дублирование для отката).
         student_pages_per_student: legacyPagesPerStudent,
         student_friend_photos: effectiveFriendPhotos,
@@ -482,42 +498,99 @@ export default function PresetEditorModal({
             )}
 
             {studentLayoutMode === 'grid' && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm text-gray-600 block mb-1">
-                    Учеников на страницу
-                  </label>
-                  <input
-                    type="number"
-                    min={2}
-                    max={12}
-                    value={studentGridSize}
-                    onChange={(e) =>
-                      setStudentGridSize(
-                        e.target.value === '' ? '' : Number(e.target.value)
-                      )
-                    }
-                    className="w-full border rounded px-3 py-2 text-sm"
-                    placeholder="2..12"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Базовый размер сетки. Адаптивный хвост (последняя
-                    неполная страница) подбирается engine'ом автоматически
-                    из доступных мастеров template_set.
-                  </p>
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm text-gray-600 block mb-1">
+                      Учеников на страницу
+                    </label>
+                    <input
+                      type="number"
+                      min={2}
+                      max={12}
+                      value={studentGridSize}
+                      onChange={(e) =>
+                        setStudentGridSize(
+                          e.target.value === '' ? '' : Number(e.target.value)
+                        )
+                      }
+                      className="w-full border rounded px-3 py-2 text-sm"
+                      placeholder="2..12"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Базовый размер сетки. Адаптивный хвост (последняя
+                      неполная страница) подбирается engine'ом автоматически
+                      из доступных мастеров template_set.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-600 block mb-1">Цитата</label>
+                    <select
+                      value={String(studentHasQuote)}
+                      onChange={(e) => setStudentHasQuote(e.target.value === 'true')}
+                      className="w-full border rounded px-3 py-2 text-sm"
+                    >
+                      <option value="true">да, под каждым учеником</option>
+                      <option value="false">нет</option>
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-sm text-gray-600 block mb-1">Цитата</label>
-                  <select
-                    value={String(studentHasQuote)}
-                    onChange={(e) => setStudentHasQuote(e.target.value === 'true')}
-                    className="w-full border rounded px-3 py-2 text-sm"
-                  >
-                    <option value="true">да, под каждым учеником</option>
-                    <option value="false">нет</option>
-                  </select>
-                </div>
-              </div>
+
+                {/* РЭ.37.5: галка симметризации хвоста.
+                    Применима только для grid_size ∈ {6, 12} — это
+                    соответствует комплектациям Light / Mini в spec §3.4.
+                    Для других значений показываем disabled+ explanation. */}
+                {(() => {
+                  const numericGridSize =
+                    studentGridSize === '' ? null : Number(studentGridSize)
+                  const isApplicable =
+                    numericGridSize === 6 || numericGridSize === 12
+                  return (
+                    <div
+                      className={
+                        'rounded border px-3 py-2 ' +
+                        (isApplicable
+                          ? 'bg-blue-50/40 border-blue-200'
+                          : 'bg-gray-50 border-gray-200')
+                      }
+                    >
+                      <label
+                        className={
+                          'flex items-start gap-2 text-sm ' +
+                          (isApplicable
+                            ? 'cursor-pointer text-gray-800'
+                            : 'cursor-not-allowed text-gray-400')
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          checked={symmetrizeStudentsTail}
+                          disabled={!isApplicable}
+                          onChange={(e) =>
+                            setSymmetrizeStudentsTail(e.target.checked)
+                          }
+                          className="mt-0.5"
+                        />
+                        <span>
+                          <span className="font-medium">
+                            Симметризировать хвост
+                          </span>
+                          {!isApplicable && (
+                            <span className="text-xs ml-1.5 text-gray-500">
+                              (только для 6 или 12 учеников на страницу)
+                            </span>
+                          )}
+                          <span className="block text-xs text-gray-600 mt-0.5">
+                            Если в хвосте остался один ученик, движок возьмёт
+                            ещё одного с предыдущей страницы — чтобы хвост был
+                            парным, без одиночного портрета с краю.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                  )
+                })()}
+              </>
             )}
 
             {preset.student_layout_mode === null && (
