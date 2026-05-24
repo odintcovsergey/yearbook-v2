@@ -181,23 +181,46 @@ function EmptyPagePlaceholder({
   width,
   aspectRatio,
   label,
+  onClick,
 }: {
   width: number
   aspectRatio: number
   label: string
+  onClick?: () => void
 }) {
   const height = width / aspectRatio
+  const isClickable = typeof onClick === 'function'
   return (
     <div
-      className="rounded border border-dashed border-gray-300 bg-gray-50/60 flex items-center justify-center select-none"
+      className={
+        'rounded border border-dashed flex items-center justify-center select-none transition-colors ' +
+        (isClickable
+          ? 'border-blue-300 bg-blue-50/30 hover:bg-blue-50 hover:border-blue-400 cursor-pointer'
+          : 'border-gray-300 bg-gray-50/60')
+      }
       style={{ width: `${width}px`, height: `${height}px` }}
-      title={label}
+      title={isClickable ? `${label} — нажмите чтобы выбрать шаблон` : label}
+      onClick={onClick}
+      role={isClickable ? 'button' : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      onKeyDown={
+        isClickable
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onClick?.()
+              }
+            }
+          : undefined
+      }
     >
       <span
-        className="text-gray-400 text-center px-4"
+        className={
+          'text-center px-4 ' + (isClickable ? 'text-blue-500' : 'text-gray-400')
+        }
         style={{ fontSize: `${Math.max(11, height * 0.025)}px` }}
       >
-        {label}
+        {isClickable ? `${label}\n— выберите шаблон` : label}
       </span>
     </div>
   )
@@ -1692,6 +1715,23 @@ function LayoutEditorPageInner({
                                 : 0.7
                             }
                             label="Левая страница пуста"
+                            onClick={
+                              isReadOnly
+                                ? undefined
+                                : () => {
+                                    // РЭ.38.2 (25.05.2026): пустая левая
+                                    // страница разворота — добавляем новую
+                                    // запись ПЕРЕД существующей правой.
+                                    // handleAddSpread вставляет на позицию
+                                    // afterIdx+1; чтобы новая стала левой
+                                    // текущего разворота, передаём afterIdx
+                                    // = rightIdx - 1 (т.е. вставка прямо
+                                    // перед rightIdx).
+                                    if (currentPair.rightIdx !== undefined) {
+                                      setAddAfterIdx(currentPair.rightIdx - 1)
+                                    }
+                                  }
+                            }
                           />
                         )}
                         {rightPage && rightTemplate ? (
@@ -1745,6 +1785,20 @@ function LayoutEditorPageInner({
                                 : 0.7
                             }
                             label="Правая страница пуста"
+                            onClick={
+                              isReadOnly
+                                ? undefined
+                                : () => {
+                                    // РЭ.38.2 (25.05.2026): пустая правая
+                                    // страница разворота — добавляем новую
+                                    // запись ПОСЛЕ существующей левой
+                                    // (handleAddSpread вставляет на позицию
+                                    // afterIdx + 1).
+                                    if (currentPair.leftIdx !== undefined) {
+                                      setAddAfterIdx(currentPair.leftIdx)
+                                    }
+                                  }
+                            }
                           />
                         )}
                       </>
