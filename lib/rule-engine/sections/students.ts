@@ -704,7 +704,7 @@ function buildGridSemantic(ctx: SectionFillContext): void {
 
   // 1. Base-мастер для полных страниц: точное совпадение students=gridSize,
   //    без общего фото (photos_full=0).
-  const baseResult = findStudentGridMaster(ctx.bundle.mastersByName, {
+  let baseResult = findStudentGridMaster(ctx.bundle.mastersByName, {
     presetId: preset.id,
     pageRole: null, // принимаем любую grid-роль
     studentsCount: gridSize,
@@ -714,13 +714,57 @@ function buildGridSemantic(ctx: SectionFillContext): void {
     hasPortrait: true,
   });
 
+  // РЭ.37.9 (25.05.2026): fallback на hasQuote=false если партнёр включил
+  // цитаты, но в template_set нет мастера-сетки с цитатами. Лучше построить
+  // альбом без цитат, чем не построить вовсе. Info-warning объяснит партнёру
+  // что произошло и как починить.
+  //
+  // effectiveHasQuote — реальное значение которое будет использовано всеми
+  // последующими find-вызовами (combined-tail, adaptive). Если fallback
+  // сработал, все хвостовые мастера тоже ищутся без quote — иначе combo
+  // на хвосте откажется (он использует тот же hasQuote критерий).
+  let effectiveHasQuote = hasQuote;
+  if (!baseResult && hasQuote) {
+    baseResult = findStudentGridMaster(ctx.bundle.mastersByName, {
+      presetId: preset.id,
+      pageRole: null,
+      studentsCount: gridSize,
+      match: 'exact',
+      photosFull: 0,
+      hasQuote: false,
+      hasPortrait: true,
+    });
+    if (baseResult) {
+      effectiveHasQuote = false;
+      ctx.warnings.push(
+        `students_quote_fallback: в дизайне нет мастера-сетки на ` +
+          `${gridSize} учеников с цитатами под каждым — взят мастер ` +
+          `без цитат («${baseResult.master.name}»). Цитаты учеников не ` +
+          `показаны. Чтобы вернуть цитаты, выберите другой дизайн ` +
+          `шаблона или закажите кастомный мастер у дизайнера.`,
+      );
+      ctx.decisionTrace.push({
+        spread_index: Math.floor(ctx.pageInstances.length / 2),
+        section_index: ctx.sectionIndex,
+        family_id: 'student-section',
+        rule_id: `grid_semantic:quote_fallback:${baseResult.master.name}`,
+        inputs: {
+          requested_has_quote: true,
+          actual_has_quote: false,
+          grid_size: gridSize,
+          master_name: baseResult.master.name,
+        },
+      });
+    }
+  }
+
   if (!baseResult) {
     ctx.warnings.push(
       `students_master_not_found: для пресета '${preset.id}' (mode=grid) ` +
         `не найден base-мастер с page_role='student_grid*', ` +
         `slot_capacity.students=${gridSize}, photos_full=0, ` +
-        `has_quote=${hasQuote}, has_portrait=true. ` +
-        `Закажите мастер у дизайнера.`,
+        `has_quote=${hasQuote} или has_quote=false. ` +
+        `Закажите мастер у дизайнера или выберите другой дизайн шаблона.`,
     );
     return;
   }
@@ -751,7 +795,7 @@ function buildGridSemantic(ctx: SectionFillContext): void {
       studentsCount: remainder,
       match: 'min_fit',
       photosFull: 1,
-      hasQuote: hasQuote,
+      hasQuote: effectiveHasQuote,
       hasPortrait: true,
     });
     if (combinedResult) {
@@ -775,7 +819,7 @@ function buildGridSemantic(ctx: SectionFillContext): void {
     studentsCount: remainder,
     match: 'min_fit',
     photosFull: 0,
-    hasQuote: hasQuote,
+    hasQuote: effectiveHasQuote,
     hasPortrait: true,
   });
   // Используем adaptive только если он МЕНЬШЕ base-мастера (иначе нет смысла

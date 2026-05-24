@@ -143,6 +143,9 @@ const WARNING_LEVELS: Record<string, WarningLevel> = {
   // Smart-fill — info
   students_no_portrait: 'info',
   per_child_override_ignored: 'info',
+  // РЭ.37.9: fallback на мастер без цитат — info-уровень, секция всё-таки
+  // построена, просто без цитат.
+  students_quote_fallback: 'info',
 }
 
 type EnrichedWarning = {

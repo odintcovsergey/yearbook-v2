@@ -474,4 +474,92 @@ describe("mode='grid' семантический поиск (РЭ.22.6)", () => 
     expect(result.spreads[0].left?.master_id).toBe('id-N-Grid-Page');
     expect(result.spreads[0].right?.master_id).toBe('id-N-Grid-Page');
   });
+
+  // ─── РЭ.37.9: fallback на hasQuote=false ─────────────────────────────────
+  //
+  // Когда партнёр в пресете выбрал has_quote=true, но в template_set нет
+  // мастера-сетки с цитатами — engine должен взять мастер без цитат
+  // (если он есть) вместо того чтобы вообще не строить секцию.
+  // Info-warning должен объяснить ситуацию партнёру.
+
+  describe('РЭ.37.9: quote fallback', () => {
+    it('has_quote=true, мастер с цитатами отсутствует, мастер БЕЗ цитат есть → fallback + info warning', () => {
+      // В template_set только L-Grid (без цитат). Партнёр просит цитаты.
+      const bundle = makeBundle({
+        preset: makePreset({
+          id: 'light-with-quote',
+          student_layout_mode: 'grid',
+          student_grid_size: 6,
+          student_has_quote: true,
+          section_structure: [{ type: 'students' }],
+        }),
+        masters: [L_GRID], // L_GRID без quote
+      });
+      const result = buildFromSectionStructure(bundle, makeInput({ students_count: 12 }));
+
+      // Секция всё-таки построилась
+      expect(result.spreads).toHaveLength(1);
+      expect(result.spreads[0].left?.master_id).toBe('id-L-Grid-Page');
+      expect(result.spreads[0].right?.master_id).toBe('id-L-Grid-Page');
+
+      // Info warning о fallback
+      expect(
+        result.warnings.some((w) => w.startsWith('students_quote_fallback')),
+      ).toBe(true);
+
+      // НЕ должен быть финальный students_master_not_found
+      expect(
+        result.warnings.some((w) => w.startsWith('students_master_not_found')),
+      ).toBe(false);
+
+      // Decision trace про fallback
+      expect(
+        result.decision_trace.some((t) =>
+          t.rule_id?.startsWith('grid_semantic:quote_fallback:'),
+        ),
+      ).toBe(true);
+    });
+
+    it('has_quote=true, мастер с цитатами есть → fallback НЕ срабатывает (контроль)', () => {
+      // M_GRID с цитатами доступен.
+      const bundle = makeBundle({
+        preset: makePreset({
+          id: 'medium-with-quote',
+          student_layout_mode: 'grid',
+          student_grid_size: 4,
+          student_has_quote: true,
+          section_structure: [{ type: 'students' }],
+        }),
+        masters: [M_GRID],
+      });
+      const result = buildFromSectionStructure(bundle, makeInput({ students_count: 8 }));
+
+      expect(result.spreads).toHaveLength(1);
+      expect(
+        result.warnings.some((w) => w.startsWith('students_quote_fallback')),
+      ).toBe(false);
+    });
+
+    it('has_quote=true, мастеров ВООБЩЕ нет → warning master_not_found (новая формулировка)', () => {
+      // В template_set только M_GRID (4 ученика), но мы просим grid_size=6.
+      const bundle = makeBundle({
+        preset: makePreset({
+          id: 'no-master',
+          student_layout_mode: 'grid',
+          student_grid_size: 6,
+          student_has_quote: true,
+          section_structure: [{ type: 'students' }],
+        }),
+        masters: [M_GRID], // только 4-слотный, не подходит для grid_size=6
+      });
+      const result = buildFromSectionStructure(bundle, makeInput({ students_count: 12 }));
+
+      // Секция не построилась
+      expect(result.spreads).toHaveLength(0);
+      // Warning master_not_found с упоминанием обоих вариантов hasQuote
+      const w = result.warnings.find((x) => x.startsWith('students_master_not_found'));
+      expect(w).toBeDefined();
+      expect(w).toMatch(/has_quote=true.*has_quote=false/);
+    });
+  });
 });
