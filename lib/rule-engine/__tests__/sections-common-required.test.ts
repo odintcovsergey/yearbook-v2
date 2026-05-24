@@ -448,3 +448,138 @@ describe('fillCommonRequiredSection (РЭ.32): новый формат pages', (
     expect(left?.bindings.collagephoto_5).toBe('https://cdn/sixth_4.jpg');
   });
 });
+
+// ─── РЭ.38.1: fallback chain для common_required ────────────────────────
+//
+// Идея: если для запрошенного партнёром мастера не хватает фоток нужной
+// категории — пробуем подобрать резервный из FALLBACK_CHAIN прежде чем
+// оставить страницу пустой. Это даёт info-warning common_required_fallback_used
+// вместо тревожного skip-warning'а.
+//
+// FALLBACK_CHAIN:
+//   half_class → [J-Collage-6, J-Full]
+//   sixth      → [J-Half, J-Full]
+//   full_class → [J-Half, J-Collage-6]
+//   quarter    → [J-Half, J-Collage-6, J-Full]
+
+describe('РЭ.38.1: fallback chain для common_required', () => {
+  it('J-Half без half_class, но есть sixth → J-Collage-6 как fallback + info warning', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [{ master_name: 'J-Half' }],
+          },
+        ],
+      }),
+    });
+    // half_class=0, sixth=6 → fallback J-Collage-6 подойдёт
+    const result = buildFromSectionStructure(bundle, makeInput({ half_class: 0, sixth: 6 }));
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Collage-6');
+    // Запрошенный шаблон НЕ положен — фактически положен fallback
+    expect(
+      result.warnings.some((w) => w.startsWith('common_required_fallback_used')),
+    ).toBe(true);
+    // НЕ должно быть page_skipped (страница построилась через fallback)
+    expect(
+      result.warnings.some((w) => w.startsWith('common_required_page_skipped')),
+    ).toBe(false);
+  });
+
+  it('J-Half без half_class и без sixth, но есть full_class → J-Full как fallback', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [{ master_name: 'J-Half' }],
+          },
+        ],
+      }),
+    });
+    // half_class=0, sixth=0, full_class=1 → J-Collage-6 не подойдёт,
+    // переходим к J-Full
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ half_class: 0, sixth: 0, full_class: 1 }),
+    );
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Full');
+    expect(
+      result.warnings.some((w) => w.startsWith('common_required_fallback_used')),
+    ).toBe(true);
+  });
+
+  it('J-Half вообще нет фоток ни одной категории → page_skipped как раньше', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [{ master_name: 'J-Half' }],
+          },
+        ],
+      }),
+    });
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ half_class: 0, sixth: 0, full_class: 0, quarter: 0 }),
+    );
+    // Все fallback'и тоже не подошли → старое поведение
+    expect(result.spreads).toHaveLength(0);
+    expect(
+      result.warnings.some((w) => w.startsWith('common_required_page_skipped')),
+    ).toBe(true);
+    expect(
+      result.warnings.some((w) => w.startsWith('common_required_fallback_used')),
+    ).toBe(false);
+  });
+
+  it('J-Collage-6 без sixth, но есть half → J-Half как fallback', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [{ master_name: 'J-Collage-6' }],
+          },
+        ],
+      }),
+    });
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ half_class: 2, sixth: 0, full_class: 0 }),
+    );
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Half');
+    expect(
+      result.warnings.some((w) => w.startsWith('common_required_fallback_used')),
+    ).toBe(true);
+  });
+
+  it('J-Half с достаточным half_class → fallback НЕ срабатывает', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'test',
+        section_structure: [
+          {
+            type: 'common_required',
+            pages: [{ master_name: 'J-Half' }],
+          },
+        ],
+      }),
+    });
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ half_class: 2, sixth: 6, full_class: 1 }),
+    );
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Half');
+    expect(
+      result.warnings.some((w) => w.startsWith('common_required_fallback_used')),
+    ).toBe(false);
+  });
+});

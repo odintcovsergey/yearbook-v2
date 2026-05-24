@@ -99,6 +99,34 @@ const WARNING_LEVELS: Record<string, WarningLevel> = {
   common_required_page_skipped: 'degraded',
   common_required_empty: 'info',
   common_required_spread_misaligned: 'info',
+  // РЭ.38.1 — fallback использован: страница построилась запасным мастером
+  // (вместо изначально выбранного партнёром). Это успешный исход, не сбой.
+  common_required_fallback_used: 'info',
+
+  // РЭ.37 — transition коды
+  // transition_complectation_unknown — это нормальный исход для legacy-шаблонов
+  // (когда students.ts кладёт мастер с именем, которое engine не распознаёт).
+  // Разворот при этом всё равно корректно закрывается через J-цепочку.
+  transition_complectation_unknown: 'info',
+  // transition_skipped — настоящая проблема (правая страница не закрылась)
+  transition_skipped: 'degraded',
+  // transition_combo_master_missing — combo не найден в template_set, но
+  // разворот может быть закрыт через closing-цепочку — degraded.
+  transition_combo_master_missing: 'degraded',
+  transition_custom_master_missing: 'degraded',
+  transition_custom_master_invalid: 'degraded',
+  transition_custom_skipped: 'degraded',
+  transition_custom_no_tail_page: 'degraded',
+  transition_master_missing: 'degraded',
+  transition_no_tail_page: 'degraded',
+
+  // Generic engine коды — informational. rule_engine_partial всегда
+  // сопровождает другие warnings (status='partial' iff warnings.length>0),
+  // поэтому не должен сам по себе акцентироваться — это просто шум,
+  // дубль факта «есть warnings». Реальная серьёзность — у конкретных
+  // warnings в списке.
+  rule_engine_partial: 'info',
+  rule_engine_warning: 'info',
 
   // РЭ.21.8 — common (auto/manual) коды
   slot_skipped: 'degraded',

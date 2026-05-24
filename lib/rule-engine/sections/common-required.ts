@@ -36,6 +36,55 @@ import { humanPhotoCategory, type SectionFillContext } from './shared';
 /** Категории общих фото — соответствуют полям CommonPhotoCounts. */
 type CommonCategory = 'full_class' | 'half_class' | 'quarter' | 'sixth' | 'spread';
 
+/**
+ * РЭ.38.1 (25.05.2026): резервные варианты на случай когда выбранный
+ * партнёром мастер не строится из-за нехватки фотографий нужной категории.
+ *
+ * Идея: партнёр в шаблоне указал J-Half (нужно 2 half_class), но фоток
+ * этой категории не хватило. Прежде чем оставить страницу пустой, engine
+ * пробует подобрать «похожий» мастер из соседних категорий. Это снижает
+ * число пустых страниц в готовом альбоме и даёт партнёру понятный
+ * info-warning «вместо X поставлен Y», вместо тревожного скип-warning'а.
+ *
+ * Логика выбора резервов:
+ *   • Для half_class — попробовать J-Collage-6 (sixth) → J-Full (full)
+ *   • Для sixth — J-Half → J-Full
+ *   • Для full_class — J-Half → J-Collage-6
+ *   • Для quarter — J-Half → J-Collage-6 → J-Full
+ *
+ * Сначала идут «дешёвые» по дефицитности (sixth обычно больше всех),
+ * затем full_class (тоже умеренно дефицитен — обычно 1-3 кадра).
+ *
+ * Партнёр может убрать engine-fallback'и переопределив страницы вручную
+ * в редакторе (РЭ.38.2 — clickable замена шаблона на пустой странице).
+ */
+type FallbackOption = {
+  masterName: string;
+  // category и needCount выводятся через analyzeMasterCapability(),
+  // здесь только подсказка для документации:
+  description: string;
+};
+
+const FALLBACK_CHAIN: Record<Exclude<CommonCategory, 'spread'>, FallbackOption[]> = {
+  half_class: [
+    { masterName: 'J-Collage-6', description: '6 фото для коллажа' },
+    { masterName: 'J-Full', description: '1 общее фото класса' },
+  ],
+  sixth: [
+    { masterName: 'J-Half', description: '2 половинных фото' },
+    { masterName: 'J-Full', description: '1 общее фото класса' },
+  ],
+  full_class: [
+    { masterName: 'J-Half', description: '2 половинных фото' },
+    { masterName: 'J-Collage-6', description: '6 фото для коллажа' },
+  ],
+  quarter: [
+    { masterName: 'J-Half', description: '2 половинных фото' },
+    { masterName: 'J-Collage-6', description: '6 фото для коллажа' },
+    { masterName: 'J-Full', description: '1 общее фото класса' },
+  ],
+};
+
 /** Возможности мастера, выведенные из placeholders. */
 type MasterCapability = {
   category: CommonCategory | null;
@@ -205,33 +254,106 @@ export function fillCommonRequiredSection(
     }
 
     // 3. Хватает ли фото в категории.
-    const haveCount = availablePhotos(ctx, ability.category, spreadConsumed);
-    if (haveCount < ability.count) {
-      const needMore = ability.count - haveCount;
-      const categoryRu = humanPhotoCategory(ability.category);
-      // РЭ.37.3.b.2 (25.05.2026): формулировка для партнёра, не разработчика.
-      // Указываем номер страницы в общем разделе (1-based), категорию по-русски,
-      // сколько именно фото докинуть, и куда дальше идти если фото нет.
+    // РЭ.38.1 (25.05.2026): если не хватает — пробуем подобрать резервный
+    // мастер из FALLBACK_CHAIN прежде чем оставить страницу пустой.
+    // Это снижает число пустых страниц в готовом альбоме и даёт партнёру
+    // info-warning вместо тревожного skip-warning'а.
+    let activeMaster = baseMaster;
+    // ability.category уже non-null после early return на шаге 2.
+    // Явно фиксируем тип чтобы TS не терял narrowing после let-присваивания.
+    let activeAbility: { category: Exclude<CommonCategory, never>; count: number } = {
+      category: ability.category,
+      count: ability.count,
+    };
+    let usedFallback: { from: string; to: string; reason: string } | null = null;
+
+    const haveCount = availablePhotos(ctx, activeAbility.category, spreadConsumed);
+    if (haveCount < activeAbility.count) {
+      // Не хватает. Пробуем fallback-цепочку (только для не-spread категорий —
+      // spread мастера занимают целый разворот и заменить его одной страницей
+      // нельзя).
+      let fallbackFound = false;
+      if (activeAbility.category !== 'spread') {
+        const chain = FALLBACK_CHAIN[activeAbility.category];
+        for (const option of chain) {
+          const candidate = ctx.bundle.mastersByName.get(option.masterName);
+          if (!candidate) continue; // у партнёра нет такого мастера
+          const candidateAbility = analyzeMasterCapability(candidate);
+          if (candidateAbility.category === null) continue;
+          if (candidateAbility.category === 'spread') continue; // защита
+          const candidateHave = availablePhotos(
+            ctx,
+            candidateAbility.category,
+            spreadConsumed,
+          );
+          if (candidateHave < candidateAbility.count) continue; // тоже не хватает
+
+          // Подходит — переключаемся на этот мастер.
+          // candidateAbility.category уже non-null (проверено выше).
+          activeMaster = candidate;
+          activeAbility = {
+            category: candidateAbility.category,
+            count: candidateAbility.count,
+          };
+          usedFallback = {
+            from: masterName,
+            to: candidate.name,
+            reason: `${humanPhotoCategory(ability.category)}: загружено ${haveCount}, нужно ${ability.count}`,
+          };
+          fallbackFound = true;
+          break;
+        }
+      }
+
+      if (!fallbackFound) {
+        // Ни один резервный вариант не подошёл — страница остаётся пустой.
+        const needMore = ability.count - haveCount;
+        const categoryRu = humanPhotoCategory(ability.category);
+        ctx.warnings.push(
+          `common_required_page_skipped: страница ${i + 1} общего раздела — ` +
+            `шаблон «${masterName}» пропущен. Нужно ${ability.count} фото типа ` +
+            `«${categoryRu}», загружено ${haveCount}. Загрузите ещё ${needMore} ` +
+            `или замените шаблон вручную в редакторе.`,
+        );
+        ctx.decisionTrace.push({
+          spread_index: Math.floor(ctx.pageInstances.length / 2),
+          section_index: ctx.sectionIndex,
+          family_id: 'common-required',
+          rule_id: `skip:no_photos:${masterName}`,
+          inputs: {
+            page_num: i + 1,
+            master_name: masterName,
+            category: ability.category,
+            need: ability.count,
+            have: haveCount,
+          },
+        });
+        continue;
+      }
+    }
+
+    // Если был выбран fallback — оставим info warning с понятным объяснением.
+    if (usedFallback) {
       ctx.warnings.push(
-        `common_required_page_skipped: страница ${i + 1} общего раздела — ` +
-          `шаблон «${masterName}» пропущен. Нужно ${ability.count} фото типа ` +
-          `«${categoryRu}», загружено ${haveCount}. Загрузите ещё ${needMore} ` +
+        `common_required_fallback_used: страница ${i + 1} общего раздела — ` +
+          `вместо шаблона «${usedFallback.from}» выбран «${usedFallback.to}», ` +
+          `потому что не хватило фото (${usedFallback.reason}). ` +
+          `Чтобы вернуть исходный шаблон, загрузите больше фото нужного типа ` +
           `или замените шаблон вручную в редакторе.`,
       );
       ctx.decisionTrace.push({
         spread_index: Math.floor(ctx.pageInstances.length / 2),
         section_index: ctx.sectionIndex,
         family_id: 'common-required',
-        rule_id: `skip:no_photos:${masterName}`,
+        rule_id: `fallback:${usedFallback.from}->${usedFallback.to}`,
         inputs: {
           page_num: i + 1,
-          master_name: masterName,
-          category: ability.category,
-          need: ability.count,
-          have: haveCount,
+          requested_master: usedFallback.from,
+          actual_master: usedFallback.to,
+          original_category: ability.category,
+          fallback_category: activeAbility.category,
         },
       });
-      continue;
     }
 
     // 4. Особый случай — J-Spread (is_spread=true).
@@ -243,25 +365,25 @@ export function fillCommonRequiredSection(
     // первую запись section_start=true если фактическая позиция
     // в pageInstances нечётна (висит разворот). virtualPos после
     // J-Spread продвигается на 2 (он занял оба слота разворота).
-    if (baseMaster.is_spread === true) {
-      const bindings = bindCommonPhotos(baseMaster, ctx.input, ctx.available);
+    if (activeMaster.is_spread === true) {
+      const bindings = bindCommonPhotos(activeMaster, ctx.input, ctx.available);
       const startNewSpread = ctx.pageInstances.length % 2 !== 0;
       ctx.pageInstances.push({
-        master_id: baseMaster.id,
+        master_id: activeMaster.id,
         bindings,
         ...(startNewSpread ? { section_start: true } : {}),
       });
-      ctx.pageInstances.push({ master_id: baseMaster.id, bindings: {} });
+      ctx.pageInstances.push({ master_id: activeMaster.id, bindings: {} });
       spreadConsumed += 1;
       virtualPos += 2; // J-Spread занял две виртуальные позиции
       ctx.decisionTrace.push({
         spread_index: Math.floor((ctx.pageInstances.length - 2) / 2),
         section_index: ctx.sectionIndex,
         family_id: 'common-required',
-        rule_id: `pages:${i + 1}:${masterName}:spread${startNewSpread ? ':forced_new' : ''}`,
+        rule_id: `pages:${i + 1}:${activeMaster.name}:spread${startNewSpread ? ':forced_new' : ''}`,
         inputs: {
           page_num: i + 1,
-          master_name: masterName,
+          master_name: activeMaster.name,
           category: 'spread',
           count: 1,
           forced_new_spread: startNewSpread,
@@ -289,14 +411,14 @@ export function fillCommonRequiredSection(
     const position: 'left' | 'right' = expectedSide;
     const master =
       position === 'right'
-        ? tryRightMirror(baseMaster, ctx.bundle.mastersByName)
-        : baseMaster;
+        ? tryRightMirror(activeMaster, ctx.bundle.mastersByName)
+        : activeMaster;
 
     const bindings = bindCommonPhotos(master, ctx.input, ctx.available);
 
     // Декремент available только для не-spread категорий.
     const consumes: SlotConsumes = {};
-    consumes[ability.category as Exclude<CommonCategory, 'spread'>] = ability.count;
+    consumes[activeAbility.category as Exclude<CommonCategory, 'spread'>] = activeAbility.count;
     decrementAvailable(ctx.available, consumes);
 
     ctx.pageInstances.push({
@@ -319,8 +441,8 @@ export function fillCommonRequiredSection(
       inputs: {
         page_num: i + 1,
         master_name: master.name,
-        category: ability.category,
-        count: ability.count,
+        category: activeAbility.category,
+        count: activeAbility.count,
         position,
       },
     });
