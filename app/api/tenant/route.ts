@@ -3227,9 +3227,12 @@ export async function POST(req: NextRequest) {
   //
   // Шаги:
   //   1. SELECT preset → 404 если не найден или не свой.
-  //   2. SELECT FROM albums WHERE (config_preset_id=template_id OR
-  //      section_structure_preset_id=template_id) AND archived=false.
-  //      Если > 0 → 409 со списком альбомов.
+  //   2. SELECT FROM albums WHERE section_structure_preset_id =
+  //      template_id AND archived=false. Если > 0 → 409 со списком.
+  //      (partner-preset.id — text типа 'blank-XXX'; ссылается из
+  //      albums.section_structure_preset_id, тоже text. Колонка
+  //      albums.config_preset_id здесь не при чём — она uuid и
+  //      ссылается на отдельную таблицу config_presets.)
   //   3. DELETE FROM presets.
   //
   // Доступ: admin/owner/superadmin (photographer тоже может).
@@ -3275,19 +3278,26 @@ export async function POST(req: NextRequest) {
     }
 
     // Проверка активных альбомов.
-    // Колонка albums.preset_id была удалена в миграциях (см. 2026-05-20
-    // albums-drop-rules-preset-id.sql). Сейчас пресет может быть указан
-    // в одном из двух полей:
-    //   • albums.config_preset_id            — основной пресет настроек
-    //   • albums.section_structure_preset_id — пресет section_structure
-    // Проверяем оба, чтобы не дать удалить пресет используемый в любом
-    // из них.
+    //
+    // ВАЖНО: partner-presets живут в таблице `presets` (id типа text,
+    // например 'blank-79fqdve8'). Из albums на них ссылается ТОЛЬКО
+    // колонка section_structure_preset_id (text).
+    //
+    // albums.config_preset_id (uuid) ссылается на ДРУГУЮ таблицу
+    // config_presets (тоже uuid) — это глобальные пресеты движка.
+    // Их через этот endpoint не удаляем; и проверять их не нужно
+    // т.к. partner-пресет не может быть указан в config_preset_id.
+    //
+    // Раньше тут была проверка по несуществующей колонке preset_id —
+    // 500 ошибка. После 6f7f52b я добавил .or() с обеими колонками,
+    // но это сломало запрос: text-id (blank-XXX) сравнивался с uuid-
+    // колонкой config_preset_id, и Postgres валил запрос с ошибкой
+    // 'invalid input syntax for type uuid'. Сейчас проверяем только
+    // нужную text-колонку.
     const { data: albums, error: albumsErr } = await supabaseAdmin
       .from('albums')
       .select('id, title, archived')
-      .or(
-        `config_preset_id.eq.${templateId},section_structure_preset_id.eq.${templateId}`,
-      )
+      .eq('section_structure_preset_id', templateId)
       .eq('archived', false)
     if (albumsErr) {
       return NextResponse.json({ error: albumsErr.message }, { status: 500 })
