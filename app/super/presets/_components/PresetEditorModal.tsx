@@ -68,7 +68,9 @@ export interface Preset {
 }
 
 export type Section =
-  | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
+  | { type: 'teachers' | 'students' | 'vignette' }
+  | { type: 'soft_intro'; master_name?: string | null }   // РЭ.42
+  | { type: 'soft_final'; master_name?: string | null }   // РЭ.42
   | { type: 'common'; slots: string[] }
   | { type: 'common'; mode: 'auto'; max_spreads: number }
   | { type: 'common_required'; pages?: { master_name: string }[] }
@@ -969,6 +971,33 @@ function SectionsEditor({
                 )}
               </div>
             )}
+            {/* РЭ.42.c — soft_intro / soft_final: опциональный мастер.
+                Партнёр может вместо автоматического classphoto положить
+                любой мастер template_set (учителя, классный руководитель,
+                воспитатели детсада и т.д.). */}
+            {(s.type === 'soft_intro' || s.type === 'soft_final') && (
+              <div className="mt-3">
+                {!hasTemplateSet ? (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    Выберите дизайн (template_set) у шаблона, чтобы выбрать
+                    мастер вступительной/финальной страницы.
+                  </p>
+                ) : templatesLoading ? (
+                  <p className="text-xs text-gray-400 italic">
+                    Загрузка мастеров…
+                  </p>
+                ) : (
+                  <SoftSectionMasterPicker
+                    sectionType={s.type}
+                    value={s.master_name ?? null}
+                    templates={templates}
+                    onChange={(name) =>
+                      onUpdate(idx, { master_name: name } as Partial<Section>)
+                    }
+                  />
+                )}
+              </div>
+            )}
             {/* common manual: slots — пока read-only (партнёры используют new секции) */}
             {s.type === 'common' && 'slots' in s && (
               <div className="mt-2">
@@ -1135,6 +1164,81 @@ function TransitionMasterSelector({
           или удалён). Engine применит правило по умолчанию.
         </p>
       )}
+    </div>
+  )
+}
+
+// ─── SoftSectionMasterPicker ─────────────────────────────────────────────
+//
+// РЭ.42.c — выбор мастера для soft_intro / soft_final.
+//
+// Опциональный select: «По умолчанию (общее фото класса)» или конкретный
+// мастер из template_set'а. Используется когда партнёр хочет вместо
+// автоматического classphoto положить учителей / классного руководителя /
+// воспитателей / любой другой мастер на вступительной (правая 1-го разворота)
+// или финальной странице soft-альбома.
+//
+// Фильтрация: показываем ВСЕ мастера template_set без -Right вариантов
+// (зеркальные дубликаты для зеркальных пресетов). Партнёр сам решает что
+// положить — у мастера могут быть placeholder'ы любых типов (classphoto,
+// teacher, half, subjects). Engine при override автоматически связывает
+// все известные placeholder'ы (см. bindOverrideMasterPlaceholders, РЭ.42.b.2).
+
+function SoftSectionMasterPicker({
+  sectionType,
+  value,
+  templates,
+  onChange,
+}: {
+  sectionType: 'soft_intro' | 'soft_final'
+  value: string | null
+  templates: SpreadTemplate[]
+  onChange: (masterName: string | null) => void
+}) {
+  // -Right варианты не показываем — это зеркальные дубликаты, engine
+  // подставит их сам если потребуется (см. tryRightMirror в common-required).
+  const candidates = templates.filter((t) => !t.name.endsWith('-Right'))
+
+  const selectedExists =
+    value === null || candidates.some((t) => t.name === value)
+
+  const sectionLabel =
+    sectionType === 'soft_intro' ? 'вступительной' : 'финальной'
+  const defaultLabel =
+    sectionType === 'soft_intro'
+      ? 'По умолчанию (общее фото класса)'
+      : 'По умолчанию (общее фото класса / прощание)'
+
+  return (
+    <div className="space-y-1">
+      <label className="text-xs text-gray-600">
+        Мастер {sectionLabel} страницы:
+      </label>
+      <select
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
+        className="w-full border rounded px-2 py-1 text-sm"
+      >
+        <option value="">{defaultLabel}</option>
+        {candidates
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((t) => (
+            <option key={t.id} value={t.name}>
+              {t.name}
+            </option>
+          ))}
+      </select>
+      {!selectedExists && value && (
+        <p className="text-xs text-amber-600">
+          Мастер «{value}» не найден в текущем дизайне (был переименован
+          или удалён). Engine применит правило по умолчанию.
+        </p>
+      )}
+      <p className="text-xs text-gray-500">
+        {sectionType === 'soft_intro'
+          ? 'Выберите свой мастер (учителя, классный руководитель, воспитатели и т.д.) или оставьте по умолчанию — engine положит общее фото класса.'
+          : 'Выберите свой мастер для финальной страницы или оставьте по умолчанию — engine положит общее фото класса / прощание.'}
+      </p>
     </div>
   )
 }
