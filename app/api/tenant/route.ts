@@ -3975,6 +3975,10 @@ export async function POST(req: NextRequest) {
       section_structure_preset_id:
         sourceAlbum.section_structure_preset_id ?? null,
       include_non_purchasers: sourceAlbum.include_non_purchasers ?? false,
+      // РЭ.40: стратегия распределения учеников — копируем как есть.
+      // Если у источника старое значение (до миграции, undefined) — БД
+      // подставит DEFAULT 'auto'.
+      student_distribution: sourceAlbum.student_distribution ?? 'auto',
       // archived и вновь созданные служебные поля БД заполняет сама
     }
 
@@ -4550,6 +4554,8 @@ export async function POST(req: NextRequest) {
                                        // удалён вместе с движком)
       'include_non_purchasers',  // РЭ.25: включать ли не-заказчиков (children.is_purchased=false)
                                   // в персональные страницы. Default false (строгое).
+      'student_distribution',  // РЭ.40: 'auto'|'equalize'|'greedy' — стратегия распределения
+                                // учеников по grid-страницам (только mini/light).
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {

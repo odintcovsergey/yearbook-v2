@@ -32,6 +32,24 @@ export interface Album {
    * engine применит resolvePrintType(album, preset).
    */
   print_type?: PrintType | null
+  /**
+   * РЭ.40: стратегия распределения учеников по grid-страницам.
+   * Применяется только к density='mini' и 'light' (где есть grid-сетка
+   * с одним мастером на полную страницу). Для 'medium', 'standard',
+   * 'universal' поле игнорируется.
+   *
+   * Режимы:
+   * - 'greedy' — жадное распределение (12+12+6), может симметризовать
+   *   хвост 1 (legacy-поведение)
+   * - 'equalize' — всегда равномерно (10+10+10), даже если есть фото
+   *   для combined-tail
+   * - 'auto' — умный алгоритм: combined+equalize если фото и подходит,
+   *   иначе чистый equalize
+   *
+   * Default 'auto' для новых и существующих альбомов (миграция
+   * 2026-05-25-albums-student-distribution.sql).
+   */
+  student_distribution?: 'auto' | 'equalize' | 'greedy'
 }
 
 export interface Child {

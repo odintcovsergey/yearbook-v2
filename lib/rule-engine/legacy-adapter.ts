@@ -71,5 +71,6 @@ export function adaptLegacyAlbumInput(legacy: AlbumInput): RulesAlbumInput {
     head_teacher,
     common_photos,
     common_section_max_spreads: legacy.common_section_max_spreads,
+    student_distribution: legacy.student_distribution,
   };
 }

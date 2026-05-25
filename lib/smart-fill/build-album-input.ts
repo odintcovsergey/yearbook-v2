@@ -308,6 +308,11 @@ export async function buildAlbumInput(
     // А.4 — лимит количества разворотов в общем разделе (NULL = без лимита).
     common_section_max_spreads:
       (album as { common_section_max_spreads?: number | null }).common_section_max_spreads ?? null,
+    // РЭ.40 — стратегия распределения учеников по grid-страницам.
+    // Если поле отсутствует (старый альбом до миграции) — undefined,
+    // engine применит 'auto' как default.
+    student_distribution:
+      (album as { student_distribution?: 'auto' | 'equalize' | 'greedy' }).student_distribution,
   };
 
   const warnings: SmartFillWarning[] = [];

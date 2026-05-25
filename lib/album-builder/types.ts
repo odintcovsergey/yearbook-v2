@@ -117,6 +117,12 @@ export type AlbumInput = {
    * Заполняется из `albums.common_section_max_spreads` в smart-fill.
    */
   common_section_max_spreads?: number | null;
+  /**
+   * РЭ.40: стратегия распределения учеников по grid-страницам
+   * (mini, light). Заполняется из albums.student_distribution.
+   * Если не задано — engine применяет 'auto'.
+   */
+  student_distribution?: 'auto' | 'equalize' | 'greedy';
 };
 
 // ─── Литералы (синхронны с CHECK constraints) ─────────────────────────────

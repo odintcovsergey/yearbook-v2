@@ -756,6 +756,19 @@ export interface RulesAlbumInput {
    * albums.common_section_max_spreads отдельной миграцией.
    */
   common_section_max_spreads?: number | null;
+  /**
+   * РЭ.40: стратегия распределения учеников по grid-страницам.
+   * Применяется только в grid-режимах (Mini, Light).
+   *
+   * - 'greedy' — жадное (12+12+6) + симметризация хвоста 1
+   * - 'equalize' — всегда равномерно (10+10+10)
+   * - 'auto' — combined-tail+equalize если есть фото и combined-мастер
+   *   с подходящим slot_capacity; иначе чистый equalize
+   *
+   * Значение из albums.student_distribution через legacy-adapter.
+   * Если undefined — engine применяет 'auto' (default).
+   */
+  student_distribution?: 'auto' | 'equalize' | 'greedy';
 }
 
 // =============================================================================
