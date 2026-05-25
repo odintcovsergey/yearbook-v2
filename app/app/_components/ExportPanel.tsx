@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
+import { api } from '@/lib/api-client'
 
 // ─── Типы (зеркало серверных ответов) ────────────────────────────────────
 
@@ -79,7 +80,7 @@ function buildUrl(base: string, viewAsTenantId?: string): string {
 }
 
 async function apiGet<T>(url: string): Promise<T> {
-  const r = await fetch(url, { credentials: 'include' })
+  const r = await api(url)
   if (!r.ok) {
     const text = await r.text()
     throw new Error(`${r.status}: ${text}`)
@@ -88,10 +89,8 @@ async function apiGet<T>(url: string): Promise<T> {
 }
 
 async function apiPost<T>(url: string, body: unknown): Promise<T> {
-  const r = await fetch(url, {
+  const r = await api(url, {
     method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   if (!r.ok) {

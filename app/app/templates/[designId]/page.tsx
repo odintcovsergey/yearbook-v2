@@ -29,6 +29,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import { api } from '@/lib/api-client'
 import PresetEditorModal, {
   type Preset as EditableP,
 } from '@/app/super/presets/_components/PresetEditorModal'
@@ -70,48 +71,9 @@ interface AuthData {
   isLegacy?: boolean
 }
 
-// API-хелпер с auto-refresh при 401.
-// При истечении короткоживущего access-token (~15 минут) автоматически
-// дёргаем /api/auth action=refresh и повторяем запрос. Без этого после
-// 15 минут на странице любые действия (Удалить / Редактировать) тихо
-// падали с 401 «Необходима авторизация» — точно та же логика что в
-// app/app/page.tsx (см. 6f7f52b → этот fix).
-let _refreshing: Promise<boolean> | null = null
-
-async function refreshAccessToken(): Promise<boolean> {
-  if (_refreshing) return _refreshing
-  _refreshing = fetch('/api/auth', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'refresh' }),
-  })
-    .then((r) => r.ok)
-    .catch(() => false)
-    .finally(() => {
-      _refreshing = null
-    })
-  return _refreshing
-}
-
-const api = async (path: string, opts?: RequestInit): Promise<Response> => {
-  const res = await fetch(path, {
-    ...opts,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...opts?.headers },
-  })
-  if (res.status === 401) {
-    const ok = await refreshAccessToken()
-    if (ok) {
-      return fetch(path, {
-        ...opts,
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...opts?.headers },
-      })
-    }
-  }
-  return res
-}
+// api() с auto-refresh JWT теперь импортируется из @/lib/api-client.
+// Module ранее жил здесь локально (5cc4a7d добавил его сюда; общий
+// клиент — следующая итерация чтобы не дублировать код).
 
 // ─── Главная страница ──────────────────────────────────────────────────────
 

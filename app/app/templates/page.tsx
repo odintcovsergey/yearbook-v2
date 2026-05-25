@@ -21,6 +21,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { CloneTemplateSetModal } from './_components/CloneTemplateSetModal'
+import { api } from '@/lib/api-client'
 
 interface Design {
   id: string
@@ -42,12 +43,7 @@ interface AuthData {
   isLegacy?: boolean
 }
 
-const api = (path: string, opts?: RequestInit) =>
-  fetch(path, {
-    ...opts,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...opts?.headers },
-  })
+// api() с auto-refresh теперь импортируется из @/lib/api-client.
 
 export default function DesignsListPage() {
   const router = useRouter()

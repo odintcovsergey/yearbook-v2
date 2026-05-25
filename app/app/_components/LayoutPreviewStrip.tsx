@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import type { SpreadInstance, SpreadTemplate } from '@/lib/album-builder/types'
+import { api } from '@/lib/api-client'
 
 // Dynamic import: AlbumSpreadCanvas использует window.Image (Konva), SSR-incompatible.
 const AlbumSpreadCanvas = dynamic(
@@ -49,11 +50,10 @@ type VisualSpread =
       key: number
     }
 
-// ─── Хелпер: API-fetch (тот же стиль что в page.tsx — credentials: include) ──
+// ─── Хелпер: API-fetch с auto-refresh JWT (см. lib/api-client.ts) ──
 async function fetchTemplateDetail(templateSetId: string): Promise<TemplateDetailResponse> {
-  const r = await fetch(
+  const r = await api(
     `/api/layout?action=template_set_detail&id=${templateSetId}`,
-    { credentials: 'include', headers: { 'Content-Type': 'application/json' } },
   )
   if (!r.ok) {
     throw new Error(`template_set_detail failed: ${r.status}`)

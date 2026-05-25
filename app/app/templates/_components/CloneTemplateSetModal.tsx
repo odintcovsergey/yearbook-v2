@@ -22,6 +22,7 @@
 'use client'
 
 import { useState, useMemo, useCallback } from 'react'
+import { api } from '@/lib/api-client'
 import {
   checkAspectCompatibility,
   mmToPx,
@@ -42,12 +43,7 @@ interface Props {
   onSuccess: (newTsId: string) => void
 }
 
-const api = (path: string, opts?: RequestInit) =>
-  fetch(path, {
-    ...opts,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...opts?.headers },
-  })
+// api() с auto-refresh теперь импортируется из @/lib/api-client.
 
 export function CloneTemplateSetModal({
   source,
