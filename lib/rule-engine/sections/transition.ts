@@ -63,7 +63,7 @@ import {
 import { detectComplectationFromLastPage } from '../detect-complectation';
 import { pushCombinedTailPage, pushGridPage } from './students';
 import type { SectionFillContext } from './shared';
-import type { SectionStructureEntry } from '../types';
+import type { SectionStructureEntry, TransitionScenario } from '../types';
 
 // ─── J-цепочка (закрывающие страницы переходного раздела) ───────────────
 
@@ -259,6 +259,17 @@ export function fillTransitionSection(
   ctx: SectionFillContext,
   sectionEntry: Extract<SectionStructureEntry, { type: 'transition' }>,
 ): void {
+  // ─── РЭ.37.6: ручной сценарий из пресета ─────────────────────────────
+  // Если в пресете явно задан custom-сценарий (через UI редактора пресетов
+  // РЭ.37.6.d), используем его — это override OkeyBook-логики. Применяется
+  // независимо от section_structure entry. Симметризация хвоста в этом
+  // режиме игнорируется (партнёр сам решил что класть на хвост).
+  const presetScenario = ctx.bundle.preset.transition_scenario;
+  if (presetScenario && presetScenario.mode === 'custom') {
+    fillPresetCustomScenario(ctx, presetScenario);
+    return;
+  }
+
   // ─── РЭ.37.2.c: явный custom-сценарий партнёра ─────────────────────
   if (sectionEntry.mode === 'custom') {
     fillCustomMode(ctx, sectionEntry);
@@ -1071,6 +1082,236 @@ function trySymmetrizeTail(
   );
 
   return true;
+}
+
+// ─── РЭ.37.6: ручной сценарий из preset.transition_scenario ─────────────
+
+/**
+ * РЭ.37.6: заполнение transition по ручному сценарию из пресета.
+ *
+ * В отличие от fillCustomMode (РЭ.37.2.c, который читает custom из
+ * section_structure entry и применяется ТОЛЬКО для combo-кейсов),
+ * эта функция:
+ *   • Читает сценарий из preset.transition_scenario (TransitionScenario,
+ *     mode='custom').
+ *   • Применяется ВСЕГДА когда сценарий есть — независимо от чётности,
+ *     наличия combo, типа последней students-страницы и т.д.
+ *   • НЕ определяет комплектацию (detectComplectation не вызывается).
+ *   • НЕ применяет симметризацию (партнёр явно решил что класть).
+ *
+ * Алгоритм:
+ *   1. Если tail_left_master_id задан:
+ *      • POP последней students-страницы (она будет заменена).
+ *        Восстанавливаем available.full_class если popped был
+ *        combined_tail с classphoto.
+ *      • Найти мастер в template_set по id. Если не найден → warning,
+ *        возвращаем popped обратно.
+ *      • PUSH мастер:
+ *        – Если содержит studentportrait_N — это grid/combo, используем
+ *          pushCombinedTailPage или pushGridPage с теми же tail-учениками.
+ *        – Иначе — это common-мастер, используем bindCommonPhotos.
+ *   2. Если tail_right_master_id задан И правая висит — PUSH мастер.
+ *   3. Если tail_right_master_id НЕ задан И правая висит — стандартный
+ *      tryJChainClosing.
+ *
+ * closing_master_id пока ИГНОРИРУЕТСЯ — резерв на будущее.
+ */
+function fillPresetCustomScenario(
+  ctx: SectionFillContext,
+  scenario: Extract<TransitionScenario, { mode: 'custom' }>,
+): void {
+  ctx.decisionTrace.push({
+    spread_index: Math.floor(ctx.pageInstances.length / 2),
+    section_index: ctx.sectionIndex,
+    family_id: 'transition',
+    rule_id: 'preset_custom_scenario:start',
+    inputs: {
+      tail_left_master_id: scenario.tail_left_master_id,
+      tail_right_master_id: scenario.tail_right_master_id,
+    },
+  });
+
+  // Шаг 1: замена левой (хвостовой) страницы.
+  if (scenario.tail_left_master_id !== null) {
+    const masterId = scenario.tail_left_master_id;
+    let leftMaster: SpreadTemplate | undefined;
+    for (const m of Array.from(ctx.bundle.mastersByName.values())) {
+      if (m.id === masterId) {
+        leftMaster = m;
+        break;
+      }
+    }
+    if (!leftMaster) {
+      ctx.warnings.push(
+        `transition_custom_master_not_found: мастер с id='${masterId}' ` +
+          `(tail_left из preset.transition_scenario) не найден в ` +
+          `template_set. Хвостовая students-страница оставлена как есть.`,
+      );
+    } else if (ctx.pageInstances.length === 0) {
+      ctx.warnings.push(
+        'transition_custom_no_tail_page: preset.transition_scenario задаёт ' +
+          'tail_left, но pageInstances пуст (students-секция не положила ни ' +
+          'одной страницы). tail_left не применён.',
+      );
+    } else {
+      const popped = ctx.pageInstances.pop()!;
+      const poppedHadClassphoto =
+        typeof popped.bindings?.classphotoframe === 'string' &&
+        popped.bindings.classphotoframe.length > 0;
+      if (poppedHadClassphoto) {
+        ctx.available.full_class += 1;
+      }
+
+      const hasStudentPortraits = (leftMaster.placeholders ?? []).some(
+        (ph) => /^studentportrait_\d+$/i.test(ph.label),
+      );
+      const hasClassPhoto = (leftMaster.placeholders ?? []).some(
+        (ph) => ph.label.toLowerCase() === 'classphotoframe',
+      );
+
+      if (hasStudentPortraits) {
+        // Grid / Combo мастер. Берём хвостовых учеников из popped.
+        let capacity = 0;
+        for (const ph of leftMaster.placeholders ?? []) {
+          if (/^studentportrait_\d+$/i.test(ph.label)) capacity++;
+        }
+        let tailCount = 0;
+        for (const key of Object.keys(popped.bindings ?? {})) {
+          if (
+            /^studentportrait_\d+$/i.test(key) &&
+            typeof popped.bindings[key] === 'string'
+          ) {
+            tailCount++;
+          }
+        }
+        if (tailCount === 0) tailCount = 1;
+        const tailStudents = ctx.input.students.slice(
+          ctx.input.students.length - tailCount,
+        );
+        if (hasClassPhoto) {
+          pushCombinedTailPage(ctx, leftMaster, tailStudents, capacity, 'mini');
+        } else {
+          pushGridPage(
+            ctx,
+            leftMaster,
+            tailStudents,
+            capacity,
+            `preset_custom_scenario:tail_left:${leftMaster.name}`,
+          );
+        }
+      } else {
+        // Common-мастер.
+        let halfCount = 0;
+        let quarterCount = 0;
+        let collageCount = 0;
+        let hasFull = false;
+        let hasSpread = false;
+        for (const ph of leftMaster.placeholders ?? []) {
+          const label = ph.label.toLowerCase();
+          if (label === 'classphotoframe') hasFull = true;
+          else if (/^halfphoto_\d+$/.test(label)) halfCount++;
+          else if (/^quarterphoto_\d+$/.test(label)) quarterCount++;
+          else if (/^collagephoto_\d+$/.test(label)) collageCount++;
+          else if (label === 'spreadphoto') hasSpread = true;
+        }
+        if (hasSpread) {
+          ctx.warnings.push(
+            `transition_custom_spread_unsupported: мастер '${leftMaster.name}' ` +
+              `(tail_left из preset.transition_scenario) — это J-Spread. ` +
+              `Spread-мастера в transition пока не поддерживаются. Хвост ` +
+              `students оставлен как был.`,
+          );
+          ctx.pageInstances.push(popped);
+          if (poppedHadClassphoto) ctx.available.full_class -= 1;
+        } else {
+          const bindings = bindCommonPhotos(leftMaster, ctx.input, ctx.available);
+          const consumes: SlotConsumes = {};
+          if (collageCount > 0) consumes.sixth = collageCount;
+          else if (quarterCount >= 4) consumes.quarter = 4;
+          else if (halfCount >= 2) consumes.half_class = 2;
+          else if (hasFull) consumes.full_class = 1;
+          if (Object.keys(consumes).length > 0) {
+            decrementAvailable(ctx.available, consumes);
+          }
+          ctx.pageInstances.push({ master_id: leftMaster.id, bindings });
+        }
+      }
+
+      ctx.decisionTrace.push({
+        spread_index: Math.floor((ctx.pageInstances.length - 1) / 2),
+        section_index: ctx.sectionIndex,
+        family_id: 'transition',
+        rule_id: `preset_custom_scenario:tail_left:${leftMaster.name}`,
+        inputs: {
+          master_id: masterId,
+          master_name: leftMaster.name,
+          had_student_portraits: hasStudentPortraits,
+          had_class_photo: hasClassPhoto,
+        },
+      });
+    }
+  }
+
+  // Шаг 2: правая страница.
+  if (scenario.tail_right_master_id !== null) {
+    const masterId = scenario.tail_right_master_id;
+    let rightMaster: SpreadTemplate | undefined;
+    for (const m of Array.from(ctx.bundle.mastersByName.values())) {
+      if (m.id === masterId) {
+        rightMaster = m;
+        break;
+      }
+    }
+    if (!rightMaster) {
+      ctx.warnings.push(
+        `transition_custom_master_not_found: мастер с id='${masterId}' ` +
+          `(tail_right из preset.transition_scenario) не найден в ` +
+          `template_set. Закрытие через стандартную J-цепочку.`,
+      );
+      if (hasVacantRight(ctx)) {
+        tryJChainClosing(ctx);
+      }
+    } else if (!hasVacantRight(ctx)) {
+      ctx.warnings.push(
+        `transition_custom_right_skipped: tail_right_master_id задан, но ` +
+          `правая страница уже занята. Мастер '${rightMaster.name}' пропущен.`,
+      );
+    } else {
+      let halfCount = 0;
+      let quarterCount = 0;
+      let collageCount = 0;
+      let hasFull = false;
+      for (const ph of rightMaster.placeholders ?? []) {
+        const label = ph.label.toLowerCase();
+        if (label === 'classphotoframe') hasFull = true;
+        else if (/^halfphoto_\d+$/.test(label)) halfCount++;
+        else if (/^quarterphoto_\d+$/.test(label)) quarterCount++;
+        else if (/^collagephoto_\d+$/.test(label)) collageCount++;
+      }
+      const bindings = bindCommonPhotos(rightMaster, ctx.input, ctx.available);
+      const consumes: SlotConsumes = {};
+      if (collageCount > 0) consumes.sixth = collageCount;
+      else if (quarterCount >= 4) consumes.quarter = 4;
+      else if (halfCount >= 2) consumes.half_class = 2;
+      else if (hasFull) consumes.full_class = 1;
+      if (Object.keys(consumes).length > 0) {
+        decrementAvailable(ctx.available, consumes);
+      }
+      ctx.pageInstances.push({ master_id: rightMaster.id, bindings });
+      ctx.decisionTrace.push({
+        spread_index: Math.floor((ctx.pageInstances.length - 1) / 2),
+        section_index: ctx.sectionIndex,
+        family_id: 'transition',
+        rule_id: `preset_custom_scenario:tail_right:${rightMaster.name}`,
+        inputs: {
+          master_id: masterId,
+          master_name: rightMaster.name,
+        },
+      });
+    }
+  } else if (hasVacantRight(ctx)) {
+    tryJChainClosing(ctx);
+  }
 }
 
 // ─── Ветка 2: legacy РЭ.32 (master_name явно задан) ─────────────────────

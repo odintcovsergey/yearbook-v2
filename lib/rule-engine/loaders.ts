@@ -14,7 +14,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Preset, Rule, TemplateFamily } from './types';
+import type { Preset, Rule, TemplateFamily, TransitionScenario } from './types';
 import { loadTemplateSet } from '@/lib/album-builder/load-template-set';
 import type { TemplateSet, SpreadTemplate } from '@/lib/album-builder/types';
 
@@ -208,6 +208,46 @@ function presetRowToPreset(row: Record<string, unknown>): Preset {
       typeof row.symmetrize_students_tail === 'boolean'
         ? row.symmetrize_students_tail
         : false,
+    // РЭ.37.6: ручной сценарий transition-разворота. БД хранит как
+    // JSONB или NULL. Парсим safely — если приходит мусор (не object,
+    // или mode не строка) — возвращаем null (engine упадёт на default).
+    transition_scenario: parseTransitionScenario(row.transition_scenario),
+  };
+}
+
+/**
+ * РЭ.37.6: парсер transition_scenario из БД-строки.
+ *
+ * Принимает что угодно (raw JSONB значение) и возвращает либо валидный
+ * TransitionScenario, либо null. Безопасен к мусору — некорректные
+ * структуры → null (engine применит default-логику).
+ *
+ * NB: API уже валидирует структуру на запись (см. rule_preset_update в
+ * app/api/tenant/route.ts) + БД CHECK constraint. Здесь — последняя
+ * линия защиты на случай если что-то пошло не так.
+ */
+function parseTransitionScenario(raw: unknown): TransitionScenario | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const mode = obj.mode;
+  if (mode === 'default') return { mode: 'default' };
+  if (mode !== 'custom') return null;
+  // custom: master_id поля должны быть string|null|undefined.
+  // undefined нормализуем к null.
+  const tail_left = obj.tail_left_master_id;
+  const tail_right = obj.tail_right_master_id;
+  const closing = obj.closing_master_id;
+  const validIdOrNull = (v: unknown): v is string | null =>
+    v === null || v === undefined || typeof v === 'string';
+  if (!validIdOrNull(tail_left) || !validIdOrNull(tail_right) || !validIdOrNull(closing)) {
+    return null;
+  }
+  return {
+    mode: 'custom',
+    tail_left_master_id: typeof tail_left === 'string' ? tail_left : null,
+    tail_right_master_id: typeof tail_right === 'string' ? tail_right : null,
+    closing_master_id: typeof closing === 'string' ? closing : null,
   };
 }
 

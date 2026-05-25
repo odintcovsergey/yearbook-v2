@@ -127,6 +127,7 @@ function makePreset(opts: Partial<Preset> & Pick<Preset, 'id'>): Preset {
     student_has_quote: opts.student_has_quote ?? null,
     student_pages_per_student: opts.student_pages_per_student ?? null,
     symmetrize_students_tail: opts.symmetrize_students_tail ?? null,
+    transition_scenario: opts.transition_scenario ?? null,
   };
 }
 

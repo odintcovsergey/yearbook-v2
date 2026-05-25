@@ -479,6 +479,33 @@ export type SectionStructureEntry =
  */
 export type SectionStructure = SectionStructureEntry[];
 
+/**
+ * РЭ.37.6: ручной сценарий для transition-разворота.
+ *
+ * Хранится в presets.transition_scenario JSONB. NULL в БД эквивалентен
+ * mode='default' (OkeyBook-логика). В TypeScript типе используем
+ * различение по полю mode для type narrowing.
+ *
+ * Поведение в engine'е:
+ *   • mode='default' — обычная OkeyBook-логика (см. fillOkeybookDefault
+ *     в lib/rule-engine/sections/transition.ts).
+ *   • mode='custom' — fillCustomScenario использует master_id из объекта
+ *     напрямую. Симметризация хвоста ИГНОРИРУЕТСЯ. detectComplectation
+ *     не вызывается. Если master_id отсутствует в template_set на момент
+ *     сборки — добавляется warning transition_custom_master_not_found.
+ */
+export type TransitionScenario =
+  | { mode: 'default' }
+  | {
+      mode: 'custom';
+      /** Мастер для левой страницы transition. null = оставить students-страницу. */
+      tail_left_master_id: string | null;
+      /** Мастер для правой страницы transition. null = закрыть J-цепочкой. */
+      tail_right_master_id: string | null;
+      /** Резерв на будущее. Пока игнорируется engine'ом. */
+      closing_master_id: string | null;
+    };
+
 export interface Preset {
   id: string;
   display_name: string;
@@ -602,8 +629,51 @@ export interface Preset {
    *
    * Источник: presets.symmetrize_students_tail BOOLEAN NOT NULL DEFAULT FALSE.
    * Дефолт false (опт-ин). Engine логика реализуется в РЭ.37.4.
+   *
+   * В custom-режиме transition_scenario симметризация ИГНОРИРУЕТСЯ —
+   * партнёр явно задал что класть на хвост (см. РЭ.37.6).
    */
   symmetrize_students_tail?: boolean | null;
+
+  /**
+   * РЭ.37.6: ручной сценарий для transition-разворота.
+   *
+   * По умолчанию (null) engine использует OkeyBook-логику —
+   * автоопределение комплектации по последней students-странице, выбор
+   * combo и closing мастеров автоматически. Это покрывает большинство
+   * случаев.
+   *
+   * Если партнёр в редакторе пресета явно задал свой сценарий
+   * (РЭ.37.6.d UI), здесь приходит объект:
+   *
+   *   {
+   *     mode: 'custom',
+   *     tail_left_master_id:  string | null,   // мастер для L страницы
+   *                                              transition. null = оставить
+   *                                              students-страницу как есть
+   *                                              (без замены).
+   *     tail_right_master_id: string | null,   // мастер для R страницы.
+   *                                              null = закрыть как обычно
+   *                                              (J-цепочка).
+   *     closing_master_id:    string | null,   // резерв на будущее, пока
+   *                                              игнорируется engine'ом.
+   *   }
+   *
+   * В custom-режиме:
+   *   • Симметризация хвоста (symmetrize_students_tail) ИГНОРИРУЕТСЯ.
+   *   • detectComplectation не вызывается.
+   *   • Адаптивный хвост students.ts работает как обычно (это про сам
+   *     students-раздел, не про transition).
+   *
+   * Если master_id из сценария отсутствует в template_set на момент
+   * сборки — engine добавляет warning transition_custom_master_not_found
+   * и продолжает с оставшимися (как если бы соответствующее поле было
+   * null).
+   *
+   * Источник: presets.transition_scenario JSONB NULL.
+   * Миграция: 2026-05-24-presets-transition-scenario.sql.
+   */
+  transition_scenario?: TransitionScenario | null;
 
   /**
    * РЭ.21.8: высокоуровневая структура альбома, редактируемая партнёром

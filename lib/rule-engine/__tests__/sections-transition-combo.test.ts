@@ -229,6 +229,7 @@ function makePreset(opts: Partial<Preset> & Pick<Preset, 'id'>): Preset {
     student_layout_mode: opts.student_layout_mode ?? null,
     student_grid_size: opts.student_grid_size ?? null,
     symmetrize_students_tail: opts.symmetrize_students_tail ?? null,
+    transition_scenario: opts.transition_scenario ?? null,
   };
 }
 
@@ -1415,6 +1416,265 @@ describe('РЭ.37.4: симметризация хвоста', () => {
     expect(
       result.warnings.some((w) =>
         w.startsWith('transition_complectation_unknown'),
+      ),
+    ).toBe(true);
+  });
+});
+
+// ─── РЭ.37.6: ручной сценарий из preset.transition_scenario ────────────
+//
+// Тесты для fillPresetCustomScenario — функции которая срабатывает когда
+// в пресете явно задан custom-сценарий (через UI РЭ.37.6.d). В отличие
+// от OkeyBook-default, custom-сценарий:
+//   • применяется ВСЕГДА когда задан (независимо от чётности, типа
+//     последней students-страницы и т.д.)
+//   • не определяет комплектацию
+//   • не применяет симметризацию (партнёр сам решил)
+//   • кладёт указанные master_id с правильным bindings (grid/combo/common)
+
+describe('РЭ.37.6: preset.transition_scenario custom-сценарий', () => {
+  it('tail_left=J-Half (common-мастер) → правильный bind halfphoto', () => {
+    // Light 13 учеников, tail=1. По умолчанию engine положил бы combo-3
+    // на L + J-Half на R. Партнёр в transition_scenario явно сказал
+    // "положи J-Half на L (вместо combo) и закрой как обычно".
+    //
+    // Замена должна сработать через bindCommonPhotos (J-Half = halfphoto_1/2).
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'custom-half-left',
+        density: 'light',
+        sheet_type: 'hard',
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+        transition_scenario: {
+          mode: 'custom',
+          tail_left_master_id: 'id-J-Half',
+          tail_right_master_id: null,
+          closing_master_id: null,
+        },
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 13, half_class: 4, full_class: 1 }),
+    );
+
+    // Trace должен показать что preset_custom_scenario сработал
+    expect(
+      result.decision_trace.some((t) =>
+        t.rule_id === 'preset_custom_scenario:start',
+      ),
+    ).toBe(true);
+    expect(
+      result.decision_trace.some((t) =>
+        t.rule_id?.startsWith('preset_custom_scenario:tail_left:'),
+      ),
+    ).toBe(true);
+
+    // Spread 1 left должен быть J-Half с заполненными halfphoto.
+    const lastSpread = result.spreads[result.spreads.length - 1];
+    expect(lastSpread.left?.master_id).toBe('id-J-Half');
+    expect(typeof lastSpread.left?.bindings.halfphoto_1).toBe('string');
+    expect(typeof lastSpread.left?.bindings.halfphoto_2).toBe('string');
+
+    // НЕТ warning о combo (combo не применялся — мы кастомным заменили)
+    expect(
+      result.warnings.some((w) =>
+        w.startsWith('transition_combo_master_missing'),
+      ),
+    ).toBe(false);
+  });
+
+  it('tail_left=combo-мастер → bind учеников хвоста + classphoto', () => {
+    // Партнёр явно выбрал J-Combined-Tail-3 (его id) для tail_left.
+    // Должно сработать как обычный combo: 1 ученик хвоста + classphoto.
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'custom-combo-left',
+        density: 'light',
+        sheet_type: 'hard',
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+        transition_scenario: {
+          mode: 'custom',
+          tail_left_master_id: 'id-J-Combined-Tail-3',
+          tail_right_master_id: null,
+          closing_master_id: null,
+        },
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 13, half_class: 2, full_class: 1 }),
+    );
+
+    const lastSpread = result.spreads[result.spreads.length - 1];
+    expect(lastSpread.left?.master_id).toBe('id-J-Combined-Tail-3');
+    // На combo лежит 1 студент (хвост) + classphoto, остальные скрыты
+    expect(typeof lastSpread.left?.bindings.studentportrait_1).toBe('string');
+    expect(typeof lastSpread.left?.bindings.classphotoframe).toBe('string');
+  });
+
+  it('tail_left=master_id отсутствует в template_set → warning + старый layout', () => {
+    // Партнёр сохранил master_id, который потом был удалён из template_set
+    // (или это какой-то мусор). Engine должен добавить warning и оставить
+    // popped страницу на месте.
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'custom-missing',
+        density: 'light',
+        sheet_type: 'hard',
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+        transition_scenario: {
+          mode: 'custom',
+          tail_left_master_id: 'id-DOES-NOT-EXIST',
+          tail_right_master_id: null,
+          closing_master_id: null,
+        },
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 13, half_class: 2, full_class: 1 }),
+    );
+
+    // Warning должен быть
+    expect(
+      result.warnings.some((w) =>
+        w.startsWith('transition_custom_master_not_found'),
+      ),
+    ).toBe(true);
+    // Last spread всё ещё должен содержать хвост (engine не сломался)
+    expect(result.spreads.length).toBeGreaterThan(0);
+  });
+
+  it('tail_right=J-Collage-6 + правая висит → bind collagephoto', () => {
+    // Партнёр положил кастомный мастер на правую страницу transition.
+    // Light 19 (full=3 нечёт, tail=1) → tail попадает на L первого
+    // students-разворота нового spread, R висит. Партнёр поставил
+    // tail_right=J-Collage-6 — engine должен положить туда коллаж.
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'custom-right-collage',
+        density: 'light',
+        sheet_type: 'hard',
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+        transition_scenario: {
+          mode: 'custom',
+          tail_left_master_id: null,
+          tail_right_master_id: 'id-J-Collage-6',
+          closing_master_id: null,
+        },
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      // 13 учеников (full=2 чёт, tail=1) → tail сел на L нового spread,
+      // R висит. Партнёр сказал положить J-Collage-6 на R.
+      makeInput({ students_count: 13, half_class: 0, full_class: 1, sixth: 6 }),
+    );
+
+    const lastSpread = result.spreads[result.spreads.length - 1];
+    expect(lastSpread.right?.master_id).toBe('id-J-Collage-6');
+    // collagephoto_1..6 должны быть заполнены
+    expect(typeof lastSpread.right?.bindings.collagephoto_1).toBe('string');
+    expect(typeof lastSpread.right?.bindings.collagephoto_6).toBe('string');
+
+    // Trace на tail_right
+    expect(
+      result.decision_trace.some((t) =>
+        t.rule_id?.startsWith('preset_custom_scenario:tail_right:'),
+      ),
+    ).toBe(true);
+  });
+
+  it('tail_right=null + правая висит → fallback на стандартную J-цепочку', () => {
+    // Light 13 (tail=1) → tail сел на L нового spread, R висит.
+    // tail_right не задан → engine использует обычный tryJChainClosing
+    // (выберет J-Half/J-Collage-6/J-Full по доступным фото).
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'custom-left-only',
+        density: 'light',
+        sheet_type: 'hard',
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+        transition_scenario: {
+          mode: 'custom',
+          tail_left_master_id: 'id-J-Combined-Tail-3',
+          tail_right_master_id: null,
+          closing_master_id: null,
+        },
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 13, half_class: 2, full_class: 1 }),
+    );
+
+    const lastSpread = result.spreads[result.spreads.length - 1];
+    expect(lastSpread.left?.master_id).toBe('id-J-Combined-Tail-3');
+    // R закрыт через J-цепочку (Half — есть 2 фото half_class)
+    expect(lastSpread.right?.master_id).toBe('id-J-Half');
+  });
+
+  it('mode=default → старое OkeyBook поведение (контроль)', () => {
+    // Если transition_scenario = null или mode='default' — engine
+    // использует обычную логику без custom-вмешательства.
+    // (mode='default' API нормализует в null, но проверим что null path
+    // работает.)
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'no-custom-control',
+        density: 'light',
+        sheet_type: 'hard',
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+        transition_scenario: null,
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 13, half_class: 2, full_class: 1 }),
+    );
+    // НЕ должно быть trace preset_custom_scenario
+    expect(
+      result.decision_trace.some((t) =>
+        t.rule_id?.startsWith('preset_custom_scenario:'),
+      ),
+    ).toBe(false);
+    // Должно быть обычное combo replacement
+    const lastSpread = result.spreads[result.spreads.length - 1];
+    expect(lastSpread.left?.master_id).toBe('id-J-Combined-Tail-3');
+    expect(lastSpread.right?.master_id).toBe('id-J-Half');
+  });
+
+  it('symmetrize=true + custom-сценарий → симметризация ИГНОРИРУЕТСЯ', () => {
+    // Если включена симметризация И задан custom-сценарий — приоритет
+    // у custom (партнёр сам решил). Симметризация не должна выполняться.
+    const bundle = makeLightBundle(
+      makePreset({
+        id: 'custom-wins-over-symm',
+        density: 'light',
+        sheet_type: 'hard',
+        symmetrize_students_tail: true, // включена, но игнорируется
+        section_structure: [{ type: 'students' }, { type: 'transition' }],
+        transition_scenario: {
+          mode: 'custom',
+          tail_left_master_id: 'id-J-Half',
+          tail_right_master_id: null,
+          closing_master_id: null,
+        },
+      }),
+    );
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 13, half_class: 4, full_class: 1 }),
+    );
+    // Trace симметризации НЕ должен быть
+    expect(
+      result.decision_trace.some((t) => t.rule_id?.startsWith('symmetrize:')),
+    ).toBe(false);
+    // Custom сработал
+    expect(
+      result.decision_trace.some(
+        (t) => t.rule_id === 'preset_custom_scenario:start',
       ),
     ).toBe(true);
   });
