@@ -3813,6 +3813,608 @@ export async function POST(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
+  // album_clone (РЭ.39) — клонирование альбома с переносом всех
+  // заполненных данных (ученики, учителя, фото, выбор фото, тексты).
+  //
+  // Что копируется:
+  //   • Сам album row (с теми же настройками + новый title с « — копия»)
+  //   • children, teachers, responsible_parents — НОВЫЕ access_token'ы
+  //     (БД генерирует их через DEFAULT при INSERT без указания поля)
+  //   • photos, original_photos — метаданные (storage_path тот же:
+  //     файлы на бакете immutable, новые rows ссылаются на те же blob'ы)
+  //   • quotes (цитаты пресета), selections (выбор фото родителями),
+  //     photo_children, photo_teachers (теги «кто на фото»),
+  //     student_texts, parent_contacts (текст от родителей),
+  //     cover_selections, quote_selections (выбор обложки и цитат),
+  //     personal_spread_photos (личные развороты)
+  //
+  // Что НЕ копируется:
+  //   • album_layouts — пересобирается с нуля при первой сборке копии
+  //     (партнёр может сменить пресет, тогда layout будет другим)
+  //   • invitations, photo_locks (временные/устаревающие токены)
+  //   • album_exports, delivery_files (PDF-экспорты)
+  //   • audit_log (история действий)
+  //
+  // Транзакционность: Supabase JS не поддерживает явные TX, поэтому при
+  // частичной ошибке копия может остаться «полусделанной». Для безопасности
+  // делаем шаги в порядке зависимостей и rollback'им новый album при
+  // первой же ошибке на дочерних таблицах. Без race-conditions на тех же
+  // данных — мы лишь читаем оригинал и пишем в копию (изолированы).
+  // ----------------------------------------------------------
+  if (body.action === 'album_clone') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+
+    const sourceAlbumId = String(body.source_album_id ?? '').trim()
+    if (!sourceAlbumId) {
+      return NextResponse.json(
+        { error: 'source_album_id обязателен' },
+        { status: 400 },
+      )
+    }
+
+    // Опциональный title для копии (если не задан — auto-suffix).
+    const customTitle =
+      typeof body.new_title === 'string' && body.new_title.trim()
+        ? body.new_title.trim()
+        : null
+
+    // 1) Загружаем source album + проверяем доступ.
+    const { data: sourceAlbum, error: srcErr } = await supabaseAdmin
+      .from('albums')
+      .select('*')
+      .eq('id', sourceAlbumId)
+      .maybeSingle()
+    if (srcErr) {
+      return NextResponse.json({ error: srcErr.message }, { status: 500 })
+    }
+    if (!sourceAlbum) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    if (
+      auth.role !== 'superadmin' &&
+      sourceAlbum.tenant_id !== auth.tenantId
+    ) {
+      return NextResponse.json(
+        { error: 'Доступ запрещён: альбом другого партнёра' },
+        { status: 403 },
+      )
+    }
+
+    // 2) Проверка лимита тарифа (как в create_album).
+    if (auth.role !== 'superadmin') {
+      const [{ count: currentCount }, { data: tenant }] = await Promise.all([
+        supabaseAdmin
+          .from('albums')
+          .select('id', { count: 'exact', head: true })
+          .eq('tenant_id', auth.tenantId)
+          .eq('archived', false),
+        supabaseAdmin
+          .from('tenants')
+          .select('max_albums, is_active, plan_expires')
+          .eq('id', auth.tenantId)
+          .single(),
+      ])
+
+      if (!tenant?.is_active) {
+        return NextResponse.json(
+          { error: 'Аккаунт заблокирован. Обратитесь в поддержку.' },
+          { status: 403 },
+        )
+      }
+      if (tenant.plan_expires && new Date(tenant.plan_expires) < new Date()) {
+        return NextResponse.json(
+          { error: 'Срок действия тарифа истёк. Обратитесь в поддержку.' },
+          { status: 403 },
+        )
+      }
+      if ((currentCount ?? 0) >= tenant.max_albums) {
+        return NextResponse.json(
+          {
+            error: `Достигнут лимит тарифа: ${tenant.max_albums} активных альбомов. Архивируйте ненужные или обновите тариф.`,
+          },
+          { status: 403 },
+        )
+      }
+    }
+
+    // 3) Создаём копию album row. Title с суффиксом « — копия» если
+    // партнёр не задал свой.
+    const newTitle = customTitle ?? `${sourceAlbum.title} — копия`
+    // Берём ВСЕ настройки оригинала, кроме служебных. id, created_at —
+    // пусть БД сама генерирует. archived=false — копия активна.
+    // submitted_at / started_at и т.п. — НЕ копируем (это статусы, новая
+    // копия начинает с чистого листа).
+    const albumInsert: Record<string, unknown> = {
+      tenant_id: auth.tenantId,
+      title: newTitle,
+      classes: sourceAlbum.classes ?? [],
+      cover_mode: sourceAlbum.cover_mode ?? 'none',
+      cover_price: sourceAlbum.cover_price ?? 0,
+      deadline: sourceAlbum.deadline ?? null,
+      group_enabled: sourceAlbum.group_enabled ?? true,
+      group_min: sourceAlbum.group_min ?? 2,
+      group_max: sourceAlbum.group_max ?? 2,
+      group_exclusive: sourceAlbum.group_exclusive ?? true,
+      personal_spread_enabled: sourceAlbum.personal_spread_enabled ?? false,
+      personal_spread_price: sourceAlbum.personal_spread_price ?? 300,
+      personal_spread_min: sourceAlbum.personal_spread_min ?? 4,
+      personal_spread_max: sourceAlbum.personal_spread_max ?? 12,
+      text_enabled: sourceAlbum.text_enabled ?? true,
+      text_max_chars: sourceAlbum.text_max_chars ?? 500,
+      text_type: sourceAlbum.text_type ?? 'free',
+      template_title: sourceAlbum.template_title ?? null,
+      city: sourceAlbum.city ?? null,
+      year: sourceAlbum.year ?? new Date().getFullYear(),
+      // По решению Сергея: настройки пресета/дизайна копируем как есть
+      // (партнёр потом может сменить).
+      config_preset_id: sourceAlbum.config_preset_id ?? null,
+      template_set_id: sourceAlbum.template_set_id ?? null,
+      print_type: sourceAlbum.print_type ?? null,
+      section_structure_preset_id:
+        sourceAlbum.section_structure_preset_id ?? null,
+      include_non_purchasers: sourceAlbum.include_non_purchasers ?? false,
+      // archived и вновь созданные служебные поля БД заполняет сама
+    }
+
+    const { data: newAlbum, error: insertErr } = await supabaseAdmin
+      .from('albums')
+      .insert(albumInsert)
+      .select()
+      .single()
+    if (insertErr || !newAlbum) {
+      return NextResponse.json(
+        { error: insertErr?.message ?? 'Не удалось создать копию альбома' },
+        { status: 500 },
+      )
+    }
+
+    const newAlbumId = String(newAlbum.id)
+
+    // Хелпер: при первой же ошибке откатываем (удаляем) новый альбом
+    // через CASCADE — БД сама удалит все FK-зависимости.
+    const rollback = async (errorMsg: string, status = 500) => {
+      await supabaseAdmin.from('albums').delete().eq('id', newAlbumId)
+      return NextResponse.json({ error: errorMsg }, { status })
+    }
+
+    // ─── 4) Копируем children (получаем map old→new id) ────────────
+    const { data: sourceChildren, error: chFetchErr } = await supabaseAdmin
+      .from('children')
+      .select('*')
+      .eq('album_id', sourceAlbumId)
+    if (chFetchErr) {
+      return rollback(`Загрузка учеников: ${chFetchErr.message}`)
+    }
+
+    const childIdMap = new Map<string, string>() // oldId → newId
+    if (sourceChildren && sourceChildren.length > 0) {
+      const childRows = sourceChildren.map((c: Record<string, unknown>) => {
+        // Копируем ВСЕ поля кроме служебных. БД сама сгенерирует:
+        //   id (uuid default), access_token (default), created_at
+        //   submitted_at и started_at — сбрасываем (копия начинает заново)
+        const row: Record<string, unknown> = {
+          album_id: newAlbumId,
+          full_name: c.full_name,
+          class: c.class,
+          is_purchased: c.is_purchased ?? false,
+          // started_at / submitted_at НЕ копируем — это статусы прогресса.
+          // Если копию используют для нового реального заказа — это правильно.
+          // Если для теста — партнёр может вручную выставить.
+        }
+        // Опциональные поля если есть в source — копируем.
+        if (c.config_preset_id !== undefined && c.config_preset_id !== null) {
+          row.config_preset_id = c.config_preset_id
+        }
+        return row
+      })
+      const { data: newChildren, error: chInsErr } = await supabaseAdmin
+        .from('children')
+        .insert(childRows)
+        .select('id')
+      if (chInsErr || !newChildren) {
+        return rollback(`Создание учеников: ${chInsErr?.message ?? 'unknown'}`)
+      }
+      // Связываем по индексу — порядок INSERT сохраняется в Postgres.
+      sourceChildren.forEach((src, idx) => {
+        childIdMap.set(String(src.id), String(newChildren[idx].id))
+      })
+    }
+
+    // ─── 5) Копируем teachers ─────────────────────────────────────
+    const { data: sourceTeachers, error: tFetchErr } = await supabaseAdmin
+      .from('teachers')
+      .select('*')
+      .eq('album_id', sourceAlbumId)
+    if (tFetchErr) {
+      return rollback(`Загрузка учителей: ${tFetchErr.message}`)
+    }
+
+    const teacherIdMap = new Map<string, string>()
+    if (sourceTeachers && sourceTeachers.length > 0) {
+      const teacherRows = sourceTeachers.map((t: Record<string, unknown>) => {
+        const row: Record<string, unknown> = {
+          album_id: newAlbumId,
+          full_name: t.full_name,
+          position: t.position,
+          is_head_teacher: t.is_head_teacher ?? false,
+        }
+        if (t.description !== undefined && t.description !== null) {
+          row.description = t.description
+        }
+        return row
+      })
+      const { data: newTeachers, error: tInsErr } = await supabaseAdmin
+        .from('teachers')
+        .insert(teacherRows)
+        .select('id')
+      if (tInsErr || !newTeachers) {
+        return rollback(`Создание учителей: ${tInsErr?.message ?? 'unknown'}`)
+      }
+      sourceTeachers.forEach((src, idx) => {
+        teacherIdMap.set(String(src.id), String(newTeachers[idx].id))
+      })
+    }
+
+    // ─── 6) Копируем responsible_parents ──────────────────────────
+    const { data: sourceResp, error: rFetchErr } = await supabaseAdmin
+      .from('responsible_parents')
+      .select('*')
+      .eq('album_id', sourceAlbumId)
+    if (rFetchErr) {
+      return rollback(`Загрузка ответственных: ${rFetchErr.message}`)
+    }
+    if (sourceResp && sourceResp.length > 0) {
+      const respRows = sourceResp.map((r: Record<string, unknown>) => ({
+        album_id: newAlbumId,
+        full_name: r.full_name,
+        phone: r.phone,
+      }))
+      const { error: rInsErr } = await supabaseAdmin
+        .from('responsible_parents')
+        .insert(respRows)
+      if (rInsErr) {
+        return rollback(`Создание ответственных: ${rInsErr.message}`)
+      }
+    }
+
+    // ─── 7) Копируем photos (метаданные + storage_path тот же) ─────
+    const { data: sourcePhotos, error: phFetchErr } = await supabaseAdmin
+      .from('photos')
+      .select('*')
+      .eq('album_id', sourceAlbumId)
+    if (phFetchErr) {
+      return rollback(`Загрузка фото: ${phFetchErr.message}`)
+    }
+
+    const photoIdMap = new Map<string, string>()
+    if (sourcePhotos && sourcePhotos.length > 0) {
+      const photoRows = sourcePhotos.map((p: Record<string, unknown>) => {
+        const row: Record<string, unknown> = {
+          album_id: newAlbumId,
+          filename: p.filename,
+          storage_path: p.storage_path,
+          thumb_path: p.thumb_path ?? null,
+          type: p.type ?? null,
+        }
+        if (p.original_path !== undefined && p.original_path !== null) {
+          row.original_path = p.original_path
+        }
+        return row
+      })
+      const { data: newPhotos, error: phInsErr } = await supabaseAdmin
+        .from('photos')
+        .insert(photoRows)
+        .select('id')
+      if (phInsErr || !newPhotos) {
+        return rollback(`Создание фото: ${phInsErr?.message ?? 'unknown'}`)
+      }
+      sourcePhotos.forEach((src, idx) => {
+        photoIdMap.set(String(src.id), String(newPhotos[idx].id))
+      })
+    }
+
+    // ─── 8) Копируем original_photos (оригиналы для печати) ────────
+    const { data: sourceOrigs, error: oFetchErr } = await supabaseAdmin
+      .from('original_photos')
+      .select('*')
+      .eq('album_id', sourceAlbumId)
+    if (oFetchErr) {
+      return rollback(`Загрузка оригиналов: ${oFetchErr.message}`)
+    }
+    if (sourceOrigs && sourceOrigs.length > 0) {
+      const origRows = sourceOrigs.map((o: Record<string, unknown>) => ({
+        album_id: newAlbumId,
+        tenant_id: auth.tenantId,
+        filename: o.filename,
+        storage_path: o.storage_path,
+        file_size: o.file_size,
+        uploaded_by: o.uploaded_by ?? null,
+      }))
+      const { error: oInsErr } = await supabaseAdmin
+        .from('original_photos')
+        .insert(origRows)
+      if (oInsErr) {
+        return rollback(`Создание оригиналов: ${oInsErr.message}`)
+      }
+    }
+
+    // ─── 9) Копируем quotes (цитаты пресета) ──────────────────────
+    const { data: sourceQuotes, error: qFetchErr } = await supabaseAdmin
+      .from('quotes')
+      .select('*')
+      .eq('album_id', sourceAlbumId)
+    if (qFetchErr) {
+      return rollback(`Загрузка цитат: ${qFetchErr.message}`)
+    }
+
+    const quoteIdMap = new Map<string, string>()
+    if (sourceQuotes && sourceQuotes.length > 0) {
+      const quoteRows = sourceQuotes.map((q: Record<string, unknown>) => {
+        const row: Record<string, unknown> = { album_id: newAlbumId }
+        // Все нестандартные поля копируем (text и любые другие).
+        for (const k of Object.keys(q)) {
+          if (k === 'id' || k === 'album_id' || k === 'created_at') continue
+          row[k] = q[k]
+        }
+        return row
+      })
+      const { data: newQuotes, error: qInsErr } = await supabaseAdmin
+        .from('quotes')
+        .insert(quoteRows)
+        .select('id')
+      if (qInsErr || !newQuotes) {
+        return rollback(`Создание цитат: ${qInsErr?.message ?? 'unknown'}`)
+      }
+      sourceQuotes.forEach((src, idx) => {
+        quoteIdMap.set(String(src.id), String(newQuotes[idx].id))
+      })
+    }
+
+    // ─── 10) Копируем дочерние таблицы (FK через child_id) ─────────
+    //
+    // Все они привязаны к child_id, не к album_id. Используем childIdMap.
+    // Если childIdMap пуст (нет учеников) — эти таблицы тоже пустые.
+
+    const childIdsOld = Array.from(childIdMap.keys())
+
+    if (childIdsOld.length > 0) {
+      // 10a. student_texts (текст от родителя)
+      const { data: stRows, error: stErr } = await supabaseAdmin
+        .from('student_texts')
+        .select('*')
+        .in('child_id', childIdsOld)
+      if (stErr) {
+        return rollback(`Загрузка текстов: ${stErr.message}`)
+      }
+      if (stRows && stRows.length > 0) {
+        const newStRows = stRows
+          .map((r: Record<string, unknown>) => ({
+            child_id: childIdMap.get(String(r.child_id)),
+            text: r.text,
+          }))
+          .filter((r) => r.child_id) // безопасность
+        if (newStRows.length > 0) {
+          const { error } = await supabaseAdmin
+            .from('student_texts')
+            .insert(newStRows)
+          if (error) return rollback(`Тексты: ${error.message}`)
+        }
+      }
+
+      // 10b. parent_contacts (родитель + телефон)
+      const { data: pcRows, error: pcErr } = await supabaseAdmin
+        .from('parent_contacts')
+        .select('*')
+        .in('child_id', childIdsOld)
+      if (pcErr) {
+        return rollback(`Загрузка контактов: ${pcErr.message}`)
+      }
+      if (pcRows && pcRows.length > 0) {
+        const newPcRows = pcRows
+          .map((r: Record<string, unknown>) => ({
+            child_id: childIdMap.get(String(r.child_id)),
+            parent_name: r.parent_name,
+            phone: r.phone,
+          }))
+          .filter((r) => r.child_id)
+        if (newPcRows.length > 0) {
+          const { error } = await supabaseAdmin
+            .from('parent_contacts')
+            .insert(newPcRows)
+          if (error) return rollback(`Контакты: ${error.message}`)
+        }
+      }
+
+      // 10c. selections (выбор фото родителем): child_id + photo_id
+      const { data: selRows, error: selErr } = await supabaseAdmin
+        .from('selections')
+        .select('*')
+        .in('child_id', childIdsOld)
+      if (selErr) {
+        return rollback(`Загрузка выбора фото: ${selErr.message}`)
+      }
+      if (selRows && selRows.length > 0) {
+        const newSelRows = selRows
+          .map((r: Record<string, unknown>) => ({
+            child_id: childIdMap.get(String(r.child_id)),
+            photo_id: photoIdMap.get(String(r.photo_id)),
+            selection_type: r.selection_type,
+          }))
+          .filter((r) => r.child_id && r.photo_id)
+        if (newSelRows.length > 0) {
+          const { error } = await supabaseAdmin
+            .from('selections')
+            .insert(newSelRows)
+          if (error) return rollback(`Выбор фото: ${error.message}`)
+        }
+      }
+
+      // 10d. photo_children (теги «кто на фото»): child_id + photo_id
+      const { data: pchRows, error: pchErr } = await supabaseAdmin
+        .from('photo_children')
+        .select('*')
+        .in('child_id', childIdsOld)
+      if (pchErr) {
+        return rollback(`Загрузка тегов фото: ${pchErr.message}`)
+      }
+      if (pchRows && pchRows.length > 0) {
+        const newPchRows = pchRows
+          .map((r: Record<string, unknown>) => ({
+            child_id: childIdMap.get(String(r.child_id)),
+            photo_id: photoIdMap.get(String(r.photo_id)),
+          }))
+          .filter((r) => r.child_id && r.photo_id)
+        if (newPchRows.length > 0) {
+          const { error } = await supabaseAdmin
+            .from('photo_children')
+            .upsert(newPchRows, {
+              onConflict: 'photo_id,child_id',
+              ignoreDuplicates: true,
+            })
+          if (error) return rollback(`Теги фото (дети): ${error.message}`)
+        }
+      }
+
+      // 10e. cover_selections (выбор обложки): child_id + photo_id (опц.)
+      const { data: csRows, error: csErr } = await supabaseAdmin
+        .from('cover_selections')
+        .select('*')
+        .in('child_id', childIdsOld)
+      if (csErr) {
+        return rollback(`Загрузка выбора обложки: ${csErr.message}`)
+      }
+      if (csRows && csRows.length > 0) {
+        const newCsRows = csRows
+          .map((r: Record<string, unknown>) => {
+            const childId = childIdMap.get(String(r.child_id))
+            if (!childId) return null
+            const photoId = r.photo_id
+              ? photoIdMap.get(String(r.photo_id)) ?? null
+              : null
+            return {
+              child_id: childId,
+              cover_option: r.cover_option ?? 'none',
+              photo_id: photoId,
+              surcharge: r.surcharge ?? 0,
+            }
+          })
+          .filter((r): r is NonNullable<typeof r> => r !== null)
+        if (newCsRows.length > 0) {
+          const { error } = await supabaseAdmin
+            .from('cover_selections')
+            .insert(newCsRows)
+          if (error) return rollback(`Выбор обложки: ${error.message}`)
+        }
+      }
+
+      // 10f. quote_selections (выбор цитаты): child_id + quote_id
+      const { data: qsRows, error: qsErr } = await supabaseAdmin
+        .from('quote_selections')
+        .select('*')
+        .in('child_id', childIdsOld)
+      if (qsErr) {
+        return rollback(`Загрузка выбора цитат: ${qsErr.message}`)
+      }
+      if (qsRows && qsRows.length > 0) {
+        const newQsRows = qsRows
+          .map((r: Record<string, unknown>) => ({
+            child_id: childIdMap.get(String(r.child_id)),
+            quote_id: quoteIdMap.get(String(r.quote_id)),
+          }))
+          .filter((r) => r.child_id && r.quote_id)
+        if (newQsRows.length > 0) {
+          const { error } = await supabaseAdmin
+            .from('quote_selections')
+            .insert(newQsRows)
+          if (error) return rollback(`Выбор цитат: ${error.message}`)
+        }
+      }
+
+      // 10g. personal_spread_photos (личные развороты)
+      const { data: pspRows, error: pspErr } = await supabaseAdmin
+        .from('personal_spread_photos')
+        .select('*')
+        .in('child_id', childIdsOld)
+      if (pspErr) {
+        return rollback(`Загрузка личных разворотов: ${pspErr.message}`)
+      }
+      if (pspRows && pspRows.length > 0) {
+        const newPspRows = pspRows
+          .map((r: Record<string, unknown>) => {
+            const childId = childIdMap.get(String(r.child_id))
+            if (!childId) return null
+            const out: Record<string, unknown> = { child_id: childId }
+            // Копируем все поля кроме id/child_id/created_at
+            for (const k of Object.keys(r)) {
+              if (k === 'id' || k === 'child_id' || k === 'created_at') continue
+              out[k] = r[k]
+            }
+            return out
+          })
+          .filter((r): r is NonNullable<typeof r> => r !== null)
+        if (newPspRows.length > 0) {
+          const { error } = await supabaseAdmin
+            .from('personal_spread_photos')
+            .insert(newPspRows)
+          if (error) return rollback(`Личные развороты: ${error.message}`)
+        }
+      }
+    }
+
+    // ─── 11) photo_teachers (FK через teacher_id + photo_id) ───────
+    const teacherIdsOld = Array.from(teacherIdMap.keys())
+    if (teacherIdsOld.length > 0) {
+      const { data: ptRows, error: ptErr } = await supabaseAdmin
+        .from('photo_teachers')
+        .select('*')
+        .in('teacher_id', teacherIdsOld)
+      if (ptErr) {
+        return rollback(`Загрузка тегов учителей: ${ptErr.message}`)
+      }
+      if (ptRows && ptRows.length > 0) {
+        const newPtRows = ptRows
+          .map((r: Record<string, unknown>) => ({
+            teacher_id: teacherIdMap.get(String(r.teacher_id)),
+            photo_id: photoIdMap.get(String(r.photo_id)),
+          }))
+          .filter((r) => r.teacher_id && r.photo_id)
+        if (newPtRows.length > 0) {
+          const { error } = await supabaseAdmin
+            .from('photo_teachers')
+            .upsert(newPtRows, {
+              onConflict: 'photo_id,teacher_id',
+              ignoreDuplicates: true,
+            })
+          if (error) return rollback(`Теги фото (учителя): ${error.message}`)
+        }
+      }
+    }
+
+    // ─── 12) Аудит-лог + возврат ──────────────────────────────────
+    await logAction(auth, 'album.clone', 'album', newAlbumId, {
+      source_album_id: sourceAlbumId,
+      source_title: sourceAlbum.title,
+      new_title: newTitle,
+      children_count: childIdMap.size,
+      teachers_count: teacherIdMap.size,
+      photos_count: photoIdMap.size,
+    })
+
+    return NextResponse.json({
+      id: newAlbumId,
+      title: newTitle,
+      stats: {
+        children: childIdMap.size,
+        teachers: teacherIdMap.size,
+        photos: photoIdMap.size,
+        quotes: quoteIdMap.size,
+      },
+    })
+  }
+
+  // ----------------------------------------------------------
   // update_album — редактирование настроек альбома
   // ----------------------------------------------------------
   if (body.action === 'update_album') {
