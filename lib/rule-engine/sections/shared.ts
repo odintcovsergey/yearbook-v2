@@ -103,6 +103,203 @@ export function humanPhotoCategory(category: string): string {
  * Эффект на полные страницы grid (когда hidden нет): no-op — ни одной
  * __pos__ записи не добавляется, центрирование не нужно.
  */
+/**
+ * РЭ.42.b.2: универсальный placeholder-driven биндинг для override-мастеров
+ * в soft_intro / soft_final. Партнёр в редакторе шаблона выбирает любой
+ * мастер из template_set (типично — учителей / классного руководителя /
+ * воспитателей детсада). Эта функция связывает placeholder'ы выбранного
+ * мастера с реальными данными из RulesAlbumInput.
+ *
+ * Поддерживаемые placeholder labels (case-insensitive):
+ *  - `classphotoframe`                                  → full_class[cursor]
+ *  - `halfphoto_N`                                      → half_class[cursor + N - 1]
+ *  - `headteacherphoto`                                 → head_teacher.photo
+ *  - `headteachername`                                  → head_teacher.name
+ *  - `headteacherrole`                                  → head_teacher.role
+ *  - `headteachertext` / `headteacherquote` /
+ *    `headtextframe`                                    → head_teacher.text
+ *  - `subjectphoto_N` / `subject_N` / `teacherphoto_N`  → subjects[N-1].photo
+ *  - `subjectname_N` / `teachername_N`                  → subjects[N-1].name
+ *  - `subjectrole_N` / `teacherrole_N`                  → subjects[N-1].role
+ *
+ * Для отсутствующих фото / subjects ставится `__hidden__<label>='1'` —
+ * Konva canvas скроет пустые слоты (РЭ.21.8.13 семантика).
+ *
+ * Cursor для full_class / half_class — по уже-потреблённым (как в teachers.ts
+ * bindRightPage): `arr.length - available[k]`. Каждое потреблённое фото
+ * учитывается в возвращаемом `consumes`, чтобы вызывающая секция
+ * декрементила `available`.
+ *
+ * Эта функция — расширенная версия классической classphoto-only биндинг
+ * логики из soft-intro.ts / soft-final.ts. В автоматическом (без override)
+ * режиме старая classphoto-only логика сохранена (минимизация риска
+ * регрессий в стабильных code paths). В override-режиме вызывается эта
+ * функция, что позволяет партнёру использовать учительские мастера.
+ *
+ * Семантика consumes:
+ *  - full_class: 0..1 — у мастера обычно ≤1 classphotoframe placeholder
+ *  - half_class: 0..N — может быть несколько halfphoto_N в одном мастере
+ *
+ * subjects / head_teacher — не cursored: индексы фиксированные (subject N
+ * это всегда subjects[N-1]), потребление не отслеживается (это
+ * непотребляемые данные, привязанные к альбому).
+ */
+export function bindOverrideMasterPlaceholders(
+  master: { placeholders?: ReadonlyArray<{ label: string }> },
+  input: RulesAlbumInput,
+  available: CommonPhotoCounts,
+): { bindings: Record<string, unknown>; consumes: { full_class: number; half_class: number } } {
+  const bindings: Record<string, unknown> = {};
+  const placeholders = master.placeholders ?? [];
+
+  const fullClassUsed = input.common_photos.full_class.length - available.full_class;
+  const halfClassUsed = input.common_photos.half_class.length - available.half_class;
+  let consumedFullClass = 0;
+  let consumedHalfClass = 0;
+
+  const headTeacher = input.head_teacher;
+  const subjects = input.subjects;
+
+  for (let i = 0; i < placeholders.length; i++) {
+    const ph = placeholders[i];
+    const label = ph.label.toLowerCase();
+
+    // ─ Общее фото класса ────────────────────────────────────────────
+    if (label === 'classphotoframe') {
+      const photo = input.common_photos.full_class[fullClassUsed + consumedFullClass];
+      if (photo) {
+        bindings[ph.label] = photo;
+        consumedFullClass += 1;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
+      continue;
+    }
+
+    // ─ Полкласса (halfphoto_N) ───────────────────────────────────────
+    const halfMatch = label.match(/^halfphoto_(\d+)$/);
+    if (halfMatch) {
+      const n = parseInt(halfMatch[1], 10);
+      // halfphoto_1, halfphoto_2 — индексы внутри мастера, должны идти
+      // подряд от cursor'а: photo для halfphoto_N = half_class[cursor + N - 1].
+      // Каждый встреченный halfphoto увеличивает consumed на 1 (т.е. позже
+      // мы декрементируем available.half_class на это число).
+      const photo = input.common_photos.half_class[halfClassUsed + n - 1];
+      if (photo) {
+        bindings[ph.label] = photo;
+        consumedHalfClass = Math.max(consumedHalfClass, n);
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
+      continue;
+    }
+
+    // ─ Главный учитель / классный руководитель ──────────────────────
+    if (label === 'headteacherphoto') {
+      if (headTeacher.photo) {
+        bindings[ph.label] = headTeacher.photo;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
+      continue;
+    }
+    if (label === 'headteachername') {
+      bindings[ph.label] = headTeacher.name;
+      continue;
+    }
+    if (label === 'headteacherrole') {
+      bindings[ph.label] = headTeacher.role;
+      continue;
+    }
+    if (
+      label === 'headteachertext' ||
+      label === 'headteacherquote' ||
+      label === 'headtextframe'
+    ) {
+      bindings[ph.label] = headTeacher.text;
+      continue;
+    }
+
+    // ─ Предметники / учителя по номерам ────────────────────────────
+    const photoMatch = label.match(/^(?:subjectphoto|subject|teacherphoto)_(\d+)$/);
+    if (photoMatch) {
+      const n = parseInt(photoMatch[1], 10);
+      const subj = subjects[n - 1];
+      if (subj && subj.photo) {
+        bindings[ph.label] = subj.photo;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
+      continue;
+    }
+    const nameMatch = label.match(/^(?:subjectname|teachername)_(\d+)$/);
+    if (nameMatch) {
+      const n = parseInt(nameMatch[1], 10);
+      const subj = subjects[n - 1];
+      if (subj) {
+        bindings[ph.label] = subj.name;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
+      continue;
+    }
+    const roleMatch = label.match(/^(?:subjectrole|teacherrole)_(\d+)$/);
+    if (roleMatch) {
+      const n = parseInt(roleMatch[1], 10);
+      const subj = subjects[n - 1];
+      if (subj) {
+        bindings[ph.label] = subj.role;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
+      continue;
+    }
+
+    // Любой неизвестный placeholder — оставляем без binding (Konva canvas
+    // покажет default-плейсхолдер из IDML, партнёр заполнит в редакторе).
+  }
+
+  return {
+    bindings,
+    consumes: {
+      full_class: consumedFullClass,
+      half_class: consumedHalfClass,
+    },
+  };
+}
+
+/**
+ * РЭ.37.5.b (25.05.2026): автоцентрирование видимых слотов в последнем
+ * ряду grid/combo-страницы.
+ *
+ * Когда страница имеет N слотов в ряд (например studentportrait_1..6),
+ * и последние K скрыты через __hidden__<label>, оставшиеся N-K слотов
+ * по умолчанию остаются на своих исходных координатах — то есть «прижаты
+ * к левому краю», а правая часть ряда выглядит пусто. Это визуальная
+ * проблема симметризованного хвоста (РЭ.37.4) и адаптивного хвоста сетки
+ * (когда учеников меньше чем слотов).
+ *
+ * Эта функция вычисляет геометрический shift и записывает в `bindings`
+ * ключи __pos__<label>='<x_mm>,<y_mm>' для каждого видимого portrait
+ * (и связанного с ним studentname/studentquote) — так renderer
+ * (Canvas/PDF, через parseBalanceOverrides) разместит слоты по центру
+ * фактической ширины ряда.
+ *
+ * Алгоритм:
+ *   1. Найти studentportrait_* placeholder'ы мастера.
+ *   2. Сгруппировать в строки по y_mm (с допуском 5 мм).
+ *   3. Для каждой строки где есть hidden — посчитать shift и применить.
+ *      Условия применения:
+ *        - в строке ≥2 слота (есть шаг dx между соседними)
+ *        - hidden идут «с конца» (защита от mixed-pattern)
+ *
+ * Связь portrait ↔ name ↔ quote: по числовому индексу в label. Если в
+ * мастере есть studentportrait_5 + studentname_5 + studentquote_5 — все
+ * три получают одинаковый shift и записываются под __pos__.
+ *
+ * Эффект на полные страницы grid (когда hidden нет): no-op — ни одной
+ * __pos__ записи не добавляется, центрирование не нужно.
+ */
 export function centerLastRowSlots(
   master: { placeholders?: ReadonlyArray<{ label: string; x_mm: number; y_mm: number }> },
   bindings: Record<string, unknown>,

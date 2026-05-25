@@ -29,6 +29,7 @@
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import { findSoftSectionMaster } from '../master-finder';
 import type { SectionStructureEntry } from '../types';
+import { bindOverrideMasterPlaceholders } from './shared';
 import type { SectionFillContext } from './shared';
 
 export function fillSoftFinalSection(
@@ -90,25 +91,37 @@ export function fillSoftFinalSection(
     }
   }
 
-  // Bindings ДО decrement available.
-  const bindings: Record<string, unknown> = {};
-  const fullClassUsed =
-    ctx.input.common_photos.full_class.length - ctx.available.full_class;
+  // Bindings: для override-режима — универсальная placeholder-driven логика
+  // (РЭ.42.b.2). Для автоматического — узкая classphoto-only.
+  let bindings: Record<string, unknown>;
   let consumedFullClass = 0;
+  let consumedHalfClass = 0;
 
-  for (let i = 0; i < master.placeholders.length; i++) {
-    const ph = master.placeholders[i];
-    if (ph.label.toLowerCase() === 'classphotoframe') {
-      const photo = ctx.input.common_photos.full_class[fullClassUsed];
-      if (photo) {
-        bindings[ph.label] = photo;
-        consumedFullClass = 1;
+  if (overridden) {
+    const result = bindOverrideMasterPlaceholders(master, ctx.input, ctx.available);
+    bindings = result.bindings;
+    consumedFullClass = result.consumes.full_class;
+    consumedHalfClass = result.consumes.half_class;
+  } else {
+    bindings = {};
+    const fullClassUsed =
+      ctx.input.common_photos.full_class.length - ctx.available.full_class;
+
+    for (let i = 0; i < master.placeholders.length; i++) {
+      const ph = master.placeholders[i];
+      if (ph.label.toLowerCase() === 'classphotoframe') {
+        const photo = ctx.input.common_photos.full_class[fullClassUsed];
+        if (photo) {
+          bindings[ph.label] = photo;
+          consumedFullClass = 1;
+        }
+        break;
       }
-      break;
     }
   }
 
   ctx.available.full_class -= consumedFullClass;
+  ctx.available.half_class -= consumedHalfClass;
 
   const pageIndex = ctx.pageInstances.length;
   ctx.pageInstances.push({ master_id: master.id, bindings });
@@ -119,7 +132,10 @@ export function fillSoftFinalSection(
     family_id: 'final',
     rule_id: `soft_final:${master.name}`,
     inputs: {
-      consumes: { full_class: consumedFullClass },
+      consumes: {
+        full_class: consumedFullClass,
+        half_class: consumedHalfClass,
+      },
       sheet_type: 'soft',
       semantic,
       overridden,

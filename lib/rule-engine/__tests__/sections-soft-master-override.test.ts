@@ -134,6 +134,31 @@ function makeInput(fullClassCount: number): RulesAlbumInput {
   };
 }
 
+// РЭ.42.b.2: input с заполненным head_teacher и subjects для тестов
+// автоматического биндинга teacher-placeholder'ов в override-режиме.
+function makeInputWithTeachers(): RulesAlbumInput {
+  return {
+    students: [],
+    subjects: [
+      { photo: 'https://cdn/subj1.jpg', name: 'Иван Иванов', role: 'Математика' },
+      { photo: 'https://cdn/subj2.jpg', name: 'Пётр Петров', role: 'Физика' },
+    ],
+    head_teacher: {
+      photo: 'https://cdn/head.jpg',
+      name: 'Мария Сергеевна',
+      role: 'Классный руководитель',
+      text: 'Мудрая цитата.',
+    },
+    common_photos: {
+      full_class: ['https://cdn/full0.jpg'],
+      half_class: [],
+      spread: [],
+      quarter: [],
+      sixth: [],
+    },
+  };
+}
+
 // ─── soft_intro ─────────────────────────────────────────────────────────────
 
 describe('РЭ.42: soft_intro master_name override', () => {
@@ -172,7 +197,7 @@ describe('РЭ.42: soft_intro master_name override', () => {
     expect(trace?.inputs.overridden).toBe(true);
     expect(trace?.inputs.semantic).toBe(false);
     // Classphoto НЕ был потреблён — у J-Teachers-Single нет такого placeholder.
-    expect(trace?.inputs.consumes).toEqual({ full_class: 0 });
+    expect(trace?.inputs.consumes).toEqual({ full_class: 0, half_class: 0 });
 
     // Warnings не должно быть.
     expect(
@@ -310,7 +335,7 @@ describe('РЭ.42: soft_final master_name override', () => {
     expect(trace?.rule_id).toBe('soft_final:J-Farewell-Custom');
     expect(trace?.inputs.overridden).toBe(true);
     expect(trace?.inputs.semantic).toBe(false);
-    expect(trace?.inputs.consumes).toEqual({ full_class: 0 });
+    expect(trace?.inputs.consumes).toEqual({ full_class: 0, half_class: 0 });
   });
 
   it('Override с несуществующим именем → warning, страница НЕ кладётся', () => {
@@ -392,5 +417,165 @@ describe('РЭ.42: soft_final master_name override', () => {
     expect(
       result.warnings.some((x) => x.startsWith('soft_final_skipped')),
     ).toBe(true);
+  });
+});
+
+// ─── Автоматический биндинг placeholder'ов в override-режиме (РЭ.42.b.2) ──
+
+describe('РЭ.42.b.2: автоматический биндинг teacher-placeholder в override', () => {
+  it('soft_intro: override с teacher-мастером → автобиндинг headteacher + subjects', () => {
+    const teacherMaster = makeMaster(
+      'J-Teachers-Single',
+      [
+        photoSlot('headteacherphoto'),
+        photoSlot('headteachername'),
+        photoSlot('headteacherrole'),
+        photoSlot('headteachertext'),
+        photoSlot('teacherphoto_1'),
+        photoSlot('teachername_1'),
+        photoSlot('teacherphoto_2'),
+        photoSlot('teachername_2'),
+      ],
+      null,
+      null,
+    );
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        sheet_type: 'soft',
+        section_structure: [
+          { type: 'soft_intro', master_name: 'J-Teachers-Single' },
+        ],
+      }),
+      masters: [teacherMaster],
+    });
+    const result = buildFromSectionStructure(bundle, makeInputWithTeachers());
+
+    const page = result.spreads[0].right;
+    expect(page?.master_id).toBe('id-J-Teachers-Single');
+
+    const bindings = page!.bindings as Record<string, unknown>;
+    expect(bindings.headteacherphoto).toBe('https://cdn/head.jpg');
+    expect(bindings.headteachername).toBe('Мария Сергеевна');
+    expect(bindings.headteacherrole).toBe('Классный руководитель');
+    expect(bindings.headteachertext).toBe('Мудрая цитата.');
+    expect(bindings.teacherphoto_1).toBe('https://cdn/subj1.jpg');
+    expect(bindings.teachername_1).toBe('Иван Иванов');
+    expect(bindings.teacherphoto_2).toBe('https://cdn/subj2.jpg');
+    expect(bindings.teachername_2).toBe('Пётр Петров');
+  });
+
+  it('soft_intro override: subject N+ отсутствует → __hidden__ для лишних слотов', () => {
+    // У нас в input 2 subjects, мастер просит 4 — последние 2 должны
+    // быть скрыты через __hidden__.
+    const teacherMaster = makeMaster(
+      'J-Teachers-4',
+      [
+        photoSlot('teacherphoto_1'),
+        photoSlot('teacherphoto_2'),
+        photoSlot('teacherphoto_3'),
+        photoSlot('teacherphoto_4'),
+      ],
+      null,
+      null,
+    );
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        sheet_type: 'soft',
+        section_structure: [
+          { type: 'soft_intro', master_name: 'J-Teachers-4' },
+        ],
+      }),
+      masters: [teacherMaster],
+    });
+    const result = buildFromSectionStructure(bundle, makeInputWithTeachers());
+    const bindings = result.spreads[0].right!.bindings as Record<string, unknown>;
+
+    expect(bindings.teacherphoto_1).toBe('https://cdn/subj1.jpg');
+    expect(bindings.teacherphoto_2).toBe('https://cdn/subj2.jpg');
+    expect(bindings.__hidden__teacherphoto_3).toBe('1');
+    expect(bindings.__hidden__teacherphoto_4).toBe('1');
+  });
+
+  it('soft_intro override с classphoto+headteacher → биндим оба + consumes.full_class=1', () => {
+    const mixedMaster = makeMaster(
+      'J-Mixed',
+      [photoSlot('classphotoframe'), photoSlot('headteacherphoto')],
+      null,
+      null,
+    );
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        sheet_type: 'soft',
+        section_structure: [
+          { type: 'soft_intro', master_name: 'J-Mixed' },
+        ],
+      }),
+      masters: [mixedMaster],
+    });
+    const result = buildFromSectionStructure(bundle, makeInputWithTeachers());
+    const bindings = result.spreads[0].right!.bindings as Record<string, unknown>;
+
+    expect(bindings.classphotoframe).toBe('https://cdn/full0.jpg');
+    expect(bindings.headteacherphoto).toBe('https://cdn/head.jpg');
+
+    const trace = result.decision_trace.find((t) =>
+      t.rule_id?.startsWith('soft_intro:'),
+    );
+    const consumes = trace?.inputs.consumes as { full_class: number };
+    expect(consumes.full_class).toBe(1);
+  });
+
+  it('soft_final override: тот же автобиндинг, что и для intro', () => {
+    const farewellMaster = makeMaster(
+      'J-Farewell-WithTeacher',
+      [photoSlot('headteacherphoto'), photoSlot('headteachertext')],
+      null,
+      null,
+    );
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        sheet_type: 'soft',
+        section_structure: [
+          { type: 'soft_final', master_name: 'J-Farewell-WithTeacher' },
+        ],
+      }),
+      masters: [farewellMaster],
+    });
+    const result = buildFromSectionStructure(bundle, makeInputWithTeachers());
+    // soft_final → section_start → LEFT.
+    const bindings = result.spreads[0].left!.bindings as Record<string, unknown>;
+
+    expect(bindings.headteacherphoto).toBe('https://cdn/head.jpg');
+    expect(bindings.headteachertext).toBe('Мудрая цитата.');
+  });
+
+  it('Автоматический режим (без override) — старая classphoto-only логика сохранена', () => {
+    // Мастер S-Intro с classphoto + неожиданный teacher placeholder. В
+    // автоматическом режиме (без master_name) НЕ должен биндить teacher,
+    // только classphoto.
+    const introMaster = makeMaster(
+      'S-Intro',
+      [photoSlot('classphotoframe'), photoSlot('headteacherphoto')],
+      'intro',
+      { photos_full: 1 },
+    );
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        sheet_type: 'soft',
+        section_structure: [{ type: 'soft_intro' }], // без master_name
+      }),
+      masters: [introMaster],
+    });
+    const result = buildFromSectionStructure(bundle, makeInputWithTeachers());
+    const bindings = result.spreads[0].right!.bindings as Record<string, unknown>;
+
+    expect(bindings.classphotoframe).toBe('https://cdn/full0.jpg');
+    // headteacherphoto НЕ должен биндиться в автоматическом режиме.
+    expect(bindings.headteacherphoto).toBeUndefined();
   });
 });
