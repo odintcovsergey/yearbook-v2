@@ -943,6 +943,10 @@ async function tryBuildViaSectionStructure(
         warnings_by_level: warningsByLevel,
         preset_slug: bundle.preset.id,
         preset_name: bundle.preset.display_name,
+        // РЭ.43.B: фронт нужен для корректного отображения форзацев в превью.
+        // bundle.preset.sheet_type здесь уже после resolvePrintType
+        // (см. tryBuildViaSectionStructure выше), т.е. эффективный.
+        sheet_type: bundle.preset.sheet_type ?? null,
       },
     }),
   }

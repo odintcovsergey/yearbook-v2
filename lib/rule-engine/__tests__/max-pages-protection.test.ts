@@ -124,8 +124,8 @@ function makeInput(): RulesAlbumInput {
   return {
     students: Array.from({ length: 30 }, (_, i) => ({
       id: `s${i}`,
-      name: `Student ${i}`,
-      photo: `https://cdn/s${i}.jpg`,
+      full_name: `Student ${i}`,
+      portrait: `https://cdn/s${i}.jpg`,
       quote: '',
       friend_photos: [],
     })),

@@ -924,6 +924,10 @@ type SmartFillSummary = {
   warnings_by_level: { blocking: number; degraded: number; info: number }
   preset_slug: string | null
   preset_name: string | null
+  // РЭ.43.B: эффективный sheet_type альбома (после resolvePrintType
+  // на сервере). Используется LayoutPreviewStrip чтобы корректно
+  // показывать форзацы для soft binding.
+  sheet_type?: 'hard' | 'soft' | null
 }
 
 type SmartFillLayout = {

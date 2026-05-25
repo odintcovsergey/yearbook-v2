@@ -17,6 +17,10 @@ const AlbumSpreadCanvas = dynamic(
 type LayoutShape = {
   template_set_id: string
   spreads: unknown[]  // narrowing к SpreadInstance[] делаем внутри
+  // РЭ.43.B: для soft binding превью должно показывать первый разворот
+  // как [форзац, soft_intro], а не парить intro со следующей student-страницей.
+  // Поле опциональное для обратной совместимости со старым shape.
+  summary?: { sheet_type?: 'hard' | 'soft' | null }
 }
 
 type Props = {
@@ -69,21 +73,33 @@ async function fetchTemplateDetail(templateSetId: string): Promise<TemplateDetai
  *   2. Два одностраничных подряд → kind='pair', одна клетка с left+right.
  *   3. Нечётный одностраничный (последний в серии или одиночный) → kind='pair'
  *      с одним из left/right = null.
- *   4. S-Intro (soft, см. master-cleanup-tz §C / designer-questions блок 1):
- *      одностраничный, рендерится как правая страница разворота с пустой левой.
- *      Детектится по template.name === 'S-Intro'.
+ *   4. РЭ.43.B: для soft binding (sheetType='soft') первый одностраничный
+ *      идёт как правая страница первого разворота (форзац слева), если
+ *      у него НЕ выставлен section_start. До РЭ.43.B детекция была по
+ *      имени мастера 'S-Intro', что не работало для override-мастеров из
+ *      РЭ.42 (партнёр выбрал свой J-Teachers / F-Head вместо classphoto).
+ *      Теперь решение принимается по sheetType — корректно для любого
+ *      мастера.
  *
- * Вход: spreads (от buildAlbum), templateById (для проверки is_spread и name).
+ *      Аналогично для soft_final последняя страница встаёт LEFT нового
+ *      spread — но это обеспечивается через section_start=true, который
+ *      приходит в spread с сервера (SECTIONS_THAT_START_NEW_SPREAD).
+ *
+ * Вход: spreads (от buildAlbum), templateById (для проверки is_spread).
+ *       sheetType — 'soft' | 'hard' | null (null = старое поведение).
  * Выход: массив VisualSpread в том же порядке.
  */
 function groupIntoVisualSpreads(
   spreads: SpreadInstance[],
   templateById: Map<string, SpreadTemplate>,
+  sheetType: 'hard' | 'soft' | null | undefined,
 ): VisualSpread[] {
   const result: VisualSpread[] = []
   let pending: SpreadInstance | null = null
+  const isSoft = sheetType === 'soft'
 
-  for (const s of spreads) {
+  for (let idx = 0; idx < spreads.length; idx++) {
+    const s = spreads[idx]
     const tmpl = templateById.get(s.template_id)
     // Если шаблон неизвестен (битый layout) — рендерим как одиночную пару,
     // не пытаемся скрестить с соседями. Пользователь увидит «Шаблон не найден».
@@ -107,13 +123,17 @@ function groupIntoVisualSpreads(
       continue
     }
 
-    // Одностраничный мастер. Спецслучай: S-Intro = правая страница,
-    // левая пустая. Не парим с предыдущим (если был pending — флашим).
-    if (tmpl.name === 'S-Intro') {
-      if (pending) {
-        result.push({ kind: 'pair', left: pending, right: null, key: pending.spread_index })
-        pending = null
-      }
+    // РЭ.43.B: soft binding — самая первая страница (idx=0) НЕ имеющая
+    // section_start ложится на R первого разворота (форзац на L). Это
+    // согласовано с engine'овской группировкой в
+    // lib/rule-engine/build-from-section-structure.ts:255+ для soft.
+    //
+    // Если у первой страницы section_start=true (что бывает когда первой
+    // секцией стоит SECTIONS_THAT_START_NEW_SPREAD типа common_required) —
+    // soft-сдвиг НЕ применяется, идём по обычному пути (станет L pending).
+    const isFirstAndSoft = isSoft && idx === 0 && pending === null
+    const hasSectionStart = (s as unknown as { section_start?: boolean }).section_start === true
+    if (isFirstAndSoft && !hasSectionStart) {
       result.push({ kind: 'pair', left: null, right: s, key: s.spread_index })
       continue
     }
@@ -127,10 +147,11 @@ function groupIntoVisualSpreads(
     }
   }
 
-  // Финал: оставшийся непарный одностраничный — одиночка справа? слева? Лево.
+  // Финал: оставшийся непарный одностраничный — одиночка слева.
   // Это случай common_right_page_empty (А.2.2.b): фотограф загрузил нечётное
   // число фото общего раздела, последняя группа без пары. Logically — левая
-  // страница занята, правая пустая.
+  // страница занята, правая пустая. Для soft binding с soft_final это
+  // тоже корректно: финальная страница остаётся на левой, форзац справа.
   if (pending) {
     result.push({ kind: 'pair', left: pending, right: null, key: pending.spread_index })
   }
@@ -173,9 +194,10 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor }: Props) {
   const spreads = layout.spreads as SpreadInstance[]
 
   // Визуальные развороты — пересчитываются когда обновляются spreads или шаблоны.
+  const sheetType = layout.summary?.sheet_type ?? null
   const visualSpreads = useMemo(
-    () => (detail ? groupIntoVisualSpreads(spreads, templateById) : []),
-    [spreads, templateById, detail],
+    () => (detail ? groupIntoVisualSpreads(spreads, templateById, sheetType) : []),
+    [spreads, templateById, detail, sheetType],
   )
 
   return (
