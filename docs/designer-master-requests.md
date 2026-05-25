@@ -70,3 +70,34 @@ Combined: `L-Combined-Page` (3 студента + 1 фото) — ✓ есть.
 
 - 2026-05-25 — создан после обсуждения РЭ.40 (smart distribution).
   Запрос Сергея на 4+3+3 компоновку для 10 учеников.
+- 2026-05-25 — добавлен раздел про семантику slot_capacity (важно
+  для различения student-combined и transition-combo мастеров).
+
+## Раздел 3 — Семантика slot_capacity (важно для дизайнера)
+
+Engine различает категории мастеров по полям `slot_capacity`. При
+создании мастеров в IDML-конвертере **обязательно** правильно
+задавайте эти флаги:
+
+### Student-grid мастера (для секции students)
+
+| Тип | photos_full | has_portrait | has_name | students |
+|---|---|---|---|---|
+| `*-Grid-Page` (полная сетка) | 0 | true | true | N (12/6/4) |
+| `*-Grid-Page-N` (хвостовая) | 0 | true | true | N (фактическое) |
+| `*-Combined-Page` (хвост с фото) | 1 | true | true | N |
+
+### Transition combo (для секции transition / симметризация)
+
+| Тип | photos_full | has_portrait | has_name | students |
+|---|---|---|---|---|
+| `J-Combined-Tail-N` | 1 | (нет/false) | (нет/false) | N |
+
+**Критически важно:** у `J-Combined-Tail-*` НЕ должно быть
+`has_portrait=true` и `has_name=true` — иначе engine путает его со
+student-combined и использует не по назначению (как было до фикса
+29b85a9).
+
+Аналогично для student-combined `has_portrait` и `has_name`
+обязательно `true` — иначе engine не подхватит мастер при поиске
+для combined-tail.
