@@ -449,7 +449,16 @@ export interface TransitionCustomScenario {
  *        одновременное наличие `mode` и `master_name`.
  */
 export type SectionStructureEntry =
-  | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
+  | { type: 'teachers' | 'students' | 'vignette' }
+  /**
+   * РЭ.42: soft_intro поддерживает опциональный master_name override.
+   * Если задан — engine кладёт именно этот мастер (партнёр выбрал из
+   * template_set). Если null/отсутствует — старое поведение (поиск
+   * по page_role='intro' + photos_full=1, обычно classphoto-мастер).
+   */
+  | { type: 'soft_intro'; master_name?: string | null }
+  /** РЭ.42: аналогично soft_intro — опциональный master_name override. */
+  | { type: 'soft_final'; master_name?: string | null }
   | { type: 'common'; slots: SlotType[] }
   | { type: 'common'; mode: 'auto'; max_spreads: number }
   | { type: 'common_required'; pages?: CommonRequiredPage[] }

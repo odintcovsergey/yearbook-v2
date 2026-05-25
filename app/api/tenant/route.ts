@@ -75,7 +75,8 @@ function rowToDescription(row: any): string {
 // РЭ.21.7.3: валидация section_structure из body.
 //
 // Допустимая форма: массив объектов вида:
-//   { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
+//   { type: 'teachers' | 'students' | 'vignette' }
+//   { type: 'soft_intro' | 'soft_final', master_name?: string | null }  — РЭ.42
 //   { type: 'common', slots: ('H' | 'Q' | 'FULL' | 'flex_A' | 'flex_B' | 'flex_C')[] }
 //   { type: 'common', mode: 'auto', max_spreads: number } — РЭ.21.8.8
 //
@@ -140,7 +141,9 @@ type ValidatedTransitionCustom = {
 }
 
 type ValidatedSection =
-  | { type: 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final' }
+  | { type: 'teachers' | 'students' | 'vignette' }
+  | { type: 'soft_intro'; master_name?: string | null }   // РЭ.42
+  | { type: 'soft_final'; master_name?: string | null }   // РЭ.42
   | { type: 'common'; slots: string[] }
   | { type: 'common'; mode: 'auto'; max_spreads: number }  // РЭ.21.8.8
   | { type: 'common_required'; pages?: { master_name: string }[] }  // РЭ.32: конструктор страниц
@@ -413,9 +416,27 @@ function validateSectionStructure(
         }
       }
       result.push({ type: 'common_additional', max_spreads: maxSpreads })
+    } else if (type === 'soft_intro' || type === 'soft_final') {
+      // РЭ.42: soft_intro / soft_final могут иметь опциональный master_name —
+      // ручной выбор мастера партнёром (вместо автоматического classphoto).
+      // Если master_name отсутствует или null — старое поведение (автомат).
+      const mn = (s as { master_name?: unknown }).master_name
+      if (mn === undefined || mn === null) {
+        result.push({ type: type as 'soft_intro' | 'soft_final' })
+      } else if (typeof mn === 'string' && mn.length > 0 && mn.length <= 200) {
+        result.push({
+          type: type as 'soft_intro' | 'soft_final',
+          master_name: mn,
+        })
+      } else {
+        return {
+          ok: false,
+          error: `Секция #${i + 1} (${type}): master_name должен быть непустой строкой (≤200 символов) или null`,
+        }
+      }
     } else {
       result.push({
-        type: type as 'soft_intro' | 'teachers' | 'students' | 'vignette' | 'soft_final',
+        type: type as 'teachers' | 'students' | 'vignette',
       })
     }
   }
