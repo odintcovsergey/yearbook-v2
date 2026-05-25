@@ -71,6 +71,7 @@ type Album = {
   section_structure_preset_id?: string | null  // РЭ.21.8.7: если задан, build_album использует
                                                 // buildFromSectionStructure
   include_non_purchasers?: boolean  // РЭ.25: включать ли не-заказчиков в личный раздел
+  student_distribution?: 'auto' | 'equalize' | 'greedy'  // РЭ.40: стратегия grid-распределения
   stats: { total: number; submitted: number; in_progress: number; purchased?: number }
   teacher_token: string | null
   teachers: { total: number; done: number } | null
@@ -2398,6 +2399,15 @@ type FormData = {
    * старых альбомов без шаблона.
    */
   print_type_override: string
+  /**
+   * РЭ.40: стратегия распределения учеников по grid-страницам в
+   * личном разделе. Применяется только к density='mini' и 'light'.
+   * - 'auto' (DEFAULT) — combined+equalize если есть фото, иначе
+   *   чистый equalize
+   * - 'equalize' — всегда равномерно
+   * - 'greedy' — жадно (legacy-поведение 12+12+6)
+   */
+  student_distribution: 'auto' | 'equalize' | 'greedy'
 }
 
 const textTypeOptions = [
@@ -2436,6 +2446,7 @@ function emptyForm(): FormData {
     section_structure_design_name: null,
     include_non_purchasers: false,  // РЭ.25: строгое поведение по умолчанию
     print_type_override: '',  // РЭ.27.6: пусто = не переопределять, engine возьмёт из пресета
+    student_distribution: 'auto',  // РЭ.40: умное распределение учеников по grid (mini/light)
   }
 }
 
@@ -2565,6 +2576,13 @@ function AlbumFormModal({
           (album as any).print_type === 'layflat' || (album as any).print_type === 'soft'
             ? (album as any).print_type
             : '',
+        // РЭ.40: подхватываем стратегию распределения из БД.
+        // Если поле undefined (старый альбом до миграции) — default 'auto'.
+        student_distribution:
+          (album as any).student_distribution === 'equalize' ||
+          (album as any).student_distribution === 'greedy'
+            ? (album as any).student_distribution
+            : 'auto',
       }
     }
     return emptyForm()
@@ -2743,6 +2761,8 @@ function AlbumFormModal({
         : [],
       // РЭ.25: переопределение фильтра не-заказчиков для альбома.
       include_non_purchasers: form.include_non_purchasers,
+      // РЭ.40: стратегия распределения учеников по grid (mini/light).
+      student_distribution: form.student_distribution,
       // РЭ.27.6: явный print_type override.
       // Если пользователь выбрал в селекте 'layflat' / 'soft' — отправляем.
       // Если пусто ('') — НЕ отправляем поле вообще (тогда API
@@ -3119,6 +3139,81 @@ function AlbumFormModal({
                 </p>
               </div>
             </label>
+          </div>
+
+          {/* РЭ.40: стратегия распределения учеников по grid-страницам */}
+          <div className="border border-gray-200 rounded-lg p-3">
+            <p className="text-sm font-medium text-gray-700 mb-2">
+              Распределение учеников по страницам
+            </p>
+            <p className="text-xs text-gray-500 mb-3">
+              Влияет только на шаблоны с сеткой (Mini 12, Light 6). Для других
+              комплектаций (Стандарт, Универсал, Медиум) настройка
+              игнорируется.
+            </p>
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="student_distribution"
+                  value="auto"
+                  checked={form.student_distribution === 'auto'}
+                  onChange={() => set('student_distribution', 'auto')}
+                  disabled={loading}
+                  className="mt-0.5"
+                />
+                <div className="flex-1">
+                  <span className="text-sm text-gray-700">
+                    Авто <span className="text-gray-400">(рекомендуется)</span>
+                  </span>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Если делится ровно — полные страницы. Если хвост маленький
+                    и есть свободное общее фото — последняя страница с
+                    портретами + общее фото внизу. Иначе равномерно (например
+                    30 учеников = 10+10+10).
+                  </p>
+                </div>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="student_distribution"
+                  value="equalize"
+                  checked={form.student_distribution === 'equalize'}
+                  onChange={() => set('student_distribution', 'equalize')}
+                  disabled={loading}
+                  className="mt-0.5"
+                />
+                <div className="flex-1">
+                  <span className="text-sm text-gray-700">Равномерно</span>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Всегда делит учеников поровну между страницами, даже если
+                    есть свободное общее фото. Без combined-страниц.
+                  </p>
+                </div>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="student_distribution"
+                  value="greedy"
+                  checked={form.student_distribution === 'greedy'}
+                  onChange={() => set('student_distribution', 'greedy')}
+                  disabled={loading}
+                  className="mt-0.5"
+                />
+                <div className="flex-1">
+                  <span className="text-sm text-gray-700">
+                    Жадно <span className="text-gray-400">(старое поведение)</span>
+                  </span>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Заполняет полные сетки, остаток — на последнюю страницу.
+                    Например 30 учеников = 12+12+6. Сохранено для совместимости
+                    со старыми альбомами.
+                  </p>
+                </div>
+              </label>
+            </div>
           </div>
 
           {/* РЭ.30.6: блок «Пресет вёрстки» (Комплектация + Тип печати)
