@@ -1178,6 +1178,98 @@ function CommonSectionLimitControl({
 }
 
 
+// РЭ.41.a — Inline-контрол для albums.student_distribution.
+// Перенесён из формы редактирования на Обзор для быстрых переключений
+// при тестировании. Сохраняет через update_album, пересборка по кнопке.
+// Применяется только к шаблонам с сеткой (Mini 12, Light 6).
+function StudentDistributionControl({
+  album,
+  apiVA,
+  onNotify,
+  onError,
+}: {
+  album: Album
+  apiVA: (url: string, opts?: RequestInit) => Promise<Response>
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  type Mode = 'auto' | 'equalize' | 'greedy'
+  const initial: Mode =
+    album.student_distribution === 'equalize' || album.student_distribution === 'greedy'
+      ? album.student_distribution
+      : 'auto'
+  const [value, setValue] = useState<Mode>(initial)
+  const [saving, setSaving] = useState(false)
+
+  const handleChange = async (newValue: Mode) => {
+    const prevValue = value
+    setValue(newValue)
+    setSaving(true)
+    try {
+      const r = await apiVA('/api/tenant', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'update_album',
+          album_id: album.id,
+          student_distribution: newValue,
+        }),
+      })
+      if (r.ok) {
+        const label =
+          newValue === 'auto' ? 'Авто' : newValue === 'equalize' ? 'Равномерно' : 'Жадно'
+        onNotify(`Распределение учеников: ${label}. Пересоберите альбом чтобы применить.`)
+      } else {
+        setValue(prevValue)
+        const d = await r.json().catch(() => ({}))
+        onError(d.error ?? 'Не удалось сохранить настройку')
+      }
+    } catch (err: unknown) {
+      setValue(prevValue)
+      onError(err instanceof Error ? err.message : 'Ошибка сети')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const description =
+    value === 'auto'
+      ? 'Если делится ровно — полные страницы. Если хвост маленький и есть свободное общее фото — комбо-страница. Иначе равномерно (30 = 10+10+10).'
+      : value === 'equalize'
+        ? 'Всегда делит поровну, без комбо-страниц.'
+        : 'Заполняет полные сетки, остаток — на последнюю (30 = 12+12+6). Старое поведение.'
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200">
+      <div className="flex items-center gap-3 flex-wrap mb-2">
+        <div className="text-xs text-gray-500 uppercase">Распределение учеников</div>
+        <div className="flex gap-1 flex-wrap">
+          {(['auto', 'equalize', 'greedy'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => handleChange(mode)}
+              disabled={saving}
+              className={`text-sm px-3 py-1 border rounded transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                value === mode
+                  ? 'bg-blue-50 border-blue-400 text-blue-700 font-medium'
+                  : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {mode === 'auto' ? 'Авто' : mode === 'equalize' ? 'Равномерно' : 'Жадно'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="text-xs text-gray-400">{description}</div>
+      <div className="text-xs text-gray-400 mt-1">
+        Влияет только на шаблоны с сеткой (Mini 12, Light 6). Для других комплектаций
+        игнорируется.
+      </div>
+    </div>
+  )
+}
+
+
 // ============================================================
 // МОДАЛКА ДЕТАЛЕЙ АЛЬБОМА (с управлением учениками)
 // ============================================================
@@ -1637,6 +1729,20 @@ function AlbumDetailModal({
                         >0 = жёсткий лимит с приоритетом крупных фото. */}
                     {canEdit && album.config_preset_id && (
                       <CommonSectionLimitControl
+                        album={album}
+                        apiVA={apiVA}
+                        onNotify={onNotify}
+                        onError={onError}
+                      />
+                    )}
+
+                    {/* РЭ.41.a — Распределение учеников по grid-страницам.
+                        Показывается для альбомов с любым шаблоном (legacy
+                        config_preset_id или новый section_structure_preset_id).
+                        Применяется только к grid-режимам (Mini/Light), но
+                        UI показываем всегда — пусть партнёр видит настройку. */}
+                    {canEdit && (album.config_preset_id || album.section_structure_preset_id) && (
+                      <StudentDistributionControl
                         album={album}
                         apiVA={apiVA}
                         onNotify={onNotify}
@@ -2399,15 +2505,6 @@ type FormData = {
    * старых альбомов без шаблона.
    */
   print_type_override: string
-  /**
-   * РЭ.40: стратегия распределения учеников по grid-страницам в
-   * личном разделе. Применяется только к density='mini' и 'light'.
-   * - 'auto' (DEFAULT) — combined+equalize если есть фото, иначе
-   *   чистый equalize
-   * - 'equalize' — всегда равномерно
-   * - 'greedy' — жадно (legacy-поведение 12+12+6)
-   */
-  student_distribution: 'auto' | 'equalize' | 'greedy'
 }
 
 const textTypeOptions = [
@@ -2446,7 +2543,6 @@ function emptyForm(): FormData {
     section_structure_design_name: null,
     include_non_purchasers: false,  // РЭ.25: строгое поведение по умолчанию
     print_type_override: '',  // РЭ.27.6: пусто = не переопределять, engine возьмёт из пресета
-    student_distribution: 'auto',  // РЭ.40: умное распределение учеников по grid (mini/light)
   }
 }
 
@@ -2576,13 +2672,6 @@ function AlbumFormModal({
           (album as any).print_type === 'layflat' || (album as any).print_type === 'soft'
             ? (album as any).print_type
             : '',
-        // РЭ.40: подхватываем стратегию распределения из БД.
-        // Если поле undefined (старый альбом до миграции) — default 'auto'.
-        student_distribution:
-          (album as any).student_distribution === 'equalize' ||
-          (album as any).student_distribution === 'greedy'
-            ? (album as any).student_distribution
-            : 'auto',
       }
     }
     return emptyForm()
@@ -2761,8 +2850,6 @@ function AlbumFormModal({
         : [],
       // РЭ.25: переопределение фильтра не-заказчиков для альбома.
       include_non_purchasers: form.include_non_purchasers,
-      // РЭ.40: стратегия распределения учеников по grid (mini/light).
-      student_distribution: form.student_distribution,
       // РЭ.27.6: явный print_type override.
       // Если пользователь выбрал в селекте 'layflat' / 'soft' — отправляем.
       // Если пусто ('') — НЕ отправляем поле вообще (тогда API
@@ -3141,80 +3228,11 @@ function AlbumFormModal({
             </label>
           </div>
 
-          {/* РЭ.40: стратегия распределения учеников по grid-страницам */}
-          <div className="border border-gray-200 rounded-lg p-3">
-            <p className="text-sm font-medium text-gray-700 mb-2">
-              Распределение учеников по страницам
-            </p>
-            <p className="text-xs text-gray-500 mb-3">
-              Влияет только на шаблоны с сеткой (Mini 12, Light 6). Для других
-              комплектаций (Стандарт, Универсал, Медиум) настройка
-              игнорируется.
-            </p>
-            <div className="space-y-2">
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="student_distribution"
-                  value="auto"
-                  checked={form.student_distribution === 'auto'}
-                  onChange={() => set('student_distribution', 'auto')}
-                  disabled={loading}
-                  className="mt-0.5"
-                />
-                <div className="flex-1">
-                  <span className="text-sm text-gray-700">
-                    Авто <span className="text-gray-400">(рекомендуется)</span>
-                  </span>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Если делится ровно — полные страницы. Если хвост маленький
-                    и есть свободное общее фото — последняя страница с
-                    портретами + общее фото внизу. Иначе равномерно (например
-                    30 учеников = 10+10+10).
-                  </p>
-                </div>
-              </label>
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="student_distribution"
-                  value="equalize"
-                  checked={form.student_distribution === 'equalize'}
-                  onChange={() => set('student_distribution', 'equalize')}
-                  disabled={loading}
-                  className="mt-0.5"
-                />
-                <div className="flex-1">
-                  <span className="text-sm text-gray-700">Равномерно</span>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Всегда делит учеников поровну между страницами, даже если
-                    есть свободное общее фото. Без combined-страниц.
-                  </p>
-                </div>
-              </label>
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="student_distribution"
-                  value="greedy"
-                  checked={form.student_distribution === 'greedy'}
-                  onChange={() => set('student_distribution', 'greedy')}
-                  disabled={loading}
-                  className="mt-0.5"
-                />
-                <div className="flex-1">
-                  <span className="text-sm text-gray-700">
-                    Жадно <span className="text-gray-400">(старое поведение)</span>
-                  </span>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Заполняет полные сетки, остаток — на последнюю страницу.
-                    Например 30 учеников = 12+12+6. Сохранено для совместимости
-                    со старыми альбомами.
-                  </p>
-                </div>
-              </label>
-            </div>
-          </div>
+          {/* РЭ.41.a: блок «Распределение учеников по страницам»
+              перенесён из формы на вкладку «Обзор» альбома
+              (StudentDistributionControl рядом с превью). Это часто
+              меняемая при тестировании настройка — на Обзоре переключать
+              быстрее. */}
 
           {/* РЭ.30.6: блок «Пресет вёрстки» (Комплектация + Тип печати)
               удалён. Это была legacy-альтернатива выбору Шаблона из
