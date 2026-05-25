@@ -962,7 +962,7 @@ export async function GET(req: NextRequest) {
   if (action === 'rule_presets_list') {
     const { data, error } = await supabaseAdmin
       .from('presets')
-      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, template_set_id, section_structure, student_pages_per_student, student_friend_photos, student_has_quote, student_layout_mode, student_grid_size, symmetrize_students_tail, tenant_id, version, is_recommended')
+      .select('id, display_name, print_type, density, sheet_type, min_pages, max_pages, template_set_id, section_structure, student_pages_per_student, student_friend_photos, student_has_quote, student_layout_mode, student_grid_size, symmetrize_students_tail, transition_scenario, tenant_id, version, is_recommended')
       .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
       .order('display_name')
 
@@ -2827,6 +2827,83 @@ export async function POST(req: NextRequest) {
         )
       }
       patch.symmetrize_students_tail = body.symmetrize_students_tail
+    }
+
+    // РЭ.37.6: ручной сценарий transition-разворота (jsonb).
+    //
+    // Принимаемые формы:
+    //   null                          → сбросить на OkeyBook-default
+    //   { mode: 'default' }           → то же что null, но явно
+    //   { mode: 'custom',
+    //     tail_left_master_id:  string|null,
+    //     tail_right_master_id: string|null,
+    //     closing_master_id:    string|null  // резерв, пока игнорируется
+    //                                           engine'ом
+    //   }
+    //
+    // В custom-режиме хотя бы один из *_master_id должен быть не null
+    // (см. CHECK constraint presets_transition_scenario_valid в миграции
+    // 2026-05-24-presets-transition-scenario.sql). API повторяет эту
+    // проверку чтобы дать осмысленный 400 ответ вместо сырой ошибки БД.
+    //
+    // Сами master_id мы FK-проверкой НЕ валидируем — мастера могут быть
+    // удалены из template_set независимо. Если на момент сборки альбома
+    // master_id отсутствует — engine добавит warning
+    // transition_custom_master_not_found (см. РЭ.37.6.c).
+    if (body.transition_scenario !== undefined) {
+      const ts = body.transition_scenario
+      if (ts === null) {
+        patch.transition_scenario = null
+      } else if (typeof ts !== 'object' || Array.isArray(ts)) {
+        return NextResponse.json(
+          { error: 'transition_scenario должен быть object или null' },
+          { status: 400 },
+        )
+      } else {
+        const mode = (ts as { mode?: unknown }).mode
+        if (mode !== 'default' && mode !== 'custom') {
+          return NextResponse.json(
+            { error: "transition_scenario.mode должен быть 'default' или 'custom'" },
+            { status: 400 },
+          )
+        }
+        if (mode === 'default') {
+          // Нормализуем default → null (упрощает чтение в engine'е, NULL
+          // и default равнозначны).
+          patch.transition_scenario = null
+        } else {
+          // custom: проверяем что хотя бы один master_id задан и валиден
+          // (string или null). Остальные поля игнорируются.
+          const obj = ts as Record<string, unknown>
+          const fields = ['tail_left_master_id', 'tail_right_master_id', 'closing_master_id']
+          for (const field of fields) {
+            const v = obj[field]
+            if (v !== undefined && v !== null && typeof v !== 'string') {
+              return NextResponse.json(
+                { error: `transition_scenario.${field} должен быть string или null` },
+                { status: 400 },
+              )
+            }
+          }
+          const allNull = fields.every((f) => obj[f] === undefined || obj[f] === null)
+          if (allNull) {
+            return NextResponse.json(
+              {
+                error:
+                  "transition_scenario с mode='custom' должен задавать хотя бы один master_id " +
+                  '(tail_left_master_id / tail_right_master_id / closing_master_id)',
+              },
+              { status: 400 },
+            )
+          }
+          patch.transition_scenario = {
+            mode: 'custom',
+            tail_left_master_id: (obj.tail_left_master_id as string | null | undefined) ?? null,
+            tail_right_master_id: (obj.tail_right_master_id as string | null | undefined) ?? null,
+            closing_master_id: (obj.closing_master_id as string | null | undefined) ?? null,
+          }
+        }
+      }
     }
 
     // РЭ.24.7: галка «рекомендовать в каталоге партнёров».
