@@ -39,6 +39,11 @@ import type { SpreadTemplate } from '@/lib/album-builder/types';
 import { findStudentMaster, findStudentGridMaster } from '../master-finder';
 import type { RulesStudentInput } from '../types';
 import { centerLastRowSlots, type SectionFillContext } from './shared';
+import {
+  decideDistribution,
+  type DistributionMode,
+  type DistributionPage,
+} from './distribution';
 
 export function fillStudentsSection(ctx: SectionFillContext): void {
   const preset = ctx.bundle.preset;
@@ -906,73 +911,54 @@ function buildGrid(ctx: SectionFillContext, config: GridConfig): void {
   const total = students.length;
   if (total === 0) return;
 
-  const fullPages = Math.floor(total / slotsPerPage);
-  const remainder = total % slotsPerPage;
+  // РЭ.40: определяем combined-мастера и его capacity для алгоритма.
+  // Если мастера в template_set нет — combinedCapacity=null, algorithm
+  // не будет пытаться combined-tail.
+  const combinedMaster = ctx.bundle.mastersByName.get(config.combinedMasterName);
+  const combinedCapacity =
+    combinedMaster &&
+    combinedMaster.slot_capacity &&
+    typeof combinedMaster.slot_capacity.students === 'number'
+      ? combinedMaster.slot_capacity.students
+      : null;
 
-  // 1. Полные страницы — все на baseMaster
-  for (let i = 0; i < fullPages; i++) {
-    const slice = students.slice(i * slotsPerPage, (i + 1) * slotsPerPage);
-    pushGridPage(
-      ctx,
-      baseMaster,
-      slice,
-      slotsPerPage,
-      `${config.density}:grid:${i}`,
-    );
-  }
+  // РЭ.40: режим распределения берём из albums.student_distribution.
+  // Если поле undefined (старый альбом до миграции) — применяем 'auto'.
+  const mode: DistributionMode = ctx.input.student_distribution ?? 'auto';
 
-  if (remainder === 0) return;
+  const decision = decideDistribution({
+    N: total,
+    maxGrid: slotsPerPage,
+    combinedCapacity,
+    hasClassPhoto: ctx.available.full_class >= 1,
+    mode,
+  });
 
-  // 2. Хвост — три варианта: combined / adaptive / base с null'ями
-  const tail = students.slice(fullPages * slotsPerPage);
+  // Распределяем учеников по страницам в порядке решения алгоритма.
+  let studentCursor = 0;
+  for (let pageIdx = 0; pageIdx < decision.pages.length; pageIdx++) {
+    const page = decision.pages[pageIdx];
+    const slice = students.slice(studentCursor, studentCursor + page.count);
+    studentCursor += page.count;
 
-  // 2a. Combined-page (если есть свободное full_class фото)
-  if (ctx.available.full_class >= 1) {
-    const combined = ctx.bundle.mastersByName.get(config.combinedMasterName);
-    if (combined) {
+    if (page.type === 'combined' && combinedMaster) {
       const combSlots =
-        combined.slot_capacity && typeof combined.slot_capacity.students === 'number'
-          ? combined.slot_capacity.students
-          : remainder;
-      if (combSlots >= remainder) {
-        pushCombinedTailPage(ctx, combined, tail, combSlots, config.density);
-        // ctx.available.full_class декрементится внутри pushCombinedTailPage
-        // (через формулу used = arr.length - available, важен порядок).
-        return;
-      }
-    }
-  }
-
-  // 2b. Адаптивный мастер (L-2/3/4, N-4/6/9)
-  if (config.adaptiveTailNames.length > 0) {
-    const adaptive = pickAdaptiveTail(
-      ctx.bundle.mastersByName,
-      config.adaptiveTailNames,
-      remainder,
-    );
-    if (adaptive) {
+        combinedMaster.slot_capacity &&
+        typeof combinedMaster.slot_capacity.students === 'number'
+          ? combinedMaster.slot_capacity.students
+          : page.count;
+      pushCombinedTailPage(ctx, combinedMaster, slice, combSlots, config.density);
+    } else {
+      // type='grid' — кладём в baseMaster.
       pushGridPage(
         ctx,
-        adaptive.master,
-        tail,
-        adaptive.slots,
-        `${config.density}:adaptive_tail:${adaptive.master.name}`,
+        baseMaster,
+        slice,
+        slotsPerPage,
+        `${config.density}:grid:${pageIdx}:${mode}`,
       );
-      return;
     }
   }
-
-  // 2c. Fallback — base-мастер с null'ями
-  pushGridPage(
-    ctx,
-    baseMaster,
-    tail,
-    slotsPerPage,
-    `${config.density}:tail_padded`,
-  );
-  ctx.warnings.push(
-    `students_grid_tail_padded: остаток ${remainder} учеников вместился в ${slotsPerPage}-слотный ${config.baseMasterName} с null-заполнением`,
-  );
 }
 
 /**
@@ -987,40 +973,15 @@ function buildGrid(ctx: SectionFillContext, config: GridConfig): void {
  * из `master.slot_capacity.students` или парсится из имени (`L-N` → N).
  * Если ни один кандидат не подходит — null (caller сделает другой fallback).
  */
-function pickAdaptiveTail(
-  mastersByName: ReadonlyMap<string, SpreadTemplate>,
-  names: string[],
-  remainder: number,
-): { master: SpreadTemplate; slots: number } | null {
-  const candidates: Array<{ master: SpreadTemplate; slots: number }> = [];
-  for (let i = 0; i < names.length; i++) {
-    const name = names[i];
-    const m = mastersByName.get(name);
-    if (!m) continue;
-    let slots: number;
-    if (m.slot_capacity && typeof m.slot_capacity.students === 'number') {
-      slots = m.slot_capacity.students;
-    } else {
-      const parsed = slotsFromName(name);
-      if (parsed === null) continue;
-      slots = parsed;
-    }
-    if (slots > 0) candidates.push({ master: m, slots });
-  }
-  const fits = candidates.filter((c) => c.slots >= remainder);
-  if (fits.length === 0) return null;
-  fits.sort((a, b) => a.slots - b.slots);
-  return fits[0];
-}
-
 /**
- * Парсит количество слотов из имени мастера вида `L-N` / `N-N` (где N — число).
- * Возвращает null если формат не подходит (например `L-Grid-Page`).
+ * РЭ.40: legacy-функции pickAdaptiveTail и slotsFromName удалены —
+ * новый алгоритм decideDistribution() более общий и не использует
+ * именования вида L-N / N-N для поиска адаптивного мастера.
+ * Алгоритм работает только с base + combined мастерами.
+ *
+ * adaptiveTailNames в GridConfig остаются (для обратной совместимости
+ * с типом), но игнорируются. Удалить в будущем коммите.
  */
-function slotsFromName(name: string): number | null {
-  const m = name.match(/^[A-Z]-(\d+)$/);
-  return m ? parseInt(m[1], 10) : null;
-}
 
 /**
  * Положить grid-страницу: формирует bindings (studentportrait_N + name + quote),
