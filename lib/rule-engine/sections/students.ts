@@ -788,13 +788,21 @@ function buildGridSemantic(ctx: SectionFillContext): void {
   // transition combo-мастеров (J-Combined-Tail-2/3/4 РЭ.37.4), у которых
   // has_portrait/has_name=undefined.
   //
-  // Раньше (до fix) фильтр был только photos_full=1, и в template_set
-  // okeybook-default это захватывало J-Combined-Tail-* — у Сергея для
-  // Light шаблона выбрался J-Combined-Tail-4 вместо правильного
-  // L-Combined-Page. Теперь жёсткий фильтр по семантике student.
+  // ВАЖНО: combined должен быть из той же density (семьи) что и base.
+  // Иначе для Light шаблона может выбраться N-Combined-Page (Mini, 4
+  // студента) вместо L-Combined-Page (Light, 3 студента) — баг 2026-05-25.
+  //
+  // Эвристика семьи: совпадает первый сегмент имени до '-' (L-Grid-Page
+  // → L-Combined-Page, N-Grid-Page → N-Combined-Page).
+  //
+  // Если у дизайнера имена не следуют этой схеме — fallback: берём
+  // combined с минимальным students (как самый «компактный»), это
+  // обычно подходит для Light.
+  const basePrefix = baseMaster.name.split('-')[0]; // 'L' / 'M' / 'N' / ...
   let combinedMaster: SpreadTemplate | null = null;
   let combinedCapacity: number | null = null;
   const allMasters = Array.from(ctx.bundle.mastersByName.values());
+  const combinedCandidates: SpreadTemplate[] = [];
   for (const m of allMasters) {
     if (!m.slot_capacity) continue;
     const photosFullN =
@@ -813,12 +821,33 @@ function buildGridSemantic(ctx: SectionFillContext): void {
       studentsN >= 1 &&
       studentsN < slotsPerPage
     ) {
-      // Берём максимальный по студентам combined.
-      if (combinedCapacity === null || studentsN > combinedCapacity) {
-        combinedMaster = m;
-        combinedCapacity = studentsN;
-      }
+      combinedCandidates.push(m);
     }
+  }
+
+  // Шаг 1: предпочитаем кандидата с тем же семейным префиксом что и base.
+  const sameFamily = combinedCandidates.filter((m) =>
+    m.name.startsWith(basePrefix + '-'),
+  );
+  if (sameFamily.length > 0) {
+    // Если несколько (что маловероятно) — берём максимальный по students.
+    sameFamily.sort(
+      (a, b) =>
+        (b.slot_capacity?.students ?? 0) - (a.slot_capacity?.students ?? 0),
+    );
+    combinedMaster = sameFamily[0];
+    combinedCapacity = combinedMaster.slot_capacity?.students ?? null;
+  } else if (combinedCandidates.length > 0) {
+    // Шаг 2: нет совпадения по семье — fallback на МИНИМАЛЬНЫЙ students.
+    // Это разумный default: combined с малым числом учеников чаще всего
+    // помещается на любую density. Раньше я брал максимальный — это
+    // даёт Mini-стиль на Light-шаблонах. Исправлено 2026-05-25.
+    combinedCandidates.sort(
+      (a, b) =>
+        (a.slot_capacity?.students ?? 0) - (b.slot_capacity?.students ?? 0),
+    );
+    combinedMaster = combinedCandidates[0];
+    combinedCapacity = combinedMaster.slot_capacity?.students ?? null;
   }
 
   // РЭ.40: режим распределения из albums.student_distribution.
