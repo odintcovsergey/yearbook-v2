@@ -698,7 +698,19 @@ function fillOkeybookDefault(ctx: SectionFillContext): void {
   // 2. Шаг А: если tail_page='combo' — заменить хвостовую страницу
   //    students на combo-мастер. POP + PUSH. Пропускается если уже
   //    применена симметризация — она положила combo сама.
+  //
+  // РЭ.40: в режимах 'auto' и 'equalize' decideDistribution уже сам
+  // разместил combined на хвосте (если это уместно). tryReplaceTailWithCombo
+  // здесь использует жадный classifyTransitionLayout и переделает хвост
+  // по legacy-логике — это сломает мой результат.
+  //
+  // Логика: отключаем только при ЯВНО auto/equalize. undefined (тесты)
+  // и greedy — оставляем legacy поведение.
+  const modeReplace = ctx.input.student_distribution;
+  const skipLegacyCombo =
+    modeReplace === 'auto' || modeReplace === 'equalize';
   if (
+    !skipLegacyCombo &&
     !symmetrized &&
     layout.tail_page === 'combo' &&
     layout.combo_master_base !== null &&
@@ -942,6 +954,19 @@ function trySymmetrizeTail(
 ): boolean {
   // 1. Проверка флага.
   if (ctx.bundle.preset.symmetrize_students_tail !== true) return false;
+
+  // РЭ.40: симметризация — legacy-фича для жадного распределения.
+  // В режимах 'auto' и 'equalize' decideDistribution сам решает проблему
+  // одинокого хвоста (даёт [N/k, N/k, ...] или combined-tail с разумным X).
+  // Симметризация поверх auto/equalize ЛОМАЕТ результат: classifyTransitionLayout
+  // считает tail=1 по жадной формуле, POP-ает мои страницы и переделывает
+  // их по своей logiке, теряя учеников.
+  //
+  // Логика: отключаем только при ЯВНО установленном 'auto' или 'equalize'.
+  // Если student_distribution=undefined (например в unit-тестах) или
+  // 'greedy' — оставляем legacy поведение.
+  const mode = ctx.input.student_distribution;
+  if (mode === 'auto' || mode === 'equalize') return false;
 
   // 2. Только Mini / Light.
   if (complectation !== 'mini' && complectation !== 'light') return false;
