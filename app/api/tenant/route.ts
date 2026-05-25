@@ -4140,37 +4140,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ─── 9) Копируем quotes (цитаты пресета) ──────────────────────
-    const { data: sourceQuotes, error: qFetchErr } = await supabaseAdmin
-      .from('quotes')
-      .select('*')
-      .eq('album_id', sourceAlbumId)
-    if (qFetchErr) {
-      return rollback(`Загрузка цитат: ${qFetchErr.message}`)
-    }
-
-    const quoteIdMap = new Map<string, string>()
-    if (sourceQuotes && sourceQuotes.length > 0) {
-      const quoteRows = sourceQuotes.map((q: Record<string, unknown>) => {
-        const row: Record<string, unknown> = { album_id: newAlbumId }
-        // Все нестандартные поля копируем (text и любые другие).
-        for (const k of Object.keys(q)) {
-          if (k === 'id' || k === 'album_id' || k === 'created_at') continue
-          row[k] = q[k]
-        }
-        return row
-      })
-      const { data: newQuotes, error: qInsErr } = await supabaseAdmin
-        .from('quotes')
-        .insert(quoteRows)
-        .select('id')
-      if (qInsErr || !newQuotes) {
-        return rollback(`Создание цитат: ${qInsErr?.message ?? 'unknown'}`)
-      }
-      sourceQuotes.forEach((src, idx) => {
-        quoteIdMap.set(String(src.id), String(newQuotes[idx].id))
-      })
-    }
+    // ─── 9) quotes НЕ копируем ─────────────────────────────────────
+    //
+    // Цитаты — это партнёрская база (quotes.tenant_id, не привязана
+    // к album_id). При клонировании альбома цитаты остаются те же —
+    // копия использует те же quote_id из общей базы. В quote_selections
+    // (шаг 10f) переадресуется только child_id; quote_id остаётся
+    // прежним.
+    //
+    // Изначально был блок копирования с album_id — ошибочно, колонки
+    // album_id в quotes не существует (РЭ.39.a фикс после ошибки на
+    // проде: 'column quotes.album_id does not exist').
 
     // ─── 10) Копируем дочерние таблицы (FK через child_id) ─────────
     //
@@ -4309,7 +4289,13 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 10f. quote_selections (выбор цитаты): child_id + quote_id
+      // 10f. quote_selections (выбор цитаты): child_id + quote_id.
+      //
+      // ВАЖНО (РЭ.39.a фикс): quotes — общая база цитат tenant'а
+      // (привязка quotes.tenant_id, НЕ к album'у). При клонировании
+      // НЕ копируем сами цитаты — копия использует те же quote_id из
+      // партнёрской базы. Здесь переадресуем только child_id; quote_id
+      // оставляем как есть.
       const { data: qsRows, error: qsErr } = await supabaseAdmin
         .from('quote_selections')
         .select('*')
@@ -4321,7 +4307,7 @@ export async function POST(req: NextRequest) {
         const newQsRows = qsRows
           .map((r: Record<string, unknown>) => ({
             child_id: childIdMap.get(String(r.child_id)),
-            quote_id: quoteIdMap.get(String(r.quote_id)),
+            quote_id: r.quote_id, // не меняем — глобальная база
           }))
           .filter((r) => r.child_id && r.quote_id)
         if (newQsRows.length > 0) {
@@ -4409,7 +4395,6 @@ export async function POST(req: NextRequest) {
         children: childIdMap.size,
         teachers: teacherIdMap.size,
         photos: photoIdMap.size,
-        quotes: quoteIdMap.size,
       },
     })
   }
