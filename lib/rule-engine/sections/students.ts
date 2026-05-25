@@ -778,86 +778,82 @@ function buildGridSemantic(ctx: SectionFillContext): void {
   const slotsPerPage = gridSize;
 
   const total = students.length;
-  const fullPages = Math.floor(total / slotsPerPage);
-  const remainder = total % slotsPerPage;
+  if (total === 0) return;
 
-  // 2. Полные страницы — все на baseMaster.
-  for (let i = 0; i < fullPages; i++) {
-    const slice = students.slice(i * slotsPerPage, (i + 1) * slotsPerPage);
-    pushGridPage(ctx, baseMaster, slice, slotsPerPage, `grid_semantic:base:${baseMaster.name}`);
+  // РЭ.40: пред-поиск combined-мастера для алгоритма decideDistribution.
+  // Combined-мастер ищется ОДИН раз (по photos_full=1) с любым students
+  // ≤ slotsPerPage; capacity берём из найденного. Если мастера нет —
+  // combinedCapacity=null и алгоритм не будет пытаться combined-tail.
+  //
+  // Поиск через min_fit=null или конкретный? Используем match='min_fit'
+  // с students=1 — найдёт минимальный combined с photos_full=1 (если он
+  // есть в template_set). Capacity — из slot_capacity.students этого
+  // мастера.
+  let combinedMaster: SpreadTemplate | null = null;
+  let combinedCapacity: number | null = null;
+  const allMasters = Array.from(ctx.bundle.mastersByName.values());
+  for (const m of allMasters) {
+    if (!m.slot_capacity) continue;
+    const photosFullN =
+      typeof m.slot_capacity.photos_full === 'number' ? m.slot_capacity.photos_full : 0;
+    const studentsN =
+      typeof m.slot_capacity.students === 'number' ? m.slot_capacity.students : 0;
+    if (photosFullN === 1 && studentsN >= 1 && studentsN < slotsPerPage) {
+      // Берём максимальный по студентам combined (например N-Combined-Page
+      // на 4 студентов, а не на 2). Алгоритм decideDistribution сам выберет
+      // правильный X из 1..capacity.
+      if (combinedCapacity === null || studentsN > combinedCapacity) {
+        combinedMaster = m;
+        combinedCapacity = studentsN;
+      }
+    }
   }
 
-  if (remainder === 0) return;
+  // РЭ.40: режим распределения из albums.student_distribution.
+  const mode: DistributionMode = ctx.input.student_distribution ?? 'auto';
 
-  // 3. Хвост — три варианта: combined / adaptive / base с null'ями.
-  const tail = students.slice(fullPages * slotsPerPage);
+  const decision = decideDistribution({
+    N: total,
+    maxGrid: slotsPerPage,
+    combinedCapacity,
+    hasClassPhoto: ctx.available.full_class >= 1,
+    mode,
+  });
 
-  // 3a. Combined-tail (если есть свободное full_class фото).
-  if (ctx.available.full_class >= 1) {
-    const combinedResult = findStudentGridMaster(ctx.bundle.mastersByName, {
-      presetId: preset.id,
-      pageRole: null,
-      studentsCount: remainder,
-      match: 'min_fit',
-      photosFull: 1,
-      hasQuote: effectiveHasQuote,
-      hasPortrait: true,
-    });
-    if (combinedResult) {
-      const combSlots = combinedResult.emptySlots + remainder;
+  // Распределяем учеников по страницам в порядке решения алгоритма.
+  let studentCursor = 0;
+  for (let pageIdx = 0; pageIdx < decision.pages.length; pageIdx++) {
+    const page = decision.pages[pageIdx];
+    const slice = students.slice(studentCursor, studentCursor + page.count);
+    studentCursor += page.count;
+
+    if (page.type === 'combined' && combinedMaster) {
+      const combSlotsTotal =
+        combinedMaster.slot_capacity &&
+        typeof combinedMaster.slot_capacity.students === 'number'
+          ? combinedMaster.slot_capacity.students
+          : page.count;
       pushCombinedTailPage(
         ctx,
-        combinedResult.master,
-        tail,
-        combSlots,
-        // density передаётся в decision_trace; используем 'semantic' маркер.
+        combinedMaster,
+        slice,
+        combSlotsTotal,
+        // density: семантический путь не имеет density, передаём 'semantic'.
         'semantic' as unknown as GridConfig['density'],
       );
-      return;
-    }
-  }
-
-  // 3b. Adaptive tail (мастер с students=remainder, без common фото).
-  const adaptiveResult = findStudentGridMaster(ctx.bundle.mastersByName, {
-    presetId: preset.id,
-    pageRole: null,
-    studentsCount: remainder,
-    match: 'min_fit',
-    photosFull: 0,
-    hasQuote: effectiveHasQuote,
-    hasPortrait: true,
-  });
-  // Используем adaptive только если он МЕНЬШЕ base-мастера (иначе нет смысла
-  // — лучше base с null-padding покажет правильное число слотов).
-  if (adaptiveResult && adaptiveResult.master.id !== baseMaster.id) {
-    const adaptiveSlots = adaptiveResult.emptySlots + remainder;
-    if (adaptiveSlots < slotsPerPage) {
+    } else {
+      // type='grid' — кладём в base-мастер (slotsPerPage = gridSize).
+      // Если count < slotsPerPage, неиспользованные слоты будут null,
+      // centerLastRowSlots внутри pushGridPage сделает центрирование.
       pushGridPage(
         ctx,
-        adaptiveResult.master,
-        tail,
-        adaptiveSlots,
-        `grid_semantic:adaptive_tail:${adaptiveResult.master.name}`,
+        baseMaster,
+        slice,
+        slotsPerPage,
+        `grid_semantic:${mode}:${pageIdx}`,
       );
-      return;
     }
   }
-
-  // 3c. Fallback — base-мастер с null'ями (последние slotsPerPage - remainder
-  //     слотов остаются пустыми, Konva/PDF их скроют через __hidden__ логику).
-  pushGridPage(
-    ctx,
-    baseMaster,
-    tail,
-    slotsPerPage,
-    `grid_semantic:tail_padded:${baseMaster.name}`,
-  );
-  ctx.warnings.push(
-    `students_grid_tail_padded: остаток ${remainder} учеников вместился в ` +
-      `${slotsPerPage}-слотный '${baseMaster.name}' с null-заполнением. ` +
-      `Закажите адаптивный мастер с students=${remainder} у дизайнера если ` +
-      `нужна более компактная вёрстка хвоста.`,
-  );
 }
 
 // ─── Grid режимы (Medium / Light / Mini) ───────────────────────────────────
