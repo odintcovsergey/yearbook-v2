@@ -64,7 +64,7 @@ export async function buildAlbumInput(
 ): Promise<BuildAlbumInputResult> {
   const { data: album, error: albumErr } = await supabase
     .from('albums')
-    .select('id, template_set_id, common_section_max_spreads, include_non_purchasers')
+    .select('id, template_set_id, common_section_max_spreads, include_non_purchasers, student_distribution')
     .eq('id', albumId)
     .single();
 
