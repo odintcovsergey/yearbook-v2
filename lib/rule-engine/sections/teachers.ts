@@ -468,7 +468,7 @@ function pickRightMaster(
  *  - `headteacherphoto`            → photo
  *  - `headteachername`             → name
  *  - `headteacherrole`             → role
- *  - `headteachertext` / `…quote`  → text
+ *  - `headteachertext` / `…quote` / `headtextframe`  → text
  *  - `subjectphoto_N` / `subject_N` / `teacherphoto_N` → subjects[N-1].photo
  *  - `subjectname_N` / `teachername_N` → subjects[N-1].name
  *  - `subjectrole_N` / `teacherrole_N` → subjects[N-1].role
@@ -502,7 +502,7 @@ function bindLeftPage(
       bindings[ph.label] = headTeacher.role;
       continue;
     }
-    if (label === 'headteachertext' || label === 'headteacherquote') {
+    if (label === 'headteachertext' || label === 'headteacherquote' || label === 'headtextframe') {
       bindings[ph.label] = headTeacher.text;
       continue;
     }
