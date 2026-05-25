@@ -3991,17 +3991,22 @@ export async function POST(req: NextRequest) {
     const childIdMap = new Map<string, string>() // oldId → newId
     if (sourceChildren && sourceChildren.length > 0) {
       const childRows = sourceChildren.map((c: Record<string, unknown>) => {
-        // Копируем ВСЕ поля кроме служебных. БД сама сгенерирует:
+        // Копируем ВСЕ значимые поля кроме служебных. БД сама сгенерирует:
         //   id (uuid default), access_token (default), created_at
-        //   submitted_at и started_at — сбрасываем (копия начинает заново)
+        //
+        // РЭ.39.a (fix): submitted_at / started_at КОПИРУЕМ — иначе UI
+        // показывает что родители ничего не заполняли (0% на дашборде),
+        // хотя selections и тексты реально перенеслись. Для теста копия
+        // должна выглядеть как заполненный альбом. Для реального деления
+        // класса (если понадобится) — партнёр сбросит статусы вручную
+        // или мы добавим чекбокс в модалку.
         const row: Record<string, unknown> = {
           album_id: newAlbumId,
           full_name: c.full_name,
           class: c.class,
           is_purchased: c.is_purchased ?? false,
-          // started_at / submitted_at НЕ копируем — это статусы прогресса.
-          // Если копию используют для нового реального заказа — это правильно.
-          // Если для теста — партнёр может вручную выставить.
+          submitted_at: c.submitted_at ?? null,
+          started_at: c.started_at ?? null,
         }
         // Опциональные поля если есть в source — копируем.
         if (c.config_preset_id !== undefined && c.config_preset_id !== null) {
@@ -4034,11 +4039,14 @@ export async function POST(req: NextRequest) {
     const teacherIdMap = new Map<string, string>()
     if (sourceTeachers && sourceTeachers.length > 0) {
       const teacherRows = sourceTeachers.map((t: Record<string, unknown>) => {
+        // РЭ.39.a (fix): submitted_at тоже копируем — учителя что-то
+        // подтвердили в оригинале, в копии состояние должно быть тем же.
         const row: Record<string, unknown> = {
           album_id: newAlbumId,
           full_name: t.full_name,
           position: t.position,
           is_head_teacher: t.is_head_teacher ?? false,
+          submitted_at: t.submitted_at ?? null,
         }
         if (t.description !== undefined && t.description !== null) {
           row.description = t.description
@@ -4070,6 +4078,9 @@ export async function POST(req: NextRequest) {
         album_id: newAlbumId,
         full_name: r.full_name,
         phone: r.phone,
+        // РЭ.39.a (fix): submitted_at тоже копируем (если ответственный
+        // подтвердил в оригинале, в копии тот же статус).
+        submitted_at: r.submitted_at ?? null,
       }))
       const { error: rInsErr } = await supabaseAdmin
         .from('responsible_parents')
