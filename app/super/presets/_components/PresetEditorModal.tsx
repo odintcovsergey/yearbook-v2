@@ -6,6 +6,26 @@ import CommonRequiredPagesEditor from './CommonRequiredPagesEditor'
 
 // ─── Типы ────────────────────────────────────────────────────────────────
 
+/**
+ * РЭ.37.6: ручной сценарий transition-разворота.
+ *
+ * NULL в БД (и в этом типе) = OkeyBook-default. Иначе:
+ *   { mode: 'custom',
+ *     tail_left_master_id:  string | null,   // мастер L страницы transition
+ *     tail_right_master_id: string | null,   // мастер R страницы transition
+ *     closing_master_id:    string | null,   // резерв, пока не используется
+ *   }
+ *
+ * Зеркало типа из lib/rule-engine/types.ts (TransitionScenario) —
+ * дублируется здесь чтобы не тянуть rule-engine в client-bundle.
+ */
+export type TransitionScenario = {
+  mode: 'custom'
+  tail_left_master_id: string | null
+  tail_right_master_id: string | null
+  closing_master_id: string | null
+}
+
 export interface Preset {
   id: string
   display_name: string
@@ -31,6 +51,13 @@ export interface Preset {
    * комплектаций (grid≠6,12) флаг игнорируется. По умолчанию false (опт-ин).
    */
   symmetrize_students_tail: boolean | null
+  /**
+   * РЭ.37.6: ручной сценарий transition-разворота.
+   * NULL = OkeyBook-default (стандартная логика). Иначе custom-объект
+   * с master_id для левой/правой страницы. Подробнее см. types.ts
+   * → TransitionScenario.
+   */
+  transition_scenario: TransitionScenario | null
   version: string
   /**
    * РЭ.24.7: показывать ли шаблон в каталоге /app/templates для партнёров.
@@ -165,6 +192,19 @@ export default function PresetEditorModal({
     preset.symmetrize_students_tail ?? false
   )
 
+  // РЭ.37.6: ручной сценарий transition-разворота.
+  // 'default' (default) = OkeyBook логика, NULL в БД.
+  // 'custom' = партнёр выбрал master_id для левой/правой страницы.
+  const [transitionMode, setTransitionMode] = useState<'default' | 'custom'>(
+    preset.transition_scenario === null ? 'default' : 'custom'
+  )
+  const [transitionTailLeftId, setTransitionTailLeftId] = useState<string | null>(
+    preset.transition_scenario?.tail_left_master_id ?? null
+  )
+  const [transitionTailRightId, setTransitionTailRightId] = useState<string | null>(
+    preset.transition_scenario?.tail_right_master_id ?? null
+  )
+
   // РЭ.24.7: галка «рекомендовать в каталоге партнёров».
   // Применима только к глобальным пресетам — для тенантских скрыта в UI.
   const [isRecommended, setIsRecommended] = useState<boolean>(
@@ -262,6 +302,19 @@ export default function PresetEditorModal({
         // РЭ.37.5: симметризация хвоста. Сохраняем фактическое значение
         // галки — engine сам игнорирует флаг если комплектация не Mini/Light.
         symmetrize_students_tail: symmetrizeStudentsTail,
+        // РЭ.37.6: ручной сценарий transition-разворота.
+        // 'default' → null (старое поведение OkeyBook).
+        // 'custom' → объект с master_id для tail_left / tail_right.
+        // API сам нормализует mode='default' в null (см. rule_preset_update).
+        transition_scenario:
+          transitionMode === 'default'
+            ? null
+            : {
+                mode: 'custom',
+                tail_left_master_id: transitionTailLeftId,
+                tail_right_master_id: transitionTailRightId,
+                closing_master_id: null,
+              },
         // Legacy (дублирование для отката).
         student_pages_per_student: legacyPagesPerStudent,
         student_friend_photos: effectiveFriendPhotos,
@@ -598,6 +651,142 @@ export default function PresetEditorModal({
                 Режим личного раздела ещё не задан в БД (дефолт «page»).
                 Проверьте параметры и нажмите «Сохранить», чтобы зафиксировать.
               </p>
+            )}
+          </section>
+
+          {/* ─── РЭ.37.6: ручной сценарий transition-разворота ─── */}
+          <section className="space-y-3 border-t pt-6">
+            <div>
+              <h3 className="font-semibold text-sm text-gray-700 uppercase tracking-wide">
+                Переходный разворот
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Что engine кладёт на переходном развороте после раздела
+                учеников. По умолчанию — автоматически (OkeyBook-логика).
+                Можно задать вручную, если стандартный результат не
+                устраивает.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="transition-mode"
+                  value="default"
+                  checked={transitionMode === 'default'}
+                  onChange={() => setTransitionMode('default')}
+                  className="mt-0.5"
+                />
+                <span className="text-sm">
+                  <span className="font-medium">По умолчанию</span>
+                  <span className="block text-xs text-gray-600 mt-0.5">
+                    Engine сам подбирает мастера для левой/правой страницы по
+                    OkeyBook-правилам: combo-мастер на хвосте, J-цепочка для
+                    закрытия. Подходит в 90% случаев.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="transition-mode"
+                  value="custom"
+                  checked={transitionMode === 'custom'}
+                  onChange={() => setTransitionMode('custom')}
+                  className="mt-0.5"
+                />
+                <span className="text-sm">
+                  <span className="font-medium">Вручную — мой сценарий</span>
+                  <span className="block text-xs text-gray-600 mt-0.5">
+                    Выберите мастера для левой и правой страницы.
+                    Симметризация хвоста при этом не применяется
+                    (вы сами решили что класть).
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            {transitionMode === 'custom' && (
+              <div className="rounded border border-blue-200 bg-blue-50/40 p-3 space-y-3">
+                {templates.length === 0 ? (
+                  <p className="text-xs text-amber-700">
+                    {preset.template_set_id === null
+                      ? 'Сначала выберите дизайн шаблона (template_set), чтобы появился список мастеров.'
+                      : 'Загрузка мастеров...'}
+                  </p>
+                ) : (
+                  <>
+                    <div>
+                      <label className="text-sm text-gray-700 block mb-1">
+                        Левая страница перехода
+                      </label>
+                      <select
+                        value={transitionTailLeftId ?? ''}
+                        onChange={(e) =>
+                          setTransitionTailLeftId(
+                            e.target.value === '' ? null : e.target.value,
+                          )
+                        }
+                        className="w-full border rounded px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="">
+                          — (оставить хвост раздела учеников как есть)
+                        </option>
+                        {templates.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Engine положит этот мастер вместо последней страницы
+                        раздела учеников. Если мастер содержит portrait-слоты
+                        — хвостовые ученики попадут туда. Иначе — биндятся
+                        общие фото по типу мастера (J-Half / J-Collage / J-Full).
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-gray-700 block mb-1">
+                        Правая страница перехода
+                      </label>
+                      <select
+                        value={transitionTailRightId ?? ''}
+                        onChange={(e) =>
+                          setTransitionTailRightId(
+                            e.target.value === '' ? null : e.target.value,
+                          )
+                        }
+                        className="w-full border rounded px-3 py-2 text-sm bg-white"
+                      >
+                        <option value="">
+                          — (закрыть как обычно — J-цепочка)
+                        </option>
+                        {templates.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Если левая страница transition оказалась на левой
+                        развороте — правая будет «висеть». Этот мастер закроет
+                        её. Если не выбрано — engine закроет автоматически
+                        через стандартную J-цепочку.
+                      </p>
+                    </div>
+
+                    {transitionTailLeftId === null && transitionTailRightId === null && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        Оба поля пустые — это равнозначно «По умолчанию».
+                        Выберите хотя бы один мастер либо переключитесь
+                        на «По умолчанию».
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
             )}
           </section>
 

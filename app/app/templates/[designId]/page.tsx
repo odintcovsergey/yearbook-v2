@@ -285,6 +285,7 @@ export default function TemplatesPage() {
         student_layout_mode: full.student_layout_mode ?? null,
         student_grid_size: full.student_grid_size ?? null,
         symmetrize_students_tail: full.symmetrize_students_tail ?? null,
+        transition_scenario: full.transition_scenario ?? null,
         version: full.version ?? '1.0',
         is_recommended: full.is_recommended ?? false,
       })
