@@ -2576,6 +2576,8 @@ function AlbumFormModal({
   const [loading, setLoading] = useState(false)
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  // РЭ.39.b: state модалки подтверждения клонирования альбома.
+  const [showCloneConfirm, setShowCloneConfirm] = useState(false)
   const [backdropStart, setBackdropStart] = useState(false)
   // РЭ.24.6: модалка выбора шаблона + диалог смены/снятия шаблона.
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
@@ -2833,6 +2835,37 @@ function AlbumFormModal({
     } else {
       const d = await r.json().catch(() => ({}))
       onError(d.error ?? 'Не удалось удалить альбом')
+      setLoading(false)
+    }
+  }
+
+  // РЭ.39.b: клонирование альбома. Создаёт копию со всеми заполненными
+  // данными (ученики, учителя, фото, выбор фото, тексты от родителей).
+  // Layout не копируется — engine пересоберёт при первом просмотре копии.
+  // Ссылки родителей в копии новые (старые продолжают работать с оригиналом).
+  const handleClone = async () => {
+    if (!album) return
+    setLoading(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'album_clone',
+        source_album_id: album.id,
+      }),
+    })
+    if (r.ok) {
+      const data = await r.json().catch(() => ({}))
+      const newId = (data as { id?: string }).id
+      // Возвращаемся в список с обновлёнными данными. Используем
+      // существующий onSuccess колбэк — он закроет модалку и обновит
+      // список альбомов. Партнёр увидит копию в списке и сам её откроет.
+      onSuccess?.(`Создана копия: ${(data as { title?: string }).title ?? 'без названия'}`)
+      // Closure-safe — пользователю не нужно ничего делать, копия видна
+      // в списке. Если в будущем понадобится auto-redirect — берём newId.
+      void newId
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось клонировать альбом')
       setLoading(false)
     }
   }
@@ -3336,6 +3369,52 @@ function AlbumFormModal({
           {/* Архив — только при редактировании */}
           {mode === 'edit' && album && (
             <div className="pt-5 border-t border-gray-100">
+              {/* РЭ.39.b: Клонировать — полезное действие, не деструктивное.
+                  Ставим первым. */}
+              {!album.archived && (
+                !showCloneConfirm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowCloneConfirm(true)}
+                    className="text-sm text-blue-600 hover:text-blue-800 transition-colors mb-4 block"
+                    disabled={loading}
+                  >
+                    📋 Клонировать альбом
+                  </button>
+                ) : (
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
+                    <div className="font-medium text-blue-800 mb-2 text-sm">
+                      Создать копию альбома?
+                    </div>
+                    <p className="text-sm text-blue-700 mb-3">
+                      Будет создан альбом <strong>«{album.title} — копия»</strong> со
+                      всеми фотографиями, выбором фото, текстами от родителей,
+                      учителями и настройками. <strong>Layout пересоберётся</strong>{' '}
+                      при первом просмотре копии. <strong>Ссылки родителей</strong>{' '}
+                      в копии будут новыми (старые продолжат работать с оригиналом).
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleClone}
+                        className="px-3 py-1.5 rounded-xl text-sm bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                        disabled={loading}
+                      >
+                        {loading ? 'Клонируем...' : 'Да, создать копию'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowCloneConfirm(false)}
+                        className="btn-secondary text-sm px-3 py-1.5"
+                        disabled={loading}
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                )
+              )}
+
               {!album.archived ? (
                 !showArchiveConfirm ? (
                   <button
