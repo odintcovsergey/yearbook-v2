@@ -1270,6 +1270,96 @@ function StudentDistributionControl({
 }
 
 
+// РЭ.41.b — Inline-контрол для типа листов (layflat / soft).
+// Перенесён из формы редактирования на Обзор для быстрых переключений
+// при тестировании. На мягких листах недоступен мастер «фото на разворот».
+// Пустая строка ('') = «из шаблона», engine берёт print_type пресета.
+function PrintTypeOverrideControl({
+  album,
+  apiVA,
+  onNotify,
+  onError,
+}: {
+  album: Album
+  apiVA: (url: string, opts?: RequestInit) => Promise<Response>
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  type Value = '' | 'layflat' | 'soft'
+  const initial: Value =
+    album.print_type === 'layflat' || album.print_type === 'soft' ? album.print_type : ''
+  const [value, setValue] = useState<Value>(initial)
+  const [saving, setSaving] = useState(false)
+
+  const handleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const v = e.target.value as Value
+    const prevValue = value
+    setValue(v)
+    setSaving(true)
+    try {
+      // Если выбрано '' (из шаблона) — отправляем print_type=null чтобы
+      // engine брал из пресета. API trim'ает 'layflat'/'soft' иначе.
+      const body: Record<string, unknown> = {
+        action: 'update_album',
+        album_id: album.id,
+      }
+      if (v === 'layflat' || v === 'soft') {
+        body.print_type = v
+      } else {
+        // Сброс — отправляем null чтобы print_type вернулся к 'из пресета'.
+        body.print_type = null
+      }
+      const r = await apiVA('/api/tenant', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      if (r.ok) {
+        const label =
+          v === 'layflat'
+            ? 'Твёрдые листы (layflat)'
+            : v === 'soft'
+              ? 'Мягкие листы (soft)'
+              : 'Из шаблона'
+        onNotify(`Тип листов: ${label}. Пересоберите альбом чтобы применить.`)
+      } else {
+        setValue(prevValue)
+        const d = await r.json().catch(() => ({}))
+        onError(d.error ?? 'Не удалось сохранить настройку')
+      }
+    } catch (err: unknown) {
+      setValue(prevValue)
+      onError(err instanceof Error ? err.message : 'Ошибка сети')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const description =
+    value === 'layflat'
+      ? 'Твёрдые листы. Доступен мастер «фото на разворот».'
+      : value === 'soft'
+        ? 'Мягкие листы. Мастер «фото на разворот» отключён (пересекает корешок).'
+        : 'Тип переплёта берётся из шаблона.'
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-3 flex-wrap">
+      <div className="text-xs text-gray-500 uppercase">Тип листов</div>
+      <select
+        value={value}
+        onChange={handleChange}
+        disabled={saving}
+        className="text-sm px-2 py-1 border border-gray-300 rounded bg-white disabled:opacity-50"
+      >
+        <option value="">Из шаблона</option>
+        <option value="layflat">Твёрдые (layflat)</option>
+        <option value="soft">Мягкие (soft)</option>
+      </select>
+      <div className="text-xs text-gray-400 flex-1 min-w-[200px]">{description}</div>
+    </div>
+  )
+}
+
+
 // ============================================================
 // МОДАЛКА ДЕТАЛЕЙ АЛЬБОМА (с управлением учениками)
 // ============================================================
@@ -1743,6 +1833,16 @@ function AlbumDetailModal({
                         UI показываем всегда — пусть партнёр видит настройку. */}
                     {canEdit && (album.config_preset_id || album.section_structure_preset_id) && (
                       <StudentDistributionControl
+                        album={album}
+                        apiVA={apiVA}
+                        onNotify={onNotify}
+                        onError={onError}
+                      />
+                    )}
+
+                    {/* РЭ.41.b — Тип листов (layflat/soft/из шаблона). */}
+                    {canEdit && (album.config_preset_id || album.section_structure_preset_id) && (
+                      <PrintTypeOverrideControl
                         album={album}
                         apiVA={apiVA}
                         onNotify={onNotify}
@@ -2493,18 +2593,6 @@ type FormData = {
    * поведение. При true — все ученики получают личную страницу.
    */
   include_non_purchasers: boolean
-  /**
-   * РЭ.27.6: явный override типа переплёта альбома.
-   * - '' (пустая строка) → не переопределять (engine возьмёт из пресета).
-   * - 'layflat' → явно твёрдые листы (приоритет над пресетом).
-   * - 'soft' → явно мягкие листы (приоритет над пресетом).
-   *
-   * Сохраняется в albums.print_type через body.print_type
-   * (API принимает с РЭ.27.2). Не путать с legacy form.print_type
-   * выше — то поле строит preset_slug = '<config>-<print>' для
-   * старых альбомов без шаблона.
-   */
-  print_type_override: string
 }
 
 const textTypeOptions = [
@@ -2542,7 +2630,6 @@ function emptyForm(): FormData {
     section_structure_preset_name: null,
     section_structure_design_name: null,
     include_non_purchasers: false,  // РЭ.25: строгое поведение по умолчанию
-    print_type_override: '',  // РЭ.27.6: пусто = не переопределять, engine возьмёт из пресета
   }
 }
 
@@ -2666,12 +2753,6 @@ function AlbumFormModal({
         section_structure_design_name: null,
         // РЭ.25: подхватываем галку «включить не-заказчиков» из БД.
         include_non_purchasers: (album as any).include_non_purchasers === true,
-        // РЭ.27.6: подхватываем явный print_type из БД (если задан).
-        // Пустая строка = не задан = engine возьмёт из пресета.
-        print_type_override:
-          (album as any).print_type === 'layflat' || (album as any).print_type === 'soft'
-            ? (album as any).print_type
-            : '',
       }
     }
     return emptyForm()
@@ -2850,14 +2931,9 @@ function AlbumFormModal({
         : [],
       // РЭ.25: переопределение фильтра не-заказчиков для альбома.
       include_non_purchasers: form.include_non_purchasers,
-      // РЭ.27.6: явный print_type override.
-      // Если пользователь выбрал в селекте 'layflat' / 'soft' — отправляем.
-      // Если пусто ('') — НЕ отправляем поле вообще (тогда API
-      // оставит существующее значение при update_album, или скопирует
-      // из пресета при create_album).
-      ...(form.print_type_override === 'layflat' || form.print_type_override === 'soft'
-        ? { print_type: form.print_type_override }
-        : {}),
+      // РЭ.41.b: print_type override перенесён из формы на Обзор
+      // (PrintTypeOverrideControl). При сохранении формы print_type
+      // НЕ отправляется — БД сохраняет существующее значение.
       // РЭ.24.6 + РЭ.30.6: единственный путь задания структуры альбома —
       // выбор Шаблона в каталоге (section_structure_preset_id). Engine
       // через buildFromSectionStructure получает template_set_id и
@@ -3171,37 +3247,8 @@ function AlbumFormModal({
             </p>
           </div>
 
-          {/* РЭ.27.6: явный override типа листов альбома.
-              Работает независимо от выбора шаблона / комплектации:
-              - 'Из шаблона' (пусто) → не переопределять, engine применит
-                preset.print_type как fallback.
-              - 'Твёрдые листы' (layflat) → явное значение, приоритет.
-              - 'Мягкие листы' (soft) → явное значение, приоритет.
-              Сохраняется в albums.print_type через body.print_type (API
-              принимает с РЭ.27.2). На сборку влияет через resolvePrintType
-              в engine (РЭ.27.3). */}
-          <div className="border border-gray-200 rounded-lg p-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Тип листов в альбоме
-            </label>
-            <select
-              value={form.print_type_override}
-              onChange={(e) => set('print_type_override', e.target.value)}
-              className="input"
-              disabled={loading}
-            >
-              <option value="">Из шаблона (по умолчанию)</option>
-              <option value="layflat">Твёрдые листы (layflat)</option>
-              <option value="soft">Мягкие листы (soft)</option>
-            </select>
-            <p className="text-xs text-gray-500 mt-2">
-              Тип переплёта влияет на правила сборки. На мягких листах
-              недоступен мастер «фото на разворот» (фото пересекало бы
-              корешок). На первом и последнем разворотах будут показаны
-              форзацы. Можно изменить в любой момент — engine применит
-              правила при следующей пересборке.
-            </p>
-          </div>
+          {/* РЭ.41.b: блок «Тип листов в альбоме» перенесён из формы
+              на вкладку «Обзор» альбома (PrintTypeOverrideControl). */}
 
           {/* РЭ.25: галка включить не-заказчиков в личный раздел */}
           <div className="border border-gray-200 rounded-lg p-3">
