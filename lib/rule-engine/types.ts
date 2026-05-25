@@ -802,6 +802,19 @@ export interface PageInstance {
    * для transition (она специально достраивает students).
    */
   section_start?: boolean;
+  /**
+   * РЭ.43: тип секции из которой пришла эта страница. Заполняется
+   * автоматически orchestrator-ом (build-from-section-structure) после
+   * вызова fill-функции секции. Используется в enforcement max_pages
+   * для защиты «жёстко привязанных» страниц от обрезки —
+   * soft_intro / soft_final у soft binding обязательно остаются
+   * на форзацах, обрезается всегда хвост из не-защищённых секций
+   * (common_additional → common_required → ...).
+   *
+   * NULL допустим для исторических page_instance без тега — fallback на
+   * старое поведение (обрезка с конца без защиты).
+   */
+  section_type?: SectionStructureEntry['type'];
 }
 
 export interface SpreadInstance {

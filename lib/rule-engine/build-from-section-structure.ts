@@ -181,11 +181,25 @@ export function buildFromSectionStructure(
     ) {
       pageInstances[startCountBeforeSection].section_start = true;
     }
+
+    // РЭ.43: тегируем все добавленные секцией страницы её типом.
+    // Используется ниже в enforcement max_pages для защиты soft_intro/
+    // soft_final от обрезки. Заполняется ПОСЛЕ fill-функции — она сама
+    // не знает свой тип в section_structure (могла бы, но архитектурно
+    // удобнее проставить тег в orchestrator-е).
+    for (let i = startCountBeforeSection; i < pageInstances.length; i++) {
+      pageInstances[i].section_type = section.type;
+    }
   }
 
   // 5.5. Enforcement min_pages / max_pages из пресета.
   // Применяется ПОСЛЕ всех секций, ДО группировки в spreads.
   // - При переборе (страниц > max_pages) обрезаем хвост + warning.
+  //   РЭ.43: soft_intro и soft_final ЗАЩИЩЕНЫ от обрезки. Если суммарно
+  //   страниц больше max_pages, удаляем последние НЕ-защищённые страницы.
+  //   Это сохраняет семантику soft binding: первая страница на форзаце
+  //   (soft_intro), последняя на форзаце (soft_final). Обрезается хвост
+  //   общего раздела / лишние students.
   //   Партнёр через редактор может посмотреть что обрезалось.
   // - При недоборе (страниц < min_pages) — warning без auto-fill.
   //   Партнёр явно добавит общие развороты через section_structure
@@ -195,15 +209,56 @@ export function buildFromSectionStructure(
   const totalPages = pageInstances.length;
 
   if (typeof maxPages === 'number' && totalPages > maxPages) {
-    const dropped = totalPages - maxPages;
-    pageInstances.length = maxPages; // обрезаем in-place
-    warnings.push(
-      `pages_overflow_truncated: страниц ${totalPages} > max_pages ${maxPages}, обрезано ${dropped} (с конца)`,
-    );
-    // Чистим decision_trace для обрезанных страниц (spread_index >= maxPages/2).
-    // Делать не строго обязательно (trace всё равно отладочная инфа), но
-    // чище для UI: фильтр inline через splice по индексу.
-    const maxSpreadKept = Math.floor((maxPages - 1) / 2);
+    const toRemove = totalPages - maxPages;
+
+    // РЭ.43: индексы страниц которые МОЖНО удалять (не soft_intro/final).
+    const PROTECTED_SECTION_TYPES = new Set<string>([
+      'soft_intro',
+      'soft_final',
+    ]);
+    const removableIndices: number[] = [];
+    for (let i = 0; i < pageInstances.length; i++) {
+      const sType = pageInstances[i].section_type;
+      // Если section_type отсутствует (старое поведение) — считаем
+      // страницу removable: обратная совместимость для тестов / случаев
+      // когда orchestrator теги не проставил.
+      if (!sType || !PROTECTED_SECTION_TYPES.has(sType)) {
+        removableIndices.push(i);
+      }
+    }
+
+    if (removableIndices.length < toRemove) {
+      // Эдж-кейс: защищённых страниц больше чем мы можем оставить
+      // в max_pages. Например max_pages=1, а структура {soft_intro,
+      // soft_final}. Удаляем все removable, выдаём warning о том
+      // что обрезка не полностью применилась.
+      const indicesToRemove = new Set(removableIndices);
+      const filtered = pageInstances.filter((_, i) => !indicesToRemove.has(i));
+      pageInstances.length = 0;
+      pageInstances.push(...filtered);
+      warnings.push(
+        `pages_overflow_partial_truncation: страниц ${totalPages} > max_pages ${maxPages}, ` +
+          `обрезаны все ${removableIndices.length} не-защищённых страниц (общий раздел, students), ` +
+          `но защищённых (soft_intro, soft_final) больше чем помещается. ` +
+          `Текущая длина ${pageInstances.length}. Увеличьте max_pages или упростите структуру.`,
+      );
+    } else {
+      // Стандартный случай: удаляем последние toRemove из removable.
+      // С конца — потому что обрезка традиционно «с конца альбома»,
+      // и эта страница ВСЕГДА имеет смысл "последняя добавленная не-защищённая".
+      const indicesToRemove = new Set(removableIndices.slice(-toRemove));
+      const filtered = pageInstances.filter((_, i) => !indicesToRemove.has(i));
+      pageInstances.length = 0;
+      pageInstances.push(...filtered);
+      warnings.push(
+        `pages_overflow_truncated: страниц ${totalPages} > max_pages ${maxPages}, обрезано ${toRemove} ` +
+          `(soft_intro/soft_final защищены, обрезаются страницы общего раздела/students)`,
+      );
+    }
+
+    // Чистим decision_trace для удалённых spread_index'ов. После фильтрации
+    // последний spread_index = (pageInstances.length-1) / 2. Всё что больше — мусор.
+    const maxSpreadKept = Math.floor((pageInstances.length - 1) / 2);
     for (let i = decisionTrace.length - 1; i >= 0; i--) {
       if (decisionTrace[i].spread_index > maxSpreadKept) {
         decisionTrace.splice(i, 1);
