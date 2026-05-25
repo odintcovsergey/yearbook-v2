@@ -3227,8 +3227,9 @@ export async function POST(req: NextRequest) {
   //
   // Шаги:
   //   1. SELECT preset → 404 если не найден или не свой.
-  //   2. SELECT COUNT(*) FROM albums WHERE preset_id=template_id
-  //      AND archived=false. Если > 0 → 409 со списком альбомов.
+  //   2. SELECT FROM albums WHERE (config_preset_id=template_id OR
+  //      section_structure_preset_id=template_id) AND archived=false.
+  //      Если > 0 → 409 со списком альбомов.
   //   3. DELETE FROM presets.
   //
   // Доступ: admin/owner/superadmin (photographer тоже может).
@@ -3274,10 +3275,19 @@ export async function POST(req: NextRequest) {
     }
 
     // Проверка активных альбомов.
+    // Колонка albums.preset_id была удалена в миграциях (см. 2026-05-20
+    // albums-drop-rules-preset-id.sql). Сейчас пресет может быть указан
+    // в одном из двух полей:
+    //   • albums.config_preset_id            — основной пресет настроек
+    //   • albums.section_structure_preset_id — пресет section_structure
+    // Проверяем оба, чтобы не дать удалить пресет используемый в любом
+    // из них.
     const { data: albums, error: albumsErr } = await supabaseAdmin
       .from('albums')
       .select('id, title, archived')
-      .eq('preset_id', templateId)
+      .or(
+        `config_preset_id.eq.${templateId},section_structure_preset_id.eq.${templateId}`,
+      )
       .eq('archived', false)
     if (albumsErr) {
       return NextResponse.json({ error: albumsErr.message }, { status: 500 })
