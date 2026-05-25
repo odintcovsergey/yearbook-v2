@@ -781,14 +781,17 @@ function buildGridSemantic(ctx: SectionFillContext): void {
   if (total === 0) return;
 
   // РЭ.40: пред-поиск combined-мастера для алгоритма decideDistribution.
-  // Combined-мастер ищется ОДИН раз (по photos_full=1) с любым students
-  // ≤ slotsPerPage; capacity берём из найденного. Если мастера нет —
-  // combinedCapacity=null и алгоритм не будет пытаться combined-tail.
   //
-  // Поиск через min_fit=null или конкретный? Используем match='min_fit'
-  // с students=1 — найдёт минимальный combined с photos_full=1 (если он
-  // есть в template_set). Capacity — из slot_capacity.students этого
-  // мастера.
+  // Combined-мастер — это student-grid с дополнительным общим фото
+  // (photos_full=1). У него ОБЯЗАТЕЛЬНО должны быть студенческие слоты
+  // с has_portrait=true И has_name=true — это отличает его от
+  // transition combo-мастеров (J-Combined-Tail-2/3/4 РЭ.37.4), у которых
+  // has_portrait/has_name=undefined.
+  //
+  // Раньше (до fix) фильтр был только photos_full=1, и в template_set
+  // okeybook-default это захватывало J-Combined-Tail-* — у Сергея для
+  // Light шаблона выбрался J-Combined-Tail-4 вместо правильного
+  // L-Combined-Page. Теперь жёсткий фильтр по семантике student.
   let combinedMaster: SpreadTemplate | null = null;
   let combinedCapacity: number | null = null;
   const allMasters = Array.from(ctx.bundle.mastersByName.values());
@@ -798,10 +801,19 @@ function buildGridSemantic(ctx: SectionFillContext): void {
       typeof m.slot_capacity.photos_full === 'number' ? m.slot_capacity.photos_full : 0;
     const studentsN =
       typeof m.slot_capacity.students === 'number' ? m.slot_capacity.students : 0;
-    if (photosFullN === 1 && studentsN >= 1 && studentsN < slotsPerPage) {
-      // Берём максимальный по студентам combined (например N-Combined-Page
-      // на 4 студентов, а не на 2). Алгоритм decideDistribution сам выберет
-      // правильный X из 1..capacity.
+    const hasPortrait = m.slot_capacity.has_portrait === true;
+    const hasName = m.slot_capacity.has_name === true;
+    // Жёсткий фильтр: photos_full=1, has_portrait=true, has_name=true.
+    // Это отсекает J-Combined-Tail-* (для transition) — у них нет
+    // has_portrait/has_name.
+    if (
+      photosFullN === 1 &&
+      hasPortrait &&
+      hasName &&
+      studentsN >= 1 &&
+      studentsN < slotsPerPage
+    ) {
+      // Берём максимальный по студентам combined.
       if (combinedCapacity === null || studentsN > combinedCapacity) {
         combinedMaster = m;
         combinedCapacity = studentsN;
