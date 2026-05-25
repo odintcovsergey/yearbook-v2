@@ -1360,6 +1360,82 @@ function PrintTypeOverrideControl({
 }
 
 
+// РЭ.41.c — Inline-контрол для include_non_purchasers.
+// Галка: личную страницу получают только заказчики (default) или
+// все ученики класса. Перенесён из формы редактирования на Обзор.
+function IncludeNonPurchasersControl({
+  album,
+  apiVA,
+  onNotify,
+  onError,
+}: {
+  album: Album
+  apiVA: (url: string, opts?: RequestInit) => Promise<Response>
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  const [value, setValue] = useState<boolean>(album.include_non_purchasers === true)
+  const [saving, setSaving] = useState(false)
+
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.checked
+    const prevValue = value
+    setValue(newValue)
+    setSaving(true)
+    try {
+      const r = await apiVA('/api/tenant', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'update_album',
+          album_id: album.id,
+          include_non_purchasers: newValue,
+        }),
+      })
+      if (r.ok) {
+        onNotify(
+          newValue
+            ? 'Личная страница для всех учеников. Пересоберите альбом чтобы применить.'
+            : 'Личная страница только для заказчиков. Пересоберите альбом чтобы применить.'
+        )
+      } else {
+        setValue(prevValue)
+        const d = await r.json().catch(() => ({}))
+        onError(d.error ?? 'Не удалось сохранить настройку')
+      }
+    } catch (err: unknown) {
+      setValue(prevValue)
+      onError(err instanceof Error ? err.message : 'Ошибка сети')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200">
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={value}
+          onChange={handleChange}
+          disabled={saving}
+          className="mt-0.5 disabled:opacity-50"
+        />
+        <div className="flex-1">
+          <span className="text-sm font-medium text-gray-700">
+            Включить в личный раздел всех учеников
+          </span>
+          <p className="text-xs text-gray-500 mt-0.5">
+            По умолчанию выключено — личную страницу получают только те ученики, у
+            которых проставлена галка «Заказывает альбом». Включите, если хотите дать
+            страницу всему классу независимо от заказа.
+          </p>
+        </div>
+      </label>
+    </div>
+  )
+}
+
+
 // ============================================================
 // МОДАЛКА ДЕТАЛЕЙ АЛЬБОМА (с управлением учениками)
 // ============================================================
@@ -1843,6 +1919,16 @@ function AlbumDetailModal({
                     {/* РЭ.41.b — Тип листов (layflat/soft/из шаблона). */}
                     {canEdit && (album.config_preset_id || album.section_structure_preset_id) && (
                       <PrintTypeOverrideControl
+                        album={album}
+                        apiVA={apiVA}
+                        onNotify={onNotify}
+                        onError={onError}
+                      />
+                    )}
+
+                    {/* РЭ.41.c — Включить в личный раздел всех учеников. */}
+                    {canEdit && (album.config_preset_id || album.section_structure_preset_id) && (
+                      <IncludeNonPurchasersControl
                         album={album}
                         apiVA={apiVA}
                         onNotify={onNotify}
@@ -2587,12 +2673,6 @@ type FormData = {
   section_structure_preset_name: string | null
   /** Для отображения в кнопке — название дизайна выбранного шаблона. */
   section_structure_design_name: string | null
-  /**
-   * РЭ.25: включать ли не-заказчиков (children.is_purchased=false) в
-   * персональные страницы альбома. По умолчанию false — строгое
-   * поведение. При true — все ученики получают личную страницу.
-   */
-  include_non_purchasers: boolean
 }
 
 const textTypeOptions = [
@@ -2629,7 +2709,6 @@ function emptyForm(): FormData {
     section_structure_preset_id: null,
     section_structure_preset_name: null,
     section_structure_design_name: null,
-    include_non_purchasers: false,  // РЭ.25: строгое поведение по умолчанию
   }
 }
 
@@ -2751,8 +2830,6 @@ function AlbumFormModal({
         section_structure_preset_id: (album as any).section_structure_preset_id ?? null,
         section_structure_preset_name: null,
         section_structure_design_name: null,
-        // РЭ.25: подхватываем галку «включить не-заказчиков» из БД.
-        include_non_purchasers: (album as any).include_non_purchasers === true,
       }
     }
     return emptyForm()
@@ -2929,8 +3006,9 @@ function AlbumFormModal({
       classes: form.class_name.trim()
         ? form.class_name.split(',').map(s => s.trim()).filter(Boolean)
         : [],
-      // РЭ.25: переопределение фильтра не-заказчиков для альбома.
-      include_non_purchasers: form.include_non_purchasers,
+      // РЭ.41.c: include_non_purchasers перенесён из формы на Обзор
+      // (IncludeNonPurchasersControl). При сохранении формы поле
+      // НЕ отправляется — БД сохраняет существующее значение.
       // РЭ.41.b: print_type override перенесён из формы на Обзор
       // (PrintTypeOverrideControl). При сохранении формы print_type
       // НЕ отправляется — БД сохраняет существующее значение.
@@ -3250,30 +3328,9 @@ function AlbumFormModal({
           {/* РЭ.41.b: блок «Тип листов в альбоме» перенесён из формы
               на вкладку «Обзор» альбома (PrintTypeOverrideControl). */}
 
-          {/* РЭ.25: галка включить не-заказчиков в личный раздел */}
-          <div className="border border-gray-200 rounded-lg p-3">
-            <label className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.include_non_purchasers}
-                onChange={(e) => set('include_non_purchasers', e.target.checked)}
-                disabled={loading}
-                className="mt-0.5"
-              />
-              <div className="flex-1">
-                <span className="text-sm font-medium text-gray-700">
-                  Включить в личный раздел всех учеников
-                </span>
-                <p className="text-xs text-gray-500 mt-1">
-                  По умолчанию выключено — личную страницу получают только
-                  те ученики, у которых проставлена галка «Заказывает альбом».
-                  Включите, если хотите дать страницу всему классу
-                  независимо от заказа (например, не-заказчиков всего 1-2
-                  человека и не хочется делать в альбоме «дырки»).
-                </p>
-              </div>
-            </label>
-          </div>
+          {/* РЭ.41.c: галка «Включить в личный раздел всех учеников»
+              перенесена из формы на вкладку «Обзор» альбома
+              (IncludeNonPurchasersControl). */}
 
           {/* РЭ.41.a: блок «Распределение учеников по страницам»
               перенесён из формы на вкладку «Обзор» альбома
