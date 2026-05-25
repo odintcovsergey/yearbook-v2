@@ -162,10 +162,10 @@ export function buildFromSectionStructure(
         fillStudentsSection(ctx);
         break;
       case 'soft_intro':
-        fillSoftIntroSection(ctx);
+        fillSoftIntroSection(ctx, section);
         break;
       case 'soft_final':
-        fillSoftFinalSection(ctx);
+        fillSoftFinalSection(ctx, section);
         break;
       // vignette — отложено (виньетки из детских фото = отдельная подсистема).
       case 'vignette':

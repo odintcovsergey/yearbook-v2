@@ -10,23 +10,37 @@
  * опциональный photos_full=1. Legacy fallback на жёсткое имя 'S-Intro'
  * для template_set'ов где теги ещё не размечены.
  *
+ * РЭ.42: партнёр может явно указать `master_name` в section_structure —
+ * тогда вместо автоматического поиска engine берёт именно этот мастер
+ * из template_set. Это нужно когда партнёр хочет на первой правой странице
+ * не общее фото класса, а, например, учителей / классного руководителя /
+ * воспитателей детсада. Если master_name указан, но мастер не найден —
+ * страница пропускается с warning (партнёр сразу заметит и исправит,
+ * это лучше чем тихое падение на classphoto).
+ *
  * Bindings: placeholder-driven, единственный поддерживаемый label —
  * `classphotoframe` (первое ещё неиспользованное full_class). Cursor-логика
  * через `arr.length - available.full_class` — порядок: bindings ДО
- * decrement available (как в teachers/students-combined).
+ * decrement available (как в teachers/students-combined). Для override-
+ * мастеров с teacher-placeholder'ами автоматический биндинг пока не
+ * реализован — партнёр заполнит teacher-фото в редакторе вручную.
  *
  * Позиция страницы: S-Intro обычно первая правая страница альбома, но
  * наш orchestrator не контролирует это явно. Если soft_intro идёт первой
- * в section_structure — она встанет на pageInstances[0] = left. Это
- * визуальное расхождение со стандартом, но функционально корректно
- * (страница есть, фото есть). Партнёр в редакторе может подвинуть.
+ * в section_structure — она встанет на pageInstances[0], а группировка
+ * для sheet_type='soft' положит её на R первого разворота (см.
+ * build-from-section-structure.ts:255).
  */
 
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import { findSoftSectionMaster } from '../master-finder';
+import type { SectionStructureEntry } from '../types';
 import type { SectionFillContext } from './shared';
 
-export function fillSoftIntroSection(ctx: SectionFillContext): void {
+export function fillSoftIntroSection(
+  ctx: SectionFillContext,
+  section: Extract<SectionStructureEntry, { type: 'soft_intro' }>,
+): void {
   const sheetType = ctx.bundle.preset.sheet_type;
   if (sheetType !== 'soft') {
     ctx.warnings.push(
@@ -35,31 +49,51 @@ export function fillSoftIntroSection(ctx: SectionFillContext): void {
     return;
   }
 
-  // 1) Семантический путь: ищем мастер с page_role='intro', photos_full=1
-  //    (требуется слот для общего фото класса).
-  const semanticResult = findSoftSectionMaster(ctx.bundle.mastersByName, {
-    presetId: ctx.bundle.preset.id,
-    pageRole: 'intro',
-    photosFull: 1,
-  });
-
   let master: SpreadTemplate | undefined;
   let semantic = false;
-  if (semanticResult) {
-    master = semanticResult.master;
-    semantic = true;
-  } else {
-    // 2) Legacy fallback по имени
-    master = ctx.bundle.mastersByName.get('S-Intro');
-  }
+  let overridden = false;
 
-  if (!master) {
-    ctx.warnings.push(
-      `soft_intro_master_not_found: ни через семантический поиск ` +
-        `(page_role='intro', photos_full=1), ни по имени 'S-Intro' мастер ` +
-        `не найден в template_set. Закажите мастер у дизайнера.`,
-    );
-    return;
+  // РЭ.42: explicit override через section.master_name. Если задан и
+  // мастер найден — используем его. Если задан но не найден — warning
+  // и SKIP страницы (не падаем на автоматический classphoto, чтобы
+  // партнёр заметил опечатку / отсутствие мастера в template_set).
+  if (section.master_name) {
+    master = ctx.bundle.mastersByName.get(section.master_name);
+    if (!master) {
+      ctx.warnings.push(
+        `soft_intro_master_override_not_found: указанный мастер ` +
+          `'${section.master_name}' не найден в template_set. ` +
+          `Проверьте имя мастера или выберите другой в редакторе шаблона.`,
+      );
+      return;
+    }
+    overridden = true;
+  } else {
+    // Автоматический режим (по умолчанию).
+    // 1) Семантический путь: ищем мастер с page_role='intro', photos_full=1
+    //    (требуется слот для общего фото класса).
+    const semanticResult = findSoftSectionMaster(ctx.bundle.mastersByName, {
+      presetId: ctx.bundle.preset.id,
+      pageRole: 'intro',
+      photosFull: 1,
+    });
+
+    if (semanticResult) {
+      master = semanticResult.master;
+      semantic = true;
+    } else {
+      // 2) Legacy fallback по имени
+      master = ctx.bundle.mastersByName.get('S-Intro');
+    }
+
+    if (!master) {
+      ctx.warnings.push(
+        `soft_intro_master_not_found: ни через семантический поиск ` +
+          `(page_role='intro', photos_full=1), ни по имени 'S-Intro' мастер ` +
+          `не найден в template_set. Закажите мастер у дизайнера.`,
+      );
+      return;
+    }
   }
 
   // Bindings ДО decrement available (cursor-логика).
@@ -95,6 +129,7 @@ export function fillSoftIntroSection(ctx: SectionFillContext): void {
       consumes: { full_class: consumedFullClass },
       sheet_type: 'soft',
       semantic,
+      overridden,
     },
   });
 }

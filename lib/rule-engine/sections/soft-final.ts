@@ -12,6 +12,10 @@
  * у партнёра), потом 'S-Final-Soft-L'. После семантизации эта
  * двойственность имён не нужна — engine ищет по page_role.
  *
+ * РЭ.42: партнёр может явно указать `master_name` в section_structure —
+ * аналогично soft_intro. Если master_name задан, но мастер не найден —
+ * страница пропускается с warning.
+ *
  * Bindings: placeholder-driven, поддерживаемый label — `classphotoframe`
  * (если есть в мастере). Cursor-логика через
  * `arr.length - available.full_class` — порядок: bindings ДО decrement.
@@ -24,9 +28,13 @@
 
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import { findSoftSectionMaster } from '../master-finder';
+import type { SectionStructureEntry } from '../types';
 import type { SectionFillContext } from './shared';
 
-export function fillSoftFinalSection(ctx: SectionFillContext): void {
+export function fillSoftFinalSection(
+  ctx: SectionFillContext,
+  section: Extract<SectionStructureEntry, { type: 'soft_final' }>,
+): void {
   const sheetType = ctx.bundle.preset.sheet_type;
   if (sheetType !== 'soft') {
     ctx.warnings.push(
@@ -35,34 +43,51 @@ export function fillSoftFinalSection(ctx: SectionFillContext): void {
     return;
   }
 
-  // 1) Семантический путь: page_role='final', photos_full=1.
-  const semanticResult = findSoftSectionMaster(ctx.bundle.mastersByName, {
-    presetId: ctx.bundle.preset.id,
-    pageRole: 'final',
-    photosFull: 1,
-  });
-
   let master: SpreadTemplate | undefined;
   let semantic = false;
-  if (semanticResult) {
-    master = semanticResult.master;
-    semantic = true;
-  } else {
-    // 2) Legacy fallback по имени — сначала S-Final, потом S-Final-Soft-L.
-    //    В реальной БД okeybook-default есть только второй, но первый
-    //    может быть у других партнёров.
-    master = ctx.bundle.mastersByName.get('S-Final');
-    if (!master) master = ctx.bundle.mastersByName.get('S-Final-Soft-L');
-  }
+  let overridden = false;
 
-  if (!master) {
-    ctx.warnings.push(
-      `soft_final_master_not_found: ни через семантический поиск ` +
-        `(page_role='final', photos_full=1), ни по именам 'S-Final' / ` +
-        `'S-Final-Soft-L' мастер не найден в template_set. Закажите ` +
-        `мастер у дизайнера.`,
-    );
-    return;
+  // РЭ.42: explicit override через section.master_name.
+  if (section.master_name) {
+    master = ctx.bundle.mastersByName.get(section.master_name);
+    if (!master) {
+      ctx.warnings.push(
+        `soft_final_master_override_not_found: указанный мастер ` +
+          `'${section.master_name}' не найден в template_set. ` +
+          `Проверьте имя мастера или выберите другой в редакторе шаблона.`,
+      );
+      return;
+    }
+    overridden = true;
+  } else {
+    // Автоматический режим (по умолчанию).
+    // 1) Семантический путь: page_role='final', photos_full=1.
+    const semanticResult = findSoftSectionMaster(ctx.bundle.mastersByName, {
+      presetId: ctx.bundle.preset.id,
+      pageRole: 'final',
+      photosFull: 1,
+    });
+
+    if (semanticResult) {
+      master = semanticResult.master;
+      semantic = true;
+    } else {
+      // 2) Legacy fallback по имени — сначала S-Final, потом S-Final-Soft-L.
+      //    В реальной БД okeybook-default есть только второй, но первый
+      //    может быть у других партнёров.
+      master = ctx.bundle.mastersByName.get('S-Final');
+      if (!master) master = ctx.bundle.mastersByName.get('S-Final-Soft-L');
+    }
+
+    if (!master) {
+      ctx.warnings.push(
+        `soft_final_master_not_found: ни через семантический поиск ` +
+          `(page_role='final', photos_full=1), ни по именам 'S-Final' / ` +
+          `'S-Final-Soft-L' мастер не найден в template_set. Закажите ` +
+          `мастер у дизайнера.`,
+      );
+      return;
+    }
   }
 
   // Bindings ДО decrement available.
@@ -97,6 +122,7 @@ export function fillSoftFinalSection(ctx: SectionFillContext): void {
       consumes: { full_class: consumedFullClass },
       sheet_type: 'soft',
       semantic,
+      overridden,
     },
   });
 }
