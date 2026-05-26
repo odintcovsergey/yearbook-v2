@@ -159,9 +159,15 @@ export {
   parseAlbumTextStyleOverrides,
   resolveFontSizeMult,
   resolveColor,
+  parseHAlign,
+  parseVAlign,
+  resolveHAlign,
+  resolveVAlign,
 } from './groups';
 export type {
   TextStyleGroup,
   TextStyleGroupOverride,
   AlbumTextStyleOverrides,
+  TextHAlign,
+  TextVAlign,
 } from './groups';

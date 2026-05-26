@@ -28,6 +28,10 @@ import {
   detectTextStyleGroup,
   resolveFontSizeMult,
   resolveColor,
+  parseHAlign,
+  parseVAlign,
+  resolveHAlign,
+  resolveVAlign,
   type AlbumTextStyleOverrides,
 } from '@/lib/text-style'
 
@@ -294,6 +298,8 @@ function TextSlot({
   value,
   fontSizeMult = 1,
   colorOverride = null,
+  hAlignOverride = null,
+  vAlignOverride = null,
 }: {
   placeholder: TextPlaceholder
   value: string | null
@@ -301,6 +307,10 @@ function TextSlot({
   // и placeholder.font_size_pt (regression-safe).
   fontSizeMult?: number
   colorOverride?: string | null
+  // РЭ.54: align overrides. null → fallback на placeholder.align (горизонталь)
+  // или 'top' (вертикаль, текущий хардкод).
+  hAlignOverride?: 'left' | 'center' | 'right' | null
+  vAlignOverride?: 'top' | 'middle' | 'bottom' | null
 }) {
   if (!value) return null
   // Маппинг IDML font_weight (regular | bold | medium | light) на CSS weight.
@@ -317,6 +327,9 @@ function TextSlot({
     ? '#000000'
     : placeholder.color || '#000000'
   const finalColor = colorOverride ?? baseColor
+  // РЭ.54: align — override побеждает; иначе placeholder.align (для H) и 'top' (для V).
+  const finalHAlign = hAlignOverride ?? placeholder.align
+  const finalVAlign = vAlignOverride ?? 'top'
   return (
     <Text
       x={placeholder.x_mm}
@@ -328,8 +341,8 @@ function TextSlot({
       fontFamily={`${placeholder.font_family}, serif`}
       fontStyle={fontStyle}
       fill={finalColor}
-      align={placeholder.align}
-      verticalAlign="top"
+      align={finalHAlign}
+      verticalAlign={finalVAlign}
     />
   )
 }
@@ -403,6 +416,8 @@ function TextInlineEditor({
   initialValue,
   fontSizeMult = 1,
   colorOverride = null,
+  hAlignOverride = null,
+  vAlignOverride = null,
   onSubmit,
   onCancel,
 }: {
@@ -412,6 +427,9 @@ function TextInlineEditor({
   /** Р.3 — override размера (мультипликатор) и цвета. Default (1, null). */
   fontSizeMult?: number
   colorOverride?: string | null
+  /** РЭ.54: override выравнивания. null → placeholder.align / 'top'. */
+  hAlignOverride?: 'left' | 'center' | 'right' | null
+  vAlignOverride?: 'top' | 'middle' | 'bottom' | null
   onSubmit: (newValue: string | null) => void
   onCancel: () => void
 }) {
@@ -439,6 +457,10 @@ function TextInlineEditor({
   // textarea — рендерится в DOM поверх Stage'а уже отскейленным.
   // Р.3: применяется fontSizeMult.
   const fontSizePx = placeholder.font_size_pt * PT_TO_MM * scale * fontSizeMult
+
+  // РЭ.54: финальные align значения. Точка → fallback на placeholder/'top'.
+  const finalHAlign = hAlignOverride ?? placeholder.align
+  const finalVAlign = vAlignOverride ?? 'top'
 
   function handleKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Escape') {
@@ -500,7 +522,11 @@ function TextInlineEditor({
         fontSize: `${fontSizePx}px`,
         fontWeight: fontStyle === 'bold' ? 700 : 400,
         color,
-        textAlign: placeholder.align,
+        textAlign: finalHAlign,
+        // РЭ.54: vertical-align в textarea не поддерживается нативно.
+        // При редактировании всегда top — это удобнее для набора. Финальный
+        // valign партнёр увидит когда выйдет из режима редактирования
+        // (Konva TextSlot применит vAlignOverride через verticalAlign).
         // Visual: тонкая синяя рамка чтобы было видно где редактируется,
         // полупрозрачный белый фон чтобы текст читался поверх фона
         // мастера (если есть background_url).
@@ -788,6 +814,9 @@ export default function AlbumSpreadCanvas({
                 ? parseFontSizeMult(instance.data[`__fontSize__${p.label}`])
                 : null
               const pointColor = parseColor(instance.data[`__color__${p.label}`])
+              // РЭ.54: align overrides.
+              const pointHAlign = parseHAlign(instance.data[`__halign__${p.label}`])
+              const pointVAlign = parseVAlign(instance.data[`__valign__${p.label}`])
               const group = detectTextStyleGroup(p.label)
               const groupOv = group ? textStyleOverrides?.[group] : null
               // resolveFontSizeMult: point !== null → point; иначе group/100; иначе 1.
@@ -795,6 +824,8 @@ export default function AlbumSpreadCanvas({
               // мы и проверяем НАЛИЧИЕ ключа отдельно (через truthy data[key]).
               const fsMult = resolveFontSizeMult(pointMult, groupOv ?? null)
               const colorOv = resolveColor(pointColor, groupOv ?? null)
+              const hAlignOv = resolveHAlign(pointHAlign, groupOv ?? null)
+              const vAlignOv = resolveVAlign(pointVAlign, groupOv ?? null)
               return (
                 <TextSlot
                   key={key}
@@ -802,6 +833,8 @@ export default function AlbumSpreadCanvas({
                   value={value}
                   fontSizeMult={fsMult}
                   colorOverride={colorOv}
+                  hAlignOverride={hAlignOv}
+                  vAlignOverride={vAlignOv}
                 />
               )
             }
@@ -848,10 +881,15 @@ export default function AlbumSpreadCanvas({
                   ? parseFontSizeMult(instance.data[`__fontSize__${p.label}`])
                   : null
                 const pointColor = parseColor(instance.data[`__color__${p.label}`])
+                // РЭ.54: align overrides.
+                const pointHAlign = parseHAlign(instance.data[`__halign__${p.label}`])
+                const pointVAlign = parseVAlign(instance.data[`__valign__${p.label}`])
                 const group = detectTextStyleGroup(p.label)
                 const groupOv = group ? textStyleOverrides?.[group] : null
                 const fsMult = resolveFontSizeMult(pointMult, groupOv ?? null)
                 const colorOv = resolveColor(pointColor, groupOv ?? null)
+                const hAlignOv = resolveHAlign(pointHAlign, groupOv ?? null)
+                const vAlignOv = resolveVAlign(pointVAlign, groupOv ?? null)
                 return (
                   <TextInlineEditor
                     key={`text-edit-${p.label}`}
@@ -860,6 +898,8 @@ export default function AlbumSpreadCanvas({
                     initialValue={value}
                     fontSizeMult={fsMult}
                     colorOverride={colorOv}
+                    hAlignOverride={hAlignOv}
+                    vAlignOverride={vAlignOv}
                     onSubmit={(newValue) => onTextSubmit?.(p.label, newValue)}
                     onCancel={() => onTextCancel?.()}
                   />

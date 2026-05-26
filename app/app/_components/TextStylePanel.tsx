@@ -50,6 +50,12 @@ type Props = {
    */
   colorOverride: string | null
   /**
+   * РЭ.54: точечные align overrides ('left'|'center'|'right' / 'top'|'middle'|'bottom').
+   * null если override отсутствует — fallback на placeholder.align / 'top'.
+   */
+  hAlignOverride: 'left' | 'center' | 'right' | null
+  vAlignOverride: 'top' | 'middle' | 'bottom' | null
+  /**
    * РЭ.52.c: границы placeholder'а в client координатах. Panel сам
    * решает «справа от rightEdge» если место есть или «слева от leftEdge».
    * topEdge — верх placeholder'а (для выравнивания шапки панели).
@@ -64,18 +70,22 @@ type Props = {
   onChange: (updates: {
     fontSize?: string | null
     color?: string | null
+    halign?: string | null
+    valign?: string | null
   }) => void
   /** Закрытие panel (явное «Готово» или Esc). */
   onClose: () => void
 }
 
 const PANEL_WIDTH = 260
-const PANEL_HEIGHT = 240
+const PANEL_HEIGHT = 320
 
 export default function TextStylePanel({
   label,
   fontSizeMult: initialMult,
   colorOverride: initialColor,
+  hAlignOverride: initialHAlign,
+  vAlignOverride: initialVAlign,
   rightEdge,
   topEdge,
   leftEdge,
@@ -87,6 +97,8 @@ export default function TextStylePanel({
   // Локальное состояние — optimistic.
   const [mult, setMult] = useState(initialMult)
   const [color, setColor] = useState<string | null>(initialColor)
+  const [hAlign, setHAlign] = useState<'left' | 'center' | 'right' | null>(initialHAlign)
+  const [vAlign, setVAlign] = useState<'top' | 'middle' | 'bottom' | null>(initialVAlign)
 
   // Закрытие по Esc. Клик «вне» НЕ закрывает — иначе любое движение к
   // textarea (которая снаружи) дёргает onClose.
@@ -101,10 +113,17 @@ export default function TextStylePanel({
   // Helper — отправить изменение parent'у. При default значениях → null
   // (parent удалит соответствующий ключ).
   const emitChange = useCallback(
-    (newMult: number, newColor: string | null) => {
+    (
+      newMult: number,
+      newColor: string | null,
+      newHAlign: 'left' | 'center' | 'right' | null,
+      newVAlign: 'top' | 'middle' | 'bottom' | null,
+    ) => {
       onChange({
         fontSize: newMult === 1 ? null : serializeFontSizeMult(newMult),
         color: newColor === null ? null : serializeColor(newColor),
+        halign: newHAlign,
+        valign: newVAlign,
       })
     },
     [onChange],
@@ -116,7 +135,7 @@ export default function TextStylePanel({
     const pct = Number(e.target.value)
     const v = parseFontSizeMult(pct / 100)
     setMult(v)
-    emitChange(v, color)
+    emitChange(v, color, hAlign, vAlign)
   }
 
   // ─── Color swatch click ─────────────────────────────────────────
@@ -126,14 +145,30 @@ export default function TextStylePanel({
     const isActive = color !== null && color.toUpperCase() === normalized
     const next = isActive ? null : normalized
     setColor(next)
-    emitChange(mult, next)
+    emitChange(mult, next, hAlign, vAlign)
+  }
+
+  // ─── РЭ.54: Align buttons ───────────────────────────────────────
+  function handleHAlign(value: 'left' | 'center' | 'right') {
+    // Повторный клик на активном → сброс (null).
+    const next = hAlign === value ? null : value
+    setHAlign(next)
+    emitChange(mult, color, next, vAlign)
+  }
+
+  function handleVAlign(value: 'top' | 'middle' | 'bottom') {
+    const next = vAlign === value ? null : value
+    setVAlign(next)
+    emitChange(mult, color, hAlign, next)
   }
 
   // ─── Reset (по умолчанию) ─────────────────────────────────────
   function handleReset() {
     setMult(1)
     setColor(null)
-    emitChange(1, null)
+    setHAlign(null)
+    setVAlign(null)
+    emitChange(1, null, null, null)
   }
 
   // РЭ.52.c: позиционирование ОТНОСИТЕЛЬНО ГРАНИЦ placeholder'а
@@ -166,7 +201,8 @@ export default function TextStylePanel({
     left = rightEdge + GAP
   }
 
-  const isDefault = !hasCustomTextStyle(mult, color)
+  const isDefault =
+    !hasCustomTextStyle(mult, color) && hAlign === null && vAlign === null
   // Активный цвет для подсветки — либо override, либо null (тогда
   // подсвечивается только если он есть в палитре, иначе — никакой).
   const activeHex = color && isColorInPalette(color) ? color.toUpperCase() : null
@@ -260,6 +296,77 @@ export default function TextStylePanel({
               </button>
             )
           })}
+        </div>
+      </div>
+
+      {/* РЭ.54: Выравнивание во фрейме */}
+      <div className="mb-3">
+        <div className="text-xs text-gray-600 mb-1">Выравнивание</div>
+        <div className="flex items-center gap-2">
+          {/* Горизонтальное */}
+          <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+            {(['left', 'center', 'right'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => handleHAlign(v)}
+                className={`px-2 py-1 text-sm leading-none border-r border-gray-300 last:border-r-0 ${
+                  hAlign === v
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                }`}
+                title={
+                  v === 'left'
+                    ? 'По левому краю'
+                    : v === 'center'
+                      ? 'По центру (горизонталь)'
+                      : 'По правому краю'
+                }
+                aria-label={`hAlign-${v}`}
+              >
+                {v === 'left' ? '⇤' : v === 'center' ? '⇔' : '⇥'}
+              </button>
+            ))}
+          </div>
+          {/* Вертикальное */}
+          <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+            {(['top', 'middle', 'bottom'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => handleVAlign(v)}
+                className={`px-2 py-1 text-sm leading-none border-r border-gray-300 last:border-r-0 ${
+                  vAlign === v
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                }`}
+                title={
+                  v === 'top'
+                    ? 'По верху'
+                    : v === 'middle'
+                      ? 'По центру (вертикаль)'
+                      : 'По низу'
+                }
+                aria-label={`vAlign-${v}`}
+              >
+                {v === 'top' ? '⤒' : v === 'middle' ? '↕' : '⤓'}
+              </button>
+            ))}
+          </div>
+          {(hAlign !== null || vAlign !== null) && (
+            <button
+              type="button"
+              onClick={() => {
+                setHAlign(null)
+                setVAlign(null)
+                emitChange(mult, color, null, null)
+              }}
+              className="text-[10px] text-gray-500 hover:text-gray-900 ml-auto"
+              title="Сбросить выравнивание к шаблону"
+            >
+              ↺
+            </button>
+          )}
         </div>
       </div>
 

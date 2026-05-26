@@ -30,6 +30,8 @@ import {
   parseFontSizeMult,
   parseColor,
   parseAlbumTextStyleOverrides,
+  parseHAlign,
+  parseVAlign,
   type AlbumTextStyleOverrides,
 } from '@/lib/text-style'
 import { remapData } from '@/lib/template-replace'
@@ -894,6 +896,8 @@ function LayoutEditorPageInner({
   function handleTextStyleChange(updates: {
     fontSize?: string | null
     color?: string | null
+    halign?: string | null
+    valign?: string | null
   }) {
     if (!textStylePanel) return
     const { label, spreadIndex } = textStylePanel
@@ -904,6 +908,8 @@ function LayoutEditorPageInner({
         const newData = { ...s.data }
         const fontSizeKey = `__fontSize__${label}`
         const colorKey = `__color__${label}`
+        const hAlignKey = `__halign__${label}`
+        const vAlignKey = `__valign__${label}`
         if (updates.fontSize !== undefined) {
           if (updates.fontSize === null) delete newData[fontSizeKey]
           else newData[fontSizeKey] = updates.fontSize
@@ -911,6 +917,15 @@ function LayoutEditorPageInner({
         if (updates.color !== undefined) {
           if (updates.color === null) delete newData[colorKey]
           else newData[colorKey] = updates.color
+        }
+        // РЭ.54: align overrides.
+        if (updates.halign !== undefined) {
+          if (updates.halign === null) delete newData[hAlignKey]
+          else newData[hAlignKey] = updates.halign
+        }
+        if (updates.valign !== undefined) {
+          if (updates.valign === null) delete newData[vAlignKey]
+          else newData[vAlignKey] = updates.valign
         }
         return { ...s, data: newData }
       })
@@ -2083,7 +2098,7 @@ function LayoutEditorPageInner({
         )
       })()}
 
-      {/* ─── TextStylePanel (Р.3) — override размера и цвета текста ─── */}
+      {/* ─── TextStylePanel (Р.3 + РЭ.54) — override стиля текста ─── */}
       {textStylePanel && !isReadOnly && (() => {
         // Извлекаем текущие overrides из data.
         // Если ключей нет → mult=1, color=null → palette default,
@@ -2092,11 +2107,16 @@ function LayoutEditorPageInner({
         const data = spread?.data ?? {}
         const mult = parseFontSizeMult(data[`__fontSize__${textStylePanel.label}`])
         const colorOv = parseColor(data[`__color__${textStylePanel.label}`])
+        // РЭ.54: align overrides.
+        const hAlignOv = parseHAlign(data[`__halign__${textStylePanel.label}`])
+        const vAlignOv = parseVAlign(data[`__valign__${textStylePanel.label}`])
         return (
           <TextStylePanel
             label={textStylePanel.label}
             fontSizeMult={mult}
             colorOverride={colorOv}
+            hAlignOverride={hAlignOv}
+            vAlignOverride={vAlignOv}
             rightEdge={textStylePanel.rightEdge}
             topEdge={textStylePanel.topEdge}
             leftEdge={textStylePanel.leftEdge}

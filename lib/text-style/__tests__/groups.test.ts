@@ -4,6 +4,10 @@ import {
   parseAlbumTextStyleOverrides,
   resolveFontSizeMult,
   resolveColor,
+  parseHAlign,
+  parseVAlign,
+  resolveHAlign,
+  resolveVAlign,
 } from '../groups';
 
 describe('detectTextStyleGroup', () => {
@@ -81,15 +85,15 @@ describe('parseAlbumTextStyleOverrides', () => {
       studentquote: { size_pct: 90, color: null },
     };
     expect(parseAlbumTextStyleOverrides(raw)).toEqual({
-      studentname: { size_pct: 110, color: '#000000' },
-      studentquote: { size_pct: 90, color: null },
+      studentname: { size_pct: 110, color: '#000000', halign: null, valign: null },
+      studentquote: { size_pct: 90, color: null, halign: null, valign: null },
     });
   });
 
   it('color нормализуется в upper-case', () => {
     const raw = { studentname: { size_pct: 100, color: '#abc123' } };
     expect(parseAlbumTextStyleOverrides(raw)).toEqual({
-      studentname: { size_pct: 100, color: '#ABC123' },
+      studentname: { size_pct: 100, color: '#ABC123', halign: null, valign: null },
     });
   });
 
@@ -109,8 +113,8 @@ describe('parseAlbumTextStyleOverrides', () => {
       studentquote: { size_pct: 100, color: '#zzz' }, // невалидный HEX
     };
     expect(parseAlbumTextStyleOverrides(raw)).toEqual({
-      studentname: { size_pct: 100, color: null },
-      studentquote: { size_pct: 100, color: null },
+      studentname: { size_pct: 100, color: null, halign: null, valign: null },
+      studentquote: { size_pct: 100, color: null, halign: null, valign: null },
     });
   });
 
@@ -120,7 +124,7 @@ describe('parseAlbumTextStyleOverrides', () => {
       unknown_group: { size_pct: 100 },
     };
     expect(parseAlbumTextStyleOverrides(raw)).toEqual({
-      studentname: { size_pct: 100, color: '#000000' },
+      studentname: { size_pct: 100, color: '#000000', halign: null, valign: null },
     });
   });
 });
@@ -165,5 +169,107 @@ describe('resolveColor', () => {
     expect(resolveColor(null, null)).toBeNull();
     expect(resolveColor(null, undefined)).toBeNull();
     expect(resolveColor(null, { size_pct: 100, color: null })).toBeNull();
+  });
+});
+
+describe('parseHAlign / parseVAlign (РЭ.54)', () => {
+  it('parseHAlign валидные значения', () => {
+    expect(parseHAlign('left')).toBe('left');
+    expect(parseHAlign('center')).toBe('center');
+    expect(parseHAlign('right')).toBe('right');
+    expect(parseHAlign('LEFT')).toBe('left'); // case-insensitive
+    expect(parseHAlign('  center  ')).toBe('center'); // trim
+  });
+
+  it('parseHAlign невалидные → null', () => {
+    expect(parseHAlign(null)).toBeNull();
+    expect(parseHAlign('')).toBeNull();
+    expect(parseHAlign('middle')).toBeNull(); // не валидное для H
+    expect(parseHAlign(42)).toBeNull();
+  });
+
+  it('parseVAlign валидные значения', () => {
+    expect(parseVAlign('top')).toBe('top');
+    expect(parseVAlign('middle')).toBe('middle');
+    expect(parseVAlign('bottom')).toBe('bottom');
+    expect(parseVAlign('TOP')).toBe('top');
+  });
+
+  it('parseVAlign невалидные → null', () => {
+    expect(parseVAlign('center')).toBeNull(); // 'center' это H, не V
+    expect(parseVAlign(undefined)).toBeNull();
+  });
+});
+
+describe('resolveHAlign / resolveVAlign (РЭ.54)', () => {
+  it('resolveHAlign: point побеждает global', () => {
+    expect(
+      resolveHAlign('right', { size_pct: null, color: null, halign: 'left' }),
+    ).toBe('right');
+  });
+
+  it('resolveHAlign: point=null + global.halign → global', () => {
+    expect(
+      resolveHAlign(null, { size_pct: null, color: null, halign: 'center' }),
+    ).toBe('center');
+  });
+
+  it('resolveHAlign: оба null → null (caller fallback)', () => {
+    expect(resolveHAlign(null, null)).toBeNull();
+    expect(resolveHAlign(null, { size_pct: 100, color: null })).toBeNull();
+  });
+
+  it('resolveVAlign: аналогично', () => {
+    expect(
+      resolveVAlign('bottom', { size_pct: null, color: null, valign: 'top' }),
+    ).toBe('bottom');
+    expect(
+      resolveVAlign(null, { size_pct: null, color: null, valign: 'middle' }),
+    ).toBe('middle');
+    expect(resolveVAlign(null, null)).toBeNull();
+  });
+});
+
+describe('parseAlbumTextStyleOverrides — halign/valign (РЭ.54)', () => {
+  it('извлекает halign и valign из JSONB', () => {
+    const raw = {
+      studentname: { size_pct: 100, color: null, halign: 'center', valign: 'middle' },
+    };
+    expect(parseAlbumTextStyleOverrides(raw)).toEqual({
+      studentname: {
+        size_pct: 100,
+        color: null,
+        halign: 'center',
+        valign: 'middle',
+      },
+    });
+  });
+
+  it('некорректные halign/valign → null', () => {
+    const raw = {
+      studentname: { size_pct: 100, color: null, halign: 'oops', valign: 'invalid' },
+    };
+    expect(parseAlbumTextStyleOverrides(raw)).toEqual({
+      studentname: { size_pct: 100, color: null, halign: null, valign: null },
+    });
+  });
+
+  it('только halign (без size/color/valign) — группа сохраняется', () => {
+    const raw = { studentname: { halign: 'right' } };
+    expect(parseAlbumTextStyleOverrides(raw)).toEqual({
+      studentname: { size_pct: null, color: null, halign: 'right', valign: null },
+    });
+  });
+
+  it('группа со всеми null значениями отбрасывается', () => {
+    const raw = {
+      studentname: {
+        size_pct: null,
+        color: null,
+        halign: 'bogus',
+        valign: 'bogus',
+      },
+    };
+    expect(parseAlbumTextStyleOverrides(raw)).toEqual({});
   });
 });

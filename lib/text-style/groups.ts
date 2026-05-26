@@ -26,13 +26,53 @@ export type TextStyleGroup = (typeof TEXT_STYLE_GROUPS)[number];
 
 /**
  * Override для одной группы. Все поля опциональны: если не задано —
- * fallback на placeholder.font_size_pt / placeholder.color.
+ * fallback на placeholder.font_size_pt / placeholder.color / placeholder.align.
  */
 export interface TextStyleGroupOverride {
   /** Мультипликатор размера в процентах (50..200). null/undefined = не трогать. */
   size_pct: number | null;
   /** HEX строка "#RRGGBB". null/undefined = не трогать (placeholder color). */
   color: string | null;
+  /**
+   * РЭ.54: горизонтальное выравнивание текста во фрейме.
+   * null/undefined = не трогать (fallback на placeholder.align из IDML).
+   */
+  halign?: TextHAlign | null;
+  /**
+   * РЭ.54: вертикальное выравнивание текста во фрейме.
+   * null/undefined = не трогать (fallback на 'top' — текущий захардкоженный default).
+   */
+  valign?: TextVAlign | null;
+}
+
+/** Допустимые значения горизонтального выравнивания. */
+export type TextHAlign = 'left' | 'center' | 'right';
+/** Допустимые значения вертикального выравнивания. */
+export type TextVAlign = 'top' | 'middle' | 'bottom';
+
+const H_ALIGN_VALUES: ReadonlyArray<TextHAlign> = ['left', 'center', 'right'];
+const V_ALIGN_VALUES: ReadonlyArray<TextVAlign> = ['top', 'middle', 'bottom'];
+
+/**
+ * Парсит значение горизонтального выравнивания из произвольного source
+ * (data ключ __halign__<label> или JSONB поле halign). Возвращает
+ * валидное TextHAlign или null.
+ */
+export function parseHAlign(v: unknown): TextHAlign | null {
+  if (typeof v !== 'string') return null;
+  const lower = v.toLowerCase().trim();
+  return (H_ALIGN_VALUES as ReadonlyArray<string>).includes(lower)
+    ? (lower as TextHAlign)
+    : null;
+}
+
+/** Парсит значение вертикального выравнивания. */
+export function parseVAlign(v: unknown): TextVAlign | null {
+  if (typeof v !== 'string') return null;
+  const lower = v.toLowerCase().trim();
+  return (V_ALIGN_VALUES as ReadonlyArray<string>).includes(lower)
+    ? (lower as TextVAlign)
+    : null;
 }
 
 /**
@@ -71,9 +111,24 @@ export function parseAlbumTextStyleOverrides(
       /^#[0-9a-fA-F]{6}$/.test(entry.color)
         ? entry.color.toUpperCase()
         : null;
+    // РЭ.54: halign/valign — опциональные поля.
+    const halign = parseHAlign(entry.halign);
+    const valign = parseVAlign(entry.valign);
     // Сохраняем группу только если хотя бы одно значение задано.
-    if (sizePct === null && color === null) continue;
-    result[group] = { size_pct: sizePct, color };
+    if (
+      sizePct === null &&
+      color === null &&
+      halign === null &&
+      valign === null
+    ) {
+      continue;
+    }
+    result[group] = {
+      size_pct: sizePct,
+      color,
+      halign: halign ?? null,
+      valign: valign ?? null,
+    };
   }
   return result;
 }
@@ -155,5 +210,47 @@ export function resolveColor(
 ): string | null {
   if (point !== null && point !== undefined) return point;
   if (global && typeof global.color === 'string') return global.color;
+  return null;
+}
+
+/**
+ * РЭ.54: применяет каскад глобальный → точечный для горизонтального
+ * выравнивания текста.
+ *
+ *   point  — точечный override из data[__halign__<label>], TextHAlign | null
+ *   global — глобальный override для группы или null
+ *
+ * Приоритет:
+ *   1. point !== null → point
+ *   2. иначе global.halign || null
+ *   3. caller fallback на placeholder.align (из IDML)
+ */
+export function resolveHAlign(
+  point: TextHAlign | null,
+  global: TextStyleGroupOverride | null | undefined,
+): TextHAlign | null {
+  if (point !== null && point !== undefined) return point;
+  if (global && global.halign) return global.halign;
+  return null;
+}
+
+/**
+ * РЭ.54: применяет каскад глобальный → точечный для вертикального
+ * выравнивания.
+ *
+ *   point  — точечный override из data[__valign__<label>]
+ *   global — глобальный override для группы или null
+ *
+ * Приоритет:
+ *   1. point !== null → point
+ *   2. иначе global.valign || null
+ *   3. caller fallback на 'top' (текущий захардкоженный default)
+ */
+export function resolveVAlign(
+  point: TextVAlign | null,
+  global: TextStyleGroupOverride | null | undefined,
+): TextVAlign | null {
+  if (point !== null && point !== undefined) return point;
+  if (global && global.valign) return global.valign;
   return null;
 }
