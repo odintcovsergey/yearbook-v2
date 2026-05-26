@@ -77,7 +77,7 @@ type Props = {
   //   решает открывать ли editor (обычно — да, если canEdit).
   // - onTextSubmit/onTextCancel: вызываются из TextInlineEditor.
   editingTextLabel?: string | null
-  onTextClick?: (label: string, currentValue: string | null, rightEdge: number, topEdge: number, leftEdge: number) => void
+  onTextClick?: (label: string, currentValue: string | null, rightEdge: number, topEdge: number, leftEdge: number, instanceKey: number) => void
   onTextSubmit?: (label: string, newValue: string | null) => void
   onTextCancel?: () => void
   // Л.2 — контекстное меню на photo placeholder (правый клик).
@@ -88,7 +88,7 @@ type Props = {
   // отменяет click при движении мыши, так что drag не триггерит этот
   // handler. Срабатывает только при url != null (нет смысла кадрировать
   // пустой слот).
-  onPhotoClick?: (label: string, url: string, rightEdge: number, topEdge: number, leftEdge: number) => void
+  onPhotoClick?: (label: string, url: string, rightEdge: number, topEdge: number, leftEdge: number, instanceKey: number) => void
   // Прототип балансировки — переопределение координат и видимости placeholder'ов.
   // Если placeholder есть в этой map с hidden=true — не рендерится вообще.
   // Если есть с x_mm/y_mm — рендерится по новым координатам.
@@ -592,7 +592,10 @@ function DropZone({
   // drag не триггерит этот handler.
   // РЭ.52.c: передаются rect.right, rect.top, rect.left (вместо clientX/Y)
   // чтобы parent мог позиционировать panel ВПЛОТНУЮ к границе фото.
-  onClick?: (label: string, url: string, rightEdge: number, topEdge: number, leftEdge: number) => void
+  // РЭ.54.d: callback также получает instanceKey — parent (page.tsx)
+  // нужно знать какой spread_index активировать (если клик пришёл с
+  // другой страницы разворота, чем currentIdx).
+  onClick?: (label: string, url: string, rightEdge: number, topEdge: number, leftEdge: number, instanceKey: number) => void
   // КЭ.6 — true если у фото в этом слоте есть кастомный crop
   // (data[__scale__<label>] или data[__offset__<label>] не default).
   // Отображается маленький бейдж '⚙' в углу.
@@ -654,7 +657,10 @@ function DropZone({
         // что справа места нет и выскочит слева (см. smart-position
         // в PhotoTransformPanel).
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-        onClick(placeholder.label, url, rect.right, rect.top, rect.left)
+        // instanceKey в DropZone Props — string|number; здесь
+        // конвертируем в number (для spread_index всегда number).
+        const ikNum = typeof instanceKey === 'number' ? instanceKey : Number(instanceKey)
+        onClick(placeholder.label, url, rect.right, rect.top, rect.left, ikNum)
       }}
       className={`absolute pointer-events-auto transition-all ${
         isOver
@@ -911,7 +917,7 @@ export default function AlbumSpreadCanvas({
                   placeholder={p}
                   scale={scale}
                   hasValue={!!value}
-                  onClick={(rx, ty, lx) => onTextClick?.(p.label, value, rx, ty, lx)}
+                  onClick={(rx, ty, lx) => onTextClick?.(p.label, value, rx, ty, lx, instance.spread_index)}
                 />
               )
             }

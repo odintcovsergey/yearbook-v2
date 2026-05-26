@@ -850,7 +850,15 @@ function LayoutEditorPageInner({
     rightEdge: number,
     topEdge: number,
     leftEdge: number,
+    instanceKey: number,
   ) {
+    // РЭ.54.d: если клик пришёл с НЕвыделенной страницы разворота —
+    // сначала переключаем currentIdx на эту страницу, потом открываем
+    // редактор. Без этого партнёру приходилось делать «лишний клик»
+    // по пустому месту правой страницы чтобы её активировать.
+    if (instanceKey !== currentIdx) {
+      setCurrentIdx(instanceKey)
+    }
     // Если уже что-то редактируется — сначала закрываем (с сохранением
     // через onBlur эффект textarea), потом открываем новое.
     // setEditingTextLabel'у одного значения достаточно: textarea со
@@ -860,7 +868,7 @@ function LayoutEditorPageInner({
     // РЭ.52.c: координаты — границы placeholder'а (а не точка клика).
     // Panel сам решит «справа или слева» так чтобы не перекрыть текст.
     setTextStylePanel({
-      spreadIndex: currentIdx,
+      spreadIndex: instanceKey,
       label,
       rightEdge,
       topEdge,
@@ -992,18 +1000,25 @@ function LayoutEditorPageInner({
     rightEdge: number,
     topEdge: number,
     leftEdge: number,
+    instanceKey: number,
   ) {
-    // Если уже открыта panel для этого же label — не дёргаем (избегаем
-    // случайного двойного клика). Иначе показываем для нового.
+    // РЭ.54.d: переключаем активную страницу разворота если клик пришёл
+    // с другой стороны (см. handleTextClick для контекста).
+    if (instanceKey !== currentIdx) {
+      setCurrentIdx(instanceKey)
+    }
+    // Если уже открыта panel для этого же label на этой же странице —
+    // не дёргаем (избегаем случайного двойного клика). Иначе показываем
+    // для нового.
     if (
       photoTransformPanel &&
       photoTransformPanel.label === label &&
-      photoTransformPanel.spreadIndex === currentIdx
+      photoTransformPanel.spreadIndex === instanceKey
     ) {
       return
     }
     setPhotoTransformPanel({
-      spreadIndex: currentIdx,
+      spreadIndex: instanceKey,
       label,
       rightEdge,
       topEdge,
