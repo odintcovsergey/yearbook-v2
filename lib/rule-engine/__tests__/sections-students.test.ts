@@ -198,6 +198,13 @@ function makeInput(opts: {
       quarter: [],
       sixth: [],
     },
+    // РЭ.40: эти тесты были написаны до student_distribution и проверяют
+    // ЖАДНОЕ распределение (полные сетки + специальный мастер для хвоста).
+    // С дефолтом 'auto' раскладка идёт равномерно (без хвостовых L-2/N-6),
+    // тесты падают. Явно ставим 'greedy' чтобы проверять что адаптивные
+    // мастера выбираются корректно — это валидный сценарий когда партнёр
+    // в /app выбрал 'Жадно' для конкретного альбома.
+    student_distribution: 'greedy',
   };
 }
 
@@ -517,20 +524,23 @@ describe('students: density=medium (M-Grid-Page 4 слота)', () => {
   });
 
   it('6 учеников БЕЗ full_class → fallback: M-Grid с null-падингом + warning', () => {
+    // РЭ.40: распределение greedy → полные страницы по 4 + хвост 2.
+    // Все хвосты теперь кладутся в baseMaster с null-padding (адаптивные
+    // мастера больше не выбираются buildGrid'ом). Для medium 6=4+2 → 2 страницы M-Grid.
+    // РЭ.31.3: пустые слоты получают __hidden__<label>='1' вместо null.
     const bundle = makeBundle({
       preset: makePreset({ id: 'p', density: 'medium' }),
       masters: [M_GRID, M_COMBINED],
     });
     const result = buildFromSectionStructure(bundle, makeInput({ students: 6 }));
     expect(result.spreads).toHaveLength(1);
-    expect(result.spreads[0].right?.master_id).toBe('id-M-Grid-Page'); // не Combined
-    expect(result.spreads[0].right?.bindings.studentportrait_1).toBe(
-      'https://cdn/portrait_5.jpg',
-    );
-    expect(result.spreads[0].right?.bindings.studentportrait_3).toBeNull();
-    expect(
-      result.warnings.some((w) => w.startsWith('students_grid_tail_padded')),
-    ).toBe(true);
+    expect(result.spreads[0].left?.master_id).toBe('id-M-Grid-Page');
+    expect(result.spreads[0].right?.master_id).toBe('id-M-Grid-Page'); // не Combined (нет full_class)
+    // Хвостовая страница: первые 2 слота заполнены, 3 и 4 скрыты __hidden__.
+    expect(result.spreads[0].right?.bindings.__hidden__studentportrait_3).toBe('1');
+    // РЭ.40: warning students_grid_tail_padded больше не выдаётся
+    // (adaptive masters не выбираются, поведение унифицировано через
+    // null-padding в baseMaster — не считается degraded).
   });
 
   it('M-Grid-Page отсутствует → warning students_master_not_found', () => {
@@ -564,7 +574,10 @@ describe('students: density=light (адаптивные сетки L-2/3/4)', ()
     expect(result.spreads[0].right?.master_id).toBe('id-L-Grid-Page');
   });
 
-  it('9 учеников → 1 полная L-Grid + L-3 (минимально достаточный)', () => {
+  it('9 учеников → 1 полная L-Grid + 1 L-Grid с null-падингом (РЭ.40: без adaptive)', () => {
+    // РЭ.40: adaptive tail masters (L-2/3/4) больше не выбираются buildGrid'ом.
+    // greedy для 9 учеников при maxGrid=6 → 6 + 3. Обе страницы в L-Grid-Page,
+    // хвостовая с __hidden__ на слотах 4-6.
     const bundle = makeBundle({
       preset: makePreset({ id: 'p', density: 'light' }),
       masters: [L_GRID, L_4, L_3, L_2, L_COMBINED],
@@ -572,16 +585,21 @@ describe('students: density=light (адаптивные сетки L-2/3/4)', ()
     const result = buildFromSectionStructure(bundle, makeInput({ students: 9 }));
     expect(result.spreads).toHaveLength(1);
     expect(result.spreads[0].left?.master_id).toBe('id-L-Grid-Page');
-    expect(result.spreads[0].right?.master_id).toBe('id-L-3');
+    expect(result.spreads[0].right?.master_id).toBe('id-L-Grid-Page');
+    // Слоты 4-6 на хвосте скрыты через __hidden__.
+    expect(result.spreads[0].right?.bindings.__hidden__studentportrait_4).toBe('1');
   });
 
-  it('8 учеников → 1 полная L-Grid + L-2 (адаптивный)', () => {
+  it('8 учеников → 1 полная L-Grid + 1 L-Grid с null-падингом (РЭ.40)', () => {
+    // РЭ.40: greedy 8 = 6 + 2, обе страницы L-Grid-Page с __hidden__
+    // на хвостовой (3-6 слоты скрыты).
     const bundle = makeBundle({
       preset: makePreset({ id: 'p', density: 'light' }),
       masters: [L_GRID, L_4, L_3, L_2, L_COMBINED],
     });
     const result = buildFromSectionStructure(bundle, makeInput({ students: 8 }));
-    expect(result.spreads[0].right?.master_id).toBe('id-L-2');
+    expect(result.spreads[0].right?.master_id).toBe('id-L-Grid-Page');
+    expect(result.spreads[0].right?.bindings.__hidden__studentportrait_3).toBe('1');
   });
 
   it('9 учеников + full=1 → Combined приоритет над адаптивным', () => {
@@ -614,10 +632,9 @@ describe('students: density=light (адаптивные сетки L-2/3/4)', ()
     const result = buildFromSectionStructure(bundle, makeInput({ students: 8 }));
     expect(result.spreads).toHaveLength(1);
     expect(result.spreads[0].right?.master_id).toBe('id-L-Grid-Page');
-    expect(result.spreads[0].right?.bindings.studentportrait_3).toBeNull();
-    expect(
-      result.warnings.some((w) => w.startsWith('students_grid_tail_padded')),
-    ).toBe(true);
+    // РЭ.31.3: __hidden__ вместо null.
+    expect(result.spreads[0].right?.bindings.__hidden__studentportrait_3).toBe('1');
+    // РЭ.40: warning students_grid_tail_padded больше не выдаётся.
   });
 });
 
@@ -636,7 +653,9 @@ describe('students: density=mini (N-Grid 12 + адаптивные N-4/6/9)', ()
     expect(result.spreads[0].right?.master_id).toBe('id-N-Grid-Page');
   });
 
-  it('17 учеников → 1 N-Grid (12) + N-6 (минимум для 5)', () => {
+  it('17 учеников → 1 N-Grid (12) + 1 N-Grid с null-падингом (РЭ.40: без adaptive)', () => {
+    // РЭ.40: greedy 17 = 12 + 5, обе страницы N-Grid-Page с __hidden__
+    // на хвостовой (6-12 слоты скрыты).
     const bundle = makeBundle({
       preset: makePreset({ id: 'p', density: 'mini' }),
       masters: [N_GRID, N_9, N_6, N_4, N_COMBINED],
@@ -647,10 +666,14 @@ describe('students: density=mini (N-Grid 12 + адаптивные N-4/6/9)', ()
     );
     expect(result.spreads).toHaveLength(1);
     expect(result.spreads[0].left?.master_id).toBe('id-N-Grid-Page');
-    expect(result.spreads[0].right?.master_id).toBe('id-N-6');
+    expect(result.spreads[0].right?.master_id).toBe('id-N-Grid-Page');
+    // Слоты 6-12 на хвосте скрыты.
+    expect(result.spreads[0].right?.bindings.__hidden__studentportrait_6).toBe('1');
   });
 
   it('Bindings grid: studentportrait_N + studentname_N + studentquote_N', () => {
+    // РЭ.40: adaptive masters не выбираются — 4 ученика идут в N-Grid-Page
+    // (12 слотов) с __hidden__ для 5-12. Слоты 1-4 заполнены.
     const bundle = makeBundle({
       preset: makePreset({ id: 'p', density: 'mini' }),
       masters: [N_GRID, N_4, N_6, N_9, N_COMBINED],
@@ -658,12 +681,14 @@ describe('students: density=mini (N-Grid 12 + адаптивные N-4/6/9)', ()
     const input = makeInput({ students: 4 });
     const result = buildFromSectionStructure(bundle, input);
     expect(result.spreads).toHaveLength(1);
-    expect(result.spreads[0].left?.master_id).toBe('id-N-4');
+    expect(result.spreads[0].left?.master_id).toBe('id-N-Grid-Page');
     const b = result.spreads[0].left!.bindings;
     expect(b.studentportrait_1).toBe(input.students[0].portrait);
     expect(b.studentname_1).toBe(input.students[0].full_name);
     expect(b.studentquote_1).toBe(input.students[0].quote);
     expect(b.studentportrait_4).toBe(input.students[3].portrait);
+    // Слоты 5-12 скрыты.
+    expect(b.__hidden__studentportrait_5).toBe('1');
   });
 });
 

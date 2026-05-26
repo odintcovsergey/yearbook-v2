@@ -205,6 +205,10 @@ function makeInput(opts: {
       quarter: [],
       sixth: [],
     },
+    // РЭ.51: явно greedy чтобы хвост шёл на ОТДЕЛЬНУЮ страницу
+    // (полная + хвост) — это то поведение которое проверяют все
+    // тесты ниже. С auto распределением engine разбил бы 7 на 4+3.
+    student_distribution: 'greedy',
   };
 }
 
@@ -236,10 +240,10 @@ describe("mode='grid' семантический поиск (РЭ.22.6)", () => 
     expect(left.bindings.studentquote_1).toBe('Quote 0');
   });
 
-  it('Light: 7 учеников, grid_size=6, нет full_class → adaptive хвост (L-2 ближайший меньший)', () => {
-    // 7 учеников: 1 полная страница (6) + 1 хвост (1 ученик).
-    // Combined нет смысла (нет full_class). Adaptive — ищем мастер с
-    // students>=1 (но < base=6). В template_set L-2 — минимальный.
+  it('Light: 7 учеников, grid_size=6, нет full_class → L-Grid с __hidden__ (РЭ.40)', () => {
+    // РЭ.40: 7 учеников = 6 + 1, обе страницы L-Grid-Page.
+    // Adaptive masters (L-2) больше не выбираются — хвост идёт в base
+    // с __hidden__ на слотах 2-6.
     const bundle = makeBundle({
       preset: makePreset({
         id: 'light',
@@ -258,13 +262,13 @@ describe("mode='grid' семантический поиск (РЭ.22.6)", () => 
     expect(result.spreads).toHaveLength(1);
     // Левая — полная сетка L-Grid-Page (6 учеников)
     expect(result.spreads[0].left?.master_id).toBe('id-L-Grid-Page');
-    // Правая — L-2 (минимально-достаточный для хвоста 1)
-    expect(result.spreads[0].right?.master_id).toBe('id-L-2');
-    // У L-2 один из 2 слотов заполнен, второй null
+    // Правая — тоже L-Grid-Page (хвост 1 ученика в полном мастере с __hidden__)
+    expect(result.spreads[0].right?.master_id).toBe('id-L-Grid-Page');
+    // Слот 1 заполнен последним учеником, слоты 2-6 скрыты.
     expect(result.spreads[0].right?.bindings.studentportrait_1).toBe(
       'https://cdn/p6.jpg',
     );
-    expect(result.spreads[0].right?.bindings.studentportrait_2).toBe(null);
+    expect(result.spreads[0].right?.bindings.__hidden__studentportrait_2).toBe('1');
   });
 
   it('Light: 7 учеников + 1 full_class → combined-tail вместо adaptive', () => {
@@ -358,9 +362,9 @@ describe("mode='grid' семантический поиск (РЭ.22.6)", () => 
     expect(warn).toContain('students=5');
   });
 
-  it('Fallback tail_padded: 7 учеников, grid_size=6, нет adaptive < 6 → base с null', () => {
-    // В template_set только L-Grid-Page (6 учеников). Хвост 1 ученика
-    // должен лечь в L-Grid-Page с 5 null-слотами + warning.
+  it('Fallback tail_padded: 7 учеников, grid_size=6, нет adaptive < 6 → base с __hidden__', () => {
+    // РЭ.40+31.3: 7 учеников = 6 + 1. Хвост в L-Grid-Page,
+    // первый слот заполнен, 2-6 скрыты через __hidden__.
     const bundle = makeBundle({
       preset: makePreset({
         id: 'custom',
@@ -379,16 +383,13 @@ describe("mode='grid' семантический поиск (РЭ.22.6)", () => 
     expect(result.spreads).toHaveLength(1);
     expect(result.spreads[0].left?.master_id).toBe('id-L-Grid-Page');
     expect(result.spreads[0].right?.master_id).toBe('id-L-Grid-Page');
-    // У хвоста первый слот заполнен, остальные null.
+    // У хвоста первый слот заполнен, 2-6 скрыты через __hidden__.
     expect(result.spreads[0].right?.bindings.studentportrait_1).toBe(
       'https://cdn/p6.jpg',
     );
-    expect(result.spreads[0].right?.bindings.studentportrait_2).toBe(null);
-    expect(result.spreads[0].right?.bindings.studentportrait_6).toBe(null);
-
-    const warn = result.warnings.find((w) => w.includes('students_grid_tail_padded'));
-    expect(warn).toBeDefined();
-    expect(warn).toContain('остаток 1 учеников');
+    expect(result.spreads[0].right?.bindings.__hidden__studentportrait_2).toBe('1');
+    expect(result.spreads[0].right?.bindings.__hidden__studentportrait_6).toBe('1');
+    // РЭ.40: warning students_grid_tail_padded больше не выдаётся.
   });
 
   it("mode=NULL + density='light' → fallback на legacy buildGrid", () => {
@@ -425,7 +426,11 @@ describe("mode='grid' семантический поиск (РЭ.22.6)", () => 
     expect(result.spreads[0].left?.master_id).toBe('id-L-Grid-Page');
   });
 
-  it('Decision trace содержит grid_semantic:base и grid_semantic:adaptive_tail', () => {
+  it('Decision trace содержит grid_semantic с mode и pageIdx (РЭ.40)', () => {
+    // РЭ.40: rule_id формат изменился с 'grid_semantic:base:...' и
+    // 'grid_semantic:adaptive_tail:...' на унифицированный
+    // 'grid_semantic:${mode}:${pageIdx}'. Для 7 учеников = 6+1
+    // ожидаем 2 trace entry: pageIdx=0 и pageIdx=1, mode='auto'.
     const bundle = makeBundle({
       preset: makePreset({
         id: 'light',
@@ -441,17 +446,14 @@ describe("mode='grid' семантический поиск (РЭ.22.6)", () => 
       makeInput({ students_count: 7 }),
     );
 
-    const baseTrace = result.decision_trace.find((t) =>
-      t.rule_id?.startsWith('grid_semantic:base:'),
+    const traces = result.decision_trace.filter((t) =>
+      t.rule_id?.startsWith('grid_semantic:'),
     );
-    expect(baseTrace).toBeDefined();
-    expect(baseTrace?.inputs.master_name).toBe('L-Grid-Page');
-
-    const tailTrace = result.decision_trace.find((t) =>
-      t.rule_id?.startsWith('grid_semantic:adaptive_tail:'),
-    );
-    expect(tailTrace).toBeDefined();
-    expect(tailTrace?.inputs.master_name).toBe('L-2');
+    expect(traces.length).toBeGreaterThanOrEqual(2);
+    // Все мастера в trace — L-Grid-Page (РЭ.40: adaptive не выбираются).
+    for (const t of traces) {
+      expect(t.inputs.master_name).toBe('L-Grid-Page');
+    }
   });
 
   it('Mini: 24 ученика, grid_size=12 → 2 полные страницы N-Grid-Page', () => {

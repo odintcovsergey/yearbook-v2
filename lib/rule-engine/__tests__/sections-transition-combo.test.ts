@@ -1103,6 +1103,11 @@ describe('РЭ.37.4: симметризация хвоста', () => {
     //
     // То есть combo попадает на ЛЕВУЮ второго разворота (positionOfIndex(2)=left).
     // Closing — J-Half (half=2).
+    //
+    // РЭ.40/РЭ.51: симметризация хвоста работает ТОЛЬКО в greedy режиме
+    // распределения (см. decideDistribution в distribution.ts). В auto/
+    // equalize режимах хвост распределяется равномерно, симметризация
+    // не нужна. Явно ставим greedy чтобы воспроизвести legacy сценарий.
     const bundle = makeLightBundle(
       makePreset({
         id: 'light',
@@ -1114,7 +1119,10 @@ describe('РЭ.37.4: симметризация хвоста', () => {
     );
     const result = buildFromSectionStructure(
       bundle,
-      makeInput({ students_count: 13, half_class: 2, full_class: 1 }),
+      {
+        ...makeInput({ students_count: 13, half_class: 2, full_class: 1 }),
+        student_distribution: 'greedy',
+      },
     );
 
     // Trace: symmetrize:light:J-Combined-Tail-3 должна быть

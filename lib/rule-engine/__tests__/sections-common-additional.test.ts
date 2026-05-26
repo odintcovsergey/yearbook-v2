@@ -302,34 +302,38 @@ describe('common_additional: основные сценарии', () => {
 });
 
 describe('common_additional: integration с common_required', () => {
-  it('Universal hard чётное → 3 разворота required + 2 разворота additional', () => {
+  it('Universal hard чётное → common_required пустой (warning) + 2 разворота additional', () => {
+    // РЭ.32.Б: common_required теперь требует явного pages[] списка.
+    // Без него секция выдаёт warning 'common_required_empty' и страниц
+    // не строит. Тест обновлён под это поведение — раньше ожидал что
+    // engine auto-собирает required по density, но эта логика убрана.
+    // Партнёр должен явно настроить общий раздел в редакторе шаблона.
     const bundle = makeBundle(
       makePreset({
         id: 'universal',
         density: 'universal',
         sheet_type: 'hard',
         section_structure: [
-          { type: 'common_required' },
+          { type: 'common_required' },  // pages не задан → пустой
           { type: 'common_additional', max_spreads: 2 },
         ],
       }),
     );
-    // Universal hard чёт → 6 страниц required (3 разворота)
-    // + max_spreads=2 → 4 страницы additional (2 разворота)
-    // Итого 10 страниц = 5 разворотов.
-    // Required потребляет: TWO_QUARTERS×2 (4 quarter) + TWO_HALVES×2 (4 half)
-    //                    + COLLAGE_OR_HALVES_OR_FULL×2.
-    // Additional потребляет: COLLAGE_OR_HALVES_OR_FULL×2 + QUARTERS×2 (4 quarter).
     const result = buildFromSectionStructure(
       bundle,
       makeInput({
         students_count: 20,
-        sixth: 24, // нужно для 4 коллажей
-        quarter: 8, // 4 для required + 4 для additional
+        sixth: 24,
+        quarter: 8,
         half_class: 4,
         full_class: 0,
       }),
     );
-    expect(result.spreads).toHaveLength(5);
+    // Только additional строит развороты (2 шт). Required пропущен.
+    expect(result.spreads).toHaveLength(2);
+    // Warning о пустом required должен присутствовать.
+    expect(
+      result.warnings.some((w) => w.startsWith('common_required_empty')),
+    ).toBe(true);
   });
 });
