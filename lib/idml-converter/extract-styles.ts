@@ -386,15 +386,37 @@ function extractStoryContent(xml: string): string {
   const parsed = xmlParserPreserveOrder.parse(xml) as unknown;
   if (!Array.isArray(parsed)) return '';
 
-  // Найдём узел Story в массиве top-level узлов.
-  let storyNode: unknown = null;
-  for (const item of parsed) {
-    if (item && typeof item === 'object' && 'Story' in (item as object)) {
-      storyNode = (item as Record<string, unknown>).Story;
-      break;
+  // РЭ.56.1 фикс: ищем узел Story РЕКУРСИВНО, не только на верхнем уровне.
+  // В реальных IDML файлах Story обёрнут в idPkg:Story (namespace prefix
+  // из IDML packaging spec), поэтому верхнеуровневый ключ — 'idPkg:Story',
+  // а 'Story' лежит внутри. Раньше парсер не находил Story и возвращал
+  // пустую строку — default_text не записывался в БД.
+  //
+  // Рекурсивный поиск устойчив к любой обёртке: возвращает array узлов
+  // первого встреченного 'Story' тега на любой глубине.
+  function findStoryArray(nodes: unknown[]): unknown[] | null {
+    for (const node of nodes) {
+      if (!node || typeof node !== 'object') continue;
+      const obj = node as Record<string, unknown>;
+      // Прямое попадание: { Story: [...] }
+      if ('Story' in obj && Array.isArray(obj.Story)) {
+        return obj.Story as unknown[];
+      }
+      // Иначе рекурсивно по всем дочерним массивам (idPkg:Story → внутри).
+      for (const key of Object.keys(obj)) {
+        if (key === '#text' || key.startsWith('@_') || key === ':@') continue;
+        const v = obj[key];
+        if (Array.isArray(v)) {
+          const found = findStoryArray(v);
+          if (found) return found;
+        }
+      }
     }
+    return null;
   }
-  if (!storyNode || !Array.isArray(storyNode)) return '';
+
+  const storyNode = findStoryArray(parsed);
+  if (!storyNode) return '';
 
   // Buffer накапливает строки; в конце склеиваем.
   const parts: string[] = [];
@@ -442,7 +464,7 @@ function extractStoryContent(xml: string): string {
     }
   }
 
-  walk(storyNode as unknown[]);
+  walk(storyNode);
 
   // Финальная очистка: trim общий + сжатие нескольких подряд \n до одного.
   // Это убирает любые ложные пустые строки в начале/конце и между абзацами.
