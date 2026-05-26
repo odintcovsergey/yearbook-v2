@@ -501,52 +501,83 @@ function TextInlineEditor({
     onSubmit(trimmed === '' ? null : value)
   }
 
+  // РЭ.54.f: textarea оборачивается в flex-контейнер, чтобы
+  // поддерживать вертикальное выравнивание. Сам <textarea> не
+  // поддерживает vertical-align внутри своего box, но flex-контейнер
+  // умеет выравнивать ребёнка. Высота textarea адаптивна — мы её
+  // динамически устанавливаем по scrollHeight (см. useEffect ниже).
+  const wrapperAlignItems =
+    finalVAlign === 'middle' ? 'center' : finalVAlign === 'bottom' ? 'flex-end' : 'flex-start'
+
+  // Auto-resize textarea по контенту — для valign middle/bottom это
+  // принципиально (если textarea растянется на всю height фрейма,
+  // visual alignment не сработает). Запускаем после каждой смены value.
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    // Сброс — иначе scrollHeight будет ограничен текущей высотой.
+    el.style.height = 'auto'
+    // scrollHeight = реальная высота контента. Прибавляем 2px для
+    // защиты от cut-off при line-height = 1 (некоторые шрифты дают
+    // descender'ы которые могут немного выходить за scrollHeight).
+    const contentH = el.scrollHeight + 2
+    // Не растягиваем больше чем фрейм.
+    const frameH = placeholder.height_mm * scale
+    el.style.height = `${Math.min(contentH, frameH)}px`
+  }, [value, scale, placeholder.height_mm, fontSizePx])
+
   return (
-    <textarea
-      ref={ref}
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onKeyDown={handleKeyDown}
-      onBlur={handleBlur}
-      // stopPropagation на pointer/mouse events чтобы клики внутри
-      // textarea не вызывали повторное открытие TextDropZone.
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
+    <div
       className="absolute pointer-events-auto"
       style={{
         left: `${placeholder.x_mm * scale}px`,
         top: `${placeholder.y_mm * scale}px`,
         width: `${placeholder.width_mm * scale}px`,
         height: `${placeholder.height_mm * scale}px`,
-        fontFamily: `${placeholder.font_family}, serif`,
-        fontSize: `${fontSizePx}px`,
-        fontWeight: fontStyle === 'bold' ? 700 : 400,
-        color,
-        textAlign: finalHAlign,
-        // РЭ.54: vertical-align в textarea не поддерживается нативно.
-        // При редактировании всегда top — это удобнее для набора. Финальный
-        // valign партнёр увидит когда выйдет из режима редактирования
-        // (Konva TextSlot применит vAlignOverride через verticalAlign).
-        // Visual: тонкая синяя рамка чтобы было видно где редактируется,
-        // полупрозрачный белый фон чтобы текст читался поверх фона
-        // мастера (если есть background_url).
-        padding: 0,
-        margin: 0,
+        display: 'flex',
+        alignItems: wrapperAlignItems,
+        // Рамка показывает границы фрейма. Перенесена с textarea на
+        // wrapper — чтобы partner видел реальный bounding box даже
+        // когда сама textarea меньше высоты фрейма (valign middle/bottom).
         border: '2px solid #3b82f6',
-        outline: 'none',
-        background: 'rgba(255, 255, 255, 0.92)',
-        resize: 'none',
-        overflow: 'hidden',
-        // line-height: Konva по дефолту использует lineHeight=1 (без
-        // дополнительного межстрочного промежутка). Для textarea
-        // ставим то же.
-        lineHeight: 1,
-        // verticalAlign: Konva рисует с top alignment (verticalAlign='top'),
-        // textarea по умолчанию тоже top-aligned. ОК.
         boxSizing: 'border-box',
         zIndex: 30,
       }}
-    />
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <textarea
+        ref={ref}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          // height задаётся динамически через useEffect выше.
+          fontFamily: `${placeholder.font_family}, serif`,
+          fontSize: `${fontSizePx}px`,
+          fontWeight: fontStyle === 'bold' ? 700 : 400,
+          color,
+          textAlign: finalHAlign,
+          padding: 0,
+          margin: 0,
+          border: 'none',
+          outline: 'none',
+          background: 'rgba(255, 255, 255, 0.92)',
+          resize: 'none',
+          overflow: 'hidden',
+          // line-height: Konva по дефолту использует lineHeight=1 (без
+          // дополнительного межстрочного промежутка). Для textarea
+          // ставим то же.
+          lineHeight: 1,
+          boxSizing: 'border-box',
+          display: 'block',
+        }}
+      />
+    </div>
   )
 }
 
