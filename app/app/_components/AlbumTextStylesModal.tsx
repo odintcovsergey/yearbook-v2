@@ -29,17 +29,13 @@ const GROUP_LABELS: Record<TextStyleGroup, string> = {
   studentquote: 'Цитаты учеников',
   teachername: 'ФИО учителей',
   teacherrole: 'Должности учителей',
-  headteachername: 'ФИО классного руководителя',
-  headtextframe: 'Текст-обращение классного руководителя',
 }
 
 const GROUP_HINTS: Record<TextStyleGroup, string> = {
-  studentname: 'Применяется ко всем placeholder\'ам studentname_N.',
-  studentquote: 'Применяется ко всем placeholder\'ам studentquote_N.',
-  teachername: 'ФИО основного учителя + учителей-предметников (teachername_N, subjectname_N).',
-  teacherrole: 'Должности всех учителей (teacherrole_N, subjectrole_N, headteacherrole).',
-  headteachername: 'Отдельная группа потому что обычно крупнее остальных учителей.',
-  headtextframe: 'Длинный текст-обращение от классного руководителя.',
+  studentname: 'studentname_N',
+  studentquote: 'studentquote_N',
+  teachername: 'teachername_N + subjectname_N',
+  teacherrole: 'teacherrole_N + subjectrole_N + headteacherrole',
 }
 
 type Props = {
@@ -132,131 +128,134 @@ export default function AlbumTextStylesModal({
       onClick={handleCancel}
     >
       <div
-        className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Шапка */}
-        <div className="flex items-center justify-between p-4 border-b">
+        {/* Шапка — компактная */}
+        <div className="flex items-center justify-between px-4 py-3 border-b">
           <div>
-            <h3 className="text-lg font-semibold">Стили текстов альбома</h3>
+            <h3 className="text-base font-semibold">Стили текстов альбома</h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              Один раз настраиваете для группы — применяется ко всем
-              соответствующим placeholder&apos;ам. Точечные правки
-              (клик на текст) переопределяют глобальные.
+              Настраивается для группы — применяется ко всем элементам.
+              Точечный клик на текст переопределяет глобальный стиль.
             </p>
           </div>
           <button
             onClick={handleCancel}
-            className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+            className="text-gray-400 hover:text-gray-700 text-2xl leading-none ml-2"
             aria-label="Закрыть"
           >
             ×
           </button>
         </div>
 
-        {/* Содержимое — список групп */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-5">
-          {TEXT_STYLE_GROUPS.map((group) => {
-            const ov = draft[group] ?? null
-            const size = ov?.size_pct ?? 100
-            const color = ov?.color ?? null
-            const isModified = ov !== null
-            return (
-              <div
-                key={group}
-                className={`border rounded-lg p-3 ${
-                  isModified ? 'border-blue-300 bg-blue-50/30' : 'border-gray-200'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <div className="font-medium text-gray-900 text-sm">
-                    {GROUP_LABELS[group]}
-                  </div>
-                  {isModified && (
-                    <button
-                      type="button"
-                      onClick={() => resetGroup(group)}
-                      className="text-xs text-gray-500 hover:text-gray-900"
-                    >
-                      ↺ По умолчанию
-                    </button>
-                  )}
-                </div>
-                <p className="text-xs text-gray-500 mb-2">{GROUP_HINTS[group]}</p>
-
-                {/* Slider размера */}
-                <div className="mb-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-gray-600">Размер</span>
-                    <span className="text-xs text-gray-900 font-mono tabular-nums">
-                      {ov?.size_pct !== null && ov?.size_pct !== undefined
-                        ? `${size}%`
-                        : 'из шаблона'}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={FONT_SIZE_MULT_MIN * 100}
-                    max={FONT_SIZE_MULT_MAX * 100}
-                    step={5}
-                    value={size}
-                    onChange={(e) => {
-                      const pct = Number(e.target.value)
-                      // Если ставят 100% — удаляем (это default).
-                      updateGroup(group, {
-                        size_pct: pct === 100 ? null : pct,
-                      })
-                    }}
-                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-
-                {/* Палитра цветов */}
-                <div>
-                  <div className="text-xs text-gray-600 mb-1">
-                    Цвет{' '}
-                    {color === null && (
-                      <span className="text-gray-400">(из шаблона)</span>
+        {/* Содержимое — секции в 2 колонки на широком экране */}
+        <div className="flex-1 overflow-y-auto p-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {TEXT_STYLE_GROUPS.map((group) => {
+              const ov = draft[group] ?? null
+              const size = ov?.size_pct ?? 100
+              const color = ov?.color ?? null
+              const isModified = ov !== null
+              return (
+                <div
+                  key={group}
+                  className={`border rounded-lg p-2.5 ${
+                    isModified ? 'border-blue-300 bg-blue-50/30' : 'border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-baseline justify-between mb-1.5">
+                    <div className="font-medium text-gray-900 text-sm truncate">
+                      {GROUP_LABELS[group]}
+                    </div>
+                    {isModified && (
+                      <button
+                        type="button"
+                        onClick={() => resetGroup(group)}
+                        className="text-[10px] text-gray-500 hover:text-gray-900 whitespace-nowrap ml-2"
+                      >
+                        ↺ сброс
+                      </button>
                     )}
                   </div>
-                  <div className="grid grid-cols-10 gap-1.5">
-                    {TEXT_STYLE_PALETTE.map(({ hex, name }) => {
-                      const isActive =
-                        color !== null && color.toUpperCase() === hex.toUpperCase()
-                      return (
-                        <button
-                          key={hex}
-                          type="button"
-                          onClick={() =>
-                            updateGroup(group, {
-                              color: isActive ? null : hex.toUpperCase(),
-                            })
-                          }
-                          title={`${name} (${hex})`}
-                          aria-label={name}
-                          className={`w-7 h-7 rounded border transition-all ${
-                            isActive
-                              ? 'border-blue-600 ring-2 ring-blue-200'
-                              : 'border-gray-300 hover:border-gray-400'
-                          }`}
-                          style={{ backgroundColor: hex }}
-                        >
-                          {isActive && (
-                            <span
-                              className="block text-center leading-none text-xs font-bold"
-                              style={{ color: isLightColor(hex) ? '#000' : '#FFF' }}
-                            >
-                              ✓
-                            </span>
-                          )}
-                        </button>
-                      )
-                    })}
+                  <p className="text-[10px] text-gray-400 font-mono mb-2 truncate" title={GROUP_HINTS[group]}>
+                    {GROUP_HINTS[group]}
+                  </p>
+
+                  {/* Slider размера */}
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[11px] text-gray-600">Размер</span>
+                      <span className="text-[11px] text-gray-900 font-mono tabular-nums">
+                        {ov?.size_pct !== null && ov?.size_pct !== undefined
+                          ? `${size}%`
+                          : 'из шаблона'}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={FONT_SIZE_MULT_MIN * 100}
+                      max={FONT_SIZE_MULT_MAX * 100}
+                      step={5}
+                      value={size}
+                      onChange={(e) => {
+                        const pct = Number(e.target.value)
+                        // Если ставят 100% — удаляем (это default).
+                        updateGroup(group, {
+                          size_pct: pct === 100 ? null : pct,
+                        })
+                      }}
+                      className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Палитра цветов — компактнее */}
+                  <div>
+                    <div className="text-[11px] text-gray-600 mb-1">
+                      Цвет{' '}
+                      {color === null && (
+                        <span className="text-gray-400">(из шаблона)</span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {TEXT_STYLE_PALETTE.map(({ hex, name }) => {
+                        const isActive =
+                          color !== null && color.toUpperCase() === hex.toUpperCase()
+                        return (
+                          <button
+                            key={hex}
+                            type="button"
+                            onClick={() =>
+                              updateGroup(group, {
+                                color: isActive ? null : hex.toUpperCase(),
+                              })
+                            }
+                            title={`${name} (${hex})`}
+                            aria-label={name}
+                            className={`w-6 h-6 rounded border transition-all ${
+                              isActive
+                                ? 'border-blue-600 ring-2 ring-blue-200'
+                                : 'border-gray-300 hover:border-gray-400'
+                            }`}
+                            style={{ backgroundColor: hex }}
+                          >
+                            {isActive && (
+                              <span
+                                className="block text-center leading-none text-[10px] font-bold"
+                                style={{ color: isLightColor(hex) ? '#000' : '#FFF' }}
+                              >
+                                ✓
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
 
         {error && (
@@ -265,13 +264,13 @@ export default function AlbumTextStylesModal({
           </div>
         )}
 
-        {/* Подвал */}
-        <div className="border-t p-4 flex items-center justify-between gap-2 bg-gray-50">
+        {/* Подвал — компактный */}
+        <div className="border-t px-3 py-2 flex items-center justify-between gap-2 bg-gray-50">
           <button
             type="button"
             onClick={resetAll}
             disabled={!hasAnyOverride || saving}
-            className="text-sm text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+            className="text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
           >
             ↺ Сбросить всё
           </button>
@@ -280,7 +279,7 @@ export default function AlbumTextStylesModal({
               type="button"
               onClick={handleCancel}
               disabled={saving}
-              className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 rounded text-sm disabled:opacity-50"
+              className="px-3 py-1.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 rounded text-sm disabled:opacity-50"
             >
               Отмена
             </button>
@@ -288,7 +287,7 @@ export default function AlbumTextStylesModal({
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm disabled:opacity-50"
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm disabled:opacity-50"
             >
               {saving ? 'Сохранение...' : 'Сохранить'}
             </button>

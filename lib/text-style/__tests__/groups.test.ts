@@ -32,17 +32,20 @@ describe('detectTextStyleGroup', () => {
     expect(detectTextStyleGroup('headteacherrole')).toBe('teacherrole');
   });
 
-  it('headteachername (без числа) → headteachername', () => {
-    expect(detectTextStyleGroup('headteachername')).toBe('headteachername');
+  it('headteachername (без числа) → null (РЭ.53.d: единственный экземпляр)', () => {
+    // headteachername в альбоме в одном экземпляре — глобальный override
+    // не нужен, партнёр правит точечно через клик. detectTextStyleGroup
+    // намеренно возвращает null для этого label.
+    expect(detectTextStyleGroup('headteachername')).toBeNull();
   });
 
-  it('headtextframe → headtextframe', () => {
-    expect(detectTextStyleGroup('headtextframe')).toBe('headtextframe');
+  it('headtextframe → null (РЭ.53.d: единственный экземпляр)', () => {
+    expect(detectTextStyleGroup('headtextframe')).toBeNull();
   });
 
   it('case-insensitive', () => {
     expect(detectTextStyleGroup('StudentName_1')).toBe('studentname');
-    expect(detectTextStyleGroup('HEADTEXTFRAME')).toBe('headtextframe');
+    expect(detectTextStyleGroup('HEADTEACHERROLE')).toBe('teacherrole');
   });
 
   it('unrelated labels → null', () => {

@@ -7,14 +7,19 @@
 /**
  * Список глобальных групп.
  * Каждое значение — ключ в albums.text_style_overrides (JSONB).
+ *
+ * РЭ.53.d: headteachername и headtextframe ВЫНЕСЕНЫ из глобальных групп —
+ * классный руководитель в альбоме в единственном экземпляре, точечная
+ * правка через TextStylePanel прямо на месте удобнее чем глобальный
+ * override для одного элемента. Эти labels определяются как 'не покрыты
+ * глобальными стилями' (detectTextStyleGroup → null) → каскад вернётся
+ * к placeholder defaults + точечному override.
  */
 export const TEXT_STYLE_GROUPS = [
   'studentname',
   'studentquote',
   'teachername',
   'teacherrole',
-  'headteachername',
-  'headtextframe',
 ] as const;
 
 export type TextStyleGroup = (typeof TEXT_STYLE_GROUPS)[number];
@@ -84,9 +89,12 @@ export function parseAlbumTextStyleOverrides(
  *   teacherrole_N     → 'teacherrole'
  *   subjectrole_N     → 'teacherrole'
  *   headteacherrole   → 'teacherrole'
- *   headteachername   → 'headteachername'
- *   headtextframe     → 'headtextframe'
  *   (всё остальное)   → null (не покрыто глобальными стилями)
+ *
+ * РЭ.53.d: headteachername и headtextframe больше НЕ покрываются
+ * глобальными группами (возвращаем null). Партнёр правит их точечно
+ * через клик на текст → TextStylePanel — для единственного экземпляра
+ * это удобнее чем глобальный override.
  *
  * Сравнение case-insensitive. Trailing цифры опциональны.
  */
@@ -94,9 +102,8 @@ export function detectTextStyleGroup(label: string): TextStyleGroup | null {
   if (!label) return null;
   const lower = label.toLowerCase();
   // Точные labels (без числового суффикса) проверяем первыми.
-  if (lower === 'headteachername') return 'headteachername';
-  if (lower === 'headtextframe') return 'headtextframe';
   if (lower === 'headteacherrole') return 'teacherrole';
+  // headteachername и headtextframe — намеренно null (см. doc выше).
   // Префиксные с числом.
   if (/^studentname(_\d+)?$/.test(lower)) return 'studentname';
   if (/^studentquote(_\d+)?$/.test(lower)) return 'studentquote';
