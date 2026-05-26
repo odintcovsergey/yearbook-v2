@@ -225,10 +225,17 @@ function frameToPlaceholder(
     masterName,
     warnings,
   );
+  // РЭ.56: исходный текст из IDML → default_text у placeholder.
+  // Так декоративные надписи в мастерах («Дорогие выпускники!», и т.п.)
+  // попадают в БД и в редактор как редактируемое значение по умолчанию.
+  // Пустые story (без <Content>) возвращают undefined — поле default_text
+  // остаётся undefined и в БД сохраняется как null.
+  const defaultText = resolver.resolveTextContent(parentStoryId);
   return {
     ...common,
     type: 'text',
     ...textStyle,
+    ...(defaultText !== undefined ? { default_text: defaultText } : {}),
     _pageIndex: pageIndex,
   };
 }

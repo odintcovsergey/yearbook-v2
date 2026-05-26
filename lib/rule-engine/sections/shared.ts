@@ -198,7 +198,18 @@ export function humanPhotoCategory(category: string): string {
  * непотребляемые данные, привязанные к альбому).
  */
 export function bindOverrideMasterPlaceholders(
-  master: { placeholders?: ReadonlyArray<{ label: string }> },
+  master: {
+    placeholders?: ReadonlyArray<{
+      label: string;
+      // РЭ.56: default_text — декоративный текст из IDML, который должен
+      // попасть в instance.data как initial value для незнакомых text
+      // placeholder'ов. Привязки к данным альбома (headtextframe и пр.)
+      // приоритетнее — default_text применяется только если binding ничего
+      // не назначил.
+      default_text?: string;
+      type?: string;
+    }>;
+  },
   input: RulesAlbumInput,
   available: CommonPhotoCounts,
 ): {
@@ -374,6 +385,23 @@ export function bindOverrideMasterPlaceholders(
 
     // Любой неизвестный placeholder — оставляем без binding (Konva canvas
     // покажет default-плейсхолдер из IDML, партнёр заполнит в редакторе).
+    //
+    // РЭ.56: исключение — text placeholder с default_text из IDML.
+    // Декоративные тексты («Дорогие выпускники!» и т.п.) которые дизайнер
+    // вписал в фрейм мастера — их и надо показать партнёру как начальное
+    // значение. Дальше он может править или удалять.
+    //
+    // ВАЖНО: после первой правки партнёра в instance.data появится свой
+    // ключ — он перекроет default_text. Если партнёр стёр текст до
+    // пустоты — в instance.data попадёт null, default_text НЕ возвращается
+    // (партнёр явно очистил поле; см. handleTextSubmit в page.tsx).
+    if (
+      ph.type === 'text' &&
+      ph.default_text &&
+      !(ph.label in bindings)
+    ) {
+      bindings[ph.label] = ph.default_text;
+    }
   }
 
   return {

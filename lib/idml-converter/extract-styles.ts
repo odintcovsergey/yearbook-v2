@@ -27,6 +27,28 @@ const xmlParser = new XMLParser({
   trimValues: true,
 });
 
+/**
+ * РЭ.56: отдельный парсер с preserveOrder=true для извлечения текстового
+ * содержимого Story в правильном порядке.
+ *
+ * fast-xml-parser в обычном режиме (выше) группирует одноимённые теги в
+ * массивы, теряя порядок между разными тегами. Для извлечения текста нам
+ * нужен порядок Content vs Br чтобы правильно реконструировать строки —
+ * поэтому делаем второй парс именно story XML.
+ *
+ * Не используется для стилей (там обычный xmlParser выше работает
+ * корректно через findFirst/collectAll).
+ */
+const xmlParserPreserveOrder = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  allowBooleanAttributes: true,
+  parseAttributeValue: false,
+  parseTagValue: false,
+  trimValues: false, // важно — иначе пробелы в начале/конце Content съедятся
+  preserveOrder: true,
+});
+
 const MAX_BASED_ON_DEPTH = 10;
 
 // ─── Публичные типы ───────────────────────────────────────────────────────
@@ -50,6 +72,21 @@ export type StyleResolver = {
     masterName: string,
     warnings: ParserWarning[],
   ): TextStyleProps;
+  /**
+   * РЭ.56: возвращает текстовое содержимое story из IDML, если оно есть.
+   * Используется парсером геометрии чтобы записать default_text в
+   * TextPlaceholder. Декоративный текст из мастера («Дорогие выпускники!»)
+   * через этот механизм попадает в БД и виден партнёру в редакторе как
+   * редактируемое поле.
+   *
+   * Возвращает undefined для случаев когда:
+   *   - storyId == null (фрейм без ParentStory — редко, но бывает)
+   *   - story не найдена в IDML (попадание в эту ветку логируется
+   *     отдельно в resolveTextStyle)
+   *   - content пустой (нет ни одного <Content> в story, или все они
+   *     пустые строки)
+   */
+  resolveTextContent(storyId: string | null): string | undefined;
 };
 
 // ─── Дефолты ──────────────────────────────────────────────────────────────
@@ -87,6 +124,20 @@ type StoryEntry = {
   inlineFontStyle?: string;
   inlineFillColor?: string;
   paragraphStyleCount: number;
+  /**
+   * РЭ.56: содержимое текстового фрейма из IDML.
+   *
+   * Извлекается из всех <Content> элементов внутри Story в порядке
+   * появления. Между Content-узлами разных абзацев (ParagraphStyleRange)
+   * и через <Br/> вставляется '\n'. Это исходный текст который дизайнер
+   * вписал в фрейм в InDesign — может быть placeholder'ом ('ФИО'),
+   * декоративным текстом ('Дорогие выпускники!'), или ничем.
+   *
+   * Используется как default_text у TextPlaceholder. Чтобы декоративный
+   * текст из IDML («Дорогие выпускники!» в S-Intro) попал в БД и был
+   * виден партнёру в редакторе с возможностью править/удалять.
+   */
+  content?: string;
 };
 
 type ColorEntry = {
@@ -171,6 +222,14 @@ export async function loadStyleResolver(zip: JSZip): Promise<StyleResolver> {
       };
 
       return applyAutoFitRule(label, props);
+    },
+    resolveTextContent(storyId): string | undefined {
+      if (!storyId) return undefined;
+      const story = stories.get(storyId);
+      if (!story) return undefined;
+      // content уже извлечено в loadStories с типографски чистой нормализацией.
+      // Возвращаем undefined для пустых строк (важно — иначе попадёт '' в БД).
+      return story.content && story.content.length > 0 ? story.content : undefined;
     },
   };
 }
@@ -268,10 +327,20 @@ async function loadStories(zip: JSZip): Promise<Map<string, StoryEntry>> {
     if (!id) continue;
 
     const paragraphRanges = collectAll(story, 'ParagraphStyleRange');
+
+    // РЭ.56: текстовое содержимое — отдельный парс с preserveOrder=true.
+    // См. комментарий к xmlParserPreserveOrder выше. Парсим тот же XML
+    // ещё раз, извлекаем содержимое Story в порядке появления узлов
+    // Content и Br. Это нужно чтобы декоративные тексты из IDML
+    // («Дорогие выпускники!» в S-Intro и т.п.) попадали в БД как
+    // default_text у placeholder'а.
+    const contentText = extractStoryContent(xml);
+
     if (paragraphRanges.length === 0) {
       out.set(id, {
         appliedParagraphStyle: null,
         paragraphStyleCount: 0,
+        content: contentText || undefined,
       });
       continue;
     }
@@ -293,9 +362,92 @@ async function loadStories(zip: JSZip): Promise<Map<string, StoryEntry>> {
         ? getAttr(firstCharRange, 'FillColor')
         : undefined,
       paragraphStyleCount: countDistinctParagraphStyles(paragraphRanges),
+      content: contentText || undefined,
     });
   }
   return out;
+}
+
+/**
+ * РЭ.56: извлечение текстового содержимого из Story XML.
+ *
+ * Парсит XML с preserveOrder=true и рекурсивно обходит все ноды,
+ * собирая <Content> в строки и заменяя <Br/> на '\n'. Между
+ * разными ParagraphStyleRange (абзацами) тоже вставляет '\n'.
+ *
+ * Возвращает финальную строку с типографски нормализованными
+ * переводами строк. Если контент пуст — возвращает пустую строку.
+ *
+ * Не падает на отсутствие тегов — корректно отрабатывает все
+ * варианты структуры story (пустой story, story без CharacterStyleRange,
+ * story с одним Content, story с множеством абзацев).
+ */
+function extractStoryContent(xml: string): string {
+  const parsed = xmlParserPreserveOrder.parse(xml) as unknown;
+  if (!Array.isArray(parsed)) return '';
+
+  // Найдём узел Story в массиве top-level узлов.
+  let storyNode: unknown = null;
+  for (const item of parsed) {
+    if (item && typeof item === 'object' && 'Story' in (item as object)) {
+      storyNode = (item as Record<string, unknown>).Story;
+      break;
+    }
+  }
+  if (!storyNode || !Array.isArray(storyNode)) return '';
+
+  // Buffer накапливает строки; в конце склеиваем.
+  const parts: string[] = [];
+
+  function walk(nodes: unknown[]): void {
+    for (const node of nodes) {
+      if (!node || typeof node !== 'object') continue;
+      const obj = node as Record<string, unknown>;
+      // <Content>текст</Content> → { Content: [{ '#text': 'текст' }] }
+      if ('Content' in obj && Array.isArray(obj.Content)) {
+        for (const inner of obj.Content) {
+          if (inner && typeof inner === 'object') {
+            const t = (inner as Record<string, unknown>)['#text'];
+            if (typeof t === 'string') parts.push(t);
+          }
+        }
+        continue;
+      }
+      // <Br/> → { Br: [] } → перевод строки внутри абзаца.
+      if ('Br' in obj) {
+        parts.push('\n');
+        continue;
+      }
+      // ParagraphStyleRange содержит CharacterStyleRange'ы.
+      if ('ParagraphStyleRange' in obj && Array.isArray(obj.ParagraphStyleRange)) {
+        if (parts.length > 0 && parts[parts.length - 1] !== '\n') {
+          // Перевод строки между абзацами (если предыдущий контент уже не закончился на \n).
+          parts.push('\n');
+        }
+        walk(obj.ParagraphStyleRange as unknown[]);
+        continue;
+      }
+      // CharacterStyleRange содержит Content/Br.
+      if ('CharacterStyleRange' in obj && Array.isArray(obj.CharacterStyleRange)) {
+        walk(obj.CharacterStyleRange as unknown[]);
+        continue;
+      }
+      // Любой другой контейнер (XMLElement, обёртка) — обходим рекурсивно
+      // по всем массивам внутри (не теги типа #text, @_attribute).
+      for (const key of Object.keys(obj)) {
+        if (key === '#text' || key.startsWith('@_') || key === ':@') continue;
+        const v = obj[key];
+        if (Array.isArray(v)) walk(v);
+      }
+    }
+  }
+
+  walk(storyNode as unknown[]);
+
+  // Финальная очистка: trim общий + сжатие нескольких подряд \n до одного.
+  // Это убирает любые ложные пустые строки в начале/конце и между абзацами.
+  const joined = parts.join('').replace(/\n{2,}/g, '\n').trim();
+  return joined;
 }
 
 function countDistinctParagraphStyles(

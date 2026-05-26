@@ -958,7 +958,14 @@ export default function AlbumSpreadCanvas({
               )
             }
             if (p.type === 'text') {
-              const value = instance.data[p.label] ?? null
+              // РЭ.56: ключ отсутствует в instance.data → используем
+              // default_text из placeholder (декоративный текст из IDML).
+              // Ключ есть но null/'' → партнёр явно очистил, default_text
+              // не применяем. Это отличает «не задано» от «явно стёрто».
+              const value =
+                p.label in instance.data
+                  ? (instance.data[p.label] ?? null)
+                  : p.default_text ?? null
               // Когда этот text-placeholder редактируется — рендерим
               // textarea-editor. Иначе — прозрачный кликабельный DropZone
               // с cursor:text и hover ring.
