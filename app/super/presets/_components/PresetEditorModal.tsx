@@ -1,6 +1,21 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  arrayMove,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { SpreadTemplate } from '@/lib/album-builder/types'
 import CommonRequiredPagesEditor from './CommonRequiredPagesEditor'
 
@@ -375,6 +390,14 @@ export default function PresetEditorModal({
     copy[idx] = copy[newIdx]
     copy[newIdx] = tmp
     setSections(copy)
+  }
+  // РЭ.45: drag-and-drop переупорядочивание секций. Принимает oldIdx/newIdx
+  // (как от arrayMove из @dnd-kit/sortable) и применяет к sections массиву.
+  const reorderSections = (oldIdx: number, newIdx: number) => {
+    if (oldIdx === newIdx) return
+    if (oldIdx < 0 || oldIdx >= sections.length) return
+    if (newIdx < 0 || newIdx >= sections.length) return
+    setSections(arrayMove(sections, oldIdx, newIdx))
   }
   const updateSection = (idx: number, patch: Partial<Section>) => {
     const copy = [...sections]
@@ -800,7 +823,8 @@ export default function PresetEditorModal({
               </h3>
               <p className="text-xs text-gray-500 mt-1">
                 Порядок секций сверху вниз. Engine собирает альбом следуя этому
-                списку. Используйте стрелки чтобы изменить порядок.
+                списку. Перетащите секцию за ⋮⋮ слева чтобы изменить порядок
+                (или используйте стрелки ▲▼).
               </p>
             </div>
 
@@ -812,6 +836,7 @@ export default function PresetEditorModal({
               onUpdate={updateSection}
               onRemove={removeSection}
               onMove={moveSection}
+              onReorder={reorderSections}
             />
 
             <AddSectionPicker
@@ -860,6 +885,7 @@ function SectionsEditor({
   onUpdate,
   onRemove,
   onMove,
+  onReorder,
 }: {
   sections: Section[]
   templates: SpreadTemplate[]
@@ -868,7 +894,33 @@ function SectionsEditor({
   onUpdate: (idx: number, patch: Partial<Section>) => void
   onRemove: (idx: number) => void
   onMove: (idx: number, dir: -1 | 1) => void
+  onReorder: (oldIdx: number, newIdx: number) => void
 }) {
+  // РЭ.45: DnD для секций. Используем тот же паттерн что в
+  // CommonRequiredPagesEditor — @dnd-kit с verticalListSortingStrategy.
+  // ID секции = `section-${idx}-${type}` (синтетический, поскольку
+  // одна секция типа common может встречаться 2+ раз — section.type
+  // не уникален. См. ALL_SECTION_TYPES.MULTIPLE_ALLOWED).
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      // Чтобы кнопки внутри карточки секции (▲▼, × и т.д.) работали
+      // без случайного захвата DnD, требуется минимальное смещение
+      // курсора перед началом drag.
+      activationConstraint: { distance: 5 },
+    }),
+  )
+
+  const itemIds = sections.map((s, idx) => `section-${idx}-${s.type}`)
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIdx = itemIds.indexOf(String(active.id))
+    const newIdx = itemIds.indexOf(String(over.id))
+    if (oldIdx === -1 || newIdx === -1) return
+    onReorder(oldIdx, newIdx)
+  }
+
   if (sections.length === 0) {
     return (
       <div className="text-sm text-gray-500 italic border border-dashed rounded p-4">
@@ -877,162 +929,236 @@ function SectionsEditor({
     )
   }
   return (
-    <div className="space-y-2">
-      {sections.map((s, idx) => (
-        <div
-          key={`${s.type}-${idx}`}
-          className="bg-gray-50 border rounded px-3 py-2 flex items-start gap-2"
-        >
-          <div className="flex flex-col gap-0.5 pt-0.5">
-            <button
-              onClick={() => onMove(idx, -1)}
-              disabled={idx === 0}
-              className="text-xs text-gray-500 hover:text-gray-900 disabled:opacity-30 px-1"
-              aria-label="Вверх"
-            >
-              ▲
-            </button>
-            <button
-              onClick={() => onMove(idx, 1)}
-              disabled={idx === sections.length - 1}
-              className="text-xs text-gray-500 hover:text-gray-900 disabled:opacity-30 px-1"
-              aria-label="Вниз"
-            >
-              ▼
-            </button>
-          </div>
-          <div className="flex-1">
-            <div className="font-medium text-sm">{SECTION_LABELS[s.type]}</div>
-            <div className="text-xs text-gray-500 font-mono">{s.type}</div>
-            {SECTION_DESCRIPTIONS[s.type] && (
-              <div className="text-xs text-gray-600 mt-1">
-                {SECTION_DESCRIPTIONS[s.type]}
-              </div>
-            )}
-            {/* common_additional: max_spreads */}
-            {s.type === 'common_additional' && (
-              <div className="mt-2 flex items-center gap-2">
-                <label className="text-xs text-gray-600">max_spreads:</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={20}
-                  value={s.max_spreads}
-                  onChange={(e) =>
-                    onUpdate(idx, { max_spreads: Number(e.target.value) } as Partial<Section>)
-                  }
-                  className="border rounded px-2 py-0.5 text-xs w-20"
-                />
-              </div>
-            )}
-            {/* РЭ.32.Б.3 — common_required: конструктор страниц */}
-            {s.type === 'common_required' && (
-              <div className="mt-3">
-                {!hasTemplateSet ? (
-                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                    Выберите дизайн (template_set) у шаблона, чтобы добавлять
-                    мастера общего раздела.
-                  </p>
-                ) : templatesLoading ? (
-                  <p className="text-xs text-gray-400 italic">
-                    Загрузка мастеров…
-                  </p>
-                ) : (
-                  <CommonRequiredPagesEditor
-                    pages={Array.isArray(s.pages) ? s.pages : []}
-                    templates={templates}
-                    onChange={(newPages) =>
-                      onUpdate(idx, { pages: newPages } as Partial<Section>)
-                    }
-                  />
-                )}
-              </div>
-            )}
-            {/* РЭ.32.Б.4 — transition: опциональный мастер */}
-            {s.type === 'transition' && (
-              <div className="mt-3">
-                {!hasTemplateSet ? (
-                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                    Выберите дизайн (template_set) у шаблона, чтобы выбрать
-                    переходный мастер.
-                  </p>
-                ) : templatesLoading ? (
-                  <p className="text-xs text-gray-400 italic">
-                    Загрузка мастеров…
-                  </p>
-                ) : (
-                  <TransitionMasterSelector
-                    value={s.master_name ?? null}
-                    templates={templates}
-                    onChange={(name) =>
-                      onUpdate(idx, { master_name: name } as Partial<Section>)
-                    }
-                  />
-                )}
-              </div>
-            )}
-            {/* РЭ.42.c — soft_intro / soft_final: опциональный мастер.
-                Партнёр может вместо автоматического classphoto положить
-                любой мастер template_set (учителя, классный руководитель,
-                воспитатели детсада и т.д.). */}
-            {(s.type === 'soft_intro' || s.type === 'soft_final') && (
-              <div className="mt-3">
-                {!hasTemplateSet ? (
-                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                    Выберите дизайн (template_set) у шаблона, чтобы выбрать
-                    мастер вступительной/финальной страницы.
-                  </p>
-                ) : templatesLoading ? (
-                  <p className="text-xs text-gray-400 italic">
-                    Загрузка мастеров…
-                  </p>
-                ) : (
-                  <SoftSectionMasterPicker
-                    sectionType={s.type}
-                    value={s.master_name ?? null}
-                    templates={templates}
-                    onChange={(name) =>
-                      onUpdate(idx, { master_name: name } as Partial<Section>)
-                    }
-                  />
-                )}
-              </div>
-            )}
-            {/* common manual: slots — пока read-only (партнёры используют new секции) */}
-            {s.type === 'common' && 'slots' in s && (
-              <div className="mt-2">
-                <span className="text-xs text-gray-600">slots:</span>{' '}
-                <span className="text-xs font-mono">[{s.slots.join(', ')}]</span>
-                <div className="text-xs text-amber-600 mt-1">
-                  Старая форма. Рекомендуется common_required + common_additional.
-                </div>
-              </div>
-            )}
-            {s.type === 'common' && 'mode' in s && (
-              <div className="mt-2 flex items-center gap-2">
-                <label className="text-xs text-gray-600">auto, max_spreads:</label>
-                <input
-                  type="number"
-                  min={0}
-                  max={20}
-                  value={s.max_spreads}
-                  onChange={(e) =>
-                    onUpdate(idx, { max_spreads: Number(e.target.value) } as Partial<Section>)
-                  }
-                  className="border rounded px-2 py-0.5 text-xs w-20"
-                />
-              </div>
-            )}
-          </div>
-          <button
-            onClick={() => onRemove(idx)}
-            className="text-xs text-red-500 hover:text-red-700 px-2"
-            aria-label="Удалить"
-          >
-            ×
-          </button>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+        <div className="space-y-2">
+          {sections.map((s, idx) => (
+            <SortableSectionItem
+              key={itemIds[idx]}
+              id={itemIds[idx]}
+              section={s}
+              index={idx}
+              totalSections={sections.length}
+              templates={templates}
+              templatesLoading={templatesLoading}
+              hasTemplateSet={hasTemplateSet}
+              onUpdate={onUpdate}
+              onRemove={onRemove}
+              onMove={onMove}
+            />
+          ))}
         </div>
-      ))}
+      </SortableContext>
+    </DndContext>
+  )
+}
+
+// ─── SortableSectionItem ──────────────────────────────────────────────────
+// РЭ.45: одна секция-карточка в DnD-сортируемом списке. Извлекли в отдельный
+// компонент потому что useSortable не может вызываться внутри map напрямую
+// (хук должен быть вызван в компоненте). Логика рендера (форма для каждой
+// секции по типу) — та же что была inline в SectionsEditor до РЭ.45.
+function SortableSectionItem({
+  id,
+  section: s,
+  index: idx,
+  totalSections,
+  templates,
+  templatesLoading,
+  hasTemplateSet,
+  onUpdate,
+  onRemove,
+  onMove,
+}: {
+  id: string
+  section: Section
+  index: number
+  totalSections: number
+  templates: SpreadTemplate[]
+  templatesLoading: boolean
+  hasTemplateSet: boolean
+  onUpdate: (idx: number, patch: Partial<Section>) => void
+  onRemove: (idx: number) => void
+  onMove: (idx: number, dir: -1 | 1) => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    // При перетаскивании поднимаем карточку над соседями и слегка
+    // делаем её полупрозрачной для визуального фидбека.
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="bg-gray-50 border rounded px-3 py-2 flex items-start gap-2"
+    >
+      {/* Drag-handle ⋮⋮ — слушатели DnD только на нём, чтобы кнопки
+          ▲▼ и × внутри карточки работали обычным кликом. */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="text-gray-400 hover:text-gray-700 cursor-grab active:cursor-grabbing select-none px-1 pt-1"
+        aria-label="Перетащите чтобы изменить порядок"
+        title="Перетащите чтобы изменить порядок"
+      >
+        ⋮⋮
+      </div>
+      <div className="flex flex-col gap-0.5 pt-0.5">
+        <button
+          onClick={() => onMove(idx, -1)}
+          disabled={idx === 0}
+          className="text-xs text-gray-500 hover:text-gray-900 disabled:opacity-30 px-1"
+          aria-label="Вверх"
+        >
+          ▲
+        </button>
+        <button
+          onClick={() => onMove(idx, 1)}
+          disabled={idx === totalSections - 1}
+          className="text-xs text-gray-500 hover:text-gray-900 disabled:opacity-30 px-1"
+          aria-label="Вниз"
+        >
+          ▼
+        </button>
+      </div>
+      <div className="flex-1">
+        <div className="font-medium text-sm">{SECTION_LABELS[s.type]}</div>
+        <div className="text-xs text-gray-500 font-mono">{s.type}</div>
+        {SECTION_DESCRIPTIONS[s.type] && (
+          <div className="text-xs text-gray-600 mt-1">
+            {SECTION_DESCRIPTIONS[s.type]}
+          </div>
+        )}
+        {/* common_additional: max_spreads */}
+        {s.type === 'common_additional' && (
+          <div className="mt-2 flex items-center gap-2">
+            <label className="text-xs text-gray-600">max_spreads:</label>
+            <input
+              type="number"
+              min={0}
+              max={20}
+              value={s.max_spreads}
+              onChange={(e) =>
+                onUpdate(idx, { max_spreads: Number(e.target.value) } as Partial<Section>)
+              }
+              className="border rounded px-2 py-0.5 text-xs w-20"
+            />
+          </div>
+        )}
+        {/* РЭ.32.Б.3 — common_required: конструктор страниц */}
+        {s.type === 'common_required' && (
+          <div className="mt-3">
+            {!hasTemplateSet ? (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                Выберите дизайн (template_set) у шаблона, чтобы добавлять
+                мастера общего раздела.
+              </p>
+            ) : templatesLoading ? (
+              <p className="text-xs text-gray-400 italic">
+                Загрузка мастеров…
+              </p>
+            ) : (
+              <CommonRequiredPagesEditor
+                pages={Array.isArray(s.pages) ? s.pages : []}
+                templates={templates}
+                onChange={(newPages) =>
+                  onUpdate(idx, { pages: newPages } as Partial<Section>)
+                }
+              />
+            )}
+          </div>
+        )}
+        {/* РЭ.32.Б.4 — transition: опциональный мастер */}
+        {s.type === 'transition' && (
+          <div className="mt-3">
+            {!hasTemplateSet ? (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                Выберите дизайн (template_set) у шаблона, чтобы выбрать
+                переходный мастер.
+              </p>
+            ) : templatesLoading ? (
+              <p className="text-xs text-gray-400 italic">
+                Загрузка мастеров…
+              </p>
+            ) : (
+              <TransitionMasterSelector
+                value={s.master_name ?? null}
+                templates={templates}
+                onChange={(name) =>
+                  onUpdate(idx, { master_name: name } as Partial<Section>)
+                }
+              />
+            )}
+          </div>
+        )}
+        {/* РЭ.42.c — soft_intro / soft_final: опциональный мастер.
+            Партнёр может вместо автоматического classphoto положить
+            любой мастер template_set (учителя, классный руководитель,
+            воспитатели детсада и т.д.). */}
+        {(s.type === 'soft_intro' || s.type === 'soft_final') && (
+          <div className="mt-3">
+            {!hasTemplateSet ? (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                Выберите дизайн (template_set) у шаблона, чтобы выбрать
+                мастер вступительной/финальной страницы.
+              </p>
+            ) : templatesLoading ? (
+              <p className="text-xs text-gray-400 italic">
+                Загрузка мастеров…
+              </p>
+            ) : (
+              <SoftSectionMasterPicker
+                sectionType={s.type}
+                value={s.master_name ?? null}
+                templates={templates}
+                onChange={(name) =>
+                  onUpdate(idx, { master_name: name } as Partial<Section>)
+                }
+              />
+            )}
+          </div>
+        )}
+        {/* Старая common: max_spreads */}
+        {s.type === 'common' && 'mode' in s && s.mode === 'auto' && (
+          <div className="mt-2 flex items-center gap-2">
+            <label className="text-xs text-gray-600">max_spreads:</label>
+            <input
+              type="number"
+              min={0}
+              max={20}
+              value={s.max_spreads}
+              onChange={(e) =>
+                onUpdate(idx, { max_spreads: Number(e.target.value) } as Partial<Section>)
+              }
+              className="border rounded px-2 py-0.5 text-xs w-20"
+            />
+          </div>
+        )}
+      </div>
+      <button
+        onClick={() => onRemove(idx)}
+        className="text-xs text-red-500 hover:text-red-700 px-2"
+        aria-label="Удалить"
+      >
+        ×
+      </button>
     </div>
   )
 }
