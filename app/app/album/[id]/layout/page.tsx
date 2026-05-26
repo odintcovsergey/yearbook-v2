@@ -25,7 +25,12 @@ import PhotoContextMenu from '../../../_components/PhotoContextMenu'
 import PhotoTransformPanel from '../../../_components/PhotoTransformPanel'
 import TextStylePanel from '../../../_components/TextStylePanel'
 import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform'
-import { parseFontSizeMult, parseColor } from '@/lib/text-style'
+import {
+  parseFontSizeMult,
+  parseColor,
+  parseAlbumTextStyleOverrides,
+  type AlbumTextStyleOverrides,
+} from '@/lib/text-style'
 import { remapData } from '@/lib/template-replace'
 import WarningsPill, {
   type EnrichedWarning,
@@ -244,6 +249,11 @@ function LayoutEditorPageInner({
   // resolvePrintType). Используется для визуализации форзацев
   // на первом/последнем развороте soft-альбомов.
   const [effectivePrintType, setEffectivePrintType] = useState<'layflat' | 'soft'>('layflat')
+  // РЭ.53: глобальные стили текста на уровне альбома.
+  // Парсится из albums.text_style_overrides, применяется в canvas
+  // как fallback когда нет точечного __fontSize__/__color__ override'а.
+  // null = нет глобальных стилей (legacy альбомы или партнёр не настраивал).
+  const [textStyleOverrides, setTextStyleOverrides] = useState<AlbumTextStyleOverrides>({})
   const [currentIdx, setCurrentIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -457,6 +467,7 @@ function LayoutEditorPageInner({
         // album endpoint можно проигнорировать если упал — это не блокер
         let title = ''
         let printType: 'layflat' | 'soft' = 'layflat'
+        let textStyleOv: AlbumTextStyleOverrides = {}
         if (albumRes.ok) {
           const albumJson = await albumRes.json()
           title = (Array.isArray(albumJson) ? albumJson[0]?.title : albumJson?.title) ?? ''
@@ -465,6 +476,11 @@ function LayoutEditorPageInner({
             ? albumJson[0]?.effective_print_type
             : albumJson?.effective_print_type
           if (ept === 'soft' || ept === 'layflat') printType = ept
+          // РЭ.53: глобальные стили текста.
+          const rawTextStyle = Array.isArray(albumJson)
+            ? albumJson[0]?.text_style_overrides
+            : albumJson?.text_style_overrides
+          textStyleOv = parseAlbumTextStyleOverrides(rawTextStyle)
         }
 
         if (cancelled) return
@@ -474,6 +490,7 @@ function LayoutEditorPageInner({
         setPhotos(photosJson.photos ?? [])
         setAlbumTitle(title)
         setEffectivePrintType(printType)
+        setTextStyleOverrides(textStyleOv)
         setLoading(false)
       } catch (e) {
         if (!cancelled) {
@@ -1671,6 +1688,7 @@ function LayoutEditorPageInner({
                           onTextCancel={isReadOnly ? undefined : handleTextCancel}
                           onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
                           onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
+                          textStyleOverrides={textStyleOverrides}
                         />
                       </div>
                     ) : (
@@ -1707,6 +1725,7 @@ function LayoutEditorPageInner({
                               onTextCancel={isReadOnly ? undefined : handleTextCancel}
                               onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
                               onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
+                          textStyleOverrides={textStyleOverrides}
                             />
                           </div>
                         ) : showLeftEndpaper ? (
@@ -1777,6 +1796,7 @@ function LayoutEditorPageInner({
                               onTextCancel={isReadOnly ? undefined : handleTextCancel}
                               onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
                               onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
+                          textStyleOverrides={textStyleOverrides}
                             />
                           </div>
                         ) : showRightEndpaper ? (

@@ -22,7 +22,14 @@ import {
   parseBalanceOverrides,
   applyBalanceOverrides,
 } from '@/lib/balance-overrides'
-import { parseFontSizeMult, parseColor } from '@/lib/text-style'
+import {
+  parseFontSizeMult,
+  parseColor,
+  detectTextStyleGroup,
+  resolveFontSizeMult,
+  resolveColor,
+  type AlbumTextStyleOverrides,
+} from '@/lib/text-style'
 
 // ─────────────────────────────────────────────────────────────────────────
 // AlbumSpreadCanvas — Konva-рендер одного SpreadInstance.
@@ -83,6 +90,10 @@ type Props = {
   // Если есть с x_mm/y_mm — рендерится по новым координатам.
   // Размеры (width_mm/height_mm) НЕ меняются.
   placeholderOverrides?: Record<string, { hidden?: boolean; x_mm?: number; y_mm?: number }>
+  // РЭ.53: глобальные стили текстов (size + color по группам).
+  // Применяются как fallback когда нет точечного __fontSize__/__color__.
+  // Default {} — нет глобальных стилей.
+  textStyleOverrides?: AlbumTextStyleOverrides
 }
 
 // ─── Хелпер: загрузка HTMLImageElement из URL ────────────────────────────
@@ -690,6 +701,7 @@ export default function AlbumSpreadCanvas({
   onPhotoContextMenu,
   onPhotoClick,
   placeholderOverrides,
+  textStyleOverrides,
 }: Props) {
   const scale = containerWidth / template.width_mm
   const stageWidth = template.width_mm * scale
@@ -770,8 +782,19 @@ export default function AlbumSpreadCanvas({
               // Р.3 — override стиля из служебных ключей. Default
               // (отсутствие ключей) → mult=1, color=null → используется
               // placeholder.font_size_pt / placeholder.color.
-              const fsMult = parseFontSizeMult(instance.data[`__fontSize__${p.label}`])
-              const colorOv = parseColor(instance.data[`__color__${p.label}`])
+              // РЭ.53: каскад глобальный (по группе) → точечный.
+              // Точка побеждает (если есть); иначе fallback на группу.
+              const pointMult = instance.data[`__fontSize__${p.label}`]
+                ? parseFontSizeMult(instance.data[`__fontSize__${p.label}`])
+                : null
+              const pointColor = parseColor(instance.data[`__color__${p.label}`])
+              const group = detectTextStyleGroup(p.label)
+              const groupOv = group ? textStyleOverrides?.[group] : null
+              // resolveFontSizeMult: point !== null → point; иначе group/100; иначе 1.
+              // parseFontSizeMult возвращает 1 для пустых значений, поэтому
+              // мы и проверяем НАЛИЧИЕ ключа отдельно (через truthy data[key]).
+              const fsMult = resolveFontSizeMult(pointMult, groupOv ?? null)
+              const colorOv = resolveColor(pointColor, groupOv ?? null)
               return (
                 <TextSlot
                   key={key}
@@ -820,8 +843,15 @@ export default function AlbumSpreadCanvas({
               // с cursor:text и hover ring.
               if (editingTextLabel === p.label) {
                 // Р.3 — те же overrides из data что и TextSlot.
-                const fsMult = parseFontSizeMult(instance.data[`__fontSize__${p.label}`])
-                const colorOv = parseColor(instance.data[`__color__${p.label}`])
+                // РЭ.53: каскад глобал → точка.
+                const pointMult = instance.data[`__fontSize__${p.label}`]
+                  ? parseFontSizeMult(instance.data[`__fontSize__${p.label}`])
+                  : null
+                const pointColor = parseColor(instance.data[`__color__${p.label}`])
+                const group = detectTextStyleGroup(p.label)
+                const groupOv = group ? textStyleOverrides?.[group] : null
+                const fsMult = resolveFontSizeMult(pointMult, groupOv ?? null)
+                const colorOv = resolveColor(pointColor, groupOv ?? null)
                 return (
                   <TextInlineEditor
                     key={`text-edit-${p.label}`}
