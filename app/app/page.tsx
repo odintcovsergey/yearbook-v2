@@ -1980,6 +1980,13 @@ function AlbumDetailModal({
                   {layout && (
                     <LayoutPreviewStrip
                       layout={layout}
+                      albumPrintType={
+                        album.print_type === 'soft'
+                          ? 'soft'
+                          : album.print_type === 'layflat' || album.print_type === 'hard'
+                            ? 'hard'
+                            : null
+                      }
                       onOpenEditor={() => {
                         router.push(`/app/album/${album.id}/layout`)
                       }}

@@ -26,6 +26,14 @@ type LayoutShape = {
 type Props = {
   layout: LayoutShape
   onOpenEditor: () => void
+  /**
+   * РЭ.43.B.3: fallback на album.print_type если layout.summary.sheet_type
+   * отсутствует. Это происходит для legacy-layout'ов сохранённых в БД до
+   * РЭ.43.B (когда sheet_type не клался в summary). Без этого fallback'а
+   * при повторном открытии заказа форзацы не показывались, пока партнёр
+   * не нажмёт «Пересобрать».
+   */
+  albumPrintType?: 'hard' | 'soft' | null
 }
 
 type TemplateDetailResponse = {
@@ -159,7 +167,7 @@ function groupIntoVisualSpreads(
   return result
 }
 
-export default function LayoutPreviewStrip({ layout, onOpenEditor }: Props) {
+export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintType }: Props) {
   const [detail, setDetail] = useState<TemplateDetailResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -194,7 +202,10 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor }: Props) {
   const spreads = layout.spreads as SpreadInstance[]
 
   // Визуальные развороты — пересчитываются когда обновляются spreads или шаблоны.
-  const sheetType = layout.summary?.sheet_type ?? null
+  // РЭ.43.B.3: sheet_type приоритетно из summary (свежие layout'ы) с
+  // fallback на album.print_type (legacy layout'ы сохранённые до РЭ.43.B
+  // в которых summary.sheet_type не было).
+  const sheetType = layout.summary?.sheet_type ?? albumPrintType ?? null
   const visualSpreads = useMemo(
     () => (detail ? groupIntoVisualSpreads(spreads, templateById, sheetType) : []),
     [spreads, templateById, detail, sheetType],
