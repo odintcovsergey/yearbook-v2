@@ -314,6 +314,13 @@ export default function TemplatesPage() {
           <div>
             <div className="text-xs text-gray-400 mb-1">
               <button
+                onClick={() => router.push('/app')}
+                className="hover:text-gray-700"
+              >
+                Главная
+              </button>
+              {' / '}
+              <button
                 onClick={() => router.push('/app/templates')}
                 className="hover:text-gray-700"
               >

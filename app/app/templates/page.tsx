@@ -167,6 +167,16 @@ export default function DesignsListPage() {
         {/* Заголовок */}
         <div className="flex items-center justify-between mb-6">
           <div>
+            <div className="text-xs text-gray-400 mb-1">
+              <button
+                onClick={() => router.push('/app')}
+                className="hover:text-gray-700"
+              >
+                Главная
+              </button>
+              {' / '}
+              <span>Шаблоны</span>
+            </div>
             <h1 className="text-2xl font-bold">Дизайны и шаблоны</h1>
             <p className="text-sm text-gray-600 mt-1">
               Сначала выберите дизайн — общий стиль альбома (например
