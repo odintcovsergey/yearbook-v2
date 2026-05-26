@@ -368,7 +368,7 @@ export default function TemplatesPage() {
               Пока нет рекомендованных шаблонов от OkeyBook.
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {globalTemplates.map((t) => (
               <TemplateCard
                 key={t.id}
@@ -403,7 +403,7 @@ export default function TemplatesPage() {
               любом готовом шаблоне или «Создать свой шаблон» сверху.
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
             {myTemplates.map((t) => (
               <TemplateCard
                 key={t.id}
@@ -458,57 +458,52 @@ function TemplateCard(props: TemplateCardProps) {
 
   return (
     <div
-      className={`bg-white border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow ${
+      className={`bg-white border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow ${
         isInvalid ? 'border-red-300' : 'border-gray-200'
       }`}
     >
-      {/* Крупное превью — students */}
+      {/* Крупное превью — students. РЭ.47: aspect ratio 1:1.4 (страница
+          вертикальная), минимальная высота уменьшена с 160 до 110px для
+          компактного грида. */}
       <div
         className="w-full bg-gray-50 border border-gray-200 rounded mb-2 overflow-hidden flex items-center justify-center"
-        style={{ aspectRatio: '1 / 1.4', minHeight: '160px' }}
+        style={{ aspectRatio: '1 / 1.4' }}
         dangerouslySetInnerHTML={{
           __html:
             template.previews.students ??
-            '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;font-size:12px;">Нет превью личного раздела</div>',
+            '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;font-size:10px;">Нет превью</div>',
         }}
       />
 
-      {/* Полоска из 3 малых превью */}
-      <div className="grid grid-cols-3 gap-1 mb-3">
-        <MiniPreview label="Обложка" svg={template.previews.cover} />
-        <MiniPreview label="Учителя" svg={template.previews.teachers} />
-        <MiniPreview label="Soft" svg={template.previews.soft} />
-      </div>
-
       {/* Название */}
-      <div className="font-semibold text-gray-900 truncate" title={template.display_name}>
+      <div className="font-semibold text-gray-900 text-sm truncate" title={template.display_name}>
         {template.display_name}
       </div>
 
       {/* Описание */}
-      <div className="text-xs text-gray-500 mb-2 min-h-[1.2em]">
+      <div className="text-xs text-gray-500 mb-2 truncate" title={template.description || ''}>
         {template.description || '—'}
       </div>
 
       {/* Бейджи */}
-      <div className="flex flex-wrap gap-1 mb-3">
+      <div className="flex flex-wrap gap-1 mb-2">
         {template.sheet_type === 'hard' && (
-          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
-            твёрдая обложка
+          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded">
+            твёрдая
           </span>
         )}
         {template.sheet_type === 'soft' && (
-          <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded">
-            мягкая обложка
+          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[10px] rounded">
+            мягкая
           </span>
         )}
         {template.student_layout_mode && (
-          <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded">
+          <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 text-[10px] rounded">
             {layoutModeLabel(template.student_layout_mode, template.student_grid_size)}
           </span>
         )}
         {isInvalid && (
-          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded">
+          <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] rounded">
             Доработай
           </span>
         )}
@@ -528,12 +523,12 @@ function TemplateCard(props: TemplateCardProps) {
 
       {/* Кнопки действий */}
       {!disabled && (
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           {kind === 'global' && (
             <button
               onClick={(props as Extract<TemplateCardProps, { kind: 'global' }>).onClone}
               disabled={busy}
-              className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded text-sm"
+              className="flex-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded text-xs"
             >
               {busy ? '...' : 'Сохранить в мои'}
             </button>
@@ -543,14 +538,14 @@ function TemplateCard(props: TemplateCardProps) {
               <button
                 onClick={(props as Extract<TemplateCardProps, { kind: 'my' }>).onEdit}
                 disabled={busy}
-                className="flex-1 px-3 py-1.5 bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 text-gray-800 rounded text-sm"
+                className="flex-1 px-2 py-1 bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 text-gray-800 rounded text-xs"
               >
                 Редактировать
               </button>
               <button
                 onClick={(props as Extract<TemplateCardProps, { kind: 'my' }>).onDelete}
                 disabled={busy}
-                className="px-3 py-1.5 bg-red-100 hover:bg-red-200 disabled:bg-gray-100 text-red-700 rounded text-sm"
+                className="px-2 py-1 bg-red-100 hover:bg-red-200 disabled:bg-gray-100 text-red-700 rounded text-xs"
                 title="Удалить шаблон"
               >
                 {busy ? '...' : '×'}
@@ -560,21 +555,6 @@ function TemplateCard(props: TemplateCardProps) {
         </div>
       )}
     </div>
-  )
-}
-
-function MiniPreview({ label, svg }: { label: string; svg: string | null }) {
-  return (
-    <div
-      className="bg-gray-50 border border-gray-200 rounded overflow-hidden flex items-center justify-center"
-      style={{ aspectRatio: '1 / 1.4', minHeight: '50px' }}
-      title={label}
-      dangerouslySetInnerHTML={{
-        __html:
-          svg ??
-          `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;font-size:10px;">${label}: нет</div>`,
-      }}
-    />
   )
 }
 
