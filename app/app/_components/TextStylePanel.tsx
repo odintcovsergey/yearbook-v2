@@ -133,19 +133,10 @@ export default function TextStylePanel({
     emitChange(1, null)
   }
 
-  // Корректируем позицию popover'а если вылазит за viewport.
-  let left = clientX
-  let top = clientY
-  if (typeof window !== 'undefined') {
-    if (left + PANEL_WIDTH > window.innerWidth - 8) {
-      left = Math.max(8, window.innerWidth - PANEL_WIDTH - 8)
-    }
-    if (top + PANEL_HEIGHT > window.innerHeight - 8) {
-      top = Math.max(8, window.innerHeight - PANEL_HEIGHT - 8)
-    }
-    if (left < 8) left = 8
-    if (top < 8) top = 8
-  }
+  // РЭ.52: панель в правом сайдбаре (фиксированной позиции), не
+  // перекрывая canvas. Раньше — popup рядом с placeholder'ом, частично
+  // закрывал текст и canvas. Теперь — всегда top-right.
+  // clientX/clientY props игнорируются.
 
   const isDefault = !hasCustomTextStyle(mult, color)
   // Активный цвет для подсветки — либо override, либо null (тогда
@@ -157,12 +148,28 @@ export default function TextStylePanel({
       ref={ref}
       className="fixed bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-50 select-none"
       style={{
-        left: `${left}px`,
-        top: `${top}px`,
+        right: '16px',
+        top: '80px',
         width: `${PANEL_WIDTH}px`,
       }}
-      // Клик на саму панель не должен пропадать в blur-кеш textarea.
-      onMouseDown={(e) => e.stopPropagation()}
+      // РЭ.52: preventDefault на mouseDown в panel'e ОТМЕНЯЕТ передачу
+      // фокуса от textarea (TextInlineEditor) к элементам внутри панели.
+      // Без этого клик по слайдеру/палитре вызывает blur textarea,
+      // а blur → handleTextSubmit → setEditingTextLabel(null) +
+      // setTextStylePanel(null) → панель тут же закрывается.
+      // stopPropagation НЕ помогает — blur срабатывает независимо от
+      // bubbling event'ов.
+      //
+      // preventDefault на mouseDown div'а:
+      //   - НЕ блокирует change/input события input range (т.е. drag
+      //     слайдера работает)
+      //   - НЕ блокирует click на кнопках (онClick handlers работают)
+      //   - БЛОКИРУЕТ изменение фокуса (textarea остаётся focused)
+      // Это стандартный приём в rich-text редакторах.
+      onMouseDown={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }}
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between mb-2">
