@@ -330,12 +330,46 @@ function TextSlot({
   // РЭ.54: align — override побеждает; иначе placeholder.align (для H) и 'top' (для V).
   const finalHAlign = hAlignOverride ?? placeholder.align
   const finalVAlign = vAlignOverride ?? 'top'
+  // РЭ.55: rotation_deg из IDML (±90° или 0). Канва игнорировала это
+  // поле — текст рисовался горизонтально несмотря на вертикальный фрейм
+  // в макете. Логика поворота:
+  //   • Placeholder в БД хранит ВИЗУАЛЬНЫЙ bbox (x_mm, y_mm, width_mm,
+  //     height_mm) — то что партнёр видит на странице ПОСЛЕ поворота.
+  //     Для повёрнутого на 90° фрейма width_mm — это узкая сторона.
+  //   • Konva рисует <Text> в нерёповёрнутой системе. Чтобы текст после
+  //     rotation попал в визуальный bbox, передаём width/height с
+  //     перестановкой и подбираем точку привязки.
+  //   • rotation = -90 (CW): text «течёт» из (x, y) вверх-вправо →
+  //     ставим (x, y) в нижний-левый угол bbox, width=height_mm,
+  //     height=width_mm.
+  //   • rotation = +90 (CCW): «течёт» вниз-влево → ставим (x, y) в
+  //     верхний-правый угол bbox, width/height тоже переставлены.
+  //   • rotation = 0 (или undefined): рисуем как раньше.
+  // PDF-export уже работает с rotation_deg (lib/pdf-export/text-shaping.ts);
+  // мы выравниваем поведение canvas с ним.
+  const rotationDeg = placeholder.rotation_deg ?? 0
+  let renderX = placeholder.x_mm
+  let renderY = placeholder.y_mm
+  let renderWidth = placeholder.width_mm
+  let renderHeight = placeholder.height_mm
+  if (rotationDeg === -90) {
+    renderX = placeholder.x_mm
+    renderY = placeholder.y_mm + placeholder.height_mm
+    renderWidth = placeholder.height_mm
+    renderHeight = placeholder.width_mm
+  } else if (rotationDeg === 90) {
+    renderX = placeholder.x_mm + placeholder.width_mm
+    renderY = placeholder.y_mm
+    renderWidth = placeholder.height_mm
+    renderHeight = placeholder.width_mm
+  }
   return (
     <Text
-      x={placeholder.x_mm}
-      y={placeholder.y_mm}
-      width={placeholder.width_mm}
-      height={placeholder.height_mm}
+      x={renderX}
+      y={renderY}
+      width={renderWidth}
+      height={renderHeight}
+      rotation={rotationDeg}
       text={value}
       fontSize={placeholder.font_size_pt * PT_TO_MM * fontSizeMult}
       fontFamily={`${placeholder.font_family}, serif`}
