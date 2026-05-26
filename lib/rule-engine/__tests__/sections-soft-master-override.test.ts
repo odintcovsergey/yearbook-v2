@@ -197,7 +197,7 @@ describe('РЭ.42: soft_intro master_name override', () => {
     expect(trace?.inputs.overridden).toBe(true);
     expect(trace?.inputs.semantic).toBe(false);
     // Classphoto НЕ был потреблён — у J-Teachers-Single нет такого placeholder.
-    expect(trace?.inputs.consumes).toEqual({ full_class: 0, half_class: 0 });
+    expect(trace?.inputs.consumes).toEqual({ full_class: 0, half_class: 0, quarter: 0, sixth: 0 });
 
     // Warnings не должно быть.
     expect(
@@ -335,7 +335,7 @@ describe('РЭ.42: soft_final master_name override', () => {
     expect(trace?.rule_id).toBe('soft_final:J-Farewell-Custom');
     expect(trace?.inputs.overridden).toBe(true);
     expect(trace?.inputs.semantic).toBe(false);
-    expect(trace?.inputs.consumes).toEqual({ full_class: 0, half_class: 0 });
+    expect(trace?.inputs.consumes).toEqual({ full_class: 0, half_class: 0, quarter: 0, sixth: 0 });
   });
 
   it('Override с несуществующим именем → warning, страница НЕ кладётся', () => {
@@ -577,5 +577,234 @@ describe('РЭ.42.b.2: автоматический биндинг teacher-place
     expect(bindings.classphotoframe).toBe('https://cdn/full0.jpg');
     // headteacherphoto НЕ должен биндиться в автоматическом режиме.
     expect(bindings.headteacherphoto).toBeUndefined();
+  });
+});
+
+// ─── РЭ.42.b.3: автобиндинг collage / quarter / spread placeholder'ов ──
+
+describe('РЭ.42.b.3: collage/quarter/spread placeholder в override-режиме', () => {
+  it('soft_final override с J-Collage-6 → 6 collagephoto биндятся из sixth', () => {
+    const collageMaster = makeMaster(
+      'J-Collage-6',
+      Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
+      null,
+      null,
+    );
+    const input: RulesAlbumInput = {
+      students: [],
+      subjects: [],
+      head_teacher: { photo: null, name: '', role: '', text: '' },
+      common_photos: {
+        full_class: [],
+        half_class: [],
+        spread: [],
+        quarter: [],
+        sixth: Array.from({ length: 6 }, (_, i) => `https://cdn/six${i}.jpg`),
+      },
+    };
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        sheet_type: 'soft',
+        section_structure: [
+          { type: 'soft_final', master_name: 'J-Collage-6' },
+        ],
+      }),
+      masters: [collageMaster],
+    });
+    const result = buildFromSectionStructure(bundle, input);
+
+    // soft_final → section_start → LEFT.
+    const bindings = result.spreads[0].left!.bindings as Record<string, unknown>;
+    for (let n = 1; n <= 6; n++) {
+      expect(bindings[`collagephoto_${n}`]).toBe(`https://cdn/six${n - 1}.jpg`);
+    }
+    // Hidden НЕ должно быть.
+    for (let n = 1; n <= 6; n++) {
+      expect(bindings[`__hidden__collagephoto_${n}`]).toBeUndefined();
+    }
+    // consumes.sixth = 6.
+    const trace = result.decision_trace.find((t) =>
+      t.rule_id?.startsWith('soft_final:'),
+    );
+    const consumes = trace?.inputs.consumes as { sixth: number };
+    expect(consumes.sixth).toBe(6);
+  });
+
+  it('soft_intro override с J-Collage-6 + недостаточно sixth → __hidden__ для лишних', () => {
+    const collageMaster = makeMaster(
+      'J-Collage-6',
+      Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
+      null,
+      null,
+    );
+    const input: RulesAlbumInput = {
+      students: [],
+      subjects: [],
+      head_teacher: { photo: null, name: '', role: '', text: '' },
+      common_photos: {
+        full_class: [],
+        half_class: [],
+        spread: [],
+        quarter: [],
+        // Только 3 sixth — мастер просит 6.
+        sixth: ['https://cdn/s0.jpg', 'https://cdn/s1.jpg', 'https://cdn/s2.jpg'],
+      },
+    };
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        sheet_type: 'soft',
+        section_structure: [
+          { type: 'soft_intro', master_name: 'J-Collage-6' },
+        ],
+      }),
+      masters: [collageMaster],
+    });
+    const result = buildFromSectionStructure(bundle, input);
+    const bindings = result.spreads[0].right!.bindings as Record<string, unknown>;
+
+    expect(bindings.collagephoto_1).toBe('https://cdn/s0.jpg');
+    expect(bindings.collagephoto_2).toBe('https://cdn/s1.jpg');
+    expect(bindings.collagephoto_3).toBe('https://cdn/s2.jpg');
+    expect(bindings.__hidden__collagephoto_4).toBe('1');
+    expect(bindings.__hidden__collagephoto_5).toBe('1');
+    expect(bindings.__hidden__collagephoto_6).toBe('1');
+  });
+
+  it('soft_intro override с J-Quarter (4 quarterphoto) → биндинг + consumes.quarter', () => {
+    const quarterMaster = makeMaster(
+      'J-Quarter',
+      Array.from({ length: 4 }, (_, i) => photoSlot(`quarterphoto_${i + 1}`)),
+      null,
+      null,
+    );
+    const input: RulesAlbumInput = {
+      students: [],
+      subjects: [],
+      head_teacher: { photo: null, name: '', role: '', text: '' },
+      common_photos: {
+        full_class: [],
+        half_class: [],
+        spread: [],
+        quarter: Array.from({ length: 4 }, (_, i) => `https://cdn/q${i}.jpg`),
+        sixth: [],
+      },
+    };
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        sheet_type: 'soft',
+        section_structure: [
+          { type: 'soft_intro', master_name: 'J-Quarter' },
+        ],
+      }),
+      masters: [quarterMaster],
+    });
+    const result = buildFromSectionStructure(bundle, input);
+    const bindings = result.spreads[0].right!.bindings as Record<string, unknown>;
+
+    for (let n = 1; n <= 4; n++) {
+      expect(bindings[`quarterphoto_${n}`]).toBe(`https://cdn/q${n - 1}.jpg`);
+    }
+    const trace = result.decision_trace.find((t) =>
+      t.rule_id?.startsWith('soft_intro:'),
+    );
+    const consumes = trace?.inputs.consumes as { quarter: number };
+    expect(consumes.quarter).toBe(4);
+  });
+
+  it('soft_intro override с spreadphoto → биндится из spread[0]', () => {
+    const spreadMaster = makeMaster(
+      'J-Spread',
+      [photoSlot('spreadphoto')],
+      null,
+      null,
+    );
+    const input: RulesAlbumInput = {
+      students: [],
+      subjects: [],
+      head_teacher: { photo: null, name: '', role: '', text: '' },
+      common_photos: {
+        full_class: [],
+        half_class: [],
+        spread: ['https://cdn/spread0.jpg'],
+        quarter: [],
+        sixth: [],
+      },
+    };
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        sheet_type: 'soft',
+        section_structure: [
+          { type: 'soft_intro', master_name: 'J-Spread' },
+        ],
+      }),
+      masters: [spreadMaster],
+    });
+    const result = buildFromSectionStructure(bundle, input);
+    const bindings = result.spreads[0].right!.bindings as Record<string, unknown>;
+
+    expect(bindings.spreadphoto).toBe('https://cdn/spread0.jpg');
+  });
+
+  it('Микс classphoto + collage + headteacher в одном override-мастере', () => {
+    // На случай мастера-гибрида.
+    const hybridMaster = makeMaster(
+      'J-Hybrid',
+      [
+        photoSlot('classphotoframe'),
+        photoSlot('headteacherphoto'),
+        photoSlot('collagephoto_1'),
+        photoSlot('collagephoto_2'),
+      ],
+      null,
+      null,
+    );
+    const input: RulesAlbumInput = {
+      students: [],
+      subjects: [],
+      head_teacher: {
+        photo: 'https://cdn/head.jpg',
+        name: 'X',
+        role: 'Y',
+        text: 'Z',
+      },
+      common_photos: {
+        full_class: ['https://cdn/full0.jpg'],
+        half_class: [],
+        spread: [],
+        quarter: [],
+        sixth: ['https://cdn/six0.jpg', 'https://cdn/six1.jpg'],
+      },
+    };
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        sheet_type: 'soft',
+        section_structure: [
+          { type: 'soft_intro', master_name: 'J-Hybrid' },
+        ],
+      }),
+      masters: [hybridMaster],
+    });
+    const result = buildFromSectionStructure(bundle, input);
+    const bindings = result.spreads[0].right!.bindings as Record<string, unknown>;
+
+    expect(bindings.classphotoframe).toBe('https://cdn/full0.jpg');
+    expect(bindings.headteacherphoto).toBe('https://cdn/head.jpg');
+    expect(bindings.collagephoto_1).toBe('https://cdn/six0.jpg');
+    expect(bindings.collagephoto_2).toBe('https://cdn/six1.jpg');
+
+    const trace = result.decision_trace.find((t) =>
+      t.rule_id?.startsWith('soft_intro:'),
+    );
+    const consumes = trace?.inputs.consumes as {
+      full_class: number;
+      sixth: number;
+    };
+    expect(consumes.full_class).toBe(1);
+    expect(consumes.sixth).toBe(2);
   });
 });

@@ -98,18 +98,23 @@ export function fillSoftIntroSection(
   }
 
   // Bindings: для override-режима — универсальная placeholder-driven логика
-  // (classphoto + halfphoto + headteacher* + subjects/teachers, РЭ.42.b.2).
+  // (classphoto + halfphoto + quarter + sixth/collage + spread + headteacher*
+  // + subjects/teachers, РЭ.42.b.2 + РЭ.42.b.3).
   // Для автоматического режима — узкая classphoto-only логика (наследие,
   // не трогаем чтобы не сломать стабильное поведение).
   let bindings: Record<string, unknown>;
   let consumedFullClass = 0;
   let consumedHalfClass = 0;
+  let consumedQuarter = 0;
+  let consumedSixth = 0;
 
   if (overridden) {
     const result = bindOverrideMasterPlaceholders(master, ctx.input, ctx.available);
     bindings = result.bindings;
     consumedFullClass = result.consumes.full_class;
     consumedHalfClass = result.consumes.half_class;
+    consumedQuarter = result.consumes.quarter;
+    consumedSixth = result.consumes.sixth;
   } else {
     bindings = {};
     const fullClassUsed =
@@ -131,6 +136,8 @@ export function fillSoftIntroSection(
 
   ctx.available.full_class -= consumedFullClass;
   ctx.available.half_class -= consumedHalfClass;
+  ctx.available.quarter -= consumedQuarter;
+  ctx.available.sixth -= consumedSixth;
 
   const pageIndex = ctx.pageInstances.length;
   ctx.pageInstances.push({ master_id: master.id, bindings });
@@ -144,6 +151,8 @@ export function fillSoftIntroSection(
       consumes: {
         full_class: consumedFullClass,
         half_class: consumedHalfClass,
+        quarter: consumedQuarter,
+        sixth: consumedSixth,
       },
       sheet_type: 'soft',
       semantic,

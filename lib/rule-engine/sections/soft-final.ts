@@ -92,16 +92,21 @@ export function fillSoftFinalSection(
   }
 
   // Bindings: для override-режима — универсальная placeholder-driven логика
-  // (РЭ.42.b.2). Для автоматического — узкая classphoto-only.
+  // (РЭ.42.b.2 + РЭ.42.b.3 c quarter / sixth / spread). Для автоматического —
+  // узкая classphoto-only.
   let bindings: Record<string, unknown>;
   let consumedFullClass = 0;
   let consumedHalfClass = 0;
+  let consumedQuarter = 0;
+  let consumedSixth = 0;
 
   if (overridden) {
     const result = bindOverrideMasterPlaceholders(master, ctx.input, ctx.available);
     bindings = result.bindings;
     consumedFullClass = result.consumes.full_class;
     consumedHalfClass = result.consumes.half_class;
+    consumedQuarter = result.consumes.quarter;
+    consumedSixth = result.consumes.sixth;
   } else {
     bindings = {};
     const fullClassUsed =
@@ -122,6 +127,8 @@ export function fillSoftFinalSection(
 
   ctx.available.full_class -= consumedFullClass;
   ctx.available.half_class -= consumedHalfClass;
+  ctx.available.quarter -= consumedQuarter;
+  ctx.available.sixth -= consumedSixth;
 
   const pageIndex = ctx.pageInstances.length;
   ctx.pageInstances.push({ master_id: master.id, bindings });
@@ -135,6 +142,8 @@ export function fillSoftFinalSection(
       consumes: {
         full_class: consumedFullClass,
         half_class: consumedHalfClass,
+        quarter: consumedQuarter,
+        sixth: consumedSixth,
       },
       sheet_type: 'soft',
       semantic,

@@ -144,18 +144,83 @@ export function humanPhotoCategory(category: string): string {
  * это всегда subjects[N-1]), потребление не отслеживается (это
  * непотребляемые данные, привязанные к альбому).
  */
+/**
+ * РЭ.42.b.2: универсальный placeholder-driven биндинг для override-мастеров
+ * в soft_intro / soft_final. Партнёр в редакторе шаблона выбирает любой
+ * мастер из template_set (типично — учителей / классного руководителя /
+ * воспитателей детсада). Эта функция связывает placeholder'ы выбранного
+ * мастера с реальными данными из RulesAlbumInput.
+ *
+ * Поддерживаемые placeholder labels (case-insensitive):
+ *  - `classphotoframe`                                  → full_class[cursor]
+ *  - `halfphoto_N`                                      → half_class[cursor + N - 1]
+ *  - `quarterphoto_N`                                   → quarter[cursor + N - 1]      (РЭ.42.b.3)
+ *  - `collagephoto_N`                                   → sixth[cursor + N - 1]        (РЭ.42.b.3)
+ *  - `spreadphoto` / `spreadphoto_N`                    → spread[cursor + N - 1]       (РЭ.42.b.3)
+ *  - `headteacherphoto`                                 → head_teacher.photo
+ *  - `headteachername`                                  → head_teacher.name
+ *  - `headteacherrole`                                  → head_teacher.role
+ *  - `headteachertext` / `headteacherquote` /
+ *    `headtextframe`                                    → head_teacher.text
+ *  - `subjectphoto_N` / `subject_N` / `teacherphoto_N`  → subjects[N-1].photo
+ *  - `subjectname_N` / `teachername_N`                  → subjects[N-1].name
+ *  - `subjectrole_N` / `teacherrole_N`                  → subjects[N-1].role
+ *
+ * Для отсутствующих фото / subjects ставится `__hidden__<label>='1'` —
+ * Konva canvas скроет пустые слоты (РЭ.21.8.13 семантика).
+ *
+ * Cursor для full_class / half_class / quarter / sixth — по уже-потреблённым
+ * (как в teachers.ts bindRightPage): `arr.length - available[k]`. Каждое
+ * потреблённое фото учитывается в возвращаемом `consumes`, чтобы
+ * вызывающая секция декрементила `available`.
+ *
+ * spread — это отдельная категория common_photos.spread, в CommonPhotoCounts
+ * не отслеживается (по архитектурным причинам — full-spread мастера редки).
+ * Биндинг spread*: cursor = 0, потребление не вычисляем (никто после
+ * нас не использует spread в override-режиме).
+ *
+ * Эта функция — расширенная версия классической classphoto-only биндинг
+ * логики из soft-intro.ts / soft-final.ts. В автоматическом (без override)
+ * режиме старая classphoto-only логика сохранена (минимизация риска
+ * регрессий в стабильных code paths). В override-режиме вызывается эта
+ * функция, что позволяет партнёру использовать учительские мастера И
+ * мастера общего раздела (J-Collage-6, J-Quarter, J-Half, J-Spread)
+ * как finale/intro page.
+ *
+ * Семантика consumes:
+ *  - full_class: 0..1 — у мастера обычно ≤1 classphotoframe placeholder
+ *  - half_class: 0..N — может быть несколько halfphoto_N в одном мастере
+ *  - quarter:    0..4 — quarter-мастера обычно содержат 4 placeholder'а
+ *  - sixth:      0..N — collage-мастера 6 или меньше (РЭ.42.b.3)
+ *
+ * subjects / head_teacher — не cursored: индексы фиксированные (subject N
+ * это всегда subjects[N-1]), потребление не отслеживается (это
+ * непотребляемые данные, привязанные к альбому).
+ */
 export function bindOverrideMasterPlaceholders(
   master: { placeholders?: ReadonlyArray<{ label: string }> },
   input: RulesAlbumInput,
   available: CommonPhotoCounts,
-): { bindings: Record<string, unknown>; consumes: { full_class: number; half_class: number } } {
+): {
+  bindings: Record<string, unknown>;
+  consumes: {
+    full_class: number;
+    half_class: number;
+    quarter: number;
+    sixth: number;
+  };
+} {
   const bindings: Record<string, unknown> = {};
   const placeholders = master.placeholders ?? [];
 
   const fullClassUsed = input.common_photos.full_class.length - available.full_class;
   const halfClassUsed = input.common_photos.half_class.length - available.half_class;
+  const quarterUsed = input.common_photos.quarter.length - available.quarter;
+  const sixthUsed = input.common_photos.sixth.length - available.sixth;
   let consumedFullClass = 0;
   let consumedHalfClass = 0;
+  let consumedQuarter = 0;
+  let consumedSixth = 0;
 
   const headTeacher = input.head_teacher;
   const subjects = input.subjects;
@@ -188,6 +253,58 @@ export function bindOverrideMasterPlaceholders(
       if (photo) {
         bindings[ph.label] = photo;
         consumedHalfClass = Math.max(consumedHalfClass, n);
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
+      continue;
+    }
+
+    // ─ Quarter (quarterphoto_N) ─ РЭ.42.b.3 ──────────────────────────
+    const quarterMatch = label.match(/^quarterphoto_(\d+)$/);
+    if (quarterMatch) {
+      const n = parseInt(quarterMatch[1], 10);
+      const photo = input.common_photos.quarter[quarterUsed + n - 1];
+      if (photo) {
+        bindings[ph.label] = photo;
+        consumedQuarter = Math.max(consumedQuarter, n);
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
+      continue;
+    }
+
+    // ─ Collage / sixth (collagephoto_N) ─ РЭ.42.b.3 ──────────────────
+    const collageMatch = label.match(/^collagephoto_(\d+)$/);
+    if (collageMatch) {
+      const n = parseInt(collageMatch[1], 10);
+      const photo = input.common_photos.sixth[sixthUsed + n - 1];
+      if (photo) {
+        bindings[ph.label] = photo;
+        consumedSixth = Math.max(consumedSixth, n);
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
+      continue;
+    }
+
+    // ─ Spread (spreadphoto / spreadphoto_N) ─ РЭ.42.b.3 ──────────────
+    // spread не отслеживается через CommonPhotoCounts (отдельная редкая
+    // категория). Cursor=0, потребление не возвращаем.
+    if (label === 'spreadphoto') {
+      const photo = input.common_photos.spread[0];
+      if (photo) {
+        bindings[ph.label] = photo;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
+      continue;
+    }
+    const spreadMatch = label.match(/^spreadphoto_(\d+)$/);
+    if (spreadMatch) {
+      const n = parseInt(spreadMatch[1], 10);
+      const photo = input.common_photos.spread[n - 1];
+      if (photo) {
+        bindings[ph.label] = photo;
       } else {
         bindings[`__hidden__${ph.label}`] = '1';
       }
@@ -264,6 +381,8 @@ export function bindOverrideMasterPlaceholders(
     consumes: {
       full_class: consumedFullClass,
       half_class: consumedHalfClass,
+      quarter: consumedQuarter,
+      sixth: consumedSixth,
     },
   };
 }
