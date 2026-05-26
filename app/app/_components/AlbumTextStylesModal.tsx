@@ -7,6 +7,9 @@ import {
   FONT_SIZE_MULT_MIN,
   FONT_SIZE_MULT_MAX,
   type TextStyleGroup,
+  type TextStyleGroupOverride,
+  type TextHAlign,
+  type TextVAlign,
   type AlbumTextStyleOverrides,
 } from '@/lib/text-style'
 
@@ -67,17 +70,34 @@ export default function AlbumTextStylesModal({
   // Обновить значение в группе + сразу preview parent'у.
   function updateGroup(
     group: TextStyleGroup,
-    patch: { size_pct?: number | null; color?: string | null },
+    patch: {
+      size_pct?: number | null
+      color?: string | null
+      halign?: TextHAlign | null
+      valign?: TextVAlign | null
+    },
   ) {
     setDraft((prev) => {
-      const cur = prev[group] ?? { size_pct: null, color: null }
-      const next = {
-        size_pct: 'size_pct' in patch ? patch.size_pct ?? null : cur.size_pct,
-        color: 'color' in patch ? patch.color ?? null : cur.color,
+      const cur = prev[group] ?? {
+        size_pct: null,
+        color: null,
+        halign: null,
+        valign: null,
       }
-      // Если оба null → удаляем группу.
+      const next: TextStyleGroupOverride = {
+        size_pct: 'size_pct' in patch ? patch.size_pct ?? null : cur.size_pct ?? null,
+        color: 'color' in patch ? patch.color ?? null : cur.color ?? null,
+        halign: 'halign' in patch ? patch.halign ?? null : cur.halign ?? null,
+        valign: 'valign' in patch ? patch.valign ?? null : cur.valign ?? null,
+      }
+      // Если все 4 поля null → удаляем группу.
       const newDraft = { ...prev }
-      if (next.size_pct === null && next.color === null) {
+      if (
+        next.size_pct === null &&
+        next.color === null &&
+        next.halign === null &&
+        next.valign === null
+      ) {
         delete newDraft[group]
       } else {
         newDraft[group] = next
@@ -210,7 +230,7 @@ export default function AlbumTextStylesModal({
                   </div>
 
                   {/* Палитра цветов — компактнее */}
-                  <div>
+                  <div className="mb-2">
                     <div className="text-[11px] text-gray-600 mb-1">
                       Цвет{' '}
                       {color === null && (
@@ -250,6 +270,76 @@ export default function AlbumTextStylesModal({
                           </button>
                         )
                       })}
+                    </div>
+                  </div>
+
+                  {/* РЭ.54.b: Выравнивание (H + V) */}
+                  <div>
+                    <div className="text-[11px] text-gray-600 mb-1">
+                      Выравнивание{' '}
+                      {ov?.halign == null && ov?.valign == null && (
+                        <span className="text-gray-400">(из шаблона)</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {/* H-align */}
+                      <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+                        {(['left', 'center', 'right'] as const).map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() =>
+                              updateGroup(group, {
+                                halign: ov?.halign === v ? null : v,
+                              })
+                            }
+                            className={`px-1.5 py-0.5 text-[11px] leading-none border-r border-gray-300 last:border-r-0 ${
+                              ov?.halign === v
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-white text-gray-700 hover:bg-gray-100'
+                            }`}
+                            title={
+                              v === 'left'
+                                ? 'По левому краю'
+                                : v === 'center'
+                                  ? 'По центру (горизонталь)'
+                                  : 'По правому краю'
+                            }
+                            aria-label={`hAlign-${v}`}
+                          >
+                            {v === 'left' ? '⇤' : v === 'center' ? '⇔' : '⇥'}
+                          </button>
+                        ))}
+                      </div>
+                      {/* V-align */}
+                      <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+                        {(['top', 'middle', 'bottom'] as const).map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() =>
+                              updateGroup(group, {
+                                valign: ov?.valign === v ? null : v,
+                              })
+                            }
+                            className={`px-1.5 py-0.5 text-[11px] leading-none border-r border-gray-300 last:border-r-0 ${
+                              ov?.valign === v
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-white text-gray-700 hover:bg-gray-100'
+                            }`}
+                            title={
+                              v === 'top'
+                                ? 'По верху'
+                                : v === 'middle'
+                                  ? 'По центру (вертикаль)'
+                                  : 'По низу'
+                            }
+                            aria-label={`vAlign-${v}`}
+                          >
+                            {v === 'top' ? '⤒' : v === 'middle' ? '↕' : '⤓'}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
