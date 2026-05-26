@@ -202,12 +202,11 @@ export default function PresetEditorModal({
   const [studentHasQuote, setStudentHasQuote] = useState<boolean>(
     preset.student_has_quote ?? false
   )
-  // РЭ.37.5: галка «симметризировать хвост». Активна (enabled в UI) только
-  // когда mode='grid' И grid_size ∈ {6, 12} — соответствует Light/Mini
-  // комплектациям. Для остальных значений UI показывает её disabled.
-  const [symmetrizeStudentsTail, setSymmetrizeStudentsTail] = useState<boolean>(
-    preset.symmetrize_students_tail ?? false
-  )
+  // РЭ.49: state симметризации удалён из шаблона. Настройка перенесена
+  // на уровень альбома (РЭ.46 — SymmetrizeTailControl на 'Обзоре').
+  // Поле preset.symmetrize_students_tail в БД остаётся для обратной
+  // совместимости (engine читает его при отсутствии override на альбоме),
+  // но партнёру в UI шаблона не показывается. См. также РЭ.49.
 
   // РЭ.37.6: ручной сценарий transition-разворота.
   // 'default' (default) = OkeyBook логика, NULL в БД.
@@ -316,9 +315,11 @@ export default function PresetEditorModal({
         // Новые поля (РЭ.22.2).
         student_layout_mode: studentLayoutMode,
         student_grid_size: effectiveGridSize,
-        // РЭ.37.5: симметризация хвоста. Сохраняем фактическое значение
-        // галки — engine сам игнорирует флаг если комплектация не Mini/Light.
-        symmetrize_students_tail: symmetrizeStudentsTail,
+        // РЭ.49: symmetrize_students_tail убран из формы шаблона.
+        // Настройка перенесена на уровень альбома (РЭ.46).
+        // Существующее значение в БД сохраняется как есть (PATCH без поля
+        // не трогает его). Engine читает БД-значение при отсутствии
+        // album.symmetrize_students_tail_override.
         // РЭ.37.6: ручной сценарий transition-разворота.
         // 'default' → null (старое поведение OkeyBook).
         // 'custom' → объект с master_id для tail_left / tail_right.
@@ -614,60 +615,6 @@ export default function PresetEditorModal({
                   </div>
                 </div>
 
-                {/* РЭ.37.5: галка симметризации хвоста.
-                    Применима только для grid_size ∈ {6, 12} — это
-                    соответствует комплектациям Light / Mini в spec §3.4.
-                    Для других значений показываем disabled+ explanation. */}
-                {(() => {
-                  const numericGridSize =
-                    studentGridSize === '' ? null : Number(studentGridSize)
-                  const isApplicable =
-                    numericGridSize === 6 || numericGridSize === 12
-                  return (
-                    <div
-                      className={
-                        'rounded border px-3 py-2 ' +
-                        (isApplicable
-                          ? 'bg-blue-50/40 border-blue-200'
-                          : 'bg-gray-50 border-gray-200')
-                      }
-                    >
-                      <label
-                        className={
-                          'flex items-start gap-2 text-sm ' +
-                          (isApplicable
-                            ? 'cursor-pointer text-gray-800'
-                            : 'cursor-not-allowed text-gray-400')
-                        }
-                      >
-                        <input
-                          type="checkbox"
-                          checked={symmetrizeStudentsTail}
-                          disabled={!isApplicable}
-                          onChange={(e) =>
-                            setSymmetrizeStudentsTail(e.target.checked)
-                          }
-                          className="mt-0.5"
-                        />
-                        <span>
-                          <span className="font-medium">
-                            Симметризировать хвост
-                          </span>
-                          {!isApplicable && (
-                            <span className="text-xs ml-1.5 text-gray-500">
-                              (только для 6 или 12 учеников на страницу)
-                            </span>
-                          )}
-                          <span className="block text-xs text-gray-600 mt-0.5">
-                            Если в хвосте остался один ученик, движок возьмёт
-                            ещё одного с предыдущей страницы — чтобы хвост был
-                            парным, без одиночного портрета с краю.
-                          </span>
-                        </span>
-                      </label>
-                    </div>
-                  )
-                })()}
               </>
             )}
 
