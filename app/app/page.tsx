@@ -3945,6 +3945,37 @@ function TemplatePickerModal({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [designFilter, setDesignFilter] = useState<string>('') // '' = все
+  // РЭ.48: двухуровневая навигация. Шаг 1 — выбор дизайна
+  // (если дизайнов > 1). Шаг 2 — шаблоны выбранного дизайна.
+  // Если только один дизайн (или не выбран) — сразу идём в 'templates'
+  // (как раньше: все шаблоны / по фильтру).
+  type Step = 'design' | 'templates'
+  const [step, setStep] = useState<Step>('design')
+
+  // Когда данные загрузились — решаем стартовый step.
+  // Если у партнёра только один дизайн, нет смысла показывать выбор дизайна.
+  // Если currentPresetId уже задан — открываемся сразу в templates с
+  // дизайном выбранного пресета (чтобы он мог быстро поменять).
+  useEffect(() => {
+    if (loading) return
+    if (designs.length <= 1) {
+      setStep('templates')
+      if (designs.length === 1) setDesignFilter(designs[0].id)
+      return
+    }
+    if (currentPresetId) {
+      const cur =
+        globals.find((t) => t.id === currentPresetId) ??
+        mine.find((t) => t.id === currentPresetId)
+      if (cur && cur.template_set_id) {
+        setDesignFilter(cur.template_set_id)
+        setStep('templates')
+        return
+      }
+    }
+    // Иначе стартуем с выбора дизайна.
+    setStep('design')
+  }, [loading, designs, currentPresetId, globals, mine])
 
   useEffect(() => {
     let cancelled = false
@@ -4018,13 +4049,9 @@ function TemplatePickerModal({
     ? mine.filter((t) => t.template_set_id === designFilter)
     : mine
 
-  // Группировка глобальных по дизайнам
-  const globalsByDesign = new Map<string, PickerTemplate[]>()
-  for (const t of filteredGlobals) {
-    const key = t.template_set_id ?? '__no_design__'
-    if (!globalsByDesign.has(key)) globalsByDesign.set(key, [])
-    globalsByDesign.get(key)!.push(t)
-  }
+  // РЭ.48: после введения двухуровневой навигации (шаг design → templates)
+  // глобальные шаблоны просто фильтруем по designFilter, группировка
+  // по дизайнам уже не нужна — внутри шага 2 всегда один дизайн.
 
   return (
     <div
@@ -4037,11 +4064,36 @@ function TemplatePickerModal({
       >
         {/* Шапка */}
         <div className="flex items-center justify-between p-4 border-b">
-          <div>
-            <h3 className="text-lg font-semibold">Выбрать шаблон</h3>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Шаблон описывает структуру альбома: дизайн + секции + тип листов.
-            </p>
+          <div className="flex items-center gap-3 min-w-0">
+            {/* РЭ.48: кнопка ← на шаге templates, чтобы вернуться к выбору
+                дизайна. Показываем только если дизайнов > 1. */}
+            {step === 'templates' && designs.length > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('design')
+                  setDesignFilter('')
+                }}
+                className="text-gray-600 hover:text-gray-900 text-sm whitespace-nowrap"
+                title="Назад к выбору дизайна"
+              >
+                ← К дизайнам
+              </button>
+            )}
+            <div className="min-w-0">
+              <h3 className="text-lg font-semibold truncate">
+                {step === 'design'
+                  ? 'Выберите дизайн'
+                  : designFilter
+                    ? `Шаблоны: ${designNameById(designFilter) ?? ''}`
+                    : 'Выбрать шаблон'}
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {step === 'design'
+                  ? 'Сначала выберите дизайн альбома, затем шаблон внутри него.'
+                  : 'Шаблон описывает структуру альбома: дизайн + секции + тип листов.'}
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -4051,23 +4103,6 @@ function TemplatePickerModal({
             ×
           </button>
         </div>
-
-        {/* Фильтр по дизайну (показываем только если дизайнов > 1) */}
-        {designs.length > 1 && (
-          <div className="px-4 py-2 border-b bg-gray-50 flex items-center gap-2 text-sm">
-            <span className="text-gray-600">Дизайн:</span>
-            <select
-              value={designFilter}
-              onChange={(e) => setDesignFilter(e.target.value)}
-              className="border rounded px-2 py-1 text-sm"
-            >
-              <option value="">Все ({designs.length})</option>
-              {designs.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
 
         {/* Содержимое */}
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -4080,7 +4115,57 @@ function TemplatePickerModal({
             </div>
           )}
 
-          {!loading && !error && (
+          {/* РЭ.48: ШАГ 1 — Выбор дизайна */}
+          {!loading && !error && step === 'design' && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              {designs.map((d) => {
+                const count =
+                  globals.filter((t) => t.template_set_id === d.id).length +
+                  mine.filter((t) => t.template_set_id === d.id).length
+                // Превью дизайна — берём первое доступное превью из любого
+                // шаблона этого дизайна (предпочитаем глобальные).
+                const preview =
+                  globals.find((t) => t.template_set_id === d.id)?.previews
+                    .students ??
+                  mine.find((t) => t.template_set_id === d.id)?.previews
+                    .students ??
+                  null
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => {
+                      setDesignFilter(d.id)
+                      setStep('templates')
+                    }}
+                    className="text-left p-3 rounded-lg border bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all flex flex-col gap-2 cursor-pointer"
+                  >
+                    <div
+                      className="w-full bg-gray-50 border border-gray-200 rounded overflow-hidden flex items-center justify-center"
+                      style={{ aspectRatio: '1 / 1.4', minHeight: '90px' }}
+                      dangerouslySetInnerHTML={{
+                        __html:
+                          preview ??
+                          '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;font-size:10px;">нет превью</div>',
+                      }}
+                    />
+                    <div
+                      className="text-sm font-medium text-gray-900 truncate"
+                      title={d.name}
+                    >
+                      {d.name}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {count > 0 ? `${count} шаблон${count === 1 ? '' : count < 5 ? 'а' : 'ов'}` : 'нет шаблонов'}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* ШАГ 2 — Шаблоны выбранного дизайна */}
+          {!loading && !error && step === 'templates' && (
             <>
               {/* Мои шаблоны */}
               <section>
@@ -4106,40 +4191,27 @@ function TemplatePickerModal({
                 )}
               </section>
 
-              {/* Готовые от OkeyBook — по дизайнам */}
+              {/* Готовые от OkeyBook — простой грид (уже отфильтровано
+                  по выбранному дизайну в шаге 1, группировка не нужна). */}
               <section>
                 <h4 className="text-sm font-semibold text-gray-700 mb-2">
                   Готовые от OkeyBook ({filteredGlobals.length})
                 </h4>
                 {filteredGlobals.length === 0 ? (
                   <div className="text-xs text-gray-400 italic">
-                    Нет рекомендованных шаблонов от OkeyBook.
+                    Нет рекомендованных шаблонов от OkeyBook в этом дизайне.
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    {Array.from(globalsByDesign.entries()).map(([designId, items]) => {
-                      const designName = designNameById(designId === '__no_design__' ? null : designId)
-                      return (
-                        <div key={designId}>
-                          {designs.length > 1 && designName && (
-                            <div className="text-xs font-medium text-gray-500 mb-2">
-                              Дизайн: {designName}
-                            </div>
-                          )}
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-                            {items.map((t) => (
-                              <PickerCard
-                                key={t.id}
-                                template={t}
-                                designName={designName}
-                                isCurrent={t.id === currentPresetId}
-                                onPick={() => pick(t)}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      )
-                    })}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                    {filteredGlobals.map((t) => (
+                      <PickerCard
+                        key={t.id}
+                        template={t}
+                        designName={designNameById(t.template_set_id)}
+                        isCurrent={t.id === currentPresetId}
+                        onPick={() => pick(t)}
+                      />
+                    ))}
                   </div>
                 )}
               </section>
