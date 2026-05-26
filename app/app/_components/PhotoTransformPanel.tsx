@@ -240,11 +240,28 @@ export default function PhotoTransformPanel({
     emitChange(1, 0, 0, 0)
   }
 
-  // Корректируем позицию popover'а если вылазит за viewport.
-  // РЭ.52: панель в правом сайдбаре (фиксированной позиции), не
-  // перекрывая canvas. Раньше — popup рядом с placeholder'ом, частично
-  // закрывал фото. Теперь — всегда top-right.
-  // clientX/clientY props игнорируются.
+  // РЭ.52.b: умное позиционирование рядом с кликом.
+  // Если клик в ЛЕВОЙ половине экрана → панель появляется СПРАВА от
+  // клика. Если клик в ПРАВОЙ половине → панель появляется СЛЕВА от
+  // клика. Это решает feedback Сергея: top-right требует «искать
+  // панель», тогда как панель рядом с placeholder'ом — естественнее.
+  let left = clientX
+  let top = clientY
+  if (typeof window !== 'undefined') {
+    const w = window.innerWidth
+    const h = window.innerHeight
+    const GAP = 30 // отступ от точки клика
+    if (clientX < w / 2) {
+      left = clientX + GAP
+    } else {
+      left = clientX - PANEL_WIDTH - GAP
+    }
+    top = clientY - 20
+    if (left + PANEL_WIDTH > w - 8) left = w - PANEL_WIDTH - 8
+    if (left < 8) left = 8
+    if (top + PANEL_HEIGHT > h - 8) top = Math.max(8, h - PANEL_HEIGHT - 8)
+    if (top < 8) top = 8
+  }
 
   // Координаты точки в touchpad (UI отображение позиции).
   // (-1..1) → (0..TOUCHPAD_SIZE)
@@ -258,8 +275,8 @@ export default function PhotoTransformPanel({
       ref={ref}
       className="fixed bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-50 select-none"
       style={{
-        right: '16px',
-        top: '80px',
+        left: `${left}px`,
+        top: `${top}px`,
         width: `${PANEL_WIDTH}px`,
       }}
     >

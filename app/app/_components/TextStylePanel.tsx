@@ -133,10 +133,33 @@ export default function TextStylePanel({
     emitChange(1, null)
   }
 
-  // РЭ.52: панель в правом сайдбаре (фиксированной позиции), не
-  // перекрывая canvas. Раньше — popup рядом с placeholder'ом, частично
-  // закрывал текст и canvas. Теперь — всегда top-right.
-  // clientX/clientY props игнорируются.
+  // РЭ.52.b: умное позиционирование рядом с кликом.
+  // Если клик в ЛЕВОЙ половине экрана → панель появляется СПРАВА от
+  // клика. Если клик в ПРАВОЙ половине → панель появляется СЛЕВА от
+  // клика. По вертикали — выравнивается чуть ниже клика с защитой
+  // от выхода за viewport.
+  // Это решает feedback Сергея: top-right требует «искать панель»,
+  // тогда как панель рядом с placeholder'ом — естественнее.
+  let left = clientX
+  let top = clientY
+  if (typeof window !== 'undefined') {
+    const w = window.innerWidth
+    const h = window.innerHeight
+    const GAP = 30 // отступ от точки клика
+    // Горизонталь: если клик в левой половине → панель справа, иначе слева.
+    if (clientX < w / 2) {
+      left = clientX + GAP
+    } else {
+      left = clientX - PANEL_WIDTH - GAP
+    }
+    // Вертикаль: чуть ниже клика, но не вылезая.
+    top = clientY - 20 // немного выше курсора чтобы шапка панели была видна
+    // Защита от выхода.
+    if (left + PANEL_WIDTH > w - 8) left = w - PANEL_WIDTH - 8
+    if (left < 8) left = 8
+    if (top + PANEL_HEIGHT > h - 8) top = Math.max(8, h - PANEL_HEIGHT - 8)
+    if (top < 8) top = 8
+  }
 
   const isDefault = !hasCustomTextStyle(mult, color)
   // Активный цвет для подсветки — либо override, либо null (тогда
@@ -146,30 +169,21 @@ export default function TextStylePanel({
   return (
     <div
       ref={ref}
+      data-text-style-panel="true"
       className="fixed bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-50 select-none"
       style={{
-        right: '16px',
-        top: '80px',
+        left: `${left}px`,
+        top: `${top}px`,
         width: `${PANEL_WIDTH}px`,
       }}
-      // РЭ.52: preventDefault на mouseDown в panel'e ОТМЕНЯЕТ передачу
-      // фокуса от textarea (TextInlineEditor) к элементам внутри панели.
-      // Без этого клик по слайдеру/палитре вызывает blur textarea,
-      // а blur → handleTextSubmit → setEditingTextLabel(null) +
-      // setTextStylePanel(null) → панель тут же закрывается.
-      // stopPropagation НЕ помогает — blur срабатывает независимо от
-      // bubbling event'ов.
-      //
-      // preventDefault на mouseDown div'а:
-      //   - НЕ блокирует change/input события input range (т.е. drag
-      //     слайдера работает)
-      //   - НЕ блокирует click на кнопках (онClick handlers работают)
-      //   - БЛОКИРУЕТ изменение фокуса (textarea остаётся focused)
-      // Это стандартный приём в rich-text редакторах.
-      onMouseDown={(e) => {
-        e.preventDefault()
-        e.stopPropagation()
-      }}
+      // РЭ.52.b: НЕ используем preventDefault на mouseDown — это
+      // блокировало начало drag на input range (#1 был не починен в
+      // РЭ.52). Вместо этого blur textarea различает «куда ушёл
+      // фокус» через relatedTarget: если в нашу панель (data-attribute
+      // text-style-panel) — игнорируем blur.
+      // stopPropagation остаётся — клик в панели не должен пузыриться
+      // на canvas (избегаем повторного открытия text-editor).
+      onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between mb-2">

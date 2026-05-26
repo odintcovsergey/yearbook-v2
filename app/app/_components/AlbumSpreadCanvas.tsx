@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type FocusEvent as ReactFocusEvent } from 'react'
 import { Stage, Layer, Rect, Image as KonvaImage, Text, Group } from 'react-konva'
 import { useDroppable, useDraggable } from '@dnd-kit/core'
 import type {
@@ -440,8 +440,23 @@ function TextInlineEditor({
     }
   }
 
-  function handleBlur() {
-    // Blur — это «мягкий submit». Сохраняем то что напечатано,
+  function handleBlur(e: ReactFocusEvent<HTMLTextAreaElement>) {
+    // РЭ.52.b: если фокус ушёл В нашу TextStylePanel — НЕ submit'им.
+    // Это позволяет:
+    //   - клик по слайдеру размера в TextStylePanel → range получает
+    //     фокус → textarea blur'ится → ЭТОТ guard перехватывает →
+    //     textarea НЕ закрывается → panel остаётся открытой и
+    //     слайдер плавно тянется
+    //   - клик по color swatch → button получает фокус → blur →
+    //     guard → не закрываемся.
+    // Определяем по data-атрибуту: TextStylePanel ставит data-text-
+    // style-panel="true" на wrapper'е. e.relatedTarget — это куда
+    // переходит фокус.
+    const next = e.relatedTarget as HTMLElement | null
+    if (next && next.closest('[data-text-style-panel="true"]')) {
+      return // фокус в нашу панель — игнорируем blur, не submit'им
+    }
+    // Иначе — обычный «мягкий submit». Сохраняем то что напечатано,
     // без potentially неожиданного reset'а.
     const trimmed = value.trim()
     onSubmit(trimmed === '' ? null : value)
