@@ -123,6 +123,14 @@ export function fillSoftFinalSection(
         break;
       }
     }
+    // РЭ.56: декоративный текст из IDML — попадает в bindings как
+    // initial value (см. комментарий в soft-intro.ts).
+    for (const ph of master.placeholders) {
+      const phAny = ph as { label: string; type?: string; default_text?: string };
+      if (phAny.type === 'text' && phAny.default_text && !(ph.label in bindings)) {
+        bindings[ph.label] = phAny.default_text;
+      }
+    }
   }
 
   ctx.available.full_class -= consumedFullClass;

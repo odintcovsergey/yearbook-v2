@@ -132,6 +132,15 @@ export function fillSoftIntroSection(
         break;
       }
     }
+    // РЭ.56: для всех text-placeholder'ов которые не получили binding
+    // (например, декоративные тексты типа static_text_1) — записываем
+    // default_text из IDML как initial value. Без этого декор не виден.
+    for (const ph of master.placeholders) {
+      const phAny = ph as { label: string; type?: string; default_text?: string };
+      if (phAny.type === 'text' && phAny.default_text && !(ph.label in bindings)) {
+        bindings[ph.label] = phAny.default_text;
+      }
+    }
   }
 
   ctx.available.full_class -= consumedFullClass;

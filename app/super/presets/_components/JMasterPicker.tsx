@@ -41,7 +41,11 @@ const PREVIEW_WIDTH = 200
 const CAPACITY_LABELS: Record<Capacity, string> = {
   full: '1 общая фотография',
   half: '2 фото по 1/2',
-  quarter: '4 фото по 1/4',
+  // Постраничная модель: на странице 2 quarter-фото. На развороте
+  // выходит 4 (левая + правая страницы по 2). Раньше было неверно
+  // 'четверти 4' — путало партнёра, который думал что 4 фото на ОДНОЙ
+  // странице.
+  quarter: '2 фото по 1/4',
   collage4: '4 коллажа',
   sixth: '6 фото по 1/6 (коллаж)',
   spread: 'На разворот',
@@ -73,7 +77,11 @@ function classifyMaster(master: SpreadTemplate): Capacity {
   if (hasSpread) return 'spread'
   if (collageCount === 6) return 'sixth'
   if (collageCount === 4) return 'collage4'
-  if (quarterCount >= 4) return 'quarter'
+  // J-Quarter-Left / J-Quarter-Right в постраничной модели содержат
+  // ПО 2 quarterphoto_N на странице (всего 4 на разворот). Поэтому
+  // >= 2, а не >= 4. Раньше Quarter-мастера попадали в 'other' и
+  // не показывались партнёру в пикере (баг РЭ.57).
+  if (quarterCount >= 2) return 'quarter'
   if (halfCount >= 2) return 'half'
   if (hasFull) return 'full'
   return 'other'
