@@ -130,15 +130,34 @@ function Section({
   )
 }
 
+// РЭ.54.c: табы по категориям фото.
+// 'all' рендерит все секции под общим заголовком (текущий вид).
+// Конкретный таб — только эту категорию (без заголовка секции).
+type PaletteTab = 'all' | 'portrait' | 'group' | 'teacher' | 'originals'
+
+const TAB_LABELS: Record<PaletteTab, string> = {
+  all: 'Все',
+  portrait: 'Портреты',
+  group: 'Группы',
+  teacher: 'Учителя',
+  originals: 'Оригиналы',
+}
+
 // ═════════════════════════════════════════════════════════════════════════
 // PhotoPalette — правая панель редактора со всеми фото альбома (2.6.2).
 //
 // В подэтапе 2.6.2 — read-only отображение: миниатюры, поиск, фильтр
 // по originals, бейджи использования. Drag-and-drop появится в 2.6.3.
+//
+// РЭ.54.c: добавлены табы по категориям. Раньше всё рендерилось одним
+// длинным столбиком с заголовками секций — для альбома с 25 учениками
+// (~37 портретов) экран забивался портретами и приходилось скроллить
+// чтобы добраться до групповых/учителей. Теперь партнёр может выбрать
+// 'Групповые' и видеть только их.
 // ═════════════════════════════════════════════════════════════════════════
 export default function PhotoPalette({ spreads, photos }: Props) {
   const [query, setQuery] = useState('')
-  const [showOriginals, setShowOriginals] = useState(false)
+  const [activeTab, setActiveTab] = useState<PaletteTab>('all')
 
   // Карта использования для O(1) lookup'а в каждой миниатюре.
   const usageMap = useMemo(() => {
@@ -174,8 +193,25 @@ export default function PhotoPalette({ spreads, photos }: Props) {
     .filter((p) => p.source === 'originals')
     .sort(byFilename)
 
-  // Счётчик originals по полному пулу (не filtered) — для лейбла checkbox'а.
-  const totalOriginals = photos.filter((p) => p.source === 'originals').length
+  // Счётчики ПО ПОЛНОМУ ПУЛУ (не filtered) — чтобы лейбл таба показывал
+  // сколько всего фото в категории, независимо от поиска.
+  const counts = useMemo(() => {
+    const p = photos.filter((x) => x.source === 'selections' && x.type === 'portrait').length
+    const g = photos.filter((x) => x.source === 'selections' && x.type === 'group').length
+    const t = photos.filter((x) => x.source === 'selections' && x.type === 'teacher').length
+    const o = photos.filter((x) => x.source === 'originals').length
+    return {
+      portrait: p,
+      group: g,
+      teacher: t,
+      originals: o,
+      all: p + g + t + o,
+    }
+  }, [photos])
+
+  // Список табов которые имеет смысл показать (с count > 0).
+  const visibleTabs: PaletteTab[] = ['all', 'portrait', 'group', 'teacher']
+  if (counts.originals > 0) visibleTabs.push('originals')
 
   return (
     <aside className="w-[30%] min-w-[300px] max-w-[440px] bg-white border-l border-gray-200 overflow-y-auto">
@@ -190,17 +226,27 @@ export default function PhotoPalette({ spreads, photos }: Props) {
           placeholder="Поиск по имени файла…"
           className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-200"
         />
-        {totalOriginals > 0 && (
-          <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer mt-2">
-            <input
-              type="checkbox"
-              checked={showOriginals}
-              onChange={(e) => setShowOriginals(e.target.checked)}
-              className="accent-blue-600"
-            />
-            Показать оригиналы ({totalOriginals})
-          </label>
-        )}
+        {/* РЭ.54.c: табы по категориям. */}
+        <div className="flex flex-wrap gap-1 mt-2">
+          {visibleTabs.map((tab) => {
+            const isActive = activeTab === tab
+            const count = counts[tab]
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`px-2 py-1 text-[11px] rounded border transition-colors ${
+                  isActive
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                {TAB_LABELS[tab]} <span className={isActive ? 'opacity-90' : 'text-gray-400'}>({count})</span>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       <div className="p-3">
@@ -208,19 +254,31 @@ export default function PhotoPalette({ spreads, photos }: Props) {
           <p className="text-xs text-gray-500 text-center py-8">
             {query ? 'Ничего не найдено' : 'Нет фото в альбоме'}
           </p>
-        ) : (
+        ) : activeTab === 'all' ? (
+          // РЭ.54.c: вкладка 'Все' — секции одна под другой (как было).
+          // Оригиналы показываются только если они вообще есть.
           <>
             <Section title="Портреты" photos={portraits} usageMap={usageMap} />
             <Section title="Группы" photos={groups} usageMap={usageMap} />
             <Section title="Учителя" photos={teachers} usageMap={usageMap} />
-            {showOriginals && (
-              <Section
-                title="Оригиналы"
-                photos={originals}
-                usageMap={usageMap}
-              />
+            {counts.originals > 0 && (
+              <Section title="Оригиналы" photos={originals} usageMap={usageMap} />
             )}
           </>
+        ) : (
+          // Конкретный таб — только эта категория, без заголовка-плашки.
+          <div className="grid grid-cols-3 gap-2">
+            {(activeTab === 'portrait'
+              ? portraits
+              : activeTab === 'group'
+                ? groups
+                : activeTab === 'teacher'
+                  ? teachers
+                  : originals
+            ).map((p) => (
+              <PhotoTile key={p.id} photo={p} usage={usageMap.get(p.id) ?? []} />
+            ))}
+          </div>
         )}
       </div>
     </aside>
