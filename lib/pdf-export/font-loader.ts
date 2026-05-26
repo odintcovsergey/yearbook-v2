@@ -35,13 +35,27 @@ import type { PdfWarning } from './types';
 /**
  * Канонические ключи зарегистрированных шрифтов.
  * Соответствуют файлам в public/fonts/.
+ *
+ * РЭ.55: curated список расширен с 5 до 12 ключей (7 семейств).
+ * Дизайнеры могут использовать в IDML любой шрифт — placeholder.font_family
+ * передаётся как строка, resolveKey матчит её на ключ или фолбачит на
+ * noto-serif-regular с warning. Партнёр в редакторе выбирает шрифт из
+ * того же curated списка (см. lib/text-style/fonts.ts).
  */
 type FontKey =
   | 'noto-serif-regular'
   | 'noto-serif-bold'
   | 'open-sans-regular'
   | 'open-sans-italic'
-  | 'slimamif-medium';
+  | 'slimamif-medium'
+  // РЭ.55:
+  | 'pt-serif-regular'
+  | 'pt-serif-bold'
+  | 'roboto-regular'
+  | 'roboto-bold'
+  | 'montserrat-regular'
+  | 'montserrat-bold'
+  | 'caveat-regular';
 
 const FONT_FILES: Record<FontKey, string> = {
   'noto-serif-regular': 'NotoSerif-Regular.ttf',
@@ -49,6 +63,14 @@ const FONT_FILES: Record<FontKey, string> = {
   'open-sans-regular': 'OpenSans-Regular.ttf',
   'open-sans-italic': 'OpenSans-Italic.ttf',
   'slimamif-medium': 'Slimamif-Medium.ttf',
+  // РЭ.55:
+  'pt-serif-regular': 'PTSerif-Regular.ttf',
+  'pt-serif-bold': 'PTSerif-Bold.ttf',
+  'roboto-regular': 'Roboto-Regular.ttf',
+  'roboto-bold': 'Roboto-Bold.ttf',
+  'montserrat-regular': 'Montserrat-Regular.ttf',
+  'montserrat-bold': 'Montserrat-Bold.ttf',
+  'caveat-regular': 'Caveat-Regular.ttf',
 };
 
 export type FontRegistry = {
@@ -156,6 +178,19 @@ function resolveKey(
   }
   if (f.includes('slimamif')) {
     return 'slimamif-medium';
+  }
+  // РЭ.55: новые curated семейства.
+  if (f.includes('pt serif') || f.includes('ptserif')) {
+    return w === 'bold' ? 'pt-serif-bold' : 'pt-serif-regular';
+  }
+  if (f.includes('roboto')) {
+    return w === 'bold' ? 'roboto-bold' : 'roboto-regular';
+  }
+  if (f.includes('montserrat')) {
+    return w === 'bold' ? 'montserrat-bold' : 'montserrat-regular';
+  }
+  if (f.includes('caveat')) {
+    return 'caveat-regular';
   }
   // Неизвестное семейство — фолбачим на Noto Serif Regular.
   // resolve() запишет warning 'font_not_found'.

@@ -85,15 +85,15 @@ describe('parseAlbumTextStyleOverrides', () => {
       studentquote: { size_pct: 90, color: null },
     };
     expect(parseAlbumTextStyleOverrides(raw)).toEqual({
-      studentname: { size_pct: 110, color: '#000000', halign: null, valign: null },
-      studentquote: { size_pct: 90, color: null, halign: null, valign: null },
+      studentname: { size_pct: 110, color: '#000000', halign: null, valign: null, font_family: null },
+      studentquote: { size_pct: 90, color: null, halign: null, valign: null, font_family: null },
     });
   });
 
   it('color нормализуется в upper-case', () => {
     const raw = { studentname: { size_pct: 100, color: '#abc123' } };
     expect(parseAlbumTextStyleOverrides(raw)).toEqual({
-      studentname: { size_pct: 100, color: '#ABC123', halign: null, valign: null },
+      studentname: { size_pct: 100, color: '#ABC123', halign: null, valign: null, font_family: null },
     });
   });
 
@@ -113,8 +113,8 @@ describe('parseAlbumTextStyleOverrides', () => {
       studentquote: { size_pct: 100, color: '#zzz' }, // невалидный HEX
     };
     expect(parseAlbumTextStyleOverrides(raw)).toEqual({
-      studentname: { size_pct: 100, color: null, halign: null, valign: null },
-      studentquote: { size_pct: 100, color: null, halign: null, valign: null },
+      studentname: { size_pct: 100, color: null, halign: null, valign: null, font_family: null },
+      studentquote: { size_pct: 100, color: null, halign: null, valign: null, font_family: null },
     });
   });
 
@@ -124,7 +124,7 @@ describe('parseAlbumTextStyleOverrides', () => {
       unknown_group: { size_pct: 100 },
     };
     expect(parseAlbumTextStyleOverrides(raw)).toEqual({
-      studentname: { size_pct: 100, color: '#000000', halign: null, valign: null },
+      studentname: { size_pct: 100, color: '#000000', halign: null, valign: null, font_family: null },
     });
   });
 });
@@ -241,6 +241,7 @@ describe('parseAlbumTextStyleOverrides — halign/valign (РЭ.54)', () => {
         color: null,
         halign: 'center',
         valign: 'middle',
+        font_family: null,
       },
     });
   });
@@ -250,14 +251,14 @@ describe('parseAlbumTextStyleOverrides — halign/valign (РЭ.54)', () => {
       studentname: { size_pct: 100, color: null, halign: 'oops', valign: 'invalid' },
     };
     expect(parseAlbumTextStyleOverrides(raw)).toEqual({
-      studentname: { size_pct: 100, color: null, halign: null, valign: null },
+      studentname: { size_pct: 100, color: null, halign: null, valign: null, font_family: null },
     });
   });
 
   it('только halign (без size/color/valign) — группа сохраняется', () => {
     const raw = { studentname: { halign: 'right' } };
     expect(parseAlbumTextStyleOverrides(raw)).toEqual({
-      studentname: { size_pct: null, color: null, halign: 'right', valign: null },
+      studentname: { size_pct: null, color: null, halign: 'right', valign: null, font_family: null },
     });
   });
 

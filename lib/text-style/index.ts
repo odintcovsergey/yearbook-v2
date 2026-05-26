@@ -171,3 +171,12 @@ export type {
   TextHAlign,
   TextVAlign,
 } from './groups';
+
+// РЭ.55 — шрифты (curated список + парсер + резолвер).
+export {
+  AVAILABLE_FONTS,
+  isAvailableFont,
+  parseFontFamily,
+  resolveFontFamily,
+} from './fonts';
+export type { FontFamilyOption } from './fonts';

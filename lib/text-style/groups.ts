@@ -4,6 +4,8 @@
 // (size + color). Партнёр задаёт стиль один раз для группы — engine /
 // canvas применяют ко всем placeholder'ам этой группы.
 
+import { parseFontFamily } from './fonts';
+
 /**
  * Список глобальных групп.
  * Каждое значение — ключ в albums.text_style_overrides (JSONB).
@@ -43,6 +45,11 @@ export interface TextStyleGroupOverride {
    * null/undefined = не трогать (fallback на 'top' — текущий захардкоженный default).
    */
   valign?: TextVAlign | null;
+  /**
+   * РЭ.55: семейство шрифта (значение из AVAILABLE_FONTS в lib/text-style/fonts).
+   * null/undefined = не трогать (fallback на placeholder.font_family из IDML).
+   */
+  font_family?: string | null;
 }
 
 /** Допустимые значения горизонтального выравнивания. */
@@ -114,12 +121,16 @@ export function parseAlbumTextStyleOverrides(
     // РЭ.54: halign/valign — опциональные поля.
     const halign = parseHAlign(entry.halign);
     const valign = parseVAlign(entry.valign);
+    // РЭ.55: font_family — опциональное, из curated списка.
+    // parseFontFamily вернёт null если значение не в AVAILABLE_FONTS.
+    const fontFamily = parseFontFamily(entry.font_family);
     // Сохраняем группу только если хотя бы одно значение задано.
     if (
       sizePct === null &&
       color === null &&
       halign === null &&
-      valign === null
+      valign === null &&
+      fontFamily === null
     ) {
       continue;
     }
@@ -128,6 +139,7 @@ export function parseAlbumTextStyleOverrides(
       color,
       halign: halign ?? null,
       valign: valign ?? null,
+      font_family: fontFamily,
     };
   }
   return result;
