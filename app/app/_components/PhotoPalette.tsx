@@ -8,12 +8,26 @@ import type { SpreadInstance } from '@/lib/album-builder/types'
 // Дубликат из app/app/album/[id]/layout/page.tsx — оба файла должны
 // держать тип в синхроне. Альтернатива: вынести в общий types.ts при
 // появлении третьего consumer'а.
+//
+// РЭ.54.e: расширен на все 8 категорий из API. До этого знали только
+// portrait/group/teacher и общие фото 'common_*' были смешаны в null
+// или общем 'group' табе. См. /api/tenant?action=album_photos в
+// app/api/tenant/route.ts — `type` оттуда уже отдаёт все варианты.
 type AlbumPhoto = {
   id: string
   filename: string
   storage_path: string
   thumb_path: string | null
-  type: 'portrait' | 'group' | 'teacher' | null
+  type:
+    | 'portrait'
+    | 'group'
+    | 'teacher'
+    | 'common_spread'
+    | 'common_full'
+    | 'common_half'
+    | 'common_quarter'
+    | 'common_sixth'
+    | null
   source: 'selections' | 'originals'
   child_ids: string[]
   teacher_ids: string[]
@@ -130,16 +144,34 @@ function Section({
   )
 }
 
-// РЭ.54.c: табы по категориям фото.
+// РЭ.54.c/e: табы по категориям фото.
 // 'all' рендерит все секции под общим заголовком (текущий вид).
 // Конкретный таб — только эту категорию (без заголовка секции).
-type PaletteTab = 'all' | 'portrait' | 'group' | 'teacher' | 'originals'
+type PaletteTab =
+  | 'all'
+  | 'portrait'
+  | 'group'
+  | 'teacher'
+  | 'common_spread'
+  | 'common_full'
+  | 'common_half'
+  | 'common_quarter'
+  | 'common_sixth'
+  | 'originals'
 
+// Лейблы повторяют названия из /app/album/[id]/photos
+// (страница загрузки фото — там партнёр выбирает категорию для каждого
+// файла). Если переименуем там — здесь нужно синхронить.
 const TAB_LABELS: Record<PaletteTab, string> = {
   all: 'Все',
   portrait: 'Портреты',
   group: 'Группы',
   teacher: 'Учителя',
+  common_spread: 'На разворот',
+  common_full: 'Класс',
+  common_half: 'Полкласса',
+  common_quarter: '1/4',
+  common_sixth: '1/6',
   originals: 'Оригиналы',
 }
 
@@ -189,6 +221,22 @@ export default function PhotoPalette({ spreads, photos }: Props) {
   const teachers = filtered
     .filter((p) => p.source === 'selections' && p.type === 'teacher')
     .sort(byFilename)
+  // РЭ.54.e: общий раздел альбома — 5 подкатегорий из /album/[id]/photos.
+  const commonSpread = filtered
+    .filter((p) => p.source === 'selections' && p.type === 'common_spread')
+    .sort(byFilename)
+  const commonFull = filtered
+    .filter((p) => p.source === 'selections' && p.type === 'common_full')
+    .sort(byFilename)
+  const commonHalf = filtered
+    .filter((p) => p.source === 'selections' && p.type === 'common_half')
+    .sort(byFilename)
+  const commonQuarter = filtered
+    .filter((p) => p.source === 'selections' && p.type === 'common_quarter')
+    .sort(byFilename)
+  const commonSixth = filtered
+    .filter((p) => p.source === 'selections' && p.type === 'common_sixth')
+    .sort(byFilename)
   const originals = filtered
     .filter((p) => p.source === 'originals')
     .sort(byFilename)
@@ -196,22 +244,48 @@ export default function PhotoPalette({ spreads, photos }: Props) {
   // Счётчики ПО ПОЛНОМУ ПУЛУ (не filtered) — чтобы лейбл таба показывал
   // сколько всего фото в категории, независимо от поиска.
   const counts = useMemo(() => {
-    const p = photos.filter((x) => x.source === 'selections' && x.type === 'portrait').length
-    const g = photos.filter((x) => x.source === 'selections' && x.type === 'group').length
-    const t = photos.filter((x) => x.source === 'selections' && x.type === 'teacher').length
+    const byType = (typeFilter: AlbumPhoto['type']) =>
+      photos.filter((x) => x.source === 'selections' && x.type === typeFilter).length
+    const p = byType('portrait')
+    const g = byType('group')
+    const t = byType('teacher')
+    const cs = byType('common_spread')
+    const cf = byType('common_full')
+    const ch = byType('common_half')
+    const cq = byType('common_quarter')
+    const cx = byType('common_sixth')
     const o = photos.filter((x) => x.source === 'originals').length
     return {
       portrait: p,
       group: g,
       teacher: t,
+      common_spread: cs,
+      common_full: cf,
+      common_half: ch,
+      common_quarter: cq,
+      common_sixth: cx,
       originals: o,
-      all: p + g + t + o,
+      all: p + g + t + cs + cf + ch + cq + cx + o,
     }
   }, [photos])
 
-  // Список табов которые имеет смысл показать (с count > 0).
-  const visibleTabs: PaletteTab[] = ['all', 'portrait', 'group', 'teacher']
-  if (counts.originals > 0) visibleTabs.push('originals')
+  // РЭ.54.e: список табов с count > 0 (плюс 'all' всегда).
+  // Пустые табы скрываем — не загромождаем UI категориями без фото.
+  // Если партнёр не загружал 'фото 1/4 класса' — таб не появится.
+  const visibleTabs: PaletteTab[] = ['all']
+  for (const tab of [
+    'portrait',
+    'group',
+    'teacher',
+    'common_spread',
+    'common_full',
+    'common_half',
+    'common_quarter',
+    'common_sixth',
+    'originals',
+  ] as const) {
+    if (counts[tab] > 0) visibleTabs.push(tab)
+  }
 
   return (
     <aside className="w-[30%] min-w-[300px] max-w-[440px] bg-white border-l border-gray-200 overflow-y-auto">
@@ -255,30 +329,45 @@ export default function PhotoPalette({ spreads, photos }: Props) {
             {query ? 'Ничего не найдено' : 'Нет фото в альбоме'}
           </p>
         ) : activeTab === 'all' ? (
-          // РЭ.54.c: вкладка 'Все' — секции одна под другой (как было).
-          // Оригиналы показываются только если они вообще есть.
+          // РЭ.54.c/e: вкладка 'Все' — секции одна под другой.
+          // Каждая секция рендерится только если в ней есть фото
+          // (Section сам возвращает null для пустого массива).
           <>
             <Section title="Портреты" photos={portraits} usageMap={usageMap} />
             <Section title="Группы" photos={groups} usageMap={usageMap} />
             <Section title="Учителя" photos={teachers} usageMap={usageMap} />
-            {counts.originals > 0 && (
-              <Section title="Оригиналы" photos={originals} usageMap={usageMap} />
-            )}
+            <Section title="На разворот" photos={commonSpread} usageMap={usageMap} />
+            <Section title="Класс" photos={commonFull} usageMap={usageMap} />
+            <Section title="Полкласса" photos={commonHalf} usageMap={usageMap} />
+            <Section title="1/4 класса" photos={commonQuarter} usageMap={usageMap} />
+            <Section title="1/6 класса" photos={commonSixth} usageMap={usageMap} />
+            <Section title="Оригиналы" photos={originals} usageMap={usageMap} />
           </>
         ) : (
           // Конкретный таб — только эта категория, без заголовка-плашки.
-          <div className="grid grid-cols-3 gap-2">
-            {(activeTab === 'portrait'
-              ? portraits
-              : activeTab === 'group'
-                ? groups
-                : activeTab === 'teacher'
-                  ? teachers
-                  : originals
-            ).map((p) => (
-              <PhotoTile key={p.id} photo={p} usage={usageMap.get(p.id) ?? []} />
-            ))}
-          </div>
+          (() => {
+            const tabPhotos = (() => {
+              switch (activeTab) {
+                case 'portrait': return portraits
+                case 'group': return groups
+                case 'teacher': return teachers
+                case 'common_spread': return commonSpread
+                case 'common_full': return commonFull
+                case 'common_half': return commonHalf
+                case 'common_quarter': return commonQuarter
+                case 'common_sixth': return commonSixth
+                case 'originals': return originals
+                default: return []
+              }
+            })()
+            return (
+              <div className="grid grid-cols-3 gap-2">
+                {tabPhotos.map((p) => (
+                  <PhotoTile key={p.id} photo={p} usage={usageMap.get(p.id) ?? []} />
+                ))}
+              </div>
+            )
+          })()
         )}
       </div>
     </aside>

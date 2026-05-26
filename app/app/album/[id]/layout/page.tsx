@@ -62,7 +62,17 @@ type AlbumPhoto = {
   filename: string
   storage_path: string
   thumb_path: string | null
-  type: 'portrait' | 'group' | 'teacher' | null
+  // РЭ.54.e: все 8 категорий из /api/tenant?action=album_photos.
+  type:
+    | 'portrait'
+    | 'group'
+    | 'teacher'
+    | 'common_spread'
+    | 'common_full'
+    | 'common_half'
+    | 'common_quarter'
+    | 'common_sixth'
+    | null
   source: 'selections' | 'originals'
   child_ids: string[]
   teacher_ids: string[]
