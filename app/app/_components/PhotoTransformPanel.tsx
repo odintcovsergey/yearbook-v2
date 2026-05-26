@@ -49,9 +49,14 @@ type Props = {
   offsetY: number
   /** Р.2 — текущий поворот из data[__rotate__<label>] (градусы) */
   rotateDeg: number
-  /** Координаты клика для позиционирования popover */
-  clientX: number
-  clientY: number
+  /**
+   * РЭ.52.c: границы placeholder'а в client координатах. Panel
+   * сам решает «справа от rightEdge» если место есть или
+   * «слева от leftEdge» — НЕ перекрывая фото.
+   */
+  rightEdge: number
+  topEdge: number
+  leftEdge: number
   /**
    * Применить локально (optimistic). null = удалить ключ.
    * Parent делает setLayout с новыми значениями для realtime preview.
@@ -78,8 +83,9 @@ export default function PhotoTransformPanel({
   offsetX: initialOffsetX,
   offsetY: initialOffsetY,
   rotateDeg: initialRotateDeg,
-  clientX,
-  clientY,
+  rightEdge,
+  topEdge,
+  leftEdge,
   onChange,
   onClose,
 }: Props) {
@@ -240,27 +246,32 @@ export default function PhotoTransformPanel({
     emitChange(1, 0, 0, 0)
   }
 
-  // РЭ.52.b: умное позиционирование рядом с кликом.
-  // Если клик в ЛЕВОЙ половине экрана → панель появляется СПРАВА от
-  // клика. Если клик в ПРАВОЙ половине → панель появляется СЛЕВА от
-  // клика. Это решает feedback Сергея: top-right требует «искать
-  // панель», тогда как панель рядом с placeholder'ом — естественнее.
-  let left = clientX
-  let top = clientY
+  // РЭ.52.c: позиционирование ОТНОСИТЕЛЬНО ГРАНИЦ placeholder'а
+  // (а не точки клика). Пытаемся положить справа от элемента
+  // (left = rightEdge + GAP). Если справа места нет — слева от
+  // элемента (left = leftEdge - PANEL_WIDTH - GAP). По вертикали
+  // выравниваемся по topEdge.
+  let left: number
+  let top = topEdge
+  const GAP = 16
   if (typeof window !== 'undefined') {
     const w = window.innerWidth
     const h = window.innerHeight
-    const GAP = 30 // отступ от точки клика
-    if (clientX < w / 2) {
-      left = clientX + GAP
+    // Сначала пробуем справа от placeholder'а.
+    if (rightEdge + GAP + PANEL_WIDTH <= w - 8) {
+      left = rightEdge + GAP
     } else {
-      left = clientX - PANEL_WIDTH - GAP
+      // Справа не помещается → ставим слева от placeholder'а.
+      left = leftEdge - PANEL_WIDTH - GAP
+      // Если и слева не помещается (placeholder сам у левого края) —
+      // прижимаемся к левому краю экрана.
+      if (left < 8) left = 8
     }
-    top = clientY - 20
-    if (left + PANEL_WIDTH > w - 8) left = w - PANEL_WIDTH - 8
-    if (left < 8) left = 8
+    // Защита от выхода вниз.
     if (top + PANEL_HEIGHT > h - 8) top = Math.max(8, h - PANEL_HEIGHT - 8)
     if (top < 8) top = 8
+  } else {
+    left = rightEdge + GAP
   }
 
   // Координаты точки в touchpad (UI отображение позиции).

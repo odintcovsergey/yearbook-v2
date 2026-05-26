@@ -66,7 +66,7 @@ type Props = {
   //   решает открывать ли editor (обычно — да, если canEdit).
   // - onTextSubmit/onTextCancel: вызываются из TextInlineEditor.
   editingTextLabel?: string | null
-  onTextClick?: (label: string, currentValue: string | null, clientX: number, clientY: number) => void
+  onTextClick?: (label: string, currentValue: string | null, rightEdge: number, topEdge: number, leftEdge: number) => void
   onTextSubmit?: (label: string, newValue: string | null) => void
   onTextCancel?: () => void
   // Л.2 — контекстное меню на photo placeholder (правый клик).
@@ -77,7 +77,7 @@ type Props = {
   // отменяет click при движении мыши, так что drag не триггерит этот
   // handler. Срабатывает только при url != null (нет смысла кадрировать
   // пустой слот).
-  onPhotoClick?: (label: string, url: string, clientX: number, clientY: number) => void
+  onPhotoClick?: (label: string, url: string, rightEdge: number, topEdge: number, leftEdge: number) => void
   // Прототип балансировки — переопределение координат и видимости placeholder'ов.
   // Если placeholder есть в этой map с hidden=true — не рендерится вообще.
   // Если есть с x_mm/y_mm — рендерится по новым координатам.
@@ -342,11 +342,17 @@ function TextDropZone({
   placeholder: TextPlaceholder
   scale: number
   hasValue: boolean
-  onClick: (clientX: number, clientY: number) => void
+  // РЭ.52.c: rightEdge/topEdge/leftEdge — границы placeholder'а
+  // (не точка клика). Используется в parent'е для позиционирования
+  // TextStylePanel ВПЛОТНУЮ к границе текста, не перекрывая его.
+  onClick: (rightEdge: number, topEdge: number, leftEdge: number) => void
 }) {
   return (
     <div
-      onClick={(e) => onClick(e.clientX, e.clientY)}
+      onClick={(e) => {
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        onClick(rect.right, rect.top, rect.left)
+      }}
       className={`absolute pointer-events-auto cursor-text transition-all ring-1 ring-transparent hover:ring-blue-300/60 hover:bg-blue-50/30 ${
         hasValue ? '' : 'bg-amber-50/40 ring-amber-200/60'
       }`}
@@ -547,7 +553,9 @@ function DropZone({
   // КЭ.5 — одинарный левый клик. Срабатывает только при url != null.
   // dnd-kit отменяет click при движении мыши с зажатой кнопкой, так что
   // drag не триггерит этот handler.
-  onClick?: (label: string, url: string, clientX: number, clientY: number) => void
+  // РЭ.52.c: передаются rect.right, rect.top, rect.left (вместо clientX/Y)
+  // чтобы parent мог позиционировать panel ВПЛОТНУЮ к границе фото.
+  onClick?: (label: string, url: string, rightEdge: number, topEdge: number, leftEdge: number) => void
   // КЭ.6 — true если у фото в этом слоте есть кастомный crop
   // (data[__scale__<label>] или data[__offset__<label>] не default).
   // Отображается маленький бейдж '⚙' в углу.
@@ -602,7 +610,14 @@ function DropZone({
         // если был drag, так что отдельный гард не нужен.
         if (!onClick || !url) return
         e.stopPropagation()
-        onClick(placeholder.label, url, e.clientX, e.clientY)
+        // РЭ.52.c: передаём правый верхний угол элемента (а не точку
+        // клика) — это позволяет PhotoTransformPanel позиционировать
+        // себя ВПЛОТНУЮ к ребру placeholder'а, не перекрывая фото.
+        // Если фото у правого края экрана — панель сама подсчитает
+        // что справа места нет и выскочит слева (см. smart-position
+        // в PhotoTransformPanel).
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+        onClick(placeholder.label, url, rect.right, rect.top, rect.left)
       }}
       className={`absolute pointer-events-auto transition-all ${
         isOver
@@ -826,7 +841,7 @@ export default function AlbumSpreadCanvas({
                   placeholder={p}
                   scale={scale}
                   hasValue={!!value}
-                  onClick={(cx, cy) => onTextClick?.(p.label, value, cx, cy)}
+                  onClick={(rx, ty, lx) => onTextClick?.(p.label, value, rx, ty, lx)}
                 />
               )
             }

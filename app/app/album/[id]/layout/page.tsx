@@ -282,26 +282,32 @@ function LayoutEditorPageInner({
   // КЭ.5 — panel кадрирования фото (scale + offset).
   // Открывается одинарным кликом на photo placeholder с фото.
   // spreadIndex нужен для адресации в /api/layout?action=update_data.
+  // РЭ.52.c: rightEdge / topEdge / leftEdge — границы placeholder'а
+  // в client координатах. PhotoTransformPanel сам решает: справа от
+  // rightEdge если место есть, иначе слева от leftEdge.
   const [photoTransformPanel, setPhotoTransformPanel] = useState<
     | null
     | {
         spreadIndex: number
         label: string
-        clientX: number
-        clientY: number
+        rightEdge: number
+        topEdge: number
+        leftEdge: number
       }
   >(null)
   // Р.3 — panel стилизации текста (размер + цвет).
   // Открывается одновременно с TextInlineEditor (handleTextClick).
   // Закрывается вместе с фиксацией текста (handleTextSubmit/Cancel)
   // либо явно кнопкой «Готово»/Esc — тогда textarea остаётся открытым.
+  // РЭ.52.c: rightEdge / topEdge / leftEdge — границы placeholder'а.
   const [textStylePanel, setTextStylePanel] = useState<
     | null
     | {
         spreadIndex: number
         label: string
-        clientX: number
-        clientY: number
+        rightEdge: number
+        topEdge: number
+        leftEdge: number
       }
   >(null)
   // Идёт ли сейчас загрузка нового оригинала через replace_original.
@@ -819,8 +825,9 @@ function LayoutEditorPageInner({
   function handleTextClick(
     label: string,
     _currentValue: string | null,
-    clientX: number,
-    clientY: number,
+    rightEdge: number,
+    topEdge: number,
+    leftEdge: number,
   ) {
     // Если уже что-то редактируется — сначала закрываем (с сохранением
     // через onBlur эффект textarea), потом открываем новое.
@@ -828,12 +835,14 @@ function LayoutEditorPageInner({
     // старым label получает unmount → onBlur → handleTextSubmit → cleanup.
     setEditingTextLabel(label)
     // Р.3 — параллельно открываем TextStylePanel для размера и цвета.
-    // Координаты для позиционирования берём из клика.
+    // РЭ.52.c: координаты — границы placeholder'а (а не точка клика).
+    // Panel сам решит «справа или слева» так чтобы не перекрыть текст.
     setTextStylePanel({
       spreadIndex: currentIdx,
       label,
-      clientX,
-      clientY,
+      rightEdge,
+      topEdge,
+      leftEdge,
     })
   }
 
@@ -916,11 +925,13 @@ function LayoutEditorPageInner({
 
   // КЭ.5 — одинарный клик на фото открывает кадрирование (scale + offset).
   // Срабатывает только если есть фото (DropZone проверяет url != null).
+  // РЭ.52.c: координаты — границы placeholder'а (а не точка клика).
   function handlePhotoClick(
     label: string,
     _url: string,
-    clientX: number,
-    clientY: number,
+    rightEdge: number,
+    topEdge: number,
+    leftEdge: number,
   ) {
     // Если уже открыта panel для этого же label — не дёргаем (избегаем
     // случайного двойного клика). Иначе показываем для нового.
@@ -934,8 +945,9 @@ function LayoutEditorPageInner({
     setPhotoTransformPanel({
       spreadIndex: currentIdx,
       label,
-      clientX,
-      clientY,
+      rightEdge,
+      topEdge,
+      leftEdge,
     })
   }
 
@@ -2003,8 +2015,9 @@ function LayoutEditorPageInner({
             offsetX={ox}
             offsetY={oy}
             rotateDeg={rot}
-            clientX={photoTransformPanel.clientX}
-            clientY={photoTransformPanel.clientY}
+            rightEdge={photoTransformPanel.rightEdge}
+            topEdge={photoTransformPanel.topEdge}
+            leftEdge={photoTransformPanel.leftEdge}
             onChange={handleTransformChange}
             onClose={handleTransformPanelClose}
           />
@@ -2025,8 +2038,9 @@ function LayoutEditorPageInner({
             label={textStylePanel.label}
             fontSizeMult={mult}
             colorOverride={colorOv}
-            clientX={textStylePanel.clientX}
-            clientY={textStylePanel.clientY}
+            rightEdge={textStylePanel.rightEdge}
+            topEdge={textStylePanel.topEdge}
+            leftEdge={textStylePanel.leftEdge}
             onChange={handleTextStyleChange}
             onClose={handleTextStylePanelClose}
           />

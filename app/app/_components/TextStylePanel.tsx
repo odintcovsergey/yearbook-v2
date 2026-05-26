@@ -50,11 +50,13 @@ type Props = {
    */
   colorOverride: string | null
   /**
-   * Координаты для позиционирования popover'а. Передаются из page.tsx —
-   * обычно центр placeholder'а или клик-координаты.
+   * РЭ.52.c: границы placeholder'а в client координатах. Panel сам
+   * решает «справа от rightEdge» если место есть или «слева от leftEdge».
+   * topEdge — верх placeholder'а (для выравнивания шапки панели).
    */
-  clientX: number
-  clientY: number
+  rightEdge: number
+  topEdge: number
+  leftEdge: number
   /**
    * Применить локально (optimistic). null = удалить соответствующий ключ.
    * Parent делает setLayout с новыми значениями для realtime preview.
@@ -74,8 +76,9 @@ export default function TextStylePanel({
   label,
   fontSizeMult: initialMult,
   colorOverride: initialColor,
-  clientX,
-  clientY,
+  rightEdge,
+  topEdge,
+  leftEdge,
   onChange,
   onClose,
 }: Props) {
@@ -133,32 +136,34 @@ export default function TextStylePanel({
     emitChange(1, null)
   }
 
-  // РЭ.52.b: умное позиционирование рядом с кликом.
-  // Если клик в ЛЕВОЙ половине экрана → панель появляется СПРАВА от
-  // клика. Если клик в ПРАВОЙ половине → панель появляется СЛЕВА от
-  // клика. По вертикали — выравнивается чуть ниже клика с защитой
-  // от выхода за viewport.
-  // Это решает feedback Сергея: top-right требует «искать панель»,
-  // тогда как панель рядом с placeholder'ом — естественнее.
-  let left = clientX
-  let top = clientY
+  // РЭ.52.c: позиционирование ОТНОСИТЕЛЬНО ГРАНИЦ placeholder'а
+  // (а не точки клика). Пытаемся положить справа от элемента
+  // (left = rightEdge + GAP). Если справа места нет — слева от
+  // элемента (left = leftEdge - PANEL_WIDTH - GAP). По вертикали
+  // выравниваемся по topEdge.
+  // Это решает feedback Сергея: панель НЕ перекрывает редактируемый
+  // объект.
+  let left: number
+  let top = topEdge
+  const GAP = 16
   if (typeof window !== 'undefined') {
     const w = window.innerWidth
     const h = window.innerHeight
-    const GAP = 30 // отступ от точки клика
-    // Горизонталь: если клик в левой половине → панель справа, иначе слева.
-    if (clientX < w / 2) {
-      left = clientX + GAP
+    // Сначала пробуем справа от placeholder'а.
+    if (rightEdge + GAP + PANEL_WIDTH <= w - 8) {
+      left = rightEdge + GAP
     } else {
-      left = clientX - PANEL_WIDTH - GAP
+      // Справа не помещается → ставим слева от placeholder'а.
+      left = leftEdge - PANEL_WIDTH - GAP
+      // Если и слева не помещается (placeholder сам у левого края) —
+      // прижимаемся к левому краю экрана.
+      if (left < 8) left = 8
     }
-    // Вертикаль: чуть ниже клика, но не вылезая.
-    top = clientY - 20 // немного выше курсора чтобы шапка панели была видна
-    // Защита от выхода.
-    if (left + PANEL_WIDTH > w - 8) left = w - PANEL_WIDTH - 8
-    if (left < 8) left = 8
+    // Защита от выхода вниз.
     if (top + PANEL_HEIGHT > h - 8) top = Math.max(8, h - PANEL_HEIGHT - 8)
     if (top < 8) top = 8
+  } else {
+    left = rightEdge + GAP
   }
 
   const isDefault = !hasCustomTextStyle(mult, color)
