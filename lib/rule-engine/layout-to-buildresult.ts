@@ -203,6 +203,10 @@ function pageToLegacy(
     // сгруппировать страницы (закрыть предыдущий разворот висящим если
     // эта страница помечена как начало секции).
     ...(page.section_start ? { section_start: true } : {}),
+    // РЭ.43.B.2: пробрасываем тип секции — UI превью (LayoutPreviewStrip)
+    // использует это чтобы распознать soft_final и нарисовать форзац
+    // справа на последнем визуальном развороте при soft binding.
+    ...(page.section_type ? { section_type: page.section_type } : {}),
   };
 }
 

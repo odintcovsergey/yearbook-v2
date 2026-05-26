@@ -279,9 +279,13 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor }: Props) {
                       mode="preview"
                     />
                   ) : (
-                    <div
-                      style={{ width: halfWidth, height: TARGET_HEIGHT_PX }}
-                      className="bg-gray-50 border-r border-gray-100"
+                    <ForzacOrEmptySlot
+                      width={halfWidth}
+                      height={TARGET_HEIGHT_PX}
+                      side="left"
+                      // РЭ.43.B.2: левый форзац — для soft binding на первом
+                      // визуальном развороте (idx=0), когда left=null.
+                      isForzac={sheetType === 'soft' && idx === 0}
                     />
                   )}
                   {/* Правая страница */}
@@ -293,9 +297,18 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor }: Props) {
                       mode="preview"
                     />
                   ) : (
-                    <div
-                      style={{ width: halfWidth, height: TARGET_HEIGHT_PX }}
-                      className="bg-gray-50"
+                    <ForzacOrEmptySlot
+                      width={halfWidth}
+                      height={TARGET_HEIGHT_PX}
+                      side="right"
+                      // РЭ.43.B.2: правый форзац — для soft binding на ПОСЛЕДНЕМ
+                      // визуальном развороте, если левая страница это soft_final.
+                      isForzac={
+                        sheetType === 'soft' &&
+                        idx === visualSpreads.length - 1 &&
+                        (vs.left as unknown as { section_type?: string } | null)
+                          ?.section_type === 'soft_final'
+                      }
                     />
                   )}
                 </div>
@@ -307,6 +320,47 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor }: Props) {
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── ForzacOrEmptySlot ─────────────────────────────────────────────────────
+//
+// РЭ.43.B.2: рендер пустой страницы в превью. Для soft binding на
+// определённых позициях (первая страница слева, последняя справа когда
+// left=soft_final) рисует стилизованный «Форзац» с подписью — чтобы партнёр
+// сразу видел физику обложки мягкого переплёта в превью. В остальных
+// случаях — просто пустая серая область (legacy поведение).
+//
+// Стиль форзаца повторяет тот что показан в Layout редакторе (см.
+// EditorSpreadCanvas) — серая надпись «Форзац» по центру.
+function ForzacOrEmptySlot({
+  width,
+  height,
+  side,
+  isForzac,
+}: {
+  width: number
+  height: number
+  side: 'left' | 'right'
+  isForzac: boolean
+}) {
+  if (!isForzac) {
+    return (
+      <div
+        style={{ width, height }}
+        className={`bg-gray-50 ${side === 'left' ? 'border-r border-gray-100' : ''}`}
+      />
+    )
+  }
+  return (
+    <div
+      style={{ width, height }}
+      className={`bg-gray-50 ${side === 'left' ? 'border-r border-gray-100' : ''} flex items-center justify-center`}
+    >
+      <span className="text-[10px] text-gray-400 italic select-none">
+        Форзац
+      </span>
     </div>
   )
 }

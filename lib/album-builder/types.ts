@@ -382,6 +382,15 @@ export type SpreadInstance = {
    * Если флага нет — поведение как раньше (попарная группировка).
    */
   section_start?: boolean;
+  /**
+   * РЭ.43.B.2: тип секции из которой пришла страница. Используется
+   * UI-превью (LayoutPreviewStrip) для распознавания soft_final и
+   * рендера форзаца справа на последнем развороте soft binding.
+   *
+   * Не используется engine'ом — это чисто транспорт информации до UI.
+   * Заполняется adapter'ом из PageInstance.section_type (РЭ.43).
+   */
+  section_type?: string;
 };
 
 /**
