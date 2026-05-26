@@ -151,3 +151,17 @@ export function hasCustomTextStyle(
 function clamp(v: number, min: number, max: number): number {
   return Math.min(Math.max(v, min), max);
 }
+
+// РЭ.53 — глобальные стили (на уровне альбома).
+export {
+  TEXT_STYLE_GROUPS,
+  detectTextStyleGroup,
+  parseAlbumTextStyleOverrides,
+  resolveFontSizeMult,
+  resolveColor,
+} from './groups';
+export type {
+  TextStyleGroup,
+  TextStyleGroupOverride,
+  AlbumTextStyleOverrides,
+} from './groups';

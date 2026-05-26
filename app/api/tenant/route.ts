@@ -4576,6 +4576,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // РЭ.53: валидация text_style_overrides (JSONB | null).
+    // Доверяем parseAlbumTextStyleOverrides из lib/text-style/groups —
+    // он сам отбросит невалидные поля. Здесь только базовая проверка
+    // что значение — объект или null. Парсинг будет на чтении.
+    if (body.text_style_overrides !== undefined) {
+      const v = body.text_style_overrides
+      if (v !== null && (typeof v !== 'object' || Array.isArray(v))) {
+        return NextResponse.json(
+          { error: 'text_style_overrides должен быть object или null' },
+          { status: 400 },
+        )
+      }
+    }
+
     // Список разрешённых полей
     const allowedFields = [
       'title', 'city', 'year', 'deadline',
@@ -4600,6 +4614,9 @@ export async function POST(req: NextRequest) {
       'symmetrize_students_tail_override',  // РЭ.46: true|false|null — override
                                               // симметризации хвоста students-секции
                                               // на уровне альбома (NULL = из пресета).
+      'text_style_overrides',  // РЭ.53: глобальные стили текстов
+                                // (имена/цитаты учеников, ФИО/должности учителей).
+                                // JSONB с группами или null.
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {

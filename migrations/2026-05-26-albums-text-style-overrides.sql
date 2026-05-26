@@ -1,0 +1,49 @@
+-- РЭ.53: глобальные стили текстов на уровне альбома.
+--
+-- Контекст:
+--   Партнёр в редакторе уже может изменить размер и цвет ОДНОГО текстового
+--   placeholder'а (через TextStylePanel, ключи __fontSize__<label> и
+--   __color__<label> в spread data). Но для 25 учеников приходится править
+--   25 имён и 25 цитат по одному — это unworkable.
+--
+--   Эта миграция добавляет глобальные override'ы на УРОВНЕ АЛЬБОМА.
+--   Партнёр задаёт стиль один раз для группы (имена учеников, цитаты,
+--   должности учителей, текст классного руководителя) — engine
+--   применяет ко всем placeholder'ам этой группы.
+--
+--   Точечные override'ы (через TextStylePanel) сохраняются и
+--   ПЕРЕОПРЕДЕЛЯЮТ глобальный.
+--
+-- Схема значения text_style_overrides (JSONB):
+--   {
+--     "studentname":     { "size_pct": 110, "color": "#000000" } | null,
+--     "studentquote":    { "size_pct": 90,  "color": "#666666" } | null,
+--     "teachername":     { "size_pct": 100, "color": null }       | null,
+--     "teacherrole":     { "size_pct": 80,  "color": "#888888" }  | null,
+--     "headteachername": { "size_pct": 110, "color": null }       | null,
+--     "headtextframe":   { "size_pct": 100, "color": null }       | null,
+--     "font_family":     null  -- reserved for future (РЭ.54+)
+--   }
+--
+--   • size_pct: целое 50..200 (мультипликатор размера). null = не трогать.
+--   • color: HEX строка "#RRGGBB" или null = не трогать (placeholder color).
+--   • Группа целиком может быть null = не трогать ничего в этой группе.
+--   • text_style_overrides сам по себе может быть NULL — это default для
+--     legacy альбомов где партнёр ничего не настраивал.
+--
+-- Группы покрывают labels:
+--   • studentname     → "studentname_1", "studentname_2", ...
+--   • studentquote    → "studentquote_1", "studentquote_2", ...
+--   • teachername     → "teachername_1..N" + "subjectname_1..N"
+--   • teacherrole     → "teacherrole_1..N" + "subjectrole_1..N" + "headteacherrole"
+--   • headteachername → "headteachername" (отдельная группа: обычно крупнее ФИО учителей)
+--   • headtextframe   → "headtextframe" (текст-обращение классного руководителя)
+--
+-- Engine группировка реализуется в новом хелпере lib/text-style/groups.ts.
+
+ALTER TABLE albums
+  ADD COLUMN IF NOT EXISTS text_style_overrides JSONB DEFAULT NULL;
+
+-- Проверка после применения:
+--   SELECT id, name, text_style_overrides FROM albums LIMIT 5;
+--   Все альбомы должны иметь text_style_overrides=NULL.
