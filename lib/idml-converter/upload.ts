@@ -243,6 +243,13 @@ export async function uploadTemplateSetToSupabase(
       page_type: mapping?.page_type ?? 'page-any',
       density: mapping?.density ?? null,
       params: mapping?.params ?? {},
+      // ─── РЭ.58: legacy-поля движков (page_role, slot_capacity, applies_to_configs) ──
+      // По ним ищут мастера движки students.ts / common.ts / teachers.ts через
+      // findStudentMaster / findStudentGridMaster / etc. Если null/[] — мастер не
+      // найдётся семантическим поиском, секции не соберутся (баг РЭ.58).
+      page_role: mapping?.page_role ?? null,
+      slot_capacity: mapping?.slot_capacity ?? null,
+      applies_to_configs: mapping?.applies_to_configs ?? [],
     };
   });
 
