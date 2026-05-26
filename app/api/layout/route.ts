@@ -821,10 +821,14 @@ async function tryBuildViaSectionStructure(
   // (бэк-совместимость для альбомов до миграции 27.7).
   // Engine использует два связанных поля — print_type (legacy) и
   // sheet_type (новый формат), оба обновляем синхронно.
+  //
+  // РЭ.46: override симметризации хвоста из альбома
+  // (albums.symmetrize_students_tail_override). NULL = используем
+  // значение пресета, true/false = принудительно переключаем.
   try {
     const { data: albumRow } = await supabase
       .from('albums')
-      .select('print_type')
+      .select('print_type, symmetrize_students_tail_override')
       .eq('id', albumId)
       .single()
     const albumPrintType = (albumRow?.print_type ?? null) as
@@ -841,6 +845,13 @@ async function tryBuildViaSectionStructure(
     ;(bundle.preset as { print_type: 'layflat' | 'soft' }).print_type = effective
     ;(bundle.preset as { sheet_type: 'hard' | 'soft' }).sheet_type =
       printTypeToSheetType(effective)
+
+    // РЭ.46: применяем override симметризации, если задан.
+    const symOverride = albumRow?.symmetrize_students_tail_override
+    if (symOverride === true || symOverride === false) {
+      ;(bundle.preset as { symmetrize_students_tail: boolean }).symmetrize_students_tail =
+        symOverride
+    }
   } catch (e) {
     // Не падаем — если SELECT не удался, оставляем bundle как пришёл
     // (poka работает старое поведение, читаем из пресета).

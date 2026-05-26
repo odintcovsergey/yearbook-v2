@@ -72,6 +72,8 @@ type Album = {
                                                 // buildFromSectionStructure
   include_non_purchasers?: boolean  // РЭ.25: включать ли не-заказчиков в личный раздел
   student_distribution?: 'auto' | 'equalize' | 'greedy'  // РЭ.40: стратегия grid-распределения
+  symmetrize_students_tail_override?: boolean | null  // РЭ.46: override симметризации
+                                                       // хвоста students (NULL=из пресета).
   stats: { total: number; submitted: number; in_progress: number; purchased?: number }
   teacher_token: string | null
   teachers: { total: number; done: number } | null
@@ -1439,6 +1441,104 @@ function IncludeNonPurchasersControl({
   )
 }
 
+// РЭ.46 — Inline-контрол для albums.symmetrize_students_tail_override.
+// Tri-state: 'preset' (по шаблону, NULL в БД) / 'on' (true) / 'off' (false).
+// По паттерну PrintTypeOverrideControl — select с 3 опциями.
+//
+// Симметризация применима только для grid-режимов (Light grid 6, Mini grid 12).
+// UI показываем всегда — для остальных density-режимов engine просто
+// игнорирует значение (см. trySymmetrizeTail в transition.ts).
+function SymmetrizeTailControl({
+  album,
+  apiVA,
+  onNotify,
+  onError,
+}: {
+  album: Album
+  apiVA: (url: string, opts?: RequestInit) => Promise<Response>
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  type Value = 'preset' | 'on' | 'off'
+  // null/undefined → 'preset', true → 'on', false → 'off'.
+  const initialValue: Value =
+    album.symmetrize_students_tail_override === true
+      ? 'on'
+      : album.symmetrize_students_tail_override === false
+        ? 'off'
+        : 'preset'
+  const [value, setValue] = useState<Value>(initialValue)
+  const [saving, setSaving] = useState(false)
+
+  const handleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newValue = e.target.value as Value
+    const prevValue = value
+    setValue(newValue)
+    setSaving(true)
+    try {
+      // 'preset' → null в БД, 'on'/'off' → true/false.
+      const apiValue: boolean | null =
+        newValue === 'on' ? true : newValue === 'off' ? false : null
+      const r = await apiVA('/api/tenant', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'update_album',
+          album_id: album.id,
+          symmetrize_students_tail_override: apiValue,
+        }),
+      })
+      if (r.ok) {
+        const label =
+          newValue === 'preset'
+            ? 'из шаблона'
+            : newValue === 'on'
+              ? 'включена'
+              : 'выключена'
+        onNotify(`Симметризация хвоста: ${label}. Пересоберите альбом чтобы применить.`)
+      } else {
+        setValue(prevValue)
+        const d = await r.json().catch(() => ({}))
+        onError(d.error ?? 'Не удалось сохранить настройку')
+      }
+    } catch (err: unknown) {
+      setValue(prevValue)
+      onError(err instanceof Error ? err.message : 'Ошибка сети')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const hintText =
+    value === 'preset'
+      ? 'Берётся из настроек шаблона.'
+      : value === 'on'
+        ? 'Если в хвосте остаётся 1 ученик, движок возьмёт ещё одного с предыдущей страницы.'
+        : 'Хвост из 1 ученика остаётся как есть (один портрет на странице).'
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200">
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+          Симметризация хвоста
+        </label>
+        <select
+          value={value}
+          onChange={handleChange}
+          disabled={saving}
+          className="border rounded px-2 py-1 text-sm disabled:opacity-50"
+        >
+          <option value="preset">По шаблону</option>
+          <option value="on">Включена</option>
+          <option value="off">Выключена</option>
+        </select>
+        <span className="text-xs text-gray-500 flex-1 min-w-[200px]">
+          {hintText}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 
 // ============================================================
 // МОДАЛКА ДЕТАЛЕЙ АЛЬБОМА (с управлением учениками)
@@ -1933,6 +2033,16 @@ function AlbumDetailModal({
                     {/* РЭ.41.c — Включить в личный раздел всех учеников. */}
                     {canEdit && (album.config_preset_id || album.section_structure_preset_id) && (
                       <IncludeNonPurchasersControl
+                        album={album}
+                        apiVA={apiVA}
+                        onNotify={onNotify}
+                        onError={onError}
+                      />
+                    )}
+
+                    {/* РЭ.46 — Симметризация хвоста students-секции. */}
+                    {canEdit && (album.config_preset_id || album.section_structure_preset_id) && (
+                      <SymmetrizeTailControl
                         album={album}
                         apiVA={apiVA}
                         onNotify={onNotify}

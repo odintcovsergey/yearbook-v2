@@ -4556,6 +4556,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // РЭ.46: валидация symmetrize_students_tail_override (boolean | null).
+    if (body.symmetrize_students_tail_override !== undefined) {
+      const v = body.symmetrize_students_tail_override
+      if (v !== null && typeof v !== 'boolean') {
+        return NextResponse.json(
+          { error: 'symmetrize_students_tail_override должен быть boolean или null' },
+          { status: 400 },
+        )
+      }
+    }
+
     // Список разрешённых полей
     const allowedFields = [
       'title', 'city', 'year', 'deadline',
@@ -4577,6 +4588,9 @@ export async function POST(req: NextRequest) {
                                   // в персональные страницы. Default false (строгое).
       'student_distribution',  // РЭ.40: 'auto'|'equalize'|'greedy' — стратегия распределения
                                 // учеников по grid-страницам (только mini/light).
+      'symmetrize_students_tail_override',  // РЭ.46: true|false|null — override
+                                              // симметризации хвоста students-секции
+                                              // на уровне альбома (NULL = из пресета).
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {
