@@ -1248,11 +1248,13 @@ export async function GET(req: NextRequest) {
   // ----------------------------------------------------------
   if (action === 'templates_list_global') {
     const designId = req.nextUrl.searchParams.get('design_id')
+    // РЭ.50: фильтр template_set_id IS NOT NULL — см. templates_list_my ниже.
     let query = supabaseAdmin
       .from('presets')
       .select('*')
       .is('tenant_id', null)
       .eq('is_recommended', true)
+      .not('template_set_id', 'is', null)
     if (designId) {
       query = query.eq('template_set_id', designId)
     }
@@ -1322,10 +1324,17 @@ export async function GET(req: NextRequest) {
     }
 
     const designId = req.nextUrl.searchParams.get('design_id')
+    // РЭ.50: фильтр template_set_id IS NOT NULL — скрываем «мёртвые» пресеты
+    // (созданные на ранних этапах когда поле не было обязательным).
+    // Они не имеют дизайна, в редакторе показываются как «Доработай»,
+    // и при попытке использовать падают с ошибкой. SQL-cleanup ниже
+    // должен их удалить из БД, а этот фильтр — защита на случай
+    // если такие пресеты ещё появятся (например, через прямой INSERT).
     let query = supabaseAdmin
       .from('presets')
       .select('*')
       .eq('tenant_id', auth.tenantId)
+      .not('template_set_id', 'is', null)
     if (designId) {
       query = query.eq('template_set_id', designId)
     }
