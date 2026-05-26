@@ -24,6 +24,7 @@ import SaveIndicator from '../../../_components/SaveIndicator'
 import PhotoContextMenu from '../../../_components/PhotoContextMenu'
 import PhotoTransformPanel from '../../../_components/PhotoTransformPanel'
 import TextStylePanel from '../../../_components/TextStylePanel'
+import AlbumTextStylesModal from '../../../_components/AlbumTextStylesModal'
 import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform'
 import {
   parseFontSizeMult,
@@ -254,6 +255,8 @@ function LayoutEditorPageInner({
   // как fallback когда нет точечного __fontSize__/__color__ override'а.
   // null = нет глобальных стилей (legacy альбомы или партнёр не настраивал).
   const [textStyleOverrides, setTextStyleOverrides] = useState<AlbumTextStyleOverrides>({})
+  // РЭ.53.c: открыта ли модалка 'Стили текста альбома'.
+  const [textStylesModalOpen, setTextStylesModalOpen] = useState(false)
   const [currentIdx, setCurrentIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -917,6 +920,31 @@ function LayoutEditorPageInner({
 
   function handleTextStylePanelClose() {
     setTextStylePanel(null)
+  }
+
+  // РЭ.53.c — handler сохранения глобальных стилей текста.
+  // Модалка AlbumTextStylesModal делает onPreview оптимистически
+  // (parent state обновляется → canvas live-rendrer'ит). Затем onSave →
+  // POST update_album. При успехе модалка закрывается, при ошибке
+  // откатываем preview к initialOverrides и показываем сообщение.
+  async function handleSaveTextStyles(next: AlbumTextStyleOverrides) {
+    const va = viewAsTenantId ? `&view_as=${viewAsTenantId}` : ''
+    // Если next пустой объект — отправляем null (это семантика
+    // 'нет override'ов', хранится как NULL в БД).
+    const apiValue =
+      Object.keys(next).length === 0 ? null : next
+    const res = await api(`/api/tenant?${va.slice(1) || ''}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'update_album',
+        album_id: albumId,
+        text_style_overrides: apiValue,
+      }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.error ?? `update_album failed: ${res.status}`)
+    }
   }
 
   // При смене разворота — закрываем текущий редактор текста (если открыт).
@@ -1892,6 +1920,17 @@ function LayoutEditorPageInner({
                       : ''}
                   </button>
                 )}
+                {/* РЭ.53.c — глобальные стили текста альбома. */}
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => setTextStylesModalOpen(true)}
+                    className="px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+                    title="Размер и цвет имён, цитат, ФИО, должностей — для всего альбома сразу"
+                  >
+                    🎨 Стили текстов
+                  </button>
+                )}
               </div>
             </>
           ) : (
@@ -2066,6 +2105,16 @@ function LayoutEditorPageInner({
           />
         )
       })()}
+
+      {/* РЭ.53.c — модалка глобальных стилей текста. */}
+      {textStylesModalOpen && !isReadOnly && (
+        <AlbumTextStylesModal
+          initialOverrides={textStyleOverrides}
+          onPreview={(next) => setTextStyleOverrides(next)}
+          onSave={handleSaveTextStyles}
+          onClose={() => setTextStylesModalOpen(false)}
+        />
+      )}
 
       {/* Toast «заменяем оригинал» — поверх редактора, blocking */}
       {replacingOriginal && (
