@@ -10,6 +10,7 @@ import {
   TEXT_STYLE_PALETTE,
   FONT_SIZE_MULT_MIN,
   FONT_SIZE_MULT_MAX,
+  AVAILABLE_FONTS,
 } from '@/lib/text-style'
 
 // TextStylePanel — popover с инструментами стилизации текста (Р.3).
@@ -56,6 +57,18 @@ type Props = {
   hAlignOverride: 'left' | 'center' | 'right' | null
   vAlignOverride: 'top' | 'middle' | 'bottom' | null
   /**
+   * РЭ.55: точечный override шрифта — каноническое имя из AVAILABLE_FONTS
+   * или null если override отсутствует (используется placeholder.font_family
+   * из IDML).
+   */
+  fontFamilyOverride: string | null
+  /**
+   * РЭ.55: placeholder.font_family из IDML — показываем в селекте как
+   * disabled-опцию 'Из шаблона: <name>' если шрифт там не в curated
+   * списке. Иначе используем для подсветки активной строки.
+   */
+  templateFontFamily: string | null
+  /**
    * РЭ.52.c: границы placeholder'а в client координатах. Panel сам
    * решает «справа от rightEdge» если место есть или «слева от leftEdge».
    * topEdge — верх placeholder'а (для выравнивания шапки панели).
@@ -72,13 +85,14 @@ type Props = {
     color?: string | null
     halign?: string | null
     valign?: string | null
+    font?: string | null
   }) => void
   /** Закрытие panel (явное «Готово» или Esc). */
   onClose: () => void
 }
 
 const PANEL_WIDTH = 260
-const PANEL_HEIGHT = 320
+const PANEL_HEIGHT = 380
 
 export default function TextStylePanel({
   label,
@@ -86,6 +100,8 @@ export default function TextStylePanel({
   colorOverride: initialColor,
   hAlignOverride: initialHAlign,
   vAlignOverride: initialVAlign,
+  fontFamilyOverride: initialFontFamily,
+  templateFontFamily,
   rightEdge,
   topEdge,
   leftEdge,
@@ -99,6 +115,8 @@ export default function TextStylePanel({
   const [color, setColor] = useState<string | null>(initialColor)
   const [hAlign, setHAlign] = useState<'left' | 'center' | 'right' | null>(initialHAlign)
   const [vAlign, setVAlign] = useState<'top' | 'middle' | 'bottom' | null>(initialVAlign)
+  // РЭ.55: точечный override шрифта.
+  const [fontFamily, setFontFamily] = useState<string | null>(initialFontFamily)
 
   // Закрытие по Esc. Клик «вне» НЕ закрывает — иначе любое движение к
   // textarea (которая снаружи) дёргает onClose.
@@ -118,12 +136,14 @@ export default function TextStylePanel({
       newColor: string | null,
       newHAlign: 'left' | 'center' | 'right' | null,
       newVAlign: 'top' | 'middle' | 'bottom' | null,
+      newFontFamily: string | null,
     ) => {
       onChange({
         fontSize: newMult === 1 ? null : serializeFontSizeMult(newMult),
         color: newColor === null ? null : serializeColor(newColor),
         halign: newHAlign,
         valign: newVAlign,
+        font: newFontFamily,
       })
     },
     [onChange],
@@ -135,7 +155,7 @@ export default function TextStylePanel({
     const pct = Number(e.target.value)
     const v = parseFontSizeMult(pct / 100)
     setMult(v)
-    emitChange(v, color, hAlign, vAlign)
+    emitChange(v, color, hAlign, vAlign, fontFamily)
   }
 
   // ─── Color swatch click ─────────────────────────────────────────
@@ -145,7 +165,7 @@ export default function TextStylePanel({
     const isActive = color !== null && color.toUpperCase() === normalized
     const next = isActive ? null : normalized
     setColor(next)
-    emitChange(mult, next, hAlign, vAlign)
+    emitChange(mult, next, hAlign, vAlign, fontFamily)
   }
 
   // ─── РЭ.54: Align buttons ───────────────────────────────────────
@@ -153,13 +173,21 @@ export default function TextStylePanel({
     // Повторный клик на активном → сброс (null).
     const next = hAlign === value ? null : value
     setHAlign(next)
-    emitChange(mult, color, next, vAlign)
+    emitChange(mult, color, next, vAlign, fontFamily)
   }
 
   function handleVAlign(value: 'top' | 'middle' | 'bottom') {
     const next = vAlign === value ? null : value
     setVAlign(next)
-    emitChange(mult, color, hAlign, next)
+    emitChange(mult, color, hAlign, next, fontFamily)
+  }
+
+  // ─── РЭ.55: Font select ─────────────────────────────────────────
+  function handleFontSelect(value: string) {
+    // value = '' означает 'из шаблона' (сброс override).
+    const next = value === '' ? null : value
+    setFontFamily(next)
+    emitChange(mult, color, hAlign, vAlign, next)
   }
 
   // ─── Reset (по умолчанию) ─────────────────────────────────────
@@ -168,7 +196,8 @@ export default function TextStylePanel({
     setColor(null)
     setHAlign(null)
     setVAlign(null)
-    emitChange(1, null, null, null)
+    setFontFamily(null)
+    emitChange(1, null, null, null, null)
   }
 
   // РЭ.52.c: позиционирование ОТНОСИТЕЛЬНО ГРАНИЦ placeholder'а
@@ -202,7 +231,10 @@ export default function TextStylePanel({
   }
 
   const isDefault =
-    !hasCustomTextStyle(mult, color) && hAlign === null && vAlign === null
+    !hasCustomTextStyle(mult, color) &&
+    hAlign === null &&
+    vAlign === null &&
+    fontFamily === null
   // Активный цвет для подсветки — либо override, либо null (тогда
   // подсвечивается только если он есть в палитре, иначе — никакой).
   const activeHex = color && isColorInPalette(color) ? color.toUpperCase() : null
@@ -240,6 +272,43 @@ export default function TextStylePanel({
         >
           ×
         </button>
+      </div>
+
+      {/* РЭ.55: Селект шрифта */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-gray-600">Шрифт</span>
+          {fontFamily !== null && (
+            <button
+              type="button"
+              onClick={() => handleFontSelect('')}
+              className="text-[10px] text-gray-500 hover:text-gray-900"
+              title="Сбросить к шрифту из шаблона"
+            >
+              ↺
+            </button>
+          )}
+        </div>
+        <select
+          value={fontFamily ?? ''}
+          onChange={(e) => handleFontSelect(e.target.value)}
+          className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
+          style={{
+            // Применяем выбранный шрифт прямо в select-боксе для preview.
+            fontFamily: fontFamily ? `'${fontFamily}', serif` : 'inherit',
+          }}
+        >
+          <option value="">
+            {templateFontFamily
+              ? `Из шаблона (${templateFontFamily})`
+              : 'Из шаблона'}
+          </option>
+          {AVAILABLE_FONTS.map((f) => (
+            <option key={f.family} value={f.family} style={{ fontFamily: `'${f.family}', serif` }}>
+              {f.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Slider размера */}
@@ -359,7 +428,7 @@ export default function TextStylePanel({
               onClick={() => {
                 setHAlign(null)
                 setVAlign(null)
-                emitChange(mult, color, null, null)
+                emitChange(mult, color, null, null, fontFamily)
               }}
               className="text-[10px] text-gray-500 hover:text-gray-900 ml-auto"
               title="Сбросить выравнивание к шаблону"

@@ -32,6 +32,8 @@ import {
   parseVAlign,
   resolveHAlign,
   resolveVAlign,
+  parseFontFamily,
+  resolveFontFamily,
   type AlbumTextStyleOverrides,
 } from '@/lib/text-style'
 
@@ -300,6 +302,7 @@ function TextSlot({
   colorOverride = null,
   hAlignOverride = null,
   vAlignOverride = null,
+  fontFamilyOverride = null,
 }: {
   placeholder: TextPlaceholder
   value: string | null
@@ -311,6 +314,9 @@ function TextSlot({
   // или 'top' (вертикаль, текущий хардкод).
   hAlignOverride?: 'left' | 'center' | 'right' | null
   vAlignOverride?: 'top' | 'middle' | 'bottom' | null
+  // РЭ.55: семейство шрифта (из curated AVAILABLE_FONTS). null →
+  // fallback на placeholder.font_family из IDML.
+  fontFamilyOverride?: string | null
 }) {
   if (!value) return null
   // Маппинг IDML font_weight (regular | bold | medium | light) на CSS weight.
@@ -330,6 +336,8 @@ function TextSlot({
   // РЭ.54: align — override побеждает; иначе placeholder.align (для H) и 'top' (для V).
   const finalHAlign = hAlignOverride ?? placeholder.align
   const finalVAlign = vAlignOverride ?? 'top'
+  // РЭ.55: шрифт — override побеждает; иначе placeholder.font_family.
+  const finalFontFamily = fontFamilyOverride ?? placeholder.font_family
   // РЭ.55: rotation_deg из IDML (±90° или 0). Канва игнорировала это
   // поле — текст рисовался горизонтально несмотря на вертикальный фрейм
   // в макете. Логика поворота:
@@ -372,7 +380,7 @@ function TextSlot({
       rotation={rotationDeg}
       text={value}
       fontSize={placeholder.font_size_pt * PT_TO_MM * fontSizeMult}
-      fontFamily={`${placeholder.font_family}, serif`}
+      fontFamily={`${finalFontFamily}, serif`}
       fontStyle={fontStyle}
       fill={finalColor}
       align={finalHAlign}
@@ -452,6 +460,7 @@ function TextInlineEditor({
   colorOverride = null,
   hAlignOverride = null,
   vAlignOverride = null,
+  fontFamilyOverride = null,
   onSubmit,
   onCancel,
 }: {
@@ -464,6 +473,8 @@ function TextInlineEditor({
   /** РЭ.54: override выравнивания. null → placeholder.align / 'top'. */
   hAlignOverride?: 'left' | 'center' | 'right' | null
   vAlignOverride?: 'top' | 'middle' | 'bottom' | null
+  /** РЭ.55: override шрифта. null → placeholder.font_family из IDML. */
+  fontFamilyOverride?: string | null
   onSubmit: (newValue: string | null) => void
   onCancel: () => void
 }) {
@@ -495,6 +506,8 @@ function TextInlineEditor({
   // РЭ.54: финальные align значения. Точка → fallback на placeholder/'top'.
   const finalHAlign = hAlignOverride ?? placeholder.align
   const finalVAlign = vAlignOverride ?? 'top'
+  // РЭ.55: финальный шрифт. Override побеждает; иначе placeholder.font_family.
+  const finalFontFamily = fontFamilyOverride ?? placeholder.font_family
 
   function handleKeyDown(e: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Escape') {
@@ -591,7 +604,7 @@ function TextInlineEditor({
         style={{
           width: '100%',
           // height задаётся динамически через useEffect выше.
-          fontFamily: `${placeholder.font_family}, serif`,
+          fontFamily: `${finalFontFamily}, serif`,
           fontSize: `${fontSizePx}px`,
           fontWeight: fontStyle === 'bold' ? 700 : 400,
           color,
@@ -888,6 +901,8 @@ export default function AlbumSpreadCanvas({
               // РЭ.54: align overrides.
               const pointHAlign = parseHAlign(instance.data[`__halign__${p.label}`])
               const pointVAlign = parseVAlign(instance.data[`__valign__${p.label}`])
+              // РЭ.55: font override.
+              const pointFontFamily = parseFontFamily(instance.data[`__font__${p.label}`])
               const group = detectTextStyleGroup(p.label)
               const groupOv = group ? textStyleOverrides?.[group] : null
               // resolveFontSizeMult: point !== null → point; иначе group/100; иначе 1.
@@ -897,6 +912,7 @@ export default function AlbumSpreadCanvas({
               const colorOv = resolveColor(pointColor, groupOv ?? null)
               const hAlignOv = resolveHAlign(pointHAlign, groupOv ?? null)
               const vAlignOv = resolveVAlign(pointVAlign, groupOv ?? null)
+              const fontFamilyOv = resolveFontFamily(pointFontFamily, groupOv ?? null)
               return (
                 <TextSlot
                   key={key}
@@ -906,6 +922,7 @@ export default function AlbumSpreadCanvas({
                   colorOverride={colorOv}
                   hAlignOverride={hAlignOv}
                   vAlignOverride={vAlignOv}
+                  fontFamilyOverride={fontFamilyOv}
                 />
               )
             }
@@ -955,12 +972,15 @@ export default function AlbumSpreadCanvas({
                 // РЭ.54: align overrides.
                 const pointHAlign = parseHAlign(instance.data[`__halign__${p.label}`])
                 const pointVAlign = parseVAlign(instance.data[`__valign__${p.label}`])
+                // РЭ.55: font override.
+                const pointFontFamily = parseFontFamily(instance.data[`__font__${p.label}`])
                 const group = detectTextStyleGroup(p.label)
                 const groupOv = group ? textStyleOverrides?.[group] : null
                 const fsMult = resolveFontSizeMult(pointMult, groupOv ?? null)
                 const colorOv = resolveColor(pointColor, groupOv ?? null)
                 const hAlignOv = resolveHAlign(pointHAlign, groupOv ?? null)
                 const vAlignOv = resolveVAlign(pointVAlign, groupOv ?? null)
+                const fontFamilyOv = resolveFontFamily(pointFontFamily, groupOv ?? null)
                 return (
                   <TextInlineEditor
                     key={`text-edit-${p.label}`}
@@ -971,6 +991,7 @@ export default function AlbumSpreadCanvas({
                     colorOverride={colorOv}
                     hAlignOverride={hAlignOv}
                     vAlignOverride={vAlignOv}
+                    fontFamilyOverride={fontFamilyOv}
                     onSubmit={(newValue) => onTextSubmit?.(p.label, newValue)}
                     onCancel={() => onTextCancel?.()}
                   />

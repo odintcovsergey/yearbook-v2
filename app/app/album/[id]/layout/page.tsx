@@ -32,6 +32,7 @@ import {
   parseAlbumTextStyleOverrides,
   parseHAlign,
   parseVAlign,
+  parseFontFamily,
   type AlbumTextStyleOverrides,
 } from '@/lib/text-style'
 import { remapData } from '@/lib/template-replace'
@@ -916,6 +917,7 @@ function LayoutEditorPageInner({
     color?: string | null
     halign?: string | null
     valign?: string | null
+    font?: string | null
   }) {
     if (!textStylePanel) return
     const { label, spreadIndex } = textStylePanel
@@ -928,6 +930,7 @@ function LayoutEditorPageInner({
         const colorKey = `__color__${label}`
         const hAlignKey = `__halign__${label}`
         const vAlignKey = `__valign__${label}`
+        const fontKey = `__font__${label}`
         if (updates.fontSize !== undefined) {
           if (updates.fontSize === null) delete newData[fontSizeKey]
           else newData[fontSizeKey] = updates.fontSize
@@ -944,6 +947,11 @@ function LayoutEditorPageInner({
         if (updates.valign !== undefined) {
           if (updates.valign === null) delete newData[vAlignKey]
           else newData[vAlignKey] = updates.valign
+        }
+        // РЭ.55: font_family override.
+        if (updates.font !== undefined) {
+          if (updates.font === null) delete newData[fontKey]
+          else newData[fontKey] = updates.font
         }
         return { ...s, data: newData }
       })
@@ -2135,6 +2143,18 @@ function LayoutEditorPageInner({
         // РЭ.54: align overrides.
         const hAlignOv = parseHAlign(data[`__halign__${textStylePanel.label}`])
         const vAlignOv = parseVAlign(data[`__valign__${textStylePanel.label}`])
+        // РЭ.55: font override + templateFontFamily для подсказки.
+        const fontOv = parseFontFamily(data[`__font__${textStylePanel.label}`])
+        // Берём template placeholder.font_family — может быть НЕ из curated списка
+        // (например, дизайнерский шрифт). Показываем как 'Из шаблона (...)'.
+        const spreadTpl = spread
+          ? templates.find((t) => t.id === spread.template_id)
+          : null
+        const phForLabel = spreadTpl?.placeholders.find(
+          (p) => p.label === textStylePanel.label,
+        )
+        const templateFontFamily =
+          phForLabel && phForLabel.type === 'text' ? phForLabel.font_family : null
         return (
           <TextStylePanel
             label={textStylePanel.label}
@@ -2142,6 +2162,8 @@ function LayoutEditorPageInner({
             colorOverride={colorOv}
             hAlignOverride={hAlignOv}
             vAlignOverride={vAlignOv}
+            fontFamilyOverride={fontOv}
+            templateFontFamily={templateFontFamily}
             rightEdge={textStylePanel.rightEdge}
             topEdge={textStylePanel.topEdge}
             leftEdge={textStylePanel.leftEdge}

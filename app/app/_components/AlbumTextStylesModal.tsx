@@ -6,6 +6,7 @@ import {
   TEXT_STYLE_PALETTE,
   FONT_SIZE_MULT_MIN,
   FONT_SIZE_MULT_MAX,
+  AVAILABLE_FONTS,
   type TextStyleGroup,
   type TextStyleGroupOverride,
   type TextHAlign,
@@ -75,6 +76,7 @@ export default function AlbumTextStylesModal({
       color?: string | null
       halign?: TextHAlign | null
       valign?: TextVAlign | null
+      font_family?: string | null
     },
   ) {
     setDraft((prev) => {
@@ -83,20 +85,24 @@ export default function AlbumTextStylesModal({
         color: null,
         halign: null,
         valign: null,
+        font_family: null,
       }
       const next: TextStyleGroupOverride = {
         size_pct: 'size_pct' in patch ? patch.size_pct ?? null : cur.size_pct ?? null,
         color: 'color' in patch ? patch.color ?? null : cur.color ?? null,
         halign: 'halign' in patch ? patch.halign ?? null : cur.halign ?? null,
         valign: 'valign' in patch ? patch.valign ?? null : cur.valign ?? null,
+        font_family:
+          'font_family' in patch ? patch.font_family ?? null : cur.font_family ?? null,
       }
-      // Если все 4 поля null → удаляем группу.
+      // Если все 5 полей null → удаляем группу.
       const newDraft = { ...prev }
       if (
         next.size_pct === null &&
         next.color === null &&
         next.halign === null &&
-        next.valign === null
+        next.valign === null &&
+        next.font_family === null
       ) {
         delete newDraft[group]
       } else {
@@ -201,6 +207,42 @@ export default function AlbumTextStylesModal({
                   <p className="text-[10px] text-gray-400 font-mono mb-2 truncate" title={GROUP_HINTS[group]}>
                     {GROUP_HINTS[group]}
                   </p>
+
+                  {/* РЭ.55: Селект шрифта */}
+                  <div className="mb-2">
+                    <div className="text-[11px] text-gray-600 mb-0.5">
+                      Шрифт{' '}
+                      {!ov?.font_family && (
+                        <span className="text-gray-400">(из шаблона)</span>
+                      )}
+                    </div>
+                    <select
+                      value={ov?.font_family ?? ''}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        updateGroup(group, {
+                          font_family: v === '' ? null : v,
+                        })
+                      }}
+                      className="w-full px-2 py-1 text-[11px] border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-200"
+                      style={{
+                        fontFamily: ov?.font_family
+                          ? `'${ov.font_family}', serif`
+                          : 'inherit',
+                      }}
+                    >
+                      <option value="">Из шаблона</option>
+                      {AVAILABLE_FONTS.map((f) => (
+                        <option
+                          key={f.family}
+                          value={f.family}
+                          style={{ fontFamily: `'${f.family}', serif` }}
+                        >
+                          {f.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
                   {/* Slider размера */}
                   <div className="mb-2">
