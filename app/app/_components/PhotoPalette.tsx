@@ -27,6 +27,7 @@ type AlbumPhoto = {
     | 'common_half'
     | 'common_quarter'
     | 'common_sixth'
+    | 'common_collage'
     | null
   source: 'selections' | 'originals'
   child_ids: string[]
@@ -157,6 +158,7 @@ type PaletteTab =
   | 'common_half'
   | 'common_quarter'
   | 'common_sixth'
+  | 'common_collage'
   | 'originals'
 
 // Лейблы повторяют названия из /app/album/[id]/photos
@@ -172,6 +174,7 @@ const TAB_LABELS: Record<PaletteTab, string> = {
   common_half: 'Полкласса',
   common_quarter: '1/4',
   common_sixth: '1/6',
+  common_collage: 'Коллаж',
   originals: 'Оригиналы',
 }
 
@@ -237,6 +240,9 @@ export default function PhotoPalette({ spreads, photos }: Props) {
   const commonSixth = filtered
     .filter((p) => p.source === 'selections' && p.type === 'common_sixth')
     .sort(byFilename)
+  const commonCollage = filtered
+    .filter((p) => p.source === 'selections' && p.type === 'common_collage')
+    .sort(byFilename)
   const originals = filtered
     .filter((p) => p.source === 'originals')
     .sort(byFilename)
@@ -254,6 +260,7 @@ export default function PhotoPalette({ spreads, photos }: Props) {
     const ch = byType('common_half')
     const cq = byType('common_quarter')
     const cx = byType('common_sixth')
+    const cc = byType('common_collage')
     const o = photos.filter((x) => x.source === 'originals').length
     return {
       portrait: p,
@@ -264,8 +271,9 @@ export default function PhotoPalette({ spreads, photos }: Props) {
       common_half: ch,
       common_quarter: cq,
       common_sixth: cx,
+      common_collage: cc,
       originals: o,
-      all: p + g + t + cs + cf + ch + cq + cx + o,
+      all: p + g + t + cs + cf + ch + cq + cx + cc + o,
     }
   }, [photos])
 
@@ -282,6 +290,7 @@ export default function PhotoPalette({ spreads, photos }: Props) {
     'common_half',
     'common_quarter',
     'common_sixth',
+    'common_collage',
     'originals',
   ] as const) {
     if (counts[tab] > 0) visibleTabs.push(tab)
@@ -356,6 +365,7 @@ export default function PhotoPalette({ spreads, photos }: Props) {
                 case 'common_half': return commonHalf
                 case 'common_quarter': return commonQuarter
                 case 'common_sixth': return commonSixth
+                case 'common_collage': return commonCollage
                 case 'originals': return originals
                 default: return []
               }

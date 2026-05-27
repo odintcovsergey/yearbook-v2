@@ -1635,7 +1635,7 @@ export async function GET(req: NextRequest) {
       filename: p.filename,
       storage_path: p.storage_path,
       thumb_path: p.thumb_path,
-      type: p.type as 'portrait' | 'group' | 'teacher' | 'common_spread' | 'common_full' | 'common_half' | 'common_quarter' | 'common_sixth',
+      type: p.type as 'portrait' | 'group' | 'teacher' | 'common_spread' | 'common_full' | 'common_half' | 'common_quarter' | 'common_sixth' | 'common_collage',
       source: 'selections' as const,
       child_ids: childIdsByPhoto[p.id] ?? [],
       teacher_ids: teacherIdsByPhoto[p.id] ?? [],
@@ -2321,7 +2321,7 @@ export async function POST(req: NextRequest) {
 
     if (!['portrait', 'group', 'teacher',
           'common_spread', 'common_full', 'common_half',
-          'common_quarter', 'common_sixth'].includes(type)) {
+          'common_quarter', 'common_sixth', 'common_collage'].includes(type)) {
       return NextResponse.json({ error: 'Неверный type' }, { status: 400 })
     }
 
@@ -5336,7 +5336,7 @@ export async function POST(req: NextRequest) {
 
     if (!['portrait', 'group', 'teacher',
           'common_spread', 'common_full', 'common_half',
-          'common_quarter', 'common_sixth'].includes(type)) {
+          'common_quarter', 'common_sixth', 'common_collage'].includes(type)) {
       return NextResponse.json({ error: 'Неверный type' }, { status: 400 })
     }
 
@@ -5461,6 +5461,7 @@ export async function POST(req: NextRequest) {
     const allowedTypes = [
       'portrait', 'group', 'teacher',
       'common_spread', 'common_full', 'common_half', 'common_quarter', 'common_sixth',
+      'common_collage',
     ]
     if (!allowedTypes.includes(photo_type)) {
       return NextResponse.json({ error: 'неизвестный photo_type' }, { status: 400 })

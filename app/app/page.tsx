@@ -5027,6 +5027,9 @@ type PhotoKind =
   | 'common_half'
   | 'common_quarter'
   | 'common_sixth'
+  // РЭ.59: коллаж — отдельная категория для коллажных вариаций
+  // (3-8 фото на странице). Мастера для отображения добавятся позже.
+  | 'common_collage'
 
 // Порядок отображения в UI (загрузка + табы галереи). Сначала
 // личные категории, затем общий раздел. Между группами в UI
@@ -5038,6 +5041,7 @@ const PHOTO_KINDS_COMMON: PhotoKind[] = [
   'common_half',
   'common_quarter',
   'common_sixth',
+  'common_collage',
 ]
 const PHOTO_KINDS_ALL: PhotoKind[] = [...PHOTO_KINDS_PERSONAL, ...PHOTO_KINDS_COMMON]
 
@@ -5053,6 +5057,7 @@ function photoKindLabel(k: PhotoKind): string {
     case 'common_half': return 'Фото по полкласса'
     case 'common_quarter': return 'Фото 1/4 класса'
     case 'common_sixth': return 'Фото 1/6 класса'
+    case 'common_collage': return 'Коллаж'
   }
 }
 
@@ -5332,6 +5337,7 @@ function PhotosTab({
     common_half:    { files: [], uploading: false, done: 0, errors: [] },
     common_quarter: { files: [], uploading: false, done: 0, errors: [] },
     common_sixth:   { files: [], uploading: false, done: 0, errors: [] },
+    common_collage: { files: [], uploading: false, done: 0, errors: [] },
   })
 
   const setUploadState = (
@@ -9112,6 +9118,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                       cat === 'common_half' ? 'Общий: полкласса' :
                       cat === 'common_quarter' ? 'Общий: 1/4 класса' :
                       cat === 'common_sixth' ? 'Общий: 1/6 класса' :
+                      cat === 'common_collage' ? 'Общий: коллаж' :
                       cat
                     return (
                       <label

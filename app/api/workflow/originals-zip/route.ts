@@ -25,6 +25,7 @@ const ALL_CATEGORIES = [
   'common_half',
   'common_quarter',
   'common_sixth',
+  'common_collage',
 ] as const
 type Category = (typeof ALL_CATEGORIES)[number]
 const ALL_CATEGORIES_SET = new Set<string>(ALL_CATEGORIES)

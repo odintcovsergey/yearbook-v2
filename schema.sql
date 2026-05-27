@@ -55,7 +55,7 @@ create table photos (
   filename      text not null,
   storage_path  text not null,
   original_path text,  -- Б.1.0: оригинал для печати (yc:.../originals/...), nullable для старых
-  type          text not null check (type in ('portrait','group','teacher','common_spread','common_full','common_half','common_quarter','common_sixth')),
+  type          text not null check (type in ('portrait','group','teacher','common_spread','common_full','common_half','common_quarter','common_sixth','common_collage')),
   created_at    timestamptz default now()
 );
 

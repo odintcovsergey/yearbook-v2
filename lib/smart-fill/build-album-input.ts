@@ -178,6 +178,7 @@ export async function buildAlbumInput(
         'common_half',
         'common_quarter',
         'common_sixth',
+        'common_collage',
       ])
       .order('created_at', { ascending: true }),
   ]);

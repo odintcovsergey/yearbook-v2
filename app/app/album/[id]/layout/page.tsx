@@ -73,6 +73,7 @@ type AlbumPhoto = {
     | 'common_half'
     | 'common_quarter'
     | 'common_sixth'
+    | 'common_collage'
     | null
   source: 'selections' | 'originals'
   child_ids: string[]

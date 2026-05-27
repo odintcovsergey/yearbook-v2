@@ -15,6 +15,7 @@ const ALLOWED_TYPES = [
   'common_half',
   'common_quarter',
   'common_sixth',
+  'common_collage',
 ]
 
 export async function POST(req: NextRequest) {
