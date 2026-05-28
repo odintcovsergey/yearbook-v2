@@ -16,6 +16,8 @@ const STEPS = [
   { id: 6, label: 'Готово' },
 ]
 
+const AI_CALLS_LIMIT = 10
+
 const ASSIST_FIELDS: Record<string, { key: string; label: string; placeholder: string }[]> = {
   grade4: [
     { key: 'hobby', label: 'Любимое хобби', placeholder: 'например, рисование или футбол' },
@@ -98,8 +100,10 @@ export default function ParentPage() {
   const [aiError, setAiError] = useState<string>('')
   const [aiAction, setAiAction] = useState<AssistAction | null>(null)
   const [aiTruncated, setAiTruncated] = useState(false)
+  const [aiCallsUsed, setAiCallsUsed] = useState(0)
   const [formMode, setFormMode] = useState<'free' | 'form'>('free')
   const [formFields, setFormFields] = useState<Record<string, string>>({})
+  const aiLimitReached = aiCallsUsed >= AI_CALLS_LIMIT
 
   const runAi = useCallback(async (action: AssistAction) => {
     const body: any = { token, action }
@@ -124,9 +128,11 @@ export default function ParentPage() {
       if (!res.ok) {
         setAiError(data?.error || 'Не удалось получить ответ от AI')
         setAiResult(null)
+        if (typeof data?.used === 'number') setAiCallsUsed(data.used)
       } else {
         setAiResult(data.result)
         setAiTruncated(!!data.truncated)
+        if (typeof data?.used === 'number') setAiCallsUsed(data.used)
       }
     } catch {
       setAiError('Не удалось связаться с AI-помощником')
@@ -187,6 +193,7 @@ export default function ParentPage() {
         setTextMaxChars(data.album?.text_max_chars ?? 500)
         setTextType(data.album?.text_type ?? 'free')
         setTextAssistEnabled(data.album?.text_assist_enabled === true)
+        setAiCallsUsed(Number(data.child?.text_assist_count) || 0)
         setPersonalSpreadEnabled(data.album?.personal_spread_enabled ?? false)
         setPersonalSpreadPrice(data.album?.personal_spread_price ?? 300)
         setPersonalSpreadMin(data.album?.personal_spread_min ?? 4)
@@ -705,23 +712,34 @@ export default function ParentPage() {
                   <span className={studentText.length > textMaxChars * 0.9 ? 'text-amber-500' : ''}>{studentText.length}</span> / {textMaxChars}
                 </div>
                 {textAssistEnabled && !aiLoading && !aiError && !aiResult && (
-                  <div className="mb-6 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={!studentText.trim()}
-                      onClick={() => runAi('fix')}
-                      className="text-sm px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      ✨ Исправить ошибки
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!studentText.trim()}
-                      onClick={() => runAi('improve')}
-                      className="text-sm px-4 py-2 rounded-xl border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      ✨ Улучшить текст
-                    </button>
+                  <div className="mb-6">
+                    {aiLimitReached ? (
+                      <p className="text-sm text-gray-500 px-4 py-3 bg-gray-50 rounded-xl border border-gray-100">
+                        Вы использовали все {AI_CALLS_LIMIT} попыток AI-помощника на этого ученика.
+                      </p>
+                    ) : (
+                      <>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={!studentText.trim()}
+                            onClick={() => runAi('fix')}
+                            className="text-sm px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            ✨ Исправить ошибки
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!studentText.trim()}
+                            onClick={() => runAi('improve')}
+                            className="text-sm px-4 py-2 rounded-xl border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            ✨ Улучшить текст
+                          </button>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-2">Осталось {AI_CALLS_LIMIT - aiCallsUsed} из {AI_CALLS_LIMIT} попыток AI</p>
+                      </>
+                    )}
                   </div>
                 )}
               </>
@@ -745,14 +763,23 @@ export default function ParentPage() {
                   ))}
                 </div>
                 {!aiLoading && !aiError && !aiResult && (
-                  <button
-                    type="button"
-                    onClick={() => runAi(textType === 'grade4' ? 'form_grade4' : textType === 'garden' ? 'form_garden' : 'form_grade11')}
-                    disabled={!Object.values(formFields).some(v => v.trim())}
-                    className="mt-4 text-sm px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    ✨ Составить текст
-                  </button>
+                  aiLimitReached ? (
+                    <p className="mt-4 text-sm text-gray-500 px-4 py-3 bg-gray-50 rounded-xl border border-gray-100">
+                      Вы использовали все {AI_CALLS_LIMIT} попыток AI-помощника на этого ученика.
+                    </p>
+                  ) : (
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={() => runAi(textType === 'grade4' ? 'form_grade4' : textType === 'garden' ? 'form_garden' : 'form_grade11')}
+                        disabled={!Object.values(formFields).some(v => v.trim())}
+                        className="text-sm px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        ✨ Составить текст
+                      </button>
+                      <p className="text-xs text-gray-400 mt-2">Осталось {AI_CALLS_LIMIT - aiCallsUsed} из {AI_CALLS_LIMIT} попыток AI</p>
+                    </div>
+                  )
                 )}
               </div>
             )}
@@ -787,8 +814,10 @@ export default function ParentPage() {
                     </button>
                     <button
                       type="button"
-                      className="text-sm px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                      className="text-sm px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      disabled={aiLimitReached}
                       onClick={() => { if (aiAction) runAi(aiAction) }}
+                      title={aiLimitReached ? `Лимит ${AI_CALLS_LIMIT} попыток исчерпан` : undefined}
                     >
                       Пересоздать
                     </button>

@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 const MODEL = 'claude-haiku-4-5'
+const AI_CALLS_LIMIT = 10
 
 type Action = 'fix' | 'improve' | 'form_grade4' | 'form_garden' | 'form_grade11'
 
@@ -222,11 +223,19 @@ export async function POST(req: NextRequest) {
 
   const { data: child, error: childErr } = await supabaseAdmin
     .from('children')
-    .select('id, album_id')
+    .select('id, album_id, text_assist_count')
     .eq('access_token', token)
     .single()
   if (childErr || !child) {
     return NextResponse.json({ error: 'Ссылка недействительна' }, { status: 404 })
+  }
+
+  const callsUsed = Number((child as any).text_assist_count) || 0
+  if (callsUsed >= AI_CALLS_LIMIT) {
+    return NextResponse.json(
+      { error: `Лимит исчерпан: вы уже использовали ${AI_CALLS_LIMIT} попыток AI-помощника`, used: callsUsed, limit: AI_CALLS_LIMIT },
+      { status: 429 },
+    )
   }
 
   const { data: album } = await supabaseAdmin
@@ -307,7 +316,13 @@ export async function POST(req: NextRequest) {
       truncated = true
     }
 
-    return NextResponse.json({ result, truncated })
+    const nextCount = callsUsed + 1
+    await supabaseAdmin
+      .from('children')
+      .update({ text_assist_count: nextCount })
+      .eq('id', (child as any).id)
+
+    return NextResponse.json({ result, truncated, used: nextCount, limit: AI_CALLS_LIMIT })
   } catch (e: any) {
     const msg = e?.message ?? 'Ошибка AI-помощника'
     console.error('[text-assist] anthropic error', msg)
