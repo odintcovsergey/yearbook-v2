@@ -74,7 +74,6 @@ export default function ParentPage() {
   const [aiError, setAiError] = useState<string>('')
   const [aiAction, setAiAction] = useState<'fix' | 'improve' | null>(null)
   const [aiTruncated, setAiTruncated] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const runAi = useCallback(async (action: 'fix' | 'improve') => {
     if (!studentText.trim()) return
@@ -622,7 +621,7 @@ export default function ParentPage() {
                 <p className="mt-3 text-blue-600 italic text-sm">Пример: «Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!»</p>
               </div>
             )}
-            <textarea ref={textareaRef} className="input resize-none h-32 mb-1"
+            <textarea className="input resize-none h-32 mb-1"
               placeholder={textType === 'garden' ? 'Я люблю играть в трассу с шариками и в машинки с друзьями. А ещё – гулять! Самый вкусный для меня суп – борщ. Когда вырасту – хочу стать футболистом.' : textType === 'grade4' ? 'Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!' : textType === 'grade11' ? '«Всё получится. По-другому не вариант.»' : '«Спасибо всем за эти годы!»'}
               maxLength={textMaxChars} value={studentText} onChange={e => setStudentText(e.target.value)} />
             <div className="text-right text-xs text-gray-400 mb-4">
@@ -677,17 +676,6 @@ export default function ParentPage() {
                         onClick={() => { if (aiResult) setStudentText(aiResult); closeAi() }}
                       >
                         Принять
-                      </button>
-                      <button
-                        type="button"
-                        className="text-sm px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                        onClick={() => {
-                          if (aiResult) setStudentText(aiResult)
-                          closeAi()
-                          setTimeout(() => textareaRef.current?.focus(), 0)
-                        }}
-                      >
-                        Доработать
                       </button>
                       <button
                         type="button"
