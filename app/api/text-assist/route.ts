@@ -268,6 +268,7 @@ export async function POST(req: NextRequest) {
   const maxChars = Number((album as any).text_max_chars) || 500
 
   let prompt: string
+  let originalForFix = ''
   if (action === 'fix' || action === 'improve') {
     const text = typeof body?.text === 'string' ? body.text.trim() : ''
     if (!text) return NextResponse.json({ error: 'Текст пустой' }, { status: 400 })
@@ -275,6 +276,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Текст слишком длинный' }, { status: 400 })
     }
     prompt = action === 'fix' ? buildPromptFix(text, maxChars) : buildPromptImprove(text, maxChars)
+    if (action === 'fix') originalForFix = text
   } else {
     const fields = sanitizeFields(body?.fields)
     if (Object.keys(fields).length === 0) {
@@ -322,7 +324,10 @@ export async function POST(req: NextRequest) {
       .update({ text_assist_count: nextCount })
       .eq('id', (child as any).id)
 
-    return NextResponse.json({ result, truncated, used: nextCount, limit: AI_CALLS_LIMIT })
+    const normalize = (s: string) => s.replace(/\s+/g, ' ').trim()
+    const noChanges = action === 'fix' && originalForFix !== '' && normalize(result) === normalize(originalForFix)
+
+    return NextResponse.json({ result, truncated, used: nextCount, limit: AI_CALLS_LIMIT, noChanges })
   } catch (e: any) {
     const msg = e?.message ?? 'Ошибка AI-помощника'
     console.error('[text-assist] anthropic error', msg)

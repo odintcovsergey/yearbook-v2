@@ -100,6 +100,7 @@ export default function ParentPage() {
   const [aiError, setAiError] = useState<string>('')
   const [aiAction, setAiAction] = useState<AssistAction | null>(null)
   const [aiTruncated, setAiTruncated] = useState(false)
+  const [aiNoChanges, setAiNoChanges] = useState(false)
   const [aiCallsUsed, setAiCallsUsed] = useState(0)
   const [formMode, setFormMode] = useState<'free' | 'form'>('free')
   const [formFields, setFormFields] = useState<Record<string, string>>({})
@@ -116,6 +117,7 @@ export default function ParentPage() {
     }
     setAiError('')
     setAiTruncated(false)
+    setAiNoChanges(false)
     setAiAction(action)
     setAiLoading(true)
     try {
@@ -132,6 +134,7 @@ export default function ParentPage() {
       } else {
         setAiResult(data.result)
         setAiTruncated(!!data.truncated)
+        setAiNoChanges(!!data.noChanges)
         if (typeof data?.used === 'number') setAiCallsUsed(data.used)
       }
     } catch {
@@ -146,6 +149,7 @@ export default function ParentPage() {
     setAiResult(null)
     setAiAction(null)
     setAiTruncated(false)
+    setAiNoChanges(false)
     setAiError('')
   }, [])
 
@@ -155,6 +159,7 @@ export default function ParentPage() {
     setAiResult(null)
     setAiAction(null)
     setAiTruncated(false)
+    setAiNoChanges(false)
     setAiError('')
     if (wasForm) setFormMode('free')
   }, [aiResult, aiAction])
@@ -794,7 +799,19 @@ export default function ParentPage() {
                 <button type="button" className="text-red-600 underline" onClick={closeAi}>Закрыть</button>
               </div>
             )}
-            {aiResult && !aiLoading && (() => {
+            {aiResult && !aiLoading && aiNoChanges && (
+              <div className="mb-6 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
+                <p className="text-sm text-green-800 mb-3">✓ Ошибок не найдено — текст уже грамотный.</p>
+                <button
+                  type="button"
+                  className="text-sm px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700"
+                  onClick={closeAi}
+                >
+                  Закрыть
+                </button>
+              </div>
+            )}
+            {aiResult && !aiLoading && !aiNoChanges && (() => {
               const isFix = aiAction === 'fix'
               const title = aiAction === 'fix' ? 'Исправленный вариант:' : aiAction === 'improve' ? 'Улучшенный вариант:' : 'Вариант от AI:'
               return (
