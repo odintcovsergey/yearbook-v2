@@ -14,6 +14,7 @@ export type TemplateSet = {
   page_binding: 'LeftToRight' | 'RightToLeft'
   description: string | null
   cover_preview_url: string | null
+  default_background_url: string | null
   created_at: string
   updated_at: string
   spread_count: number

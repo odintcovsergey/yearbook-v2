@@ -41,7 +41,8 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const TEMPLATE_SET_FIELDS =
   'id, name, slug, print_type, is_global, tenant_id, ' +
   'page_width_mm, page_height_mm, spread_width_mm, spread_height_mm, bleed_mm, ' +
-  'facing_pages, page_binding, description, cover_preview_url, created_at, updated_at'
+  'facing_pages, page_binding, description, cover_preview_url, ' +
+  'default_background_url, created_at, updated_at'
 
 const SPREAD_TEMPLATE_FIELDS =
   'id, name, type, is_spread, width_mm, height_mm, ' +
