@@ -643,7 +643,7 @@ export default function ParentPage() {
               : textType === 'grade4'
                 ? (textAssistEnabled ? 'Напишите текст сами или заполните анкету — AI составит текст из ответов' : 'Ответьте на вопросы — получится небольшой текст для альбома')
                 : textType === 'grade11'
-                  ? (textAssistEnabled ? 'Напишите цитату сами или заполните анкету — AI составит текст. Готовая цитата из списка ниже тоже подойдёт' : 'Напишите цитату или выберите готовую из списка ниже')
+                  ? (textAssistEnabled ? 'Напишите цитату сами или заполните анкету — AI составит текст' : 'Напишите цитату или выберите готовую из списка ниже')
                 : 'Цитата, пожелание или любимая фраза'
           }>
             {textAssistEnabled && (textType === 'grade4' || textType === 'garden' || textType === 'grade11') && (
@@ -813,7 +813,7 @@ export default function ParentPage() {
                 Далее →
               </button>
             </div>
-            {textType === 'grade11' && quotes.length > 0 && (
+            {textType === 'grade11' && formMode === 'free' && quotes.length > 0 && (
               <div className="border-t border-gray-100 pt-5">
                 <p className="text-sm font-medium text-gray-700 mb-3">Или выберите готовую цитату:</p>
                 <div className="space-y-2">
