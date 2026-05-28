@@ -7,15 +7,38 @@ export const revalidate = 0
 
 const MODEL = 'claude-haiku-4-5'
 
-type Action = 'fix' | 'improve'
+type Action = 'fix' | 'improve' | 'form_grade4' | 'form_garden'
 
-const ACTIONS: ReadonlySet<Action> = new Set<Action>(['fix', 'improve'])
+const ACTIONS: ReadonlySet<Action> = new Set<Action>(['fix', 'improve', 'form_grade4', 'form_garden'])
 
 const SHORT_THRESHOLD = 150
 
-function buildPrompt(action: Action, text: string, maxChars: number): string {
-  if (action === 'fix') {
-    return `Ты помогаешь школьнику оформить текст для выпускного альбома.
+const GRADE4_FIELD_LABELS: Record<string, string> = {
+  hobby: 'Любимое хобби',
+  profession: 'Кем хочет стать',
+  dream: 'О чём мечтает',
+  superpower: 'Суперспособность',
+  wish: 'Пожелание классу/школе',
+}
+
+const GARDEN_FIELD_LABELS: Record<string, string> = {
+  game: 'Любимая игра',
+  food: 'Любимая еда',
+  profession: 'Кем хочет стать когда вырастет',
+  love: 'Что любит больше всего',
+}
+
+function formatFields(fields: Record<string, string>, labels: Record<string, string>): string {
+  const lines: string[] = []
+  for (const key of Object.keys(labels)) {
+    const value = (fields[key] ?? '').trim()
+    if (value) lines.push(`- ${labels[key]}: ${value}`)
+  }
+  return lines.join('\n')
+}
+
+function buildPromptFix(text: string, maxChars: number): string {
+  return `Ты помогаешь школьнику оформить текст для выпускного альбома.
 
 Исходный текст:
 "${text}"
@@ -25,10 +48,11 @@ function buildPrompt(action: Action, text: string, maxChars: number): string {
 Лимит: ${maxChars} символов. Если исходный текст укладывается — сохрани его длину. Не превышай лимит.
 
 Верни ТОЛЬКО исправленный текст, без кавычек, без пояснений.`
-  }
-  if (action === 'improve') {
-    if (maxChars <= SHORT_THRESHOLD) {
-      return `Ты помогаешь школьнику оформить короткую подпись для выпускного альбома.
+}
+
+function buildPromptImprove(text: string, maxChars: number): string {
+  if (maxChars <= SHORT_THRESHOLD) {
+    return `Ты помогаешь школьнику оформить короткую подпись для выпускного альбома.
 
 Исходный текст:
 "${text}"
@@ -38,8 +62,8 @@ function buildPrompt(action: Action, text: string, maxChars: number): string {
 Лимит: СТРОГО не более ${maxChars} символов.
 
 Верни ТОЛЬКО результат, без кавычек, без пояснений.`
-    }
-    return `Ты помогаешь школьнику красиво оформить текст для выпускного альбома.
+  }
+  return `Ты помогаешь школьнику красиво оформить текст для выпускного альбома.
 
 Исходный текст:
 "${text}"
@@ -51,8 +75,34 @@ function buildPrompt(action: Action, text: string, maxChars: number): string {
 Тон: искренний, живой, подходящий для выпускного альбома. Избегай канцелярита и пафоса.
 
 Верни ТОЛЬКО улучшенный текст, без кавычек, без пояснений.`
-  }
-  throw new Error(`unknown action: ${action}`)
+}
+
+function buildPromptFormGrade4(fields: Record<string, string>, maxChars: number): string {
+  const formatted = formatFields(fields, GRADE4_FIELD_LABELS)
+  return `Ты помогаешь ученику 4 класса составить текст о себе для выпускного альбома начальной школы. Текст от первого лица, тёплый и детский, но грамотный.
+
+Ученик рассказал о себе:
+${formatted}
+
+Задача: составь связный живой рассказ от первого лица на основе этих ответов. Будь искренним и непосредственным, как ребёнок. Сделай текст УНИКАЛЬНЫМ и индивидуальным — не используй шаблонные обороты вроде "меня зовут" или "я учусь в школе".
+
+Лимит: СТРОГО не более ${maxChars} символов.
+
+Верни ТОЛЬКО текст, без кавычек, без пояснений.`
+}
+
+function buildPromptFormGarden(fields: Record<string, string>, maxChars: number): string {
+  const formatted = formatFields(fields, GARDEN_FIELD_LABELS)
+  return `Ты помогаешь составить текст о ребёнке-дошкольнике для выпускного альбома детского сада. Текст от первого лица ребёнка, очень простой, тёплый и милый.
+
+Ребёнок рассказал:
+${formatted}
+
+Задача: составь короткий милый рассказ от первого лица малыша. Простые слова, детская непосредственность, тепло. Сделай УНИКАЛЬНЫМ, избегай шаблонов.
+
+Лимит: СТРОГО не более ${maxChars} символов.
+
+Верни ТОЛЬКО текст, без кавычек, без пояснений.`
 }
 
 function buildShrinkPrompt(previous: string, maxChars: number): string {
@@ -84,6 +134,18 @@ function hardTruncate(text: string, maxChars: number): string {
   return lastDot > maxChars * 0.5 ? cut.slice(0, lastDot + 1) : cut
 }
 
+function sanitizeFields(input: any): Record<string, string> {
+  if (!input || typeof input !== 'object') return {}
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(input)) {
+    if (typeof v === 'string') {
+      const trimmed = v.trim()
+      if (trimmed) out[k] = trimmed.slice(0, 300)
+    }
+  }
+  return out
+}
+
 export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
@@ -102,11 +164,9 @@ export async function POST(req: NextRequest) {
 
   const token = typeof body?.token === 'string' ? body.token.trim() : ''
   const action = body?.action as Action
-  const text = typeof body?.text === 'string' ? body.text.trim() : ''
 
   if (!token) return NextResponse.json({ error: 'Токен не указан' }, { status: 400 })
   if (!ACTIONS.has(action)) return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })
-  if (!text) return NextResponse.json({ error: 'Текст пустой' }, { status: 400 })
 
   const { data: child, error: childErr } = await supabaseAdmin
     .from('children')
@@ -129,25 +189,43 @@ export async function POST(req: NextRequest) {
   if (!(album as any).text_assist_enabled) {
     return NextResponse.json({ error: 'AI-помощник для этого альбома не включён' }, { status: 403 })
   }
-  const textType = (album as any).text_type as string | null
-  if (textType !== 'free' && textType !== 'grade11') {
-    return NextResponse.json({ error: 'AI-помощник пока доступен только для свободного текста и 11 класса' }, { status: 403 })
-  }
   if ((album as any).deadline && new Date((album as any).deadline) < new Date()) {
     return NextResponse.json({ error: 'Срок истёк' }, { status: 410 })
   }
 
+  const textType = (album as any).text_type as string | null
+  if (action === 'form_grade4' && textType !== 'grade4') {
+    return NextResponse.json({ error: 'Анкета 4 класса доступна только для альбомов начальной школы' }, { status: 403 })
+  }
+  if (action === 'form_garden' && textType !== 'garden') {
+    return NextResponse.json({ error: 'Анкета доступна только для альбомов детского сада' }, { status: 403 })
+  }
+
   const maxChars = Number((album as any).text_max_chars) || 500
 
-  if (text.length > maxChars * 1.5) {
-    return NextResponse.json({ error: 'Текст слишком длинный' }, { status: 400 })
+  let prompt: string
+  if (action === 'fix' || action === 'improve') {
+    const text = typeof body?.text === 'string' ? body.text.trim() : ''
+    if (!text) return NextResponse.json({ error: 'Текст пустой' }, { status: 400 })
+    if (text.length > maxChars * 1.5) {
+      return NextResponse.json({ error: 'Текст слишком длинный' }, { status: 400 })
+    }
+    prompt = action === 'fix' ? buildPromptFix(text, maxChars) : buildPromptImprove(text, maxChars)
+  } else {
+    const fields = sanitizeFields(body?.fields)
+    if (Object.keys(fields).length === 0) {
+      return NextResponse.json({ error: 'Заполните хотя бы одно поле анкеты' }, { status: 400 })
+    }
+    prompt = action === 'form_grade4'
+      ? buildPromptFormGrade4(fields, maxChars)
+      : buildPromptFormGarden(fields, maxChars)
   }
 
   const client = new Anthropic({ apiKey })
   const temperature = action === 'fix' ? 0.3 : 0.8
 
   try {
-    let result = await callClaude(client, buildPrompt(action, text, maxChars), temperature)
+    let result = await callClaude(client, prompt, temperature)
     let truncated = false
 
     let attempts = 0

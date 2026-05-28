@@ -16,6 +16,22 @@ const STEPS = [
   { id: 6, label: 'Готово' },
 ]
 
+const ASSIST_FIELDS: Record<string, { key: string; label: string; placeholder: string }[]> = {
+  grade4: [
+    { key: 'hobby', label: 'Любимое хобби', placeholder: 'например, рисование или футбол' },
+    { key: 'profession', label: 'Кем хочу стать', placeholder: 'например, ветеринаром' },
+    { key: 'dream', label: 'О чём мечтаю', placeholder: 'например, побывать в Антарктиде' },
+    { key: 'superpower', label: 'Какая суперспособность', placeholder: 'например, уметь летать' },
+    { key: 'wish', label: 'Пожелание классу или школе', placeholder: 'например, больше походов' },
+  ],
+  garden: [
+    { key: 'game', label: 'Любимая игра', placeholder: 'например, машинки или прятки' },
+    { key: 'food', label: 'Любимая еда', placeholder: 'например, блинчики' },
+    { key: 'profession', label: 'Кем хочу стать, когда вырасту', placeholder: 'например, космонавтом' },
+    { key: 'love', label: 'Что люблю больше всего', placeholder: 'например, гулять с мамой' },
+  ],
+}
+
 export default function ParentPage() {
   const { token } = useParams<{ token: string }>()
   const [loading, setLoading] = useState(true)
@@ -69,14 +85,24 @@ export default function ParentPage() {
   const [studentText, setStudentText] = useState('')
   const [groupPhotos, setGroupPhotos] = useState<string[]>([])
 
+  type AssistAction = 'fix' | 'improve' | 'form_grade4' | 'form_garden'
   const [aiLoading, setAiLoading] = useState(false)
   const [aiResult, setAiResult] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string>('')
-  const [aiAction, setAiAction] = useState<'fix' | 'improve' | null>(null)
+  const [aiAction, setAiAction] = useState<AssistAction | null>(null)
   const [aiTruncated, setAiTruncated] = useState(false)
+  const [formMode, setFormMode] = useState<'free' | 'form'>('free')
+  const [formFields, setFormFields] = useState<Record<string, string>>({})
 
-  const runAi = useCallback(async (action: 'fix' | 'improve') => {
-    if (!studentText.trim()) return
+  const runAi = useCallback(async (action: AssistAction) => {
+    const body: any = { token, action }
+    if (action === 'fix' || action === 'improve') {
+      if (!studentText.trim()) return
+      body.text = studentText
+    } else {
+      if (!Object.values(formFields).some(v => v.trim())) return
+      body.fields = formFields
+    }
     setAiError('')
     setAiTruncated(false)
     setAiAction(action)
@@ -85,7 +111,7 @@ export default function ParentPage() {
       const res = await fetch('/api/text-assist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, action, text: studentText }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -101,7 +127,7 @@ export default function ParentPage() {
     } finally {
       setAiLoading(false)
     }
-  }, [studentText, token])
+  }, [studentText, formFields, token])
 
   const closeAi = useCallback(() => {
     setAiResult(null)
@@ -109,6 +135,16 @@ export default function ParentPage() {
     setAiTruncated(false)
     setAiError('')
   }, [])
+
+  const acceptAi = useCallback(() => {
+    if (aiResult) setStudentText(aiResult)
+    const wasForm = aiAction === 'form_grade4' || aiAction === 'form_garden'
+    setAiResult(null)
+    setAiAction(null)
+    setAiTruncated(false)
+    setAiError('')
+    if (wasForm) setFormMode('free')
+  }, [aiResult, aiAction])
 
   const [lightbox, setLightbox] = useState<{ photos: Photo[], index: number, onSelect?: (id: string) => void | Promise<void> } | null>(null)
 
@@ -600,7 +636,25 @@ export default function ParentPage() {
             textType === 'grade11' ? 'Напишите цитату или выберите готовую из списка ниже' :
             'Цитата, пожелание или любимая фраза'
           }>
-            {textType === 'garden' && (
+            {textAssistEnabled && (textType === 'grade4' || textType === 'garden') && (
+              <div className="mb-4 flex bg-gray-100 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => { setFormMode('free'); closeAi() }}
+                  className={`flex-1 text-sm px-3 py-2 rounded-lg transition-colors ${formMode === 'free' ? 'bg-white text-gray-900 shadow-sm font-medium' : 'text-gray-600 hover:text-gray-800'}`}
+                >
+                  Написать самому
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setFormMode('form'); closeAi() }}
+                  className={`flex-1 text-sm px-3 py-2 rounded-lg transition-colors ${formMode === 'form' ? 'bg-white text-gray-900 shadow-sm font-medium' : 'text-gray-600 hover:text-gray-800'}`}
+                >
+                  Заполнить анкету
+                </button>
+              </div>
+            )}
+            {formMode === 'free' && textType === 'garden' && (
               <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
                 <p className="font-medium mb-2">Вопросы для вдохновения:</p>
                 <ul className="space-y-1 text-blue-700 list-disc list-inside">
@@ -611,7 +665,7 @@ export default function ParentPage() {
                 <p className="mt-3 text-blue-600 italic text-sm">Пример: «Я люблю играть в трассу с шариками и в машинки с друзьями. А ещё – гулять! Самый вкусный для меня суп – борщ. Когда вырасту – хочу стать футболистом.»</p>
               </div>
             )}
-            {textType === 'grade4' && (
+            {formMode === 'free' && textType === 'grade4' && (
               <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
                 <p className="font-medium mb-2">Вопросы для вдохновения:</p>
                 <ul className="space-y-1 text-blue-700 list-disc list-inside">
@@ -621,16 +675,16 @@ export default function ParentPage() {
                 <p className="mt-3 text-blue-600 italic text-sm">Пример: «Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!»</p>
               </div>
             )}
-            <textarea className="input resize-none h-32 mb-1"
-              placeholder={textType === 'garden' ? 'Я люблю играть в трассу с шариками и в машинки с друзьями. А ещё – гулять! Самый вкусный для меня суп – борщ. Когда вырасту – хочу стать футболистом.' : textType === 'grade4' ? 'Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!' : textType === 'grade11' ? '«Всё получится. По-другому не вариант.»' : '«Спасибо всем за эти годы!»'}
-              maxLength={textMaxChars} value={studentText} onChange={e => setStudentText(e.target.value)} />
-            <div className="text-right text-xs text-gray-400 mb-4">
-              <span className={studentText.length > textMaxChars * 0.9 ? 'text-amber-500' : ''}>{studentText.length}</span> / {textMaxChars}
-            </div>
-            {textAssistEnabled && (textType === 'free' || textType === 'grade11') && (
-              <div className="mb-6">
-                {!aiResult && !aiLoading && !aiError && (
-                  <div className="flex flex-wrap gap-2">
+            {formMode === 'free' && (
+              <>
+                <textarea className="input resize-none h-32 mb-1"
+                  placeholder={textType === 'garden' ? 'Я люблю играть в трассу с шариками и в машинки с друзьями. А ещё – гулять! Самый вкусный для меня суп – борщ. Когда вырасту – хочу стать футболистом.' : textType === 'grade4' ? 'Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!' : textType === 'grade11' ? '«Всё получится. По-другому не вариант.»' : '«Спасибо всем за эти годы!»'}
+                  maxLength={textMaxChars} value={studentText} onChange={e => setStudentText(e.target.value)} />
+                <div className="text-right text-xs text-gray-400 mb-4">
+                  <span className={studentText.length > textMaxChars * 0.9 ? 'text-amber-500' : ''}>{studentText.length}</span> / {textMaxChars}
+                </div>
+                {textAssistEnabled && !aiLoading && !aiError && !aiResult && (
+                  <div className="mb-6 flex flex-wrap gap-2">
                     <button
                       type="button"
                       disabled={!studentText.trim()}
@@ -649,53 +703,85 @@ export default function ParentPage() {
                     </button>
                   </div>
                 )}
-                {aiLoading && (
-                  <div className="text-sm text-gray-500 px-4 py-3 bg-gray-50 rounded-xl border border-gray-100">
-                    {aiAction === 'improve' ? 'Улучшаю текст…' : 'Обрабатываю текст…'}
-                  </div>
-                )}
-                {aiError && !aiLoading && (
-                  <div className="px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700 flex items-center justify-between gap-3">
-                    <span>{aiError}</span>
-                    <button type="button" className="text-red-600 underline" onClick={closeAi}>Закрыть</button>
-                  </div>
-                )}
-                {aiResult && !aiLoading && (
-                  <div className={`px-4 py-3 rounded-xl border ${aiAction === 'improve' ? 'bg-purple-50 border-purple-200' : 'bg-blue-50 border-blue-200'}`}>
-                    <p className={`text-xs font-medium mb-2 ${aiAction === 'improve' ? 'text-purple-800' : 'text-blue-800'}`}>
-                      {aiAction === 'improve' ? 'Улучшенный вариант:' : 'Исправленный вариант:'}
-                    </p>
-                    <p className="text-sm text-gray-800 whitespace-pre-wrap mb-3">{aiResult}</p>
-                    {aiTruncated && (
-                      <p className="text-xs text-amber-700 mb-3">⚠️ Текст пришлось укоротить, чтобы вписать в лимит {textMaxChars} символов.</p>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className={`text-sm px-4 py-2 rounded-xl text-white ${aiAction === 'improve' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                        onClick={() => { if (aiResult) setStudentText(aiResult); closeAi() }}
-                      >
-                        Принять
-                      </button>
-                      <button
-                        type="button"
-                        className="text-sm px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                        onClick={() => { if (aiAction) runAi(aiAction) }}
-                      >
-                        Пересоздать
-                      </button>
-                      <button
-                        type="button"
-                        className="text-sm px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                        onClick={closeAi}
-                      >
-                        Отмена
-                      </button>
+              </>
+            )}
+            {formMode === 'form' && (textType === 'grade4' || textType === 'garden') && (
+              <div className="mb-6">
+                <p className="text-sm text-gray-600 mb-3">Заполните любые из полей — AI составит на их основе тёплый рассказ от первого лица. Можно оставить часть пустыми.</p>
+                <div className="space-y-3">
+                  {(ASSIST_FIELDS[textType] || []).map(field => (
+                    <div key={field.key}>
+                      <label className="text-sm text-gray-700 block mb-1">{field.label}</label>
+                      <input
+                        type="text"
+                        value={formFields[field.key] || ''}
+                        onChange={e => setFormFields(prev => ({ ...prev, [field.key]: e.target.value }))}
+                        placeholder={field.placeholder}
+                        maxLength={200}
+                        className="input"
+                      />
                     </div>
-                  </div>
+                  ))}
+                </div>
+                {!aiLoading && !aiError && !aiResult && (
+                  <button
+                    type="button"
+                    onClick={() => runAi(textType === 'grade4' ? 'form_grade4' : 'form_garden')}
+                    disabled={!Object.values(formFields).some(v => v.trim())}
+                    className="mt-4 text-sm px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    ✨ Составить текст
+                  </button>
                 )}
               </div>
             )}
+            {aiLoading && (
+              <div className="mb-6 text-sm text-gray-500 px-4 py-3 bg-gray-50 rounded-xl border border-gray-100">
+                {aiAction === 'fix' ? 'Обрабатываю текст…' : aiAction === 'improve' ? 'Улучшаю текст…' : 'Составляю текст…'}
+              </div>
+            )}
+            {aiError && !aiLoading && (
+              <div className="mb-6 px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700 flex items-center justify-between gap-3">
+                <span>{aiError}</span>
+                <button type="button" className="text-red-600 underline" onClick={closeAi}>Закрыть</button>
+              </div>
+            )}
+            {aiResult && !aiLoading && (() => {
+              const isFix = aiAction === 'fix'
+              const title = aiAction === 'fix' ? 'Исправленный вариант:' : aiAction === 'improve' ? 'Улучшенный вариант:' : 'Вариант от AI:'
+              return (
+                <div className={`mb-6 px-4 py-3 rounded-xl border ${isFix ? 'bg-blue-50 border-blue-200' : 'bg-purple-50 border-purple-200'}`}>
+                  <p className={`text-xs font-medium mb-2 ${isFix ? 'text-blue-800' : 'text-purple-800'}`}>{title}</p>
+                  <p className="text-sm text-gray-800 whitespace-pre-wrap mb-3">{aiResult}</p>
+                  {aiTruncated && (
+                    <p className="text-xs text-amber-700 mb-3">⚠️ Текст пришлось укоротить, чтобы вписать в лимит {textMaxChars} символов.</p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={`text-sm px-4 py-2 rounded-xl text-white ${isFix ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
+                      onClick={acceptAi}
+                    >
+                      Принять
+                    </button>
+                    <button
+                      type="button"
+                      className="text-sm px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                      onClick={() => { if (aiAction) runAi(aiAction) }}
+                    >
+                      Пересоздать
+                    </button>
+                    <button
+                      type="button"
+                      className="text-sm px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                      onClick={closeAi}
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
             <div className="flex items-center justify-between mb-6">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
               <button className="btn-primary px-8" onClick={goNext}>Далее →</button>
