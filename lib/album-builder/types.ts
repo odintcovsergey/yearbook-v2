@@ -345,6 +345,12 @@ export type TemplateSet = {
   bleed_mm: number;
   facing_pages: boolean;
   page_binding: 'LeftToRight' | 'RightToLeft';
+  /**
+   * Путь в bucket'е template-backgrounds (`<set_id>/default.jpg|png`).
+   * Optional — для фикстур и старых БД без миграции 2026-05-28; в реальных
+   * данных из loadTemplateSet поле всегда присутствует (string или null).
+   */
+  default_background_url?: string | null;
   spreads: SpreadTemplate[];
 };
 

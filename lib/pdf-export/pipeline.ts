@@ -29,7 +29,7 @@
  * См. docs/phase-3-spec.md §3.4, §4.1 (фаза 3.4), §4.3 (фаза 3.5).
  */
 
-import { PDFDocument, PDFPage } from 'pdf-lib';
+import { PDFDocument, PDFImage, PDFPage } from 'pdf-lib';
 import { computePageBoxes, mmToPt } from './units';
 import type { FontRegistry } from './font-loader';
 import { embedPhotoOnPage, type PhotoEmbedContext } from './photo-embed';
@@ -37,6 +37,7 @@ import { drawTextShaped } from './text-shaping';
 import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform';
 import { parseFontSizeMult, parseColor } from '@/lib/text-style';
 import { applyBalanceFromData } from '@/lib/balance-overrides';
+import { segmentToSpreads } from '@/lib/album-builder/segment-to-spreads';
 import type {
   AlbumExportInput,
   PageBoxes,
@@ -63,6 +64,19 @@ type RenderContext = {
   profile: AlbumExportInput['profile'];
   /** Подконтекст для photo-embed (передаётся в embedPhotoOnPage). */
   photoCtx: PhotoEmbedContext;
+  /**
+   * Embed'нутая картинка фона набора (template_sets.default_background_url).
+   * null = фон не задан или не загрузился — рисуем без подложки.
+   */
+  background: PDFImage | null;
+  /**
+   * Сторона разворота для одностраничного мастера (pageHint='single'):
+   * 'left' — фон смещаем так, чтобы видна была левая половина разворота;
+   * 'right' — наоборот. Считается через segmentToSpreads до рендера.
+   * Для is_spread мастеров не используется (pageHint='spread' либо
+   * split на 'left'/'right' в renderSpread уже несёт нужную семантику).
+   */
+  sideByIndex: ReadonlyMap<number, 'left' | 'right'>;
 };
 
 /**
@@ -96,6 +110,41 @@ export async function renderAllSpreads(
     warnings,
   };
 
+  // Индекс мастеров для O(1) lookup'а (вместо .find() на каждый разворот).
+  const templateById = new Map<string, SpreadTemplate>();
+  for (const t of templateSet.spreads) {
+    templateById.set(t.id, t);
+  }
+
+  // Фоновое изображение набора — embed один раз, переиспользуем на всех страницах.
+  const background = await loadBackground(
+    pdfDoc,
+    templateSet.default_background_url ?? null,
+    warnings,
+  );
+
+  // Карта spread_index → 'left'|'right' для одностраничных мастеров.
+  // segmentToSpreads группирует страницы как в визуальном редакторе.
+  // Для is_spread мастеров значение не пишется (фон у них рисуется как 'spread').
+  // softShift пока всегда false — для soft-альбомов первая страница может
+  // быть правой первого разворота, но это уточнение оставим следующей итерации
+  // (сейчас типография обычно печатает в layflat/pages-mode, где это не критично).
+  const sideByIndex = new Map<number, 'left' | 'right'>();
+  if (background) {
+    const visualSpreads = segmentToSpreads(layout.spreads, templateById);
+    for (const vs of visualSpreads) {
+      if (vs.isSpread) continue;
+      if (vs.leftIdx !== undefined) {
+        const leftSpread = layout.spreads[vs.leftIdx];
+        if (leftSpread) sideByIndex.set(leftSpread.spread_index, 'left');
+      }
+      if (vs.rightIdx !== undefined) {
+        const rightSpread = layout.spreads[vs.rightIdx];
+        if (rightSpread) sideByIndex.set(rightSpread.spread_index, 'right');
+      }
+    }
+  }
+
   const ctx: RenderContext = {
     pdfDoc,
     fontRegistry,
@@ -103,13 +152,9 @@ export async function renderAllSpreads(
     warnings,
     profile,
     photoCtx,
+    background,
+    sideByIndex,
   };
-
-  // Индекс мастеров для O(1) lookup'а (вместо .find() на каждый разворот).
-  const templateById = new Map<string, SpreadTemplate>();
-  for (const t of templateSet.spreads) {
-    templateById.set(t.id, t);
-  }
 
   let pageCount = 0;
 
@@ -223,7 +268,17 @@ async function renderPage(
     page.setBleedBox(0, 0, mmToPt(media_w_mm), mmToPt(media_h_mm));
   }
 
-  // TODO (фаза 4): рисуем background_url первым слоем если он не null.
+  // Фон набора — первый слой, под placeholder'ами.
+  // Для одностраничных мастеров (pageHint='single') берём сторону из ctx.sideByIndex.
+  if (ctx.background) {
+    const bgSide: 'spread' | 'left' | 'right' =
+      pageHint === 'spread'
+        ? 'spread'
+        : pageHint === 'left' || pageHint === 'right'
+          ? pageHint
+          : ctx.sideByIndex.get(instance.spread_index) ?? 'left';
+    drawBackground(page, ctx.background, ctx.pageBoxes, trim_w_mm, bgSide);
+  }
 
   // Для spread mode placeholderToPdfBox должна работать с увеличенной
   // шириной trim. Создаём локальный pageBoxes override для spread.
@@ -374,4 +429,94 @@ function drawText(
     fontSizeMult,
     colorOverride
   );
+}
+
+// ─── Background ──────────────────────────────────────────────────────────
+//
+// Фон набора (template_sets.default_background_url) — путь в Supabase Storage
+// bucket'е template-backgrounds. Грузим один раз перед циклом по страницам,
+// embed в PDFDocument, дальше рисуем одну и ту же PDFImage на всех страницах
+// с разными координатами (см. drawBackground).
+
+async function loadBackground(
+  pdfDoc: PDFDocument,
+  path: string | null,
+  warnings: PdfWarning[]
+): Promise<PDFImage | null> {
+  if (!path) return null;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!supabaseUrl) {
+    warnings.push({
+      code: 'image_decode_failed',
+      detail: 'background skipped: NEXT_PUBLIC_SUPABASE_URL env not set',
+    });
+    return null;
+  }
+  const url = `${supabaseUrl}/storage/v1/object/public/template-backgrounds/${path}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      warnings.push({
+        code: 'image_decode_failed',
+        detail: `background fetch failed: HTTP ${response.status} for ${path}`,
+      });
+      return null;
+    }
+    const buffer = await response.arrayBuffer();
+    if (path.toLowerCase().endsWith('.png')) {
+      return await pdfDoc.embedPng(buffer);
+    }
+    return await pdfDoc.embedJpg(buffer);
+  } catch (err) {
+    warnings.push({
+      code: 'image_decode_failed',
+      detail: `background load error for ${path}: ${(err as Error).message}`,
+    });
+    return null;
+  }
+}
+
+/**
+ * Рисует подложку набора первым слоем на странице.
+ *
+ * Координаты в pdf-lib идут от низа страницы (origin bottom-left).
+ * Фон ложится в trim-зону (без bleed). Если у дизайнера фон без bleed
+ * — на печатном листе в bleed-зоне останется белая полоса (типографии
+ * обычно ок для теста; для финала дизайнер сам добавит bleed на PNG).
+ *
+ * - spread: фон ровно по ширине разворота (trim_w_mm уже = 2× ширины страницы).
+ * - left:   фон растягивается на 2× ширины (фактически разворот), x=bleed.
+ *           Правая половина выходит за mediaBox справа и обрезается.
+ * - right:  фон растягивается на 2× ширины, x=bleed - trim_w_mm.
+ *           Левая половина уходит за mediaBox слева.
+ */
+function drawBackground(
+  page: PDFPage,
+  image: PDFImage,
+  pageBoxes: PageBoxes,
+  trim_w_mm: number,
+  side: 'spread' | 'left' | 'right'
+): void {
+  const trim_h_mm = pageBoxes.trim_height_mm;
+  const bleed = pageBoxes.bleed_mm;
+
+  let x_mm: number;
+  let w_mm: number;
+  if (side === 'spread') {
+    x_mm = bleed;
+    w_mm = trim_w_mm;
+  } else if (side === 'left') {
+    x_mm = bleed;
+    w_mm = trim_w_mm * 2;
+  } else {
+    x_mm = bleed - trim_w_mm;
+    w_mm = trim_w_mm * 2;
+  }
+
+  page.drawImage(image, {
+    x: mmToPt(x_mm),
+    y: mmToPt(bleed),
+    width: mmToPt(w_mm),
+    height: mmToPt(trim_h_mm),
+  });
 }
