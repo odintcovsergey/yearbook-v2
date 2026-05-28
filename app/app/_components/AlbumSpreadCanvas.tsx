@@ -100,6 +100,16 @@ type Props = {
   // Применяются как fallback когда нет точечного __fontSize__/__color__.
   // Default {} — нет глобальных стилей.
   textStyleOverrides?: AlbumTextStyleOverrides
+  // Фоновое изображение набора (template_sets.default_background_url),
+  // public URL уже собран. Рендерится первым слоем под placeholder'ами.
+  // null = без фона (текущее поведение).
+  backgroundUrl?: string | null
+  // Какая часть фона показывается на этом канвасе:
+  // - 'spread' (двустраничный мастер) — картинка тянется на template.width_mm
+  // - 'left'  — картинка шириной 2× template.width_mm, x=0 (видна левая половина)
+  // - 'right' — картинка шириной 2× template.width_mm, x=-template.width_mm
+  // Default 'spread' для обратной совместимости (можно опускать).
+  pageSide?: 'spread' | 'left' | 'right'
 }
 
 // ─── Хелпер: загрузка HTMLImageElement из URL ────────────────────────────
@@ -143,6 +153,44 @@ function isTooLight(hex: string | null | undefined): boolean {
   if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return true
   const luminance = 0.299 * r + 0.587 * g + 0.114 * b
   return luminance > 0.7
+}
+
+// ─── Фоновое изображение набора ───────────────────────────────────────────
+//
+// Рисует default_background_url разворота под placeholder'ами.
+// Для одностраничного мастера картинка тянется на 2× ширины страницы:
+// - pageSide='left'  → x=0,                видна левая половина
+// - pageSide='right' → x=-pageWidthMm,     видна правая половина
+// Stage обрезает то, что выходит за template.width_mm.
+// Для is_spread (pageSide='spread') картинка ровно по ширине разворота.
+function SpreadBackgroundLayer({
+  url,
+  pageWidthMm,
+  pageHeightMm,
+  pageSide,
+}: {
+  url: string
+  pageWidthMm: number
+  pageHeightMm: number
+  pageSide: 'spread' | 'left' | 'right'
+}) {
+  const img = useImage(url)
+  if (!img) return null
+
+  const isSpread = pageSide === 'spread'
+  const drawWidth = isSpread ? pageWidthMm : pageWidthMm * 2
+  const drawX = pageSide === 'right' ? -pageWidthMm : 0
+
+  return (
+    <KonvaImage
+      image={img}
+      x={drawX}
+      y={0}
+      width={drawWidth}
+      height={pageHeightMm}
+      listening={false}
+    />
+  )
 }
 
 // ─── Photo placeholder ────────────────────────────────────────────────────
@@ -812,6 +860,8 @@ export default function AlbumSpreadCanvas({
   onPhotoClick,
   placeholderOverrides,
   textStyleOverrides,
+  backgroundUrl,
+  pageSide = 'spread',
 }: Props) {
   const scale = containerWidth / template.width_mm
   const stageWidth = template.width_mm * scale
@@ -856,6 +906,19 @@ export default function AlbumSpreadCanvas({
             stroke="#e5e7eb"
             strokeWidth={0.3}
           />
+
+          {/* Фоновое изображение набора (default_background_url).
+              Для одностраничного мастера картинка — это разворот целиком,
+              видна только своя половина (Stage обрезает по template.width_mm).
+              Для is_spread мастера картинка ровно по ширине разворота. */}
+          {backgroundUrl && (
+            <SpreadBackgroundLayer
+              url={backgroundUrl}
+              pageWidthMm={template.width_mm}
+              pageHeightMm={template.height_mm}
+              pageSide={pageSide}
+            />
+          )}
 
           {/* Контент из instance.data */}
           {effectiveTemplate.placeholders.map((p: Placeholder, i) => {

@@ -258,6 +258,9 @@ function LayoutEditorPageInner({
 
   const [layout, setLayout] = useState<LayoutData | null>(null)
   const [templates, setTemplates] = useState<SpreadTemplate[]>([])
+  // Public URL фона набора (template_sets.default_background_url).
+  // null если фон не загружен — канвас рисует без подложки (старое поведение).
+  const [backgroundUrl, setBackgroundUrl] = useState<string | null>(null)
   const [photos, setPhotos] = useState<AlbumPhoto[]>([])
   const [albumTitle, setAlbumTitle] = useState<string>('')
   // РЭ.27.4: тип переплёта альбома (вычисляется на сервере через
@@ -504,6 +507,12 @@ function LayoutEditorPageInner({
         setLayout(loadedLayout)
         setLastSavedSpreads(loadedLayout.spreads)
         setTemplates(templateJson.spread_templates ?? [])
+        const bgPath = templateJson.template_set?.default_background_url ?? null
+        setBackgroundUrl(
+          bgPath
+            ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${bgPath}`
+            : null
+        )
         setPhotos(photosJson.photos ?? [])
         setAlbumTitle(title)
         setEffectivePrintType(printType)
@@ -1766,6 +1775,8 @@ function LayoutEditorPageInner({
                           onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
                           onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
                           textStyleOverrides={textStyleOverrides}
+                          backgroundUrl={backgroundUrl}
+                          pageSide="spread"
                         />
                       </div>
                     ) : (
@@ -1803,6 +1814,8 @@ function LayoutEditorPageInner({
                               onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
                               onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
                           textStyleOverrides={textStyleOverrides}
+                          backgroundUrl={backgroundUrl}
+                          pageSide="left"
                             />
                           </div>
                         ) : showLeftEndpaper ? (
@@ -1874,6 +1887,8 @@ function LayoutEditorPageInner({
                               onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
                               onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
                           textStyleOverrides={textStyleOverrides}
+                          backgroundUrl={backgroundUrl}
+                          pageSide="right"
                             />
                           </div>
                         ) : showRightEndpaper ? (
