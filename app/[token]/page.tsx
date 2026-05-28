@@ -631,10 +631,12 @@ export default function ParentPage() {
 
         {step === 3 && (
           <StepCard title="Текст от ученика" subtitle={
-            textType === 'garden' ? 'Расскажите о ребёнке — ответьте на вопросы ниже' :
-            textType === 'grade4' ? 'Ответьте на вопросы — получится небольшой текст для альбома' :
-            textType === 'grade11' ? 'Напишите цитату или выберите готовую из списка ниже' :
-            'Цитата, пожелание или любимая фраза'
+            textType === 'garden'
+              ? (textAssistEnabled ? 'Расскажите о ребёнке: напишите текст сами или заполните анкету — AI составит текст из ответов' : 'Расскажите о ребёнке — ответьте на вопросы ниже')
+              : textType === 'grade4'
+                ? (textAssistEnabled ? 'Напишите текст сами или заполните анкету — AI составит текст из ответов' : 'Ответьте на вопросы — получится небольшой текст для альбома')
+                : textType === 'grade11' ? 'Напишите цитату или выберите готовую из списка ниже'
+                : 'Цитата, пожелание или любимая фраза'
           }>
             {textAssistEnabled && (textType === 'grade4' || textType === 'garden') && (
               <div className="mb-4 flex bg-gray-100 rounded-xl p-1">
@@ -784,7 +786,13 @@ export default function ParentPage() {
             })()}
             <div className="flex items-center justify-between mb-6">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
-              <button className="btn-primary px-8" onClick={goNext}>Далее →</button>
+              <button
+                className="btn-primary px-8"
+                onClick={goNext}
+                disabled={formMode === 'form' && !studentText.trim()}
+              >
+                Далее →
+              </button>
             </div>
             {textType === 'grade11' && quotes.length > 0 && (
               <div className="border-t border-gray-100 pt-5">
