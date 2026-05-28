@@ -30,6 +30,7 @@
  */
 
 import { PDFDocument, PDFImage, PDFPage } from 'pdf-lib';
+import sharp from 'sharp';
 import { computePageBoxes, mmToPt } from './units';
 import type { FontRegistry } from './font-loader';
 import { embedPhotoOnPage, type PhotoEmbedContext } from './photo-embed';
@@ -55,6 +56,17 @@ import type {
  * Контекст рендера, передаваемый между функциями pipeline.
  * Накапливает warnings, держит ссылку на FontRegistry.
  */
+/**
+ * Готовые embed'ы трёх версий фона набора: целая (для is_spread мастера)
+ * и две половины (для одностраничных мастеров — каждая ровно по ширине
+ * одной страницы, рисуется без выноса за media box).
+ */
+type BackgroundImages = {
+  spread: PDFImage;
+  left: PDFImage;
+  right: PDFImage;
+};
+
 type RenderContext = {
   pdfDoc: PDFDocument;
   fontRegistry: FontRegistry;
@@ -65,10 +77,14 @@ type RenderContext = {
   /** Подконтекст для photo-embed (передаётся в embedPhotoOnPage). */
   photoCtx: PhotoEmbedContext;
   /**
-   * Embed'нутая картинка фона набора (template_sets.default_background_url).
+   * Embed'нутые версии фона набора (template_sets.default_background_url):
+   * - spread: целое изображение для двустраничного мастера
+   * - left:   левая половина (для левой страницы обычного разворота)
+   * - right:  правая половина (для правой страницы)
    * null = фон не задан или не загрузился — рисуем без подложки.
+   * Каждая версия embed'ится в pdfDoc один раз и переиспользуется на всех страницах.
    */
-  background: PDFImage | null;
+  background: BackgroundImages | null;
   /**
    * Сторона разворота для одностраничного мастера (pageHint='single'):
    * 'left' — фон смещаем так, чтобы видна была левая половина разворота;
@@ -442,7 +458,7 @@ async function loadBackground(
   pdfDoc: PDFDocument,
   path: string | null,
   warnings: PdfWarning[]
-): Promise<PDFImage | null> {
+): Promise<BackgroundImages | null> {
   if (!path) return null;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!supabaseUrl) {
@@ -462,11 +478,43 @@ async function loadBackground(
       });
       return null;
     }
-    const buffer = await response.arrayBuffer();
-    if (path.toLowerCase().endsWith('.png')) {
-      return await pdfDoc.embedPng(buffer);
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    // Используем sharp чтобы предварительно нарезать фон на три версии:
+    // целая (для is_spread мастеров) и две половины (для левой/правой
+    // страниц обычного разворота). Каждую embed'им отдельно — на странице
+    // потом рисуем ровно по ширине без выноса за media box.
+    const meta = await sharp(buffer).metadata();
+    const width = meta.width ?? 0;
+    const height = meta.height ?? 0;
+    if (width === 0 || height === 0) {
+      warnings.push({
+        code: 'image_decode_failed',
+        detail: `background metadata invalid for ${path}: ${width}x${height}`,
+      });
+      return null;
     }
-    return await pdfDoc.embedJpg(buffer);
+
+    const halfWidth = Math.floor(width / 2);
+    const leftBuf = await sharp(buffer)
+      .extract({ left: 0, top: 0, width: halfWidth, height })
+      .toBuffer();
+    const rightBuf = await sharp(buffer)
+      .extract({ left: halfWidth, top: 0, width: width - halfWidth, height })
+      .toBuffer();
+
+    const isPng = path.toLowerCase().endsWith('.png');
+    const embed = isPng
+      ? (b: Buffer) => pdfDoc.embedPng(b)
+      : (b: Buffer) => pdfDoc.embedJpg(b);
+
+    const [spread, left, right] = await Promise.all([
+      embed(buffer),
+      embed(leftBuf),
+      embed(rightBuf),
+    ]);
+
+    return { spread, left, right };
   } catch (err) {
     warnings.push({
       code: 'image_decode_failed',
@@ -479,44 +527,33 @@ async function loadBackground(
 /**
  * Рисует подложку набора первым слоем на странице.
  *
- * Координаты в pdf-lib идут от низа страницы (origin bottom-left).
- * Фон ложится в trim-зону (без bleed). Если у дизайнера фон без bleed
- * — на печатном листе в bleed-зоне останется белая полоса (типографии
- * обычно ок для теста; для финала дизайнер сам добавит bleed на PNG).
+ * Координаты pdf-lib от низа страницы (origin bottom-left).
+ * Фон ложится в trim-зону (без bleed). Для финальной типографии дизайнер
+ * сам подготовит PNG с запасом на обрез.
  *
- * - spread: фон ровно по ширине разворота (trim_w_mm уже = 2× ширины страницы).
- * - left:   фон растягивается на 2× ширины (фактически разворот), x=bleed.
- *           Правая половина выходит за mediaBox справа и обрезается.
- * - right:  фон растягивается на 2× ширины, x=bleed - trim_w_mm.
- *           Левая половина уходит за mediaBox слева.
+ * Использует предварительно нарезанные через sharp версии (см. loadBackground):
+ * - spread: рисуется на всю ширину разворотного мастера
+ * - left:   левая половина дизайна рисуется ровно по ширине левой страницы
+ * - right:  правая половина — по ширине правой
+ *
+ * Никаких отрицательных координат и выноса за mediaBox — половинки
+ * посчитаны заранее ровно по pixel'ам исходника.
  */
 function drawBackground(
   page: PDFPage,
-  image: PDFImage,
+  images: BackgroundImages,
   pageBoxes: PageBoxes,
   trim_w_mm: number,
   side: 'spread' | 'left' | 'right'
 ): void {
   const trim_h_mm = pageBoxes.trim_height_mm;
   const bleed = pageBoxes.bleed_mm;
-
-  let x_mm: number;
-  let w_mm: number;
-  if (side === 'spread') {
-    x_mm = bleed;
-    w_mm = trim_w_mm;
-  } else if (side === 'left') {
-    x_mm = bleed;
-    w_mm = trim_w_mm * 2;
-  } else {
-    x_mm = bleed - trim_w_mm;
-    w_mm = trim_w_mm * 2;
-  }
+  const image = images[side];
 
   page.drawImage(image, {
-    x: mmToPt(x_mm),
+    x: mmToPt(bleed),
     y: mmToPt(bleed),
-    width: mmToPt(w_mm),
+    width: mmToPt(trim_w_mm),
     height: mmToPt(trim_h_mm),
   });
 }
