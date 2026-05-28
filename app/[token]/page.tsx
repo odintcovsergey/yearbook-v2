@@ -37,6 +37,7 @@ export default function ParentPage() {
   const [textEnabled, setTextEnabled] = useState(true)
   const [textMaxChars, setTextMaxChars] = useState(500)
   const [textType, setTextType] = useState<string>('free')
+  const [textAssistEnabled, setTextAssistEnabled] = useState(false)
   const [personalSpreadEnabled, setPersonalSpreadEnabled] = useState(false)
   const [personalSpreadPrice, setPersonalSpreadPrice] = useState(300)
   const [personalSpreadMin, setPersonalSpreadMin] = useState(4)
@@ -67,6 +68,10 @@ export default function ParentPage() {
   const [portraitCover, setPortraitCover] = useState<string | null>(null)
   const [studentText, setStudentText] = useState('')
   const [groupPhotos, setGroupPhotos] = useState<string[]>([])
+
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiResult, setAiResult] = useState<string | null>(null)
+  const [aiError, setAiError] = useState<string>('')
 
   const [lightbox, setLightbox] = useState<{ photos: Photo[], index: number, onSelect?: (id: string) => void | Promise<void> } | null>(null)
 
@@ -101,6 +106,7 @@ export default function ParentPage() {
         setTextEnabled(data.album?.text_enabled ?? true)
         setTextMaxChars(data.album?.text_max_chars ?? 500)
         setTextType(data.album?.text_type ?? 'free')
+        setTextAssistEnabled(data.album?.text_assist_enabled === true)
         setPersonalSpreadEnabled(data.album?.personal_spread_enabled ?? false)
         setPersonalSpreadPrice(data.album?.personal_spread_price ?? 300)
         setPersonalSpreadMin(data.album?.personal_spread_min ?? 4)
@@ -584,6 +590,73 @@ export default function ParentPage() {
             <div className="text-right text-xs text-gray-400 mb-4">
               <span className={studentText.length > textMaxChars * 0.9 ? 'text-amber-500' : ''}>{studentText.length}</span> / {textMaxChars}
             </div>
+            {textAssistEnabled && (textType === 'free' || textType === 'grade11') && (
+              <div className="mb-6">
+                {!aiResult && !aiLoading && !aiError && (
+                  <button
+                    type="button"
+                    disabled={!studentText.trim()}
+                    onClick={async () => {
+                      setAiError('')
+                      setAiLoading(true)
+                      try {
+                        const res = await fetch('/api/text-assist', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ token, action: 'fix', text: studentText }),
+                        })
+                        const data = await res.json()
+                        if (!res.ok) {
+                          setAiError(data?.error || 'Не удалось получить ответ от AI')
+                        } else {
+                          setAiResult(data.result)
+                        }
+                      } catch {
+                        setAiError('Не удалось связаться с AI-помощником')
+                      } finally {
+                        setAiLoading(false)
+                      }
+                    }}
+                    className="text-sm px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    ✨ Исправить ошибки
+                  </button>
+                )}
+                {aiLoading && (
+                  <div className="text-sm text-gray-500 px-4 py-3 bg-gray-50 rounded-xl border border-gray-100">
+                    Обрабатываю текст…
+                  </div>
+                )}
+                {aiError && (
+                  <div className="px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700 flex items-center justify-between gap-3">
+                    <span>{aiError}</span>
+                    <button type="button" className="text-red-600 underline" onClick={() => setAiError('')}>Закрыть</button>
+                  </div>
+                )}
+                {aiResult && (
+                  <div className="px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl">
+                    <p className="text-xs font-medium text-blue-800 mb-2">Вариант от AI-помощника:</p>
+                    <p className="text-sm text-gray-800 whitespace-pre-wrap mb-3">{aiResult}</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="text-sm px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
+                        onClick={() => { setStudentText(aiResult); setAiResult(null) }}
+                      >
+                        Принять
+                      </button>
+                      <button
+                        type="button"
+                        className="text-sm px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                        onClick={() => setAiResult(null)}
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex items-center justify-between mb-6">
               <button className="btn-ghost" onClick={goPrev}>← Назад</button>
               <button className="btn-primary px-8" onClick={goNext}>Далее →</button>

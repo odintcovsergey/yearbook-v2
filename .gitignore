@@ -7,3 +7,6 @@ node_modules/
 # Next.js build output
 .next/
 out/
+
+# Claude Code (per-user permission overrides — settings.json коммитим если появится)
+.claude/settings.local.json
