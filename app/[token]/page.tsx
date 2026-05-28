@@ -72,6 +72,44 @@ export default function ParentPage() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiResult, setAiResult] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string>('')
+  const [aiAction, setAiAction] = useState<'fix' | 'improve' | null>(null)
+  const [aiTruncated, setAiTruncated] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const runAi = useCallback(async (action: 'fix' | 'improve') => {
+    if (!studentText.trim()) return
+    setAiError('')
+    setAiTruncated(false)
+    setAiAction(action)
+    setAiLoading(true)
+    try {
+      const res = await fetch('/api/text-assist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action, text: studentText }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setAiError(data?.error || 'Не удалось получить ответ от AI')
+        setAiResult(null)
+      } else {
+        setAiResult(data.result)
+        setAiTruncated(!!data.truncated)
+      }
+    } catch {
+      setAiError('Не удалось связаться с AI-помощником')
+      setAiResult(null)
+    } finally {
+      setAiLoading(false)
+    }
+  }, [studentText, token])
+
+  const closeAi = useCallback(() => {
+    setAiResult(null)
+    setAiAction(null)
+    setAiTruncated(false)
+    setAiError('')
+  }, [])
 
   const [lightbox, setLightbox] = useState<{ photos: Photo[], index: number, onSelect?: (id: string) => void | Promise<void> } | null>(null)
 
@@ -584,7 +622,7 @@ export default function ParentPage() {
                 <p className="mt-3 text-blue-600 italic text-sm">Пример: «Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!»</p>
               </div>
             )}
-            <textarea className="input resize-none h-32 mb-1"
+            <textarea ref={textareaRef} className="input resize-none h-32 mb-1"
               placeholder={textType === 'garden' ? 'Я люблю играть в трассу с шариками и в машинки с друзьями. А ещё – гулять! Самый вкусный для меня суп – борщ. Когда вырасту – хочу стать футболистом.' : textType === 'grade4' ? 'Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!' : textType === 'grade11' ? '«Всё получится. По-другому не вариант.»' : '«Спасибо всем за эти годы!»'}
               maxLength={textMaxChars} value={studentText} onChange={e => setStudentText(e.target.value)} />
             <div className="text-right text-xs text-gray-400 mb-4">
@@ -593,62 +631,75 @@ export default function ParentPage() {
             {textAssistEnabled && (textType === 'free' || textType === 'grade11') && (
               <div className="mb-6">
                 {!aiResult && !aiLoading && !aiError && (
-                  <button
-                    type="button"
-                    disabled={!studentText.trim()}
-                    onClick={async () => {
-                      setAiError('')
-                      setAiLoading(true)
-                      try {
-                        const res = await fetch('/api/text-assist', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ token, action: 'fix', text: studentText }),
-                        })
-                        const data = await res.json()
-                        if (!res.ok) {
-                          setAiError(data?.error || 'Не удалось получить ответ от AI')
-                        } else {
-                          setAiResult(data.result)
-                        }
-                      } catch {
-                        setAiError('Не удалось связаться с AI-помощником')
-                      } finally {
-                        setAiLoading(false)
-                      }
-                    }}
-                    className="text-sm px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    ✨ Исправить ошибки
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={!studentText.trim()}
+                      onClick={() => runAi('fix')}
+                      className="text-sm px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      ✨ Исправить ошибки
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!studentText.trim()}
+                      onClick={() => runAi('improve')}
+                      className="text-sm px-4 py-2 rounded-xl border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      ✨ Улучшить текст
+                    </button>
+                  </div>
                 )}
                 {aiLoading && (
                   <div className="text-sm text-gray-500 px-4 py-3 bg-gray-50 rounded-xl border border-gray-100">
-                    Обрабатываю текст…
+                    {aiAction === 'improve' ? 'Улучшаю текст…' : 'Обрабатываю текст…'}
                   </div>
                 )}
-                {aiError && (
+                {aiError && !aiLoading && (
                   <div className="px-4 py-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700 flex items-center justify-between gap-3">
                     <span>{aiError}</span>
-                    <button type="button" className="text-red-600 underline" onClick={() => setAiError('')}>Закрыть</button>
+                    <button type="button" className="text-red-600 underline" onClick={closeAi}>Закрыть</button>
                   </div>
                 )}
-                {aiResult && (
-                  <div className="px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl">
-                    <p className="text-xs font-medium text-blue-800 mb-2">Вариант от AI-помощника:</p>
+                {aiResult && !aiLoading && (
+                  <div className={`px-4 py-3 rounded-xl border ${aiAction === 'improve' ? 'bg-purple-50 border-purple-200' : 'bg-blue-50 border-blue-200'}`}>
+                    <p className={`text-xs font-medium mb-2 ${aiAction === 'improve' ? 'text-purple-800' : 'text-blue-800'}`}>
+                      {aiAction === 'improve' ? 'Улучшенный вариант:' : 'Исправленный вариант:'}
+                    </p>
                     <p className="text-sm text-gray-800 whitespace-pre-wrap mb-3">{aiResult}</p>
-                    <div className="flex gap-2">
+                    {aiTruncated && (
+                      <p className="text-xs text-amber-700 mb-3">⚠️ Текст пришлось укоротить, чтобы вписать в лимит {textMaxChars} символов.</p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        className="text-sm px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700"
-                        onClick={() => { setStudentText(aiResult); setAiResult(null) }}
+                        className={`text-sm px-4 py-2 rounded-xl text-white ${aiAction === 'improve' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                        onClick={() => { if (aiResult) setStudentText(aiResult); closeAi() }}
                       >
                         Принять
                       </button>
                       <button
                         type="button"
                         className="text-sm px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                        onClick={() => setAiResult(null)}
+                        onClick={() => {
+                          if (aiResult) setStudentText(aiResult)
+                          closeAi()
+                          setTimeout(() => textareaRef.current?.focus(), 0)
+                        }}
+                      >
+                        Доработать
+                      </button>
+                      <button
+                        type="button"
+                        className="text-sm px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                        onClick={() => { if (aiAction) runAi(aiAction) }}
+                      >
+                        Пересоздать
+                      </button>
+                      <button
+                        type="button"
+                        className="text-sm px-4 py-2 rounded-xl border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                        onClick={closeAi}
                       >
                         Отмена
                       </button>

@@ -7,9 +7,11 @@ export const revalidate = 0
 
 const MODEL = 'claude-haiku-4-5'
 
-type Action = 'fix'
+type Action = 'fix' | 'improve'
 
-const ACTIONS: ReadonlySet<Action> = new Set<Action>(['fix'])
+const ACTIONS: ReadonlySet<Action> = new Set<Action>(['fix', 'improve'])
+
+const SHORT_THRESHOLD = 150
 
 function buildPrompt(action: Action, text: string, maxChars: number): string {
   if (action === 'fix') {
@@ -24,7 +26,62 @@ function buildPrompt(action: Action, text: string, maxChars: number): string {
 
 Верни ТОЛЬКО исправленный текст, без кавычек, без пояснений.`
   }
+  if (action === 'improve') {
+    if (maxChars <= SHORT_THRESHOLD) {
+      return `Ты помогаешь школьнику оформить короткую подпись для выпускного альбома.
+
+Исходный текст:
+"${text}"
+
+Задача: исправь ошибки и слегка причеши формулировку. Текст очень короткий — НЕ удлиняй его, не добавляй новые мысли. Просто сделай грамотнее и чуть изящнее в пределах той же длины.
+
+Лимит: СТРОГО не более ${maxChars} символов.
+
+Верни ТОЛЬКО результат, без кавычек, без пояснений.`
+    }
+    return `Ты помогаешь школьнику красиво оформить текст для выпускного альбома.
+
+Исходный текст:
+"${text}"
+
+Задача: исправь ошибки и сделай текст более тёплым, связным и красивым. СОХРАНИ основной смысл и индивидуальность автора — это личный текст, а не шаблон. Не выдумывай факты которых нет.
+
+Лимит: СТРОГО не более ${maxChars} символов. Это критично.
+
+Тон: искренний, живой, подходящий для выпускного альбома. Избегай канцелярита и пафоса.
+
+Верни ТОЛЬКО улучшенный текст, без кавычек, без пояснений.`
+  }
   throw new Error(`unknown action: ${action}`)
+}
+
+function buildShrinkPrompt(previous: string, maxChars: number): string {
+  return `Сократи текст ниже строго до ${maxChars} символов, сохраняя смысл, тон и грамотность. Не добавляй кавычек, верни только результат.
+
+Текст:
+"${previous}"`
+}
+
+function cleanText(raw: string): string {
+  return raw.trim().replace(/^["«»]+|["«»]+$/g, '').trim()
+}
+
+async function callClaude(client: Anthropic, prompt: string, temperature: number): Promise<string> {
+  const resp = await client.messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    temperature,
+    messages: [{ role: 'user', content: prompt }],
+  })
+  const part = resp.content.find((b: any) => b.type === 'text') as any
+  return cleanText(part?.text ?? '')
+}
+
+function hardTruncate(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text
+  const cut = text.slice(0, maxChars)
+  const lastDot = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('!'), cut.lastIndexOf('?'))
+  return lastDot > maxChars * 0.5 ? cut.slice(0, lastDot + 1) : cut
 }
 
 export async function POST(req: NextRequest) {
@@ -86,28 +143,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Текст слишком длинный' }, { status: 400 })
   }
 
-  const prompt = buildPrompt(action, text, maxChars)
   const client = new Anthropic({ apiKey })
+  const temperature = action === 'fix' ? 0.3 : 0.8
 
   try {
-    const resp = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1024,
-      temperature: 0.3,
-      messages: [{ role: 'user', content: prompt }],
-    })
-    const part = resp.content.find((b: any) => b.type === 'text') as any
-    const raw: string = part?.text ?? ''
-    let result = raw.trim().replace(/^["«»]+|["«»]+$/g, '').trim()
+    let result = await callClaude(client, buildPrompt(action, text, maxChars), temperature)
+    let truncated = false
+
+    let attempts = 0
+    while (result.length > maxChars && attempts < 2) {
+      attempts++
+      result = await callClaude(client, buildShrinkPrompt(result, maxChars), temperature)
+    }
+
     if (!result) {
       return NextResponse.json({ error: 'AI вернул пустой ответ, попробуйте ещё раз' }, { status: 502 })
     }
+
     if (result.length > maxChars) {
-      const cut = result.slice(0, maxChars)
-      const lastDot = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('!'), cut.lastIndexOf('?'))
-      result = lastDot > maxChars * 0.5 ? cut.slice(0, lastDot + 1) : cut
+      result = hardTruncate(result, maxChars)
+      truncated = true
     }
-    return NextResponse.json({ result })
+
+    return NextResponse.json({ result, truncated })
   } catch (e: any) {
     const msg = e?.message ?? 'Ошибка AI-помощника'
     console.error('[text-assist] anthropic error', msg)
