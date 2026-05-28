@@ -30,6 +30,13 @@ const ASSIST_FIELDS: Record<string, { key: string; label: string; placeholder: s
     { key: 'profession', label: 'Кем хочу стать, когда вырасту', placeholder: 'например, космонавтом' },
     { key: 'love', label: 'Что люблю больше всего', placeholder: 'например, гулять с мамой' },
   ],
+  grade11: [
+    { key: 'memory', label: 'Что запомнится из школьных лет больше всего', placeholder: 'например, поездки и долгие разговоры с друзьями' },
+    { key: 'hobby', label: 'Чем увлекаешься, что для тебя важно', placeholder: 'например, музыка, спорт, программирование' },
+    { key: 'future', label: 'Кем видишь себя в будущем, о чём мечтаешь', placeholder: 'например, поступить в медицинский, стать врачом' },
+    { key: 'gratitude', label: 'За что благодаришь школу или учителей', placeholder: 'например, классному руководителю за поддержку' },
+    { key: 'wish', label: 'Что пожелаешь одноклассникам', placeholder: 'например, не бояться идти за мечтой' },
+  ],
 }
 
 export default function ParentPage() {
@@ -85,7 +92,7 @@ export default function ParentPage() {
   const [studentText, setStudentText] = useState('')
   const [groupPhotos, setGroupPhotos] = useState<string[]>([])
 
-  type AssistAction = 'fix' | 'improve' | 'form_grade4' | 'form_garden'
+  type AssistAction = 'fix' | 'improve' | 'form_grade4' | 'form_garden' | 'form_grade11'
   const [aiLoading, setAiLoading] = useState(false)
   const [aiResult, setAiResult] = useState<string | null>(null)
   const [aiError, setAiError] = useState<string>('')
@@ -138,7 +145,7 @@ export default function ParentPage() {
 
   const acceptAi = useCallback(() => {
     if (aiResult) setStudentText(aiResult)
-    const wasForm = aiAction === 'form_grade4' || aiAction === 'form_garden'
+    const wasForm = aiAction === 'form_grade4' || aiAction === 'form_garden' || aiAction === 'form_grade11'
     setAiResult(null)
     setAiAction(null)
     setAiTruncated(false)
@@ -635,10 +642,11 @@ export default function ParentPage() {
               ? (textAssistEnabled ? 'Расскажите о ребёнке: напишите текст сами или заполните анкету — AI составит текст из ответов' : 'Расскажите о ребёнке — ответьте на вопросы ниже')
               : textType === 'grade4'
                 ? (textAssistEnabled ? 'Напишите текст сами или заполните анкету — AI составит текст из ответов' : 'Ответьте на вопросы — получится небольшой текст для альбома')
-                : textType === 'grade11' ? 'Напишите цитату или выберите готовую из списка ниже'
+                : textType === 'grade11'
+                  ? (textAssistEnabled ? 'Напишите цитату сами или заполните анкету — AI составит текст. Готовая цитата из списка ниже тоже подойдёт' : 'Напишите цитату или выберите готовую из списка ниже')
                 : 'Цитата, пожелание или любимая фраза'
           }>
-            {textAssistEnabled && (textType === 'grade4' || textType === 'garden') && (
+            {textAssistEnabled && (textType === 'grade4' || textType === 'garden' || textType === 'grade11') && (
               <div className="mb-4 flex bg-gray-100 rounded-xl p-1">
                 <button
                   type="button"
@@ -677,10 +685,21 @@ export default function ParentPage() {
                 <p className="mt-3 text-blue-600 italic text-sm">Пример: «Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!»</p>
               </div>
             )}
+            {formMode === 'free' && textType === 'grade11' && (
+              <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
+                <p className="font-medium mb-2">Вопросы для вдохновения:</p>
+                <ul className="space-y-1 text-blue-700 list-disc list-inside">
+                  <li>Что запомнится из школьных лет больше всего?</li>
+                  <li>Чем увлекаешься, кем видишь себя в будущем?</li>
+                  <li>Что пожелаешь одноклассникам?</li>
+                </ul>
+                <p className="mt-3 text-blue-600 italic text-sm">Пример: «Школа дала мне больше, чем знания, — настоящих друзей и веру в себя. Впереди медицинский, мечтаю стать врачом. Ребята, не теряйтесь и оставайтесь собой — у нас всё впереди!»</p>
+              </div>
+            )}
             {formMode === 'free' && (
               <>
                 <textarea className="input resize-none h-32 mb-1"
-                  placeholder={textType === 'garden' ? 'Я люблю играть в трассу с шариками и в машинки с друзьями. А ещё – гулять! Самый вкусный для меня суп – борщ. Когда вырасту – хочу стать футболистом.' : textType === 'grade4' ? 'Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!' : textType === 'grade11' ? '«Всё получится. По-другому не вариант.»' : '«Спасибо всем за эти годы!»'}
+                  placeholder={textType === 'garden' ? 'Я люблю играть в трассу с шариками и в машинки с друзьями. А ещё – гулять! Самый вкусный для меня суп – борщ. Когда вырасту – хочу стать футболистом.' : textType === 'grade4' ? 'Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!' : textType === 'grade11' ? 'Школа дала мне больше, чем знания, — настоящих друзей и веру в себя. Впереди медицинский, мечтаю стать врачом. Ребята, не теряйтесь и оставайтесь собой — у нас всё впереди!' : '«Спасибо всем за эти годы!»'}
                   maxLength={textMaxChars} value={studentText} onChange={e => setStudentText(e.target.value)} />
                 <div className="text-right text-xs text-gray-400 mb-4">
                   <span className={studentText.length > textMaxChars * 0.9 ? 'text-amber-500' : ''}>{studentText.length}</span> / {textMaxChars}
@@ -707,9 +726,9 @@ export default function ParentPage() {
                 )}
               </>
             )}
-            {formMode === 'form' && (textType === 'grade4' || textType === 'garden') && (
+            {formMode === 'form' && (textType === 'grade4' || textType === 'garden' || textType === 'grade11') && (
               <div className="mb-6">
-                <p className="text-sm text-gray-600 mb-3">Заполните любые из полей — AI составит на их основе тёплый рассказ от первого лица. Можно оставить часть пустыми.</p>
+                <p className="text-sm text-gray-600 mb-3">Заполните любые из полей — AI составит на их основе текст от первого лица. Можно оставить часть пустыми.</p>
                 <div className="space-y-3">
                   {(ASSIST_FIELDS[textType] || []).map(field => (
                     <div key={field.key}>
@@ -728,7 +747,7 @@ export default function ParentPage() {
                 {!aiLoading && !aiError && !aiResult && (
                   <button
                     type="button"
-                    onClick={() => runAi(textType === 'grade4' ? 'form_grade4' : 'form_garden')}
+                    onClick={() => runAi(textType === 'grade4' ? 'form_grade4' : textType === 'garden' ? 'form_garden' : 'form_grade11')}
                     disabled={!Object.values(formFields).some(v => v.trim())}
                     className="mt-4 text-sm px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >

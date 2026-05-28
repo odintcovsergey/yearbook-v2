@@ -7,9 +7,9 @@ export const revalidate = 0
 
 const MODEL = 'claude-haiku-4-5'
 
-type Action = 'fix' | 'improve' | 'form_grade4' | 'form_garden'
+type Action = 'fix' | 'improve' | 'form_grade4' | 'form_garden' | 'form_grade11'
 
-const ACTIONS: ReadonlySet<Action> = new Set<Action>(['fix', 'improve', 'form_grade4', 'form_garden'])
+const ACTIONS: ReadonlySet<Action> = new Set<Action>(['fix', 'improve', 'form_grade4', 'form_garden', 'form_grade11'])
 
 const SHORT_THRESHOLD = 150
 
@@ -26,6 +26,14 @@ const GARDEN_FIELD_LABELS: Record<string, string> = {
   food: 'Любимая еда',
   profession: 'Кем хочет стать когда вырастет',
   love: 'Что любит больше всего',
+}
+
+const GRADE11_FIELD_LABELS: Record<string, string> = {
+  memory: 'Что запомнится из школьных лет',
+  hobby: 'Чем увлекается, что важно',
+  future: 'Кем видит себя в будущем, о чём мечтает',
+  gratitude: 'За что благодарен школе или учителям',
+  wish: 'Что пожелает одноклассникам',
 }
 
 function formatFields(fields: Record<string, string>, labels: Record<string, string>): string {
@@ -93,6 +101,32 @@ ${formatted}
 4. Детский тон и непосредственность, но без сюсюканья и без канцеляризмов.
 5. Не выдумывай факты, которых нет в анкете. Пропущенные поля просто не упоминай.
 6. Сделай текст уникальным — без шаблонных оборотов типа «эти годы были для меня…».
+7. Между предложениями и абзацами НЕ ставь пустые строки. Абзацы можно (новая строка), но БЕЗ пустой строки между ними. Никаких двойных переносов \\n\\n.
+
+Лимит: СТРОГО не более ${maxChars} символов.
+
+Верни ТОЛЬКО текст, без кавычек, без пояснений, без подписи.`
+}
+
+function buildPromptFormGrade11(fields: Record<string, string>, maxChars: number): string {
+  const formatted = formatFields(fields, GRADE11_FIELD_LABELS)
+  const shortHint = maxChars <= SHORT_THRESHOLD
+    ? '\nЛимит очень маленький — выбери самое главное из ответов, остальное оставь, не пытайся вместить всё.'
+    : '\nЕсли лимит позволяет, можно несколько коротких абзацев; если ответов мало — сделай короче.'
+  return `Ты помогаешь старшекласснику оформить текст о себе для выпускного альбома. Текст от первого лица, искренний и живой, без пафоса и канцелярита. Тон взрослый, но тёплый — это прощание со школой.
+
+Ученик ответил на вопросы:
+${formatted}
+
+Составь связный искренний текст от первого лица на основе ответов.
+
+ЖЁСТКИЕ ТРЕБОВАНИЯ (важнее всего остального):
+1. Имя ученика НЕ упоминай. Его нет в данных, придумывать или ставить заглушку («Меня зовут…») нельзя. Начни сразу с содержания.
+2. ЗАПРЕЩЕНЫ формулы представления: «Меня зовут», «Привет, я», «Здравствуйте», «Я учусь в…».
+3. ЗАПРЕЩЕНЫ шаблонные обороты: «школьные годы пролетели незаметно», «эти годы запомнятся навсегда», «спасибо за всё», «впереди новая жизнь», «я никогда не забуду». Пиши своими словами.
+4. Литературный русский, без канцеляризмов и пафоса. Никаких неестественных конструкций типа «дарит мне X и Y».
+5. Сохрани индивидуальность ученика — не превращай в шаблонную выпускную речь.
+6. Не выдумывай факты которых нет в ответах. Пропущенные поля просто не упоминай.${shortHint}
 7. Между предложениями и абзацами НЕ ставь пустые строки. Абзацы можно (новая строка), но БЕЗ пустой строки между ними. Никаких двойных переносов \\n\\n.
 
 Лимит: СТРОГО не более ${maxChars} символов.
@@ -218,6 +252,9 @@ export async function POST(req: NextRequest) {
   if (action === 'form_garden' && textType !== 'garden') {
     return NextResponse.json({ error: 'Анкета доступна только для альбомов детского сада' }, { status: 403 })
   }
+  if (action === 'form_grade11' && textType !== 'grade11') {
+    return NextResponse.json({ error: 'Анкета доступна только для альбомов выпускных классов' }, { status: 403 })
+  }
 
   const maxChars = Number((album as any).text_max_chars) || 500
 
@@ -234,15 +271,15 @@ export async function POST(req: NextRequest) {
     if (Object.keys(fields).length === 0) {
       return NextResponse.json({ error: 'Заполните хотя бы одно поле анкеты' }, { status: 400 })
     }
-    prompt = action === 'form_grade4'
-      ? buildPromptFormGrade4(fields, maxChars)
-      : buildPromptFormGarden(fields, maxChars)
+    if (action === 'form_grade4') prompt = buildPromptFormGrade4(fields, maxChars)
+    else if (action === 'form_garden') prompt = buildPromptFormGarden(fields, maxChars)
+    else prompt = buildPromptFormGrade11(fields, maxChars)
   }
 
   const client = new Anthropic({ apiKey })
   const temperature = action === 'fix' ? 0.3 : 0.8
 
-  const isForm = action === 'form_grade4' || action === 'form_garden'
+  const isForm = action === 'form_grade4' || action === 'form_garden' || action === 'form_grade11'
 
   try {
     let result = await callClaude(client, prompt, temperature)
