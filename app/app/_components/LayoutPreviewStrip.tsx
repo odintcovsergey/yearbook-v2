@@ -37,7 +37,12 @@ type Props = {
 }
 
 type TemplateDetailResponse = {
-  template_set: { id: string; spread_width_mm: number; spread_height_mm: number }
+  template_set: {
+    id: string
+    spread_width_mm: number
+    spread_height_mm: number
+    default_background_url: string | null
+  }
   spread_templates: SpreadTemplate[]
 }
 
@@ -199,6 +204,13 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
     return m
   }, [detail])
 
+  // Public URL фона набора (если задан). Применяется во всех мини-канвасах.
+  const backgroundUrl = useMemo(() => {
+    const path = detail?.template_set.default_background_url
+    if (!path) return null
+    return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${path}`
+  }, [detail])
+
   const spreads = layout.spreads as SpreadInstance[]
 
   // Визуальные развороты — пересчитываются когда обновляются spreads или шаблоны.
@@ -259,6 +271,8 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       template={tmpl}
                       containerWidth={containerWidth}
                       mode="preview"
+                      backgroundUrl={backgroundUrl}
+                      pageSide="spread"
                     />
                   </div>
                   <div className="text-[10px] text-center text-gray-500 mt-1">
@@ -288,6 +302,8 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       template={leftTmpl}
                       containerWidth={halfWidth}
                       mode="preview"
+                      backgroundUrl={backgroundUrl}
+                      pageSide="left"
                     />
                   ) : (
                     <ForzacOrEmptySlot
@@ -306,6 +322,8 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       template={rightTmpl}
                       containerWidth={halfWidth}
                       mode="preview"
+                      backgroundUrl={backgroundUrl}
+                      pageSide="right"
                     />
                   ) : (
                     <ForzacOrEmptySlot

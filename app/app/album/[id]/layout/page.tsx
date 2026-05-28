@@ -2038,6 +2038,7 @@ function LayoutEditorPageInner({
           onAddRequest={isReadOnly ? undefined : handleAddRequest}
           readOnly={isReadOnly}
           softShift={isSoftAlbum}
+          backgroundUrl={backgroundUrl}
         />
       )}
 

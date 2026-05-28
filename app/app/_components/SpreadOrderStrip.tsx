@@ -68,6 +68,8 @@ type Props = {
    * (левая = форзац), а последняя — ЛЕВОЙ последнего (правая = форзац).
    */
   softShift?: boolean
+  /** Public URL фона набора (template_sets.default_background_url). */
+  backgroundUrl?: string | null
 }
 
 const PAGE_THUMB_WIDTH = 96 // одна страница (~140px высоты для книжной пропорции)
@@ -83,6 +85,7 @@ export default function SpreadOrderStrip({
   onAddRequest,
   readOnly = false,
   softShift = false,
+  backgroundUrl = null,
 }: Props) {
   const templateMap = useMemo(() => {
     const map = new Map<string, SpreadTemplate>()
@@ -208,6 +211,7 @@ export default function SpreadOrderStrip({
                       : undefined
                   }
                   disabled={readOnly}
+                  backgroundUrl={backgroundUrl}
                 />
               )
             })}
@@ -252,6 +256,7 @@ function SpreadCard({
   onDeletePage,
   onDeleteSpread,
   disabled,
+  backgroundUrl,
 }: {
   pair: VisualSpread
   leftPage: SpreadInstance | null
@@ -265,6 +270,7 @@ function SpreadCard({
   onDeletePage?: (pageIdx: number) => void
   onDeleteSpread?: () => void
   disabled: boolean
+  backgroundUrl: string | null
 }) {
   // Является ли разворот двух-страничным мастером (J-Spread)?
   // Тогда обе страницы — это ОДНА запись SpreadInstance с одним
@@ -292,6 +298,8 @@ function SpreadCard({
             onSelect={onSelect}
             onDeletePage={onDeletePage}
             disabled={disabled}
+            backgroundUrl={backgroundUrl}
+            pageSide="spread"
           />
         ) : (
           <>
@@ -306,6 +314,8 @@ function SpreadCard({
                 onSelect={onSelect}
                 onDeletePage={onDeletePage}
                 disabled={disabled}
+                backgroundUrl={backgroundUrl}
+                pageSide="left"
               />
             ) : (
               <EmptySideThumb width={PAGE_THUMB_WIDTH} />
@@ -323,6 +333,8 @@ function SpreadCard({
                 onSelect={onSelect}
                 onDeletePage={onDeletePage}
                 disabled={disabled}
+                backgroundUrl={backgroundUrl}
+                pageSide="right"
               />
             ) : (
               <EmptySideThumb width={PAGE_THUMB_WIDTH} />
@@ -369,6 +381,8 @@ function DraggablePage({
   onSelect,
   onDeletePage,
   disabled,
+  backgroundUrl,
+  pageSide,
 }: {
   pageIdx: number
   page: SpreadInstance
@@ -378,6 +392,8 @@ function DraggablePage({
   onSelect: (idx: number) => void
   onDeletePage?: (pageIdx: number) => void
   disabled: boolean
+  backgroundUrl: string | null
+  pageSide: 'spread' | 'left' | 'right'
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `page-${page.spread_index}`, disabled })
@@ -412,6 +428,8 @@ function DraggablePage({
           template={template}
           containerWidth={width}
           mode="preview"
+          backgroundUrl={backgroundUrl}
+          pageSide={pageSide}
         />
       </div>
 
