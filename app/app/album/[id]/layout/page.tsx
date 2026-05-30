@@ -17,6 +17,11 @@ import type {
   SpreadTemplate,
 } from '@/lib/album-builder/types'
 import { segmentToSpreads, findVisualSpreadForPage } from '@/lib/album-builder/segment-to-spreads'
+import {
+  resolveBackgrounds,
+  type SpreadBackgroundInput,
+  type BackgroundPoolRow,
+} from '@/lib/backgrounds/resolve-background'
 import PhotoPalette from '../../../_components/PhotoPalette'
 import SpreadOrderStrip from '../../../_components/SpreadOrderStrip'
 import TemplatePickerModal from '../../../_components/TemplatePickerModal'
@@ -260,7 +265,12 @@ function LayoutEditorPageInner({
   const [templates, setTemplates] = useState<SpreadTemplate[]>([])
   // Public URL фона набора (template_sets.default_background_url).
   // null если фон не загружен — канвас рисует без подложки (старое поведение).
+  // Используется как fallback для категорийной ротации (если категория пуста).
   const [backgroundUrl, setBackgroundUrl] = useState<string | null>(null)
+  // Путь default-фона (НЕ public URL) — отдаём в resolveBackgrounds как fallback.
+  const [defaultBgPath, setDefaultBgPath] = useState<string | null>(null)
+  // Пул категорийных фонов набора (template_set_backgrounds) для ротации.
+  const [categoryBackgrounds, setCategoryBackgrounds] = useState<BackgroundPoolRow[]>([])
   const [photos, setPhotos] = useState<AlbumPhoto[]>([])
   const [albumTitle, setAlbumTitle] = useState<string>('')
   // РЭ.27.4: тип переплёта альбома (вычисляется на сервере через
@@ -508,11 +518,13 @@ function LayoutEditorPageInner({
         setLastSavedSpreads(loadedLayout.spreads)
         setTemplates(templateJson.spread_templates ?? [])
         const bgPath = templateJson.template_set?.default_background_url ?? null
+        setDefaultBgPath(bgPath)
         setBackgroundUrl(
           bgPath
             ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${bgPath}`
             : null
         )
+        setCategoryBackgrounds((templateJson.backgrounds ?? []) as BackgroundPoolRow[])
         setPhotos(photosJson.photos ?? [])
         setAlbumTitle(title)
         setEffectivePrintType(printType)
@@ -1563,6 +1575,43 @@ function LayoutEditorPageInner({
     ? templatesById.get(rightPage.template_id)
     : null
 
+  // ─── Категорийные фоны: фон текущего разворота ──────────────────────────
+  // Ротация считается по ВСЕМ визуальным разворотам (зависит от позиции внутри
+  // раздела), затем берём фон текущего. Категория — по ведущей странице
+  // (левая, иначе правая). Приоритет: album override (__bg__) → master override
+  // → ротация категории → default_background_url → без фона. Расчёт дешёвый,
+  // считаем при каждом ререндере (как visualSpreads выше — нельзя useMemo после
+  // ранних return'ов).
+  const bgInputs: SpreadBackgroundInput[] = visualSpreads.map((vs) => {
+    const leadIdx = vs.leftIdx ?? vs.rightIdx
+    const page = leadIdx !== undefined ? spreads[leadIdx] : undefined
+    const master = page ? templatesById.get(page.template_id) : undefined
+    return {
+      leadingPageRole: master?.page_role ?? null,
+      sectionType: page?.section_type ?? null,
+      masterOverrideUrl: master?.background_override_url ?? null,
+      albumOverrideUrl: page?.data?.['__bg__'] ?? null,
+    }
+  })
+  const bgPaths = resolveBackgrounds(bgInputs, categoryBackgrounds, defaultBgPath)
+  const toBgPublicUrl = (p: string | null): string | null => {
+    if (!p) return null
+    if (p.startsWith('http')) return p
+    return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${p}`
+  }
+  // Фон текущего разворота. Если индекс не найден — старый общий backgroundUrl.
+  const currentSpreadBgUrl =
+    currentPairIdx >= 0 ? toBgPublicUrl(bgPaths[currentPairIdx]) : backgroundUrl
+
+  // Карта «индекс страницы → public URL фона его разворота» — для ленты
+  // миниатюр (SpreadOrderStrip), чтобы ротация была видна на всех разворотах.
+  const bgUrlByPageIdx = new Map<number, string | null>()
+  visualSpreads.forEach((vs, i) => {
+    const url = toBgPublicUrl(bgPaths[i])
+    if (vs.leftIdx !== undefined) bgUrlByPageIdx.set(vs.leftIdx, url)
+    if (vs.rightIdx !== undefined) bgUrlByPageIdx.set(vs.rightIdx, url)
+  })
+
   // Динамический расчёт canvas: вписываем РАЗВОРОТ в доступное пространство
   // с сохранением аспекта. Для is_spread мастера ширина = ширина одной
   // страницы (потому что мастер уже двухстраничный, у него width_mm
@@ -1775,7 +1824,7 @@ function LayoutEditorPageInner({
                           onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
                           onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
                           textStyleOverrides={textStyleOverrides}
-                          backgroundUrl={backgroundUrl}
+                          backgroundUrl={currentSpreadBgUrl}
                           pageSide="spread"
                         />
                       </div>
@@ -1814,7 +1863,7 @@ function LayoutEditorPageInner({
                               onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
                               onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
                           textStyleOverrides={textStyleOverrides}
-                          backgroundUrl={backgroundUrl}
+                          backgroundUrl={currentSpreadBgUrl}
                           pageSide="left"
                             />
                           </div>
@@ -1887,7 +1936,7 @@ function LayoutEditorPageInner({
                               onPhotoContextMenu={isReadOnly ? undefined : handlePhotoContextMenu}
                               onPhotoClick={isReadOnly ? undefined : handlePhotoClick}
                           textStyleOverrides={textStyleOverrides}
-                          backgroundUrl={backgroundUrl}
+                          backgroundUrl={currentSpreadBgUrl}
                           pageSide="right"
                             />
                           </div>
@@ -2039,6 +2088,7 @@ function LayoutEditorPageInner({
           readOnly={isReadOnly}
           softShift={isSoftAlbum}
           backgroundUrl={backgroundUrl}
+          pageBackgroundUrl={(idx) => bgUrlByPageIdx.get(idx) ?? null}
         />
       )}
 

@@ -324,6 +324,12 @@ export type SpreadTemplate = {
   is_fallback: boolean;
   mirror_for_soft: boolean;
   audit_notes: string | null;
+  /**
+   * Категорийные фоны: если задан — фон этого мастера фиксирован (приоритет
+   * над ротацией категории). NULL = ротация. Опционально, т.к. не все запросы
+   * выбирают это поле.
+   */
+  background_override_url?: string | null;
 };
 
 /**

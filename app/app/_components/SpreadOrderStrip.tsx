@@ -68,8 +68,14 @@ type Props = {
    * (левая = форзац), а последняя — ЛЕВОЙ последнего (правая = форзац).
    */
   softShift?: boolean
-  /** Public URL фона набора (template_sets.default_background_url). */
+  /** Public URL фона набора (template_sets.default_background_url) — fallback. */
   backgroundUrl?: string | null
+  /**
+   * Категорийные фоны: public URL фона для конкретной страницы (по её индексу
+   * в spreads). Если задан — переопределяет общий backgroundUrl, показывая
+   * ротацию в миниатюрах. null из резолвера = у этой страницы фона нет.
+   */
+  pageBackgroundUrl?: (pageIdx: number) => string | null
 }
 
 const PAGE_THUMB_WIDTH = 96 // одна страница (~140px высоты для книжной пропорции)
@@ -86,6 +92,7 @@ export default function SpreadOrderStrip({
   readOnly = false,
   softShift = false,
   backgroundUrl = null,
+  pageBackgroundUrl,
 }: Props) {
   const templateMap = useMemo(() => {
     const map = new Map<string, SpreadTemplate>()
@@ -212,6 +219,7 @@ export default function SpreadOrderStrip({
                   }
                   disabled={readOnly}
                   backgroundUrl={backgroundUrl}
+                  pageBackgroundUrl={pageBackgroundUrl}
                 />
               )
             })}
@@ -257,6 +265,7 @@ function SpreadCard({
   onDeleteSpread,
   disabled,
   backgroundUrl,
+  pageBackgroundUrl,
 }: {
   pair: VisualSpread
   leftPage: SpreadInstance | null
@@ -271,11 +280,16 @@ function SpreadCard({
   onDeleteSpread?: () => void
   disabled: boolean
   backgroundUrl: string | null
+  pageBackgroundUrl?: (pageIdx: number) => string | null
 }) {
   // Является ли разворот двух-страничным мастером (J-Spread)?
   // Тогда обе страницы — это ОДНА запись SpreadInstance с одним
   // spread_index и одним sortable-item. Drag берёт всю карточку.
   const isSpreadMaster = pair.isSpread && pair.leftIdx !== undefined
+
+  // Фон страницы: категорийный (по индексу) с откатом на общий backgroundUrl.
+  const resolveBg = (idx: number | undefined): string | null =>
+    idx !== undefined && pageBackgroundUrl ? pageBackgroundUrl(idx) : backgroundUrl
 
   return (
     <div
@@ -298,7 +312,7 @@ function SpreadCard({
             onSelect={onSelect}
             onDeletePage={onDeletePage}
             disabled={disabled}
-            backgroundUrl={backgroundUrl}
+            backgroundUrl={resolveBg(pair.leftIdx)}
             pageSide="spread"
           />
         ) : (
@@ -314,7 +328,7 @@ function SpreadCard({
                 onSelect={onSelect}
                 onDeletePage={onDeletePage}
                 disabled={disabled}
-                backgroundUrl={backgroundUrl}
+                backgroundUrl={resolveBg(pair.leftIdx)}
                 pageSide="left"
               />
             ) : (
@@ -333,7 +347,7 @@ function SpreadCard({
                 onSelect={onSelect}
                 onDeletePage={onDeletePage}
                 disabled={disabled}
-                backgroundUrl={backgroundUrl}
+                backgroundUrl={resolveBg(pair.rightIdx)}
                 pageSide="right"
               />
             ) : (

@@ -46,7 +46,10 @@ const TEMPLATE_SET_FIELDS =
 
 const SPREAD_TEMPLATE_FIELDS =
   'id, name, type, is_spread, width_mm, height_mm, ' +
-  'placeholders, rules, sort_order, background_url, created_at'
+  'placeholders, rules, sort_order, background_url, created_at, ' +
+  // Нужны редактору для категорийных фонов с ротацией: page_role → категория,
+  // background_override_url → фон конкретного мастера (приоритет над ротацией).
+  'page_role, background_override_url'
 
 // ============================================================
 // Локальная копия assertAlbumAccess (паттерн из app/api/tenant/route.ts).
@@ -265,9 +268,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: spreadsError.message }, { status: 500 })
     }
 
+    // Пул категорийных фонов набора (для ротации в редакторе/PDF). Партнёру
+    // super-admin API недоступно по роли, поэтому отдаём пул здесь.
+    const { data: backgrounds, error: bgError } = await supabaseAdmin
+      .from('template_set_backgrounds')
+      .select('id, category, url, sort_order, side')
+      .eq('template_set_id', id)
+      .order('category', { ascending: true })
+      .order('sort_order', { ascending: true })
+
+    if (bgError) {
+      return NextResponse.json({ error: bgError.message }, { status: 500 })
+    }
+
     return NextResponse.json({
       template_set: templateSet,
       spread_templates: spreadTemplates ?? [],
+      backgrounds: backgrounds ?? [],
     })
   }
 
