@@ -166,23 +166,27 @@ export async function renderAllSpreads(
     templateSet.default_background_url ?? null,
   );
 
-  // Кэш cover-нарезанных embed'ов по пути (один фон embed'ится один раз).
+  // Кэш cover-нарезанных embed'ов по пути (один фон обрабатывается один раз).
+  // Грузим ВСЕ уникальные фоны ПАРАЛЛЕЛЬНО (fetch + sharp cover дорогие) —
+  // это снимает основное замедление экспорта от множества фонов. Уникальных
+  // путей немного (≈ по числу категорий), память не раздувается.
   const bgCache = new Map<string, BackgroundImages | null>();
-  const loadCached = async (
-    path: string | null,
-  ): Promise<BackgroundImages | null> => {
-    if (!path) return null;
-    if (bgCache.has(path)) return bgCache.get(path) ?? null;
-    const loaded = await loadBackground(pdfDoc, path, spreadAspect, warnings);
-    bgCache.set(path, loaded);
-    return loaded;
-  };
+  const distinctPaths = Array.from(
+    new Set(bgPaths.filter((p): p is string => !!p)),
+  );
+  await Promise.all(
+    distinctPaths.map(async (path) => {
+      const loaded = await loadBackground(pdfDoc, path, spreadAspect, warnings);
+      bgCache.set(path, loaded);
+    }),
+  );
 
   const bgByPageIndex = new Map<number, BackgroundImages | null>();
   const sideByIndex = new Map<number, 'left' | 'right'>();
   for (let i = 0; i < visualSpreads.length; i++) {
     const vs = visualSpreads[i];
-    const images = await loadCached(bgPaths[i]);
+    const path = bgPaths[i];
+    const images = path ? bgCache.get(path) ?? null : null;
     if (vs.leftIdx !== undefined) {
       const sp = layout.spreads[vs.leftIdx];
       if (sp) {

@@ -5,7 +5,6 @@ import dynamic from 'next/dynamic'
 import { useRouter, useParams } from 'next/navigation'
 import type { TemplateSetDetailResponse, SpreadTemplate } from '../_components/types'
 import { PLACEHOLDER_COLORS } from '../_components/colors'
-import TemplateBackgroundPanel from '../_components/TemplateBackgroundPanel'
 import CategoryBackgroundsPanel from '../_components/CategoryBackgroundsPanel'
 import type { ConfigType, PrintType } from '@/lib/album-builder/types'
 
@@ -310,18 +309,6 @@ export default function TemplateDetailPage() {
                   text
                 </span>
               </div>
-
-              <TemplateBackgroundPanel
-                templateSetId={data.template_set.id}
-                currentPath={data.template_set.default_background_url}
-                onChange={(newPath) =>
-                  setData((prev) =>
-                    prev
-                      ? { ...prev, template_set: { ...prev.template_set, default_background_url: newPath } }
-                      : prev
-                  )
-                }
-              />
 
               <CategoryBackgroundsPanel templateSetId={data.template_set.id} />
 
