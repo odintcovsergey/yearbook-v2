@@ -39,6 +39,10 @@ import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform';
 import { parseFontSizeMult, parseColor } from '@/lib/text-style';
 import { applyBalanceFromData } from '@/lib/balance-overrides';
 import { segmentToSpreads } from '@/lib/album-builder/segment-to-spreads';
+import {
+  resolveBackgrounds,
+  type SpreadBackgroundInput,
+} from '@/lib/backgrounds/resolve-background';
 import type {
   AlbumExportInput,
   PageBoxes,
@@ -77,14 +81,12 @@ type RenderContext = {
   /** Подконтекст для photo-embed (передаётся в embedPhotoOnPage). */
   photoCtx: PhotoEmbedContext;
   /**
-   * Embed'нутые версии фона набора (template_sets.default_background_url):
-   * - spread: целое изображение для двустраничного мастера
-   * - left:   левая половина (для левой страницы обычного разворота)
-   * - right:  правая половина (для правой страницы)
-   * null = фон не задан или не загрузился — рисуем без подложки.
-   * Каждая версия embed'ится в pdfDoc один раз и переиспользуется на всех страницах.
+   * Категорийные фоны: для каждого spread_index — embed'нутые версии фона
+   * ЕГО разворота (spread/left/right), уже cover-нарезанные и закэшированные
+   * по url (один и тот же фон embed'ится один раз). null = у этого разворота
+   * фона нет. Резолвится через resolveBackgrounds (ротация + приоритеты).
    */
-  background: BackgroundImages | null;
+  bgByPageIndex: ReadonlyMap<number, BackgroundImages | null>;
   /**
    * Сторона разворота для одностраничного мастера (pageHint='single'):
    * 'left' — фон смещаем так, чтобы видна была левая половина разворота;
@@ -132,31 +134,67 @@ export async function renderAllSpreads(
     templateById.set(t.id, t);
   }
 
-  // Фоновое изображение набора — embed один раз, переиспользуем на всех страницах.
-  const background = await loadBackground(
-    pdfDoc,
+  // ── Категорийные фоны: резолв на каждый разворот + cover-нарезка + кэш ──
+  //
+  // 1) Группируем страницы в визуальные развороты (как в редакторе).
+  // 2) Резолвим путь фона на каждый разворот (ротация по категории + приоритеты),
+  //    тот же resolveBackgrounds что канвас/превью.
+  // 3) Грузим и cover-нарезаем КАЖДЫЙ уникальный путь ровно один раз (кэш).
+  // 4) Строим карты: spread_index → BackgroundImages и spread_index → 'left'|'right'.
+  //
+  // Aspect разворота (для cover): две trim-страницы рядом по ширине.
+  const spreadAspect =
+    (pageBoxes.trim_width_mm * 2) / pageBoxes.trim_height_mm;
+
+  const visualSpreads = segmentToSpreads(layout.spreads, templateById);
+
+  // Вход резолвера на каждый визуальный разворот: категория по ведущей странице.
+  const bgInputs: SpreadBackgroundInput[] = visualSpreads.map((vs) => {
+    const leadIdx = vs.leftIdx ?? vs.rightIdx;
+    const page = leadIdx !== undefined ? layout.spreads[leadIdx] : undefined;
+    const master = page ? templateById.get(page.template_id) : undefined;
+    return {
+      leadingPageRole: master?.page_role ?? null,
+      sectionType: page?.section_type ?? null,
+      masterOverrideUrl: master?.background_override_url ?? null,
+      albumOverrideUrl: (page?.data?.['__bg__'] as string | undefined) ?? null,
+    };
+  });
+  const bgPaths = resolveBackgrounds(
+    bgInputs,
+    input.backgrounds ?? [],
     templateSet.default_background_url ?? null,
-    warnings,
   );
 
-  // Карта spread_index → 'left'|'right' для одностраничных мастеров.
-  // segmentToSpreads группирует страницы как в визуальном редакторе.
-  // Для is_spread мастеров значение не пишется (фон у них рисуется как 'spread').
-  // softShift пока всегда false — для soft-альбомов первая страница может
-  // быть правой первого разворота, но это уточнение оставим следующей итерации
-  // (сейчас типография обычно печатает в layflat/pages-mode, где это не критично).
+  // Кэш cover-нарезанных embed'ов по пути (один фон embed'ится один раз).
+  const bgCache = new Map<string, BackgroundImages | null>();
+  const loadCached = async (
+    path: string | null,
+  ): Promise<BackgroundImages | null> => {
+    if (!path) return null;
+    if (bgCache.has(path)) return bgCache.get(path) ?? null;
+    const loaded = await loadBackground(pdfDoc, path, spreadAspect, warnings);
+    bgCache.set(path, loaded);
+    return loaded;
+  };
+
+  const bgByPageIndex = new Map<number, BackgroundImages | null>();
   const sideByIndex = new Map<number, 'left' | 'right'>();
-  if (background) {
-    const visualSpreads = segmentToSpreads(layout.spreads, templateById);
-    for (const vs of visualSpreads) {
-      if (vs.isSpread) continue;
-      if (vs.leftIdx !== undefined) {
-        const leftSpread = layout.spreads[vs.leftIdx];
-        if (leftSpread) sideByIndex.set(leftSpread.spread_index, 'left');
+  for (let i = 0; i < visualSpreads.length; i++) {
+    const vs = visualSpreads[i];
+    const images = await loadCached(bgPaths[i]);
+    if (vs.leftIdx !== undefined) {
+      const sp = layout.spreads[vs.leftIdx];
+      if (sp) {
+        bgByPageIndex.set(sp.spread_index, images);
+        if (!vs.isSpread) sideByIndex.set(sp.spread_index, 'left');
       }
-      if (vs.rightIdx !== undefined) {
-        const rightSpread = layout.spreads[vs.rightIdx];
-        if (rightSpread) sideByIndex.set(rightSpread.spread_index, 'right');
+    }
+    if (vs.rightIdx !== undefined && vs.rightIdx !== vs.leftIdx) {
+      const sp = layout.spreads[vs.rightIdx];
+      if (sp) {
+        bgByPageIndex.set(sp.spread_index, images);
+        if (!vs.isSpread) sideByIndex.set(sp.spread_index, 'right');
       }
     }
   }
@@ -168,7 +206,7 @@ export async function renderAllSpreads(
     warnings,
     profile,
     photoCtx,
-    background,
+    bgByPageIndex,
     sideByIndex,
   };
 
@@ -284,16 +322,17 @@ async function renderPage(
     page.setBleedBox(0, 0, mmToPt(media_w_mm), mmToPt(media_h_mm));
   }
 
-  // Фон набора — первый слой, под placeholder'ами.
+  // Фон ЭТОГО разворота — первый слой, под placeholder'ами.
   // Для одностраничных мастеров (pageHint='single') берём сторону из ctx.sideByIndex.
-  if (ctx.background) {
+  const pageBackground = ctx.bgByPageIndex.get(instance.spread_index) ?? null;
+  if (pageBackground) {
     const bgSide: 'spread' | 'left' | 'right' =
       pageHint === 'spread'
         ? 'spread'
         : pageHint === 'left' || pageHint === 'right'
           ? pageHint
           : ctx.sideByIndex.get(instance.spread_index) ?? 'left';
-    drawBackground(page, ctx.background, ctx.pageBoxes, trim_w_mm, bgSide);
+    drawBackground(page, pageBackground, ctx.pageBoxes, trim_w_mm, bgSide);
   }
 
   // Для spread mode placeholderToPdfBox должна работать с увеличенной
@@ -457,6 +496,7 @@ function drawText(
 async function loadBackground(
   pdfDoc: PDFDocument,
   path: string | null,
+  spreadAspect: number,
   warnings: PdfWarning[]
 ): Promise<BackgroundImages | null> {
   if (!path) return null;
@@ -480,10 +520,6 @@ async function loadBackground(
     }
     const buffer = Buffer.from(await response.arrayBuffer());
 
-    // Используем sharp чтобы предварительно нарезать фон на три версии:
-    // целая (для is_spread мастеров) и две половины (для левой/правой
-    // страниц обычного разворота). Каждую embed'им отдельно — на странице
-    // потом рисуем ровно по ширине без выноса за media box.
     const meta = await sharp(buffer).metadata();
     const width = meta.width ?? 0;
     const height = meta.height ?? 0;
@@ -495,12 +531,30 @@ async function loadBackground(
       return null;
     }
 
-    const halfWidth = Math.floor(width / 2);
-    const leftBuf = await sharp(buffer)
-      .extract({ left: 0, top: 0, width: halfWidth, height })
+    // «cover»: приводим фон к ПРОПОРЦИИ разворота с сохранением аспекта,
+    // лишнее обрезаем по центру — ровно как канвас (SpreadBackgroundLayer).
+    // Бокс вписываем в исходник (без апскейла): по широкой стороне режем.
+    const srcAspect = width / height;
+    let tW: number;
+    let tH: number;
+    if (srcAspect >= spreadAspect) {
+      tH = height;
+      tW = Math.max(1, Math.round(height * spreadAspect));
+    } else {
+      tW = width;
+      tH = Math.max(1, Math.round(width / spreadAspect));
+    }
+    const covered = await sharp(buffer)
+      .resize(tW, tH, { fit: 'cover', position: 'centre' })
       .toBuffer();
-    const rightBuf = await sharp(buffer)
-      .extract({ left: halfWidth, top: 0, width: width - halfWidth, height })
+
+    // Нарезаем cover-версию на 3: целая (is_spread) + левая/правая половины.
+    const halfWidth = Math.floor(tW / 2);
+    const leftBuf = await sharp(covered)
+      .extract({ left: 0, top: 0, width: halfWidth, height: tH })
+      .toBuffer();
+    const rightBuf = await sharp(covered)
+      .extract({ left: halfWidth, top: 0, width: tW - halfWidth, height: tH })
       .toBuffer();
 
     const isPng = path.toLowerCase().endsWith('.png');
@@ -509,7 +563,7 @@ async function loadBackground(
       : (b: Buffer) => pdfDoc.embedJpg(b);
 
     const [spread, left, right] = await Promise.all([
-      embed(buffer),
+      embed(covered),
       embed(leftBuf),
       embed(rightBuf),
     ]);

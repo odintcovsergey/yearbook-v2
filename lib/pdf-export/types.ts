@@ -16,6 +16,7 @@ import type {
   TemplateSet,
   AlbumInput,
 } from '@/lib/album-builder/types';
+import type { BackgroundPoolRow } from '@/lib/backgrounds/resolve-background';
 
 // ─── ExportProfile (из БД export_profiles) ────────────────────────────────
 
@@ -118,6 +119,12 @@ export type AlbumExportInput = {
   originals: OriginalPhoto[];
   urlToFilename: Record<string, string>;
   profile: ExportProfile;
+  /**
+   * Пул категорийных фонов набора (template_set_backgrounds). Опционально —
+   * если не передан, фон берётся только из templateSet.default_background_url
+   * (старое поведение). Движок резолвит фон на каждый разворот с ротацией.
+   */
+  backgrounds?: BackgroundPoolRow[];
 };
 
 // ─── Warnings ─────────────────────────────────────────────────────────────

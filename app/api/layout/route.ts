@@ -2101,6 +2101,15 @@ async function handleExportPdf(
   // При коллизии filename'ов выиграет первый — то есть новый.
   const originals: OriginalPhoto[] = [...inlineOriginals, ...legacyOriginals]
 
+  // 5e. Пул категорийных фонов набора (template_set_backgrounds) — для
+  // ротации фонов в PDF (тот же резолвер, что в редакторе/превью).
+  const { data: bgPool } = await supabaseAdmin
+    .from('template_set_backgrounds')
+    .select('category, url, sort_order')
+    .eq('template_set_id', templateSet.id)
+    .order('category', { ascending: true })
+    .order('sort_order', { ascending: true })
+
   // 6. exportAlbumPdf
   const exportInput: AlbumExportInput = {
     album: {
@@ -2120,6 +2129,7 @@ async function handleExportPdf(
     originals,
     urlToFilename,
     profile,
+    backgrounds: bgPool ?? [],
   }
 
   let pdfResult: Awaited<ReturnType<typeof exportAlbumPdf>>
