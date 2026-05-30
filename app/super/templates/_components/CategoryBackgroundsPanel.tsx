@@ -32,6 +32,10 @@ import {
   BACKGROUND_CATEGORIES,
   BACKGROUND_CATEGORY_LABELS,
 } from '@/lib/backgrounds/page-role-to-category'
+import { supabaseBrowser } from '@/lib/supabase-browser'
+
+const BUCKET = 'template-backgrounds'
+const MAX_SIZE = 50 * 1024 * 1024 // 50 МБ — совпадает с лимитом bucket'а
 
 type Bg = {
   id: string
@@ -164,15 +168,66 @@ function CategorySection({
     async (files: File[]) => {
       if (files.length === 0) return
       onError(null)
+
+      // Клиентская валидация до запроса подписи.
+      for (const f of files) {
+        if (!['image/jpeg', 'image/png'].includes(f.type)) {
+          onError('Допустимы только JPG и PNG')
+          return
+        }
+        if (f.size > MAX_SIZE) {
+          onError('Файл больше 50 МБ')
+          return
+        }
+      }
+
       setUploading(true)
       try {
-        const fd = new FormData()
-        fd.append('category', category)
-        for (const f of files) fd.append('file', f)
-        const r = await fetch(base, { method: 'POST', credentials: 'include', body: fd })
-        const data = await r.json().catch(() => ({}))
-        if (!r.ok) {
-          onError(data.error ?? `Ошибка загрузки (HTTP ${r.status})`)
+        // Шаг 1 — попросить у сервера подписанные ссылки на загрузку.
+        const signRes = await fetch(base, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'sign',
+            category,
+            files: files.map((f) => ({ ext: f.type === 'image/png' ? 'png' : 'jpg' })),
+          }),
+        })
+        const signData = await signRes.json().catch(() => ({}))
+        if (!signRes.ok) {
+          onError(signData.error ?? `Ошибка подписи (HTTP ${signRes.status})`)
+          return
+        }
+        const uploads: Array<{ path: string; token: string }> = signData.uploads
+
+        // Шаг 2 — залить файлы НАПРЯМУЮ в Storage (мимо нашего сервера,
+        // поэтому лимит тела Vercel не действует).
+        for (let i = 0; i < files.length; i++) {
+          const { path, token } = uploads[i]
+          const { error: upErr } = await supabaseBrowser.storage
+            .from(BUCKET)
+            .uploadToSignedUrl(path, token, files[i], { contentType: files[i].type })
+          if (upErr) {
+            onError(`Не удалось загрузить файл: ${upErr.message}`)
+            return
+          }
+        }
+
+        // Шаг 3 — зафиксировать записи в БД.
+        const commitRes = await fetch(base, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'commit',
+            category,
+            paths: uploads.map((u) => u.path),
+          }),
+        })
+        const commitData = await commitRes.json().catch(() => ({}))
+        if (!commitRes.ok) {
+          onError(commitData.error ?? `Ошибка сохранения (HTTP ${commitRes.status})`)
           return
         }
         onChanged()

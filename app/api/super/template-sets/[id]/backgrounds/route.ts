@@ -19,15 +19,8 @@ export const revalidate = 0
 // ============================================================
 
 const BUCKET = 'template-backgrounds'
-const ALLOWED_MIME = new Set(['image/jpeg', 'image/png'])
-const MAX_SIZE = 50 * 1024 * 1024 // 50 MB
+const ALLOWED_EXT = new Set(['jpg', 'png'])
 const ALLOWED_SIDES = new Set(['spread', 'left', 'right', 'any'])
-
-function extFromMime(mime: string): 'jpg' | 'png' | null {
-  if (mime === 'image/jpeg') return 'jpg'
-  if (mime === 'image/png') return 'png'
-  return null
-}
 
 function publicUrl(path: string): string {
   return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`
@@ -77,9 +70,16 @@ export async function GET(
 }
 
 // ============================================================
-// POST — загрузить один или несколько фонов в категорию.
-// multipart/form-data: file (один или несколько), category, side (опц).
-// Каждый файл становится отдельной строкой, sort_order дописывается в конец.
+// POST — двухшаговая загрузка фонов (обход лимита тела Vercel ~4.5 МБ).
+// Файл НЕ проходит через сервер: клиент льёт его прямо в Storage по
+// подписанной ссылке.
+//
+//   { action: 'sign',   category, files: [{ ext: 'jpg'|'png' }] }
+//     → создаём пути <set>/<category>/<uuid>.<ext> и подписанные upload-URL.
+//       Записи в БД ещё НЕ создаём.
+//   { action: 'commit', category, side, paths: string[] }
+//     → после успешной заливки клиентом создаём строки template_set_backgrounds,
+//       sort_order дописывается в конец категории.
 // ============================================================
 export async function POST(
   req: NextRequest,
@@ -98,93 +98,110 @@ export async function POST(
     return NextResponse.json({ error: 'Набор не найден' }, { status: 404 })
   }
 
-  let formData: FormData
+  let body: Record<string, unknown>
   try {
-    formData = await req.formData()
+    body = await req.json()
   } catch {
     return NextResponse.json({ error: 'Неверный формат запроса' }, { status: 400 })
   }
 
-  const category = String(formData.get('category') ?? '').trim()
+  const category = String(body.category ?? '').trim()
   if (!category) {
     return NextResponse.json({ error: 'Категория обязательна' }, { status: 400 })
   }
 
-  const sideRaw = String(formData.get('side') ?? 'spread')
-  const side = ALLOWED_SIDES.has(sideRaw) ? sideRaw : 'spread'
+  // ── Шаг 1: выдать подписанные ссылки на загрузку ───────────────────────
+  if (body.action === 'sign') {
+    const files = Array.isArray(body.files) ? body.files : []
+    if (files.length === 0) {
+      return NextResponse.json({ error: 'Нет файлов' }, { status: 400 })
+    }
 
-  const files = formData.getAll('file').filter((f): f is File => f instanceof File)
-  if (files.length === 0) {
-    return NextResponse.json({ error: 'Нет файлов' }, { status: 400 })
+    const uploads: Array<{ path: string; token: string }> = []
+    for (const f of files) {
+      const ext = String((f as { ext?: unknown })?.ext ?? '')
+      if (!ALLOWED_EXT.has(ext)) {
+        return NextResponse.json({ error: 'Допустимы только JPG и PNG' }, { status: 400 })
+      }
+      const path = `${templateSetId}/${category}/${crypto.randomUUID()}.${ext}`
+      const { data, error } = await supabaseAdmin.storage
+        .from(BUCKET)
+        .createSignedUploadUrl(path)
+      if (error || !data) {
+        return NextResponse.json(
+          { error: error?.message ?? 'Не удалось подписать загрузку' },
+          { status: 500 },
+        )
+      }
+      uploads.push({ path, token: data.token })
+    }
+
+    return NextResponse.json({ ok: true, uploads })
   }
 
-  for (const file of files) {
-    if (!ALLOWED_MIME.has(file.type)) {
-      return NextResponse.json({ error: 'Допустимы только JPG и PNG' }, { status: 400 })
-    }
-    if (file.size > MAX_SIZE) {
-      return NextResponse.json({ error: 'Файл больше 50 МБ' }, { status: 400 })
-    }
-  }
+  // ── Шаг 2: зафиксировать записи после заливки ──────────────────────────
+  if (body.action === 'commit') {
+    const sideRaw = String(body.side ?? 'spread')
+    const side = ALLOWED_SIDES.has(sideRaw) ? sideRaw : 'spread'
 
-  // Текущий максимум sort_order в категории — дописываем новые в конец.
-  const { data: existing } = await supabaseAdmin
-    .from('template_set_backgrounds')
-    .select('sort_order')
-    .eq('template_set_id', templateSetId)
-    .eq('category', category)
-    .order('sort_order', { ascending: false })
-    .limit(1)
-
-  let nextOrder = existing && existing.length > 0 ? existing[0].sort_order + 1 : 0
-
-  const created: Array<Record<string, unknown>> = []
-
-  for (const file of files) {
-    const ext = extFromMime(file.type)!
-    const path = `${templateSetId}/${category}/${crypto.randomUUID()}.${ext}`
-
-    const buffer = Buffer.from(await file.arrayBuffer())
-    const { error: upErr } = await supabaseAdmin.storage
-      .from(BUCKET)
-      .upload(path, buffer, { contentType: file.type, upsert: true })
-
-    if (upErr) {
-      return NextResponse.json({ error: upErr.message }, { status: 500 })
+    const paths = Array.isArray(body.paths) ? (body.paths as unknown[]).map(String) : []
+    if (paths.length === 0) {
+      return NextResponse.json({ error: 'Нет путей' }, { status: 400 })
     }
 
-    const { data: row, error: dbErr } = await supabaseAdmin
+    // Защита: путь должен лежать в каталоге этого набора и категории.
+    const prefix = `${templateSetId}/${category}/`
+    for (const p of paths) {
+      if (!p.startsWith(prefix)) {
+        return NextResponse.json({ error: 'Недопустимый путь файла' }, { status: 400 })
+      }
+    }
+
+    // Текущий максимум sort_order — дописываем новые в конец категории.
+    const { data: existing } = await supabaseAdmin
       .from('template_set_backgrounds')
-      .insert({
-        template_set_id: templateSetId,
-        category,
-        url: path,
-        sort_order: nextOrder,
-        side,
-      })
-      .select('id, category, url, sort_order, side, created_at')
-      .single()
+      .select('sort_order')
+      .eq('template_set_id', templateSetId)
+      .eq('category', category)
+      .order('sort_order', { ascending: false })
+      .limit(1)
 
-    if (dbErr || !row) {
-      // Откатываем загруженный файл, чтобы не плодить сирот.
-      await supabaseAdmin.storage.from(BUCKET).remove([path])
-      return NextResponse.json(
-        { error: dbErr?.message ?? 'Не удалось создать запись фона' },
-        { status: 500 },
-      )
+    let nextOrder = existing && existing.length > 0 ? existing[0].sort_order + 1 : 0
+
+    const created: Array<Record<string, unknown>> = []
+    for (const path of paths) {
+      const { data: row, error: dbErr } = await supabaseAdmin
+        .from('template_set_backgrounds')
+        .insert({
+          template_set_id: templateSetId,
+          category,
+          url: path,
+          sort_order: nextOrder,
+          side,
+        })
+        .select('id, category, url, sort_order, side, created_at')
+        .single()
+
+      if (dbErr || !row) {
+        return NextResponse.json(
+          { error: dbErr?.message ?? 'Не удалось создать запись фона' },
+          { status: 500 },
+        )
+      }
+      created.push({ ...row, public_url: publicUrl(row.url) })
+      nextOrder += 1
     }
 
-    created.push({ ...row, public_url: publicUrl(row.url) })
-    nextOrder += 1
+    await logAction(auth, 'template_set.upload_category_background', 'template_set', templateSetId, {
+      name: set.name,
+      category,
+      count: created.length,
+    })
+
+    return NextResponse.json({ ok: true, created })
   }
 
-  await logAction(auth, 'template_set.upload_category_background', 'template_set', templateSetId, {
-    name: set.name,
-    category,
-    count: created.length,
-  })
-
-  return NextResponse.json({ ok: true, created })
+  return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })
 }
 
 // ============================================================
