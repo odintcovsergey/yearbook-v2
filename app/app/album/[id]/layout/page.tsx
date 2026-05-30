@@ -22,6 +22,8 @@ import {
   type SpreadBackgroundInput,
   type BackgroundPoolRow,
 } from '@/lib/backgrounds/resolve-background'
+import { pageRoleToCategory } from '@/lib/backgrounds/page-role-to-category'
+import SpreadBackgroundPicker from '../../../_components/SpreadBackgroundPicker'
 import PhotoPalette from '../../../_components/PhotoPalette'
 import SpreadOrderStrip from '../../../_components/SpreadOrderStrip'
 import TemplatePickerModal from '../../../_components/TemplatePickerModal'
@@ -271,6 +273,8 @@ function LayoutEditorPageInner({
   const [defaultBgPath, setDefaultBgPath] = useState<string | null>(null)
   // Пул категорийных фонов набора (template_set_backgrounds) для ротации.
   const [categoryBackgrounds, setCategoryBackgrounds] = useState<BackgroundPoolRow[]>([])
+  // Открыта ли модалка «Сменить фон» текущего разворота (Этап 6).
+  const [bgPickerOpen, setBgPickerOpen] = useState(false)
   const [photos, setPhotos] = useState<AlbumPhoto[]>([])
   const [albumTitle, setAlbumTitle] = useState<string>('')
   // РЭ.27.4: тип переплёта альбома (вычисляется на сервере через
@@ -1612,6 +1616,42 @@ function LayoutEditorPageInner({
     if (vs.rightIdx !== undefined) bgUrlByPageIdx.set(vs.rightIdx, url)
   })
 
+  // ─── Этап 6: ручной фон текущего разворота («Сменить фон») ──────────────
+  // Ведущая страница разворота (левая, иначе правая) — там хранится __bg__.
+  const bgLeadIdx = currentPair
+    ? currentPair.leftIdx ?? currentPair.rightIdx
+    : undefined
+  const bgLeadingPage =
+    bgLeadIdx !== undefined ? spreads[bgLeadIdx] : null
+  const bgLeadingMaster = bgLeadingPage
+    ? templatesById.get(bgLeadingPage.template_id)
+    : null
+  const currentSpreadCategory = pageRoleToCategory(
+    bgLeadingMaster?.page_role ?? null,
+  )
+  const currentBgOverride = bgLeadingPage?.data?.['__bg__'] ?? null
+
+  function applyBgOverride(path: string | null) {
+    if (bgLeadIdx === undefined) return
+    setLayout((prev) => {
+      if (!prev) return prev
+      const newSpreads = prev.spreads.map((s, idx) => {
+        if (idx !== bgLeadIdx) return s
+        const newData = { ...s.data }
+        if (path === null) {
+          if (newData['__bg__'] === undefined) return s
+          delete newData['__bg__']
+        } else {
+          if (newData['__bg__'] === path) return s
+          newData['__bg__'] = path
+        }
+        return { ...s, data: newData }
+      })
+      return { ...prev, spreads: newSpreads }
+    })
+    setBgPickerOpen(false)
+  }
+
   // Динамический расчёт canvas: вписываем РАЗВОРОТ в доступное пространство
   // с сохранением аспекта. Для is_spread мастера ширина = ширина одной
   // страницы (потому что мастер уже двухстраничный, у него width_mm
@@ -2044,6 +2084,22 @@ function LayoutEditorPageInner({
                     🎨 Стили текстов
                   </button>
                 )}
+                {/* Этап 6 — ручной фон этого разворота. Показываем только если
+                    у набора вообще есть категорийные фоны. */}
+                {!isReadOnly && categoryBackgrounds.length > 0 && bgLeadIdx !== undefined && (
+                  <button
+                    type="button"
+                    onClick={() => setBgPickerOpen(true)}
+                    className={`px-3 py-1.5 text-sm rounded border bg-white hover:bg-gray-50 ${
+                      currentBgOverride
+                        ? 'border-blue-400 text-blue-700'
+                        : 'border-gray-300 text-gray-700'
+                    }`}
+                    title="Выбрать конкретный фон для этого разворота (перебить авторотацию)"
+                  >
+                    🖼 Фон разворота{currentBgOverride ? ' •' : ''}
+                  </button>
+                )}
               </div>
             </>
           ) : (
@@ -2089,6 +2145,18 @@ function LayoutEditorPageInner({
           softShift={isSoftAlbum}
           backgroundUrl={backgroundUrl}
           pageBackgroundUrl={(idx) => bgUrlByPageIdx.get(idx) ?? null}
+        />
+      )}
+
+      {/* Этап 6 — модалка выбора ручного фона текущего разворота */}
+      {bgPickerOpen && (
+        <SpreadBackgroundPicker
+          backgrounds={categoryBackgrounds}
+          category={currentSpreadCategory}
+          currentOverride={currentBgOverride}
+          onSelect={(path) => applyBgOverride(path)}
+          onReset={() => applyBgOverride(null)}
+          onClose={() => setBgPickerOpen(false)}
         />
       )}
 
