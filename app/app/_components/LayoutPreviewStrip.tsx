@@ -4,6 +4,11 @@ import { useEffect, useState, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import type { SpreadInstance, SpreadTemplate } from '@/lib/album-builder/types'
 import { api } from '@/lib/api-client'
+import {
+  resolveBackgrounds,
+  type SpreadBackgroundInput,
+  type BackgroundPoolRow,
+} from '@/lib/backgrounds/resolve-background'
 
 // Dynamic import: AlbumSpreadCanvas использует window.Image (Konva), SSR-incompatible.
 const AlbumSpreadCanvas = dynamic(
@@ -44,6 +49,8 @@ type TemplateDetailResponse = {
     default_background_url: string | null
   }
   spread_templates: SpreadTemplate[]
+  /** Пул категорийных фонов набора (для ротации). */
+  backgrounds?: BackgroundPoolRow[]
 }
 
 const TARGET_HEIGHT_PX = 175  // см. инструкцию 2.3 «Размер миниатюр»
@@ -204,13 +211,6 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
     return m
   }, [detail])
 
-  // Public URL фона набора (если задан). Применяется во всех мини-канвасах.
-  const backgroundUrl = useMemo(() => {
-    const path = detail?.template_set.default_background_url
-    if (!path) return null
-    return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${path}`
-  }, [detail])
-
   const spreads = layout.spreads as SpreadInstance[]
 
   // Визуальные развороты — пересчитываются когда обновляются spreads или шаблоны.
@@ -222,6 +222,34 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
     () => (detail ? groupIntoVisualSpreads(spreads, templateById, sheetType) : []),
     [spreads, templateById, detail, sheetType],
   )
+
+  // Категорийные фоны: public URL фона на КАЖДЫЙ визуальный разворот (тот же
+  // резолвер, что в редакторе). Категория — по ведущей странице (для пары —
+  // левая, иначе правая; для full_spread — сам мастер). Fallback на
+  // default_background_url сохранён.
+  const bgUrls = useMemo<(string | null)[]>(() => {
+    if (!detail) return []
+    const defaultPath = detail.template_set.default_background_url ?? null
+    const pool = detail.backgrounds ?? []
+    const inputs: SpreadBackgroundInput[] = visualSpreads.map((vs) => {
+      const page = vs.kind === 'full_spread' ? vs.instance : (vs.left ?? vs.right)
+      const master = page ? templateById.get(page.template_id) : undefined
+      return {
+        leadingPageRole: master?.page_role ?? null,
+        sectionType: page?.section_type ?? null,
+        masterOverrideUrl: master?.background_override_url ?? null,
+        albumOverrideUrl: page?.data?.['__bg__'] ?? null,
+      }
+    })
+    const paths = resolveBackgrounds(inputs, pool, defaultPath)
+    return paths.map((p) =>
+      p
+        ? p.startsWith('http')
+          ? p
+          : `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${p}`
+        : null,
+    )
+  }, [detail, visualSpreads, templateById])
 
   return (
     <div className="bg-gray-50 rounded-lg p-3 mb-4">
@@ -271,7 +299,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       template={tmpl}
                       containerWidth={containerWidth}
                       mode="preview"
-                      backgroundUrl={backgroundUrl}
+                      backgroundUrl={bgUrls[idx] ?? null}
                       pageSide="spread"
                     />
                   </div>
@@ -302,7 +330,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       template={leftTmpl}
                       containerWidth={halfWidth}
                       mode="preview"
-                      backgroundUrl={backgroundUrl}
+                      backgroundUrl={bgUrls[idx] ?? null}
                       pageSide="left"
                     />
                   ) : (
@@ -322,7 +350,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       template={rightTmpl}
                       containerWidth={halfWidth}
                       mode="preview"
-                      backgroundUrl={backgroundUrl}
+                      backgroundUrl={bgUrls[idx] ?? null}
                       pageSide="right"
                     />
                   ) : (

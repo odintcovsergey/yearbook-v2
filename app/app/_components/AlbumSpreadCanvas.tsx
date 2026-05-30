@@ -181,6 +181,29 @@ function SpreadBackgroundLayer({
   const drawWidth = isSpread ? pageWidthMm : pageWidthMm * 2
   const drawX = pageSide === 'right' ? -pageWidthMm : 0
 
+  // «cover»: вписываем фон в бокс разворота с СОХРАНЕНИЕМ пропорций, лишнее
+  // обрезаем по центру (crop в исходных пикселях картинки). Без этого Konva
+  // растягивала картинку под бокс (stretch) и при несовпадении пропорций
+  // картинки и разворота фон деформировался.
+  const imgW = img.naturalWidth || img.width
+  const imgH = img.naturalHeight || img.height
+  let crop:
+    | { x: number; y: number; width: number; height: number }
+    | undefined
+  if (imgW > 0 && imgH > 0) {
+    const boxAspect = drawWidth / pageHeightMm
+    const imgAspect = imgW / imgH
+    if (imgAspect > boxAspect) {
+      // Картинка шире бокса → обрезаем по бокам.
+      const cropW = imgH * boxAspect
+      crop = { x: (imgW - cropW) / 2, y: 0, width: cropW, height: imgH }
+    } else {
+      // Картинка выше бокса → обрезаем сверху/снизу.
+      const cropH = imgW / boxAspect
+      crop = { x: 0, y: (imgH - cropH) / 2, width: imgW, height: cropH }
+    }
+  }
+
   return (
     <KonvaImage
       image={img}
@@ -188,6 +211,7 @@ function SpreadBackgroundLayer({
       y={0}
       width={drawWidth}
       height={pageHeightMm}
+      crop={crop}
       listening={false}
     />
   )
