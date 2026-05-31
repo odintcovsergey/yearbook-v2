@@ -70,4 +70,20 @@ describe('orderPlaceholdersForRender (Этап 4)', () => {
     ];
     expect(labels(orderPlaceholdersForRender(phs))).toEqual(['p', 'p__over_a', 'p__over_b']);
   });
+
+  it('foreground (__fg_n) рисуется самым последним — поверх всего (Часть 4)', () => {
+    const phs: P[] = [
+      { label: '__fg_1', type: 'decoration', attached_to: '', layer: 'foreground' },
+      { label: 'teacherphoto_1', type: 'photo' },
+      { label: 'teacherphoto_1__over', type: 'decoration', attached_to: 'teacherphoto_1', layer: 'over' },
+      { label: '__fg_2', type: 'decoration', attached_to: '', layer: 'foreground' },
+    ];
+    // foreground в самом конце (после баз и привязанного декора), порядок fg стабилен
+    expect(labels(orderPlaceholdersForRender(phs))).toEqual([
+      'teacherphoto_1',
+      'teacherphoto_1__over',
+      '__fg_1',
+      '__fg_2',
+    ]);
+  });
 });

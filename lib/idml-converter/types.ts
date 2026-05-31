@@ -106,10 +106,17 @@ export type EmbeddedImage = {
  */
 export type DecorationPlaceholder = Common & {
   type: 'decoration';
-  /** label базового слота, к которому привязан декор (например 'teacherphoto_1'). */
+  /**
+   * label базового слота, к которому привязан декор (например 'teacherphoto_1').
+   * Для `foreground`-декора (Часть 4 ТЗ, метка `__fg_<n>`) — пустая строка:
+   * передний план не привязан к слоту, а лежит поверх всего разворота.
+   */
   attached_to: string;
-  /** Слой относительно базового слота: 'under' (z ниже) / 'over' (z выше). */
-  layer: 'under' | 'over';
+  /**
+   * Слой по z: 'under' (ниже базового слота) / 'over' (выше слота) /
+   * 'foreground' (Часть 4 ТЗ — поверх ВСЕГО разворота, не привязан к слоту).
+   */
+  layer: 'under' | 'over' | 'foreground';
   /**
    * URL картинки декора в storage (bucket template-decorations).
    * После Этапа 2а (только парсинг) пусто '' — заполняется на Этапе 2б

@@ -309,15 +309,25 @@ function dedupeLabels(
 // ─── Декор (Часть 1 ТЗ) ───────────────────────────────────────────────────
 
 /**
- * Распознаёт метку привязанного декора `<base>__under` / `<base>__over`.
- * Суффикс — РОВНО два подчёркивания + under|over в конце. Одиночные
+ * Распознаёт метку декора:
+ *   - `<base>__under` / `<base>__over` — привязанный декор (Часть 1 ТЗ);
+ *   - `__fg_<n>` / `__fg` — декор переднего плана (Часть 4 ТЗ): поверх всего
+ *     разворота, не привязан к слоту (attached_to=''). Номер `<n>` нужен лишь
+ *     чтобы у нескольких таких фреймов были уникальные метки.
+ *
+ * Суффикс under/over — РОВНО два подчёркивания + слово в конце; одиночные
  * подчёркивания внутри base (`teacherphoto_1`) сохраняются.
  *
  * Возвращает null если метка не декоративная (обычный слот).
  */
 function parseDecorationLabel(
   label: string,
-): { attached_to: string; layer: 'under' | 'over' } | null {
+): { attached_to: string; layer: 'under' | 'over' | 'foreground' } | null {
+  // Передний план: __fg, __fg_1, __fg_2 … (проверяем ДО under/over —
+  // у __fg нет базового слота).
+  if (/^__fg(_\d+)?$/.test(label)) {
+    return { attached_to: '', layer: 'foreground' };
+  }
   const m = label.match(/^(.+)__(under|over)$/);
   if (!m) return null;
   return { attached_to: m[1], layer: m[2] as 'under' | 'over' };
@@ -435,6 +445,8 @@ function computeDecorationOffsets(
   for (const ph of placeholders) {
     if (ph.type !== 'decoration') continue;
     const deco = ph as DecorationPlaceholder & { _pageIndex: number };
+    // Передний план (Часть 4) не привязан к слоту — offset не нужен.
+    if (deco.layer === 'foreground') continue;
     const base = byLabel.get(deco.attached_to);
     if (!base) {
       warnings.push({

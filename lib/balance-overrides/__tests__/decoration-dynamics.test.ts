@@ -115,6 +115,23 @@ describe('decoration dynamics (Этап 3)', () => {
     expect(d!.y_mm).toBe(78); // 80 + (-2)
   });
 
+  it('foreground-декор (__fg, attached_to="") не двигается и не скрывается', () => {
+    const fg: Ph = {
+      label: '__fg_1', x_mm: 0, y_mm: 0, width_mm: 200, height_mm: 280,
+      type: 'decoration', attached_to: '', layer: 'foreground', offset_x_mm: 0, offset_y_mm: 0,
+    };
+    const phs: Ph[] = [photo('teacherphoto_1', 10, 20), fg];
+    // даже если в data есть мусорные override-ключи — foreground остаётся как есть
+    const out = applyBalanceFromData(asPhs(phs), {
+      '__hidden__teacherphoto_1': '1',
+      '__pos__teacherphoto_1': '99,99',
+    });
+    const d = out.find((p) => p.label === '__fg_1');
+    expect(d).toBeDefined();
+    expect(d!.x_mm).toBe(0);
+    expect(d!.y_mm).toBe(0);
+  });
+
   it('обычные слоты не затронуты новой логикой (регрессия)', () => {
     const phs: Ph[] = [photo('a', 1, 1), photo('b', 2, 2)];
     const out = applyBalanceFromData(asPhs(phs), { '__hidden__a': '1', '__pos__b': '9,9' });

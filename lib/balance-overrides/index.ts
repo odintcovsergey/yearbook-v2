@@ -83,12 +83,17 @@ type DecorationLike = {
   offset_y_mm: number;
 };
 
-/** Рантайм-распознавание привязанного декора среди плейсхолдеров. */
+/**
+ * Рантайм-распознавание ПРИВЯЗАННОГО декора (Часть 1). Foreground-декор
+ * (Часть 4, attached_to='') сюда не попадает — он не привязан к слоту, не
+ * скрывается и не двигается, проходит обычным путём как самостоятельный слот.
+ */
 function asDecoration(ph: Placeholder): DecorationLike | null {
   const p = ph as unknown as Record<string, unknown>;
   if (
     p.type === 'decoration' &&
     typeof p.attached_to === 'string' &&
+    p.attached_to !== '' &&
     typeof p.offset_x_mm === 'number' &&
     typeof p.offset_y_mm === 'number'
   ) {

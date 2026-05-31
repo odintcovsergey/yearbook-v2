@@ -288,10 +288,16 @@ export type TextPlaceholder = PlaceholderCommon & {
  */
 export type DecorationPlaceholder = PlaceholderCommon & {
   type: 'decoration';
-  /** label базового слота, за которым следует декор (например 'teacherphoto_1'). */
+  /**
+   * label базового слота, за которым следует декор (например 'teacherphoto_1').
+   * Для `foreground`-декора (Часть 4 ТЗ, метка `__fg_<n>`) — пустая строка.
+   */
   attached_to: string;
-  /** Слой относительно базового слота: 'under' (z ниже) / 'over' (z выше). */
-  layer: 'under' | 'over';
+  /**
+   * Слой по z: 'under' (ниже слота) / 'over' (выше слота) / 'foreground'
+   * (Часть 4 ТЗ — поверх всего разворота, не привязан к слоту).
+   */
+  layer: 'under' | 'over' | 'foreground';
   /** URL картинки декора в storage (bucket template-decorations). */
   url: string;
   /** Смещение исходной позиции декора относительно базового слота, мм. */

@@ -7,11 +7,14 @@
  *
  * Порядок на каждый базовый слот (ТЗ):
  *   [фон разворота] → [слот__under] → [фото/текст слота] → [слот__over]
+ *   → … → [foreground-декор разворота (Часть 4, метка __fg_<n>)]
  *
  * То есть `__under`-декор рисуется ПЕРЕД своим базовым слотом (ниже по z),
  * `__over` — ПОСЛЕ (выше по z). Базовые слоты между собой сохраняют исходный
  * порядок. Декор берётся СРАЗУ ПОСЛЕ/ПЕРЕД своей базой, а не общим пластом —
  * это позволяет декору одного слота лежать между соседними слотами корректно.
+ * `foreground`-декор не привязан к слоту и рисуется В САМОМ КОНЦЕ — поверх
+ * всего разворота (сказочный дизайн: ветки поверх рамок).
  */
 
 /** Минимальная форма для сортировки — реальные плейсхолдеры шире. */
@@ -19,17 +22,22 @@ type OrderablePlaceholder = {
   label: string;
   type: string;
   attached_to?: string;
-  layer?: 'under' | 'over';
+  layer?: 'under' | 'over' | 'foreground';
 };
 
-function isDecoration(
+function isAttachedDecoration(
   ph: OrderablePlaceholder,
 ): ph is OrderablePlaceholder & { attached_to: string; layer: 'under' | 'over' } {
   return (
     ph.type === 'decoration' &&
     typeof ph.attached_to === 'string' &&
+    ph.attached_to !== '' &&
     (ph.layer === 'under' || ph.layer === 'over')
   );
+}
+
+function isForeground(ph: OrderablePlaceholder): boolean {
+  return ph.type === 'decoration' && ph.layer === 'foreground';
 }
 
 /**
@@ -49,11 +57,14 @@ export function orderPlaceholdersForRender<T extends OrderablePlaceholder>(
 ): T[] {
   const unders = new Map<string, T[]>();
   const overs = new Map<string, T[]>();
+  const foregrounds: T[] = [];
   const bases: T[] = [];
   const baseLabels = new Set<string>();
 
   for (const ph of placeholders) {
-    if (isDecoration(ph)) {
+    if (isForeground(ph)) {
+      foregrounds.push(ph);
+    } else if (isAttachedDecoration(ph)) {
       const bucket = ph.layer === 'under' ? unders : overs;
       const list = bucket.get(ph.attached_to);
       if (list) list.push(ph);
@@ -73,13 +84,16 @@ export function orderPlaceholdersForRender<T extends OrderablePlaceholder>(
     if (o) out.push(...o);
   }
 
-  // Orphan-декор (базы нет в списке): дорисовываем в конце, under затем over.
+  // Orphan-декор (базы нет в списке): дорисовываем перед foreground, under→over.
   unders.forEach((list, attached) => {
     if (!baseLabels.has(attached)) out.push(...list);
   });
   overs.forEach((list, attached) => {
     if (!baseLabels.has(attached)) out.push(...list);
   });
+
+  // Передний план (Часть 4) — самый верхний слой, поверх всего разворота.
+  out.push(...foregrounds);
 
   return out;
 }
