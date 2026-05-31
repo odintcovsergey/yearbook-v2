@@ -8,7 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import { orderPlaceholdersForRender } from '../render-order';
 
-type P = { label: string; type: string; attached_to?: string; layer?: 'under' | 'over' };
+type P = { label: string; type: string; attached_to?: string; layer?: 'under' | 'over' | 'foreground' };
 
 const labels = (arr: P[]) => arr.map((p) => p.label);
 

@@ -21,7 +21,7 @@ type Ph = {
   height_mm: number;
   type: 'photo' | 'text' | 'decoration';
   attached_to?: string;
-  layer?: 'under' | 'over';
+  layer?: 'under' | 'over' | 'foreground';
   offset_x_mm?: number;
   offset_y_mm?: number;
 };
