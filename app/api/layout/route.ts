@@ -39,7 +39,7 @@ export const revalidate = 0
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const TEMPLATE_SET_FIELDS =
-  'id, name, slug, print_type, is_global, tenant_id, ' +
+  'id, name, slug, print_type, is_global, is_published, tenant_id, ' +
   'page_width_mm, page_height_mm, spread_width_mm, spread_height_mm, bleed_mm, ' +
   'facing_pages, page_binding, description, cover_preview_url, ' +
   'default_background_url, created_at, updated_at'

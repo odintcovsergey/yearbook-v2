@@ -542,6 +542,26 @@ async function getDefaultTemplateSetId(): Promise<string | null> {
 }
 
 // ============================================================
+// Хелпер: ID внутреннего tenant'а Сергея (okeybook). Нужен переключателю
+// глобальности дизайна: когда «Глобальный» ВЫКЛючается, tenant_id набора
+// перестаёт быть NULL и становится id этого tenant'а.
+// Порядок: env DEFAULT_TENANT_ID → tenants по slug='okeybook'.
+// Возвращает null, если не нашёлся однозначно (UI попросит указать вручную).
+// ============================================================
+async function okeybookTenantId(): Promise<string | null> {
+  const envId = process.env.DEFAULT_TENANT_ID
+  if (envId && /^[0-9a-f-]{36}$/i.test(envId)) return envId
+
+  const { data } = await supabaseAdmin
+    .from('tenants')
+    .select('id')
+    .eq('slug', 'okeybook')
+    .limit(1)
+    .maybeSingle()
+  return (data as { id: string } | null)?.id ?? null
+}
+
+// ============================================================
 // GET /api/tenant — данные своего арендатора
 // ============================================================
 export async function GET(req: NextRequest) {
@@ -1017,9 +1037,10 @@ export async function GET(req: NextRequest) {
       .from('template_sets')
       .select('id, name, slug, tenant_id')
     if (auth.role !== 'superadmin') {
-      templateSetsQuery = templateSetsQuery.or(
-        `tenant_id.is.null,tenant_id.eq.${auth.tenantId}`,
-      )
+      // Партнёр видит только опубликованные дизайны (черновики — только superadmin).
+      templateSetsQuery = templateSetsQuery
+        .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+        .eq('is_published', true)
     }
     const { data: templateSets, error: tsErr } = await templateSetsQuery
     if (tsErr) {
@@ -1115,9 +1136,11 @@ export async function GET(req: NextRequest) {
       .from('template_sets')
       .select('id, name, slug, tenant_id, print_type, page_width_mm, page_height_mm')
     if (auth.role !== 'superadmin') {
+      // Партнёр видит только опубликованные дизайны (черновики — только superadmin).
       tsQuery = tsQuery
         .or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
         .not('name', 'ilike', 'TEST%')
+        .eq('is_published', true)
     }
     const { data: tsRows, error: tsErr } = await tsQuery.order('name')
     if (tsErr) {
@@ -1251,10 +1274,15 @@ export async function GET(req: NextRequest) {
     // РЭ.50: фильтр template_set_id IS NOT NULL — см. templates_list_my ниже.
     let query = supabaseAdmin
       .from('presets')
-      .select('*')
+      .select('*, template_sets!inner(is_published)')
       .is('tenant_id', null)
       .eq('is_recommended', true)
       .not('template_set_id', 'is', null)
+    if (auth.role !== 'superadmin') {
+      // Партнёр видит только пресеты опубликованных дизайнов
+      // (is_published живёт на template_sets; черновики — только superadmin).
+      query = query.eq('template_sets.is_published', true)
+    }
     if (designId) {
       query = query.eq('template_set_id', designId)
     }
@@ -1400,7 +1428,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Не задан tenant' }, { status: 400 })
     }
 
-    const { data: rows, error: loadErr } = await supabaseAdmin
+    let myListQuery = supabaseAdmin
       .from('template_sets')
       .select(
         'id, name, slug, tenant_id, parent_template_set_id, print_type, ' +
@@ -1409,6 +1437,13 @@ export async function GET(req: NextRequest) {
       )
       .eq('tenant_id', auth.tenantId)
       .order('created_at', { ascending: false })
+
+    // Партнёр (не superadmin) видит в каталоге только опубликованные дизайны.
+    if (auth.role !== 'superadmin') {
+      myListQuery = myListQuery.eq('is_published', true)
+    }
+
+    const { data: rows, error: loadErr } = await myListQuery
 
     if (loadErr) {
       return NextResponse.json({ error: loadErr.message }, { status: 500 })
@@ -3586,6 +3621,248 @@ export async function POST(req: NextRequest) {
   //
   // Доступ: не-viewer.
   // ----------------------------------------------------------
+  // ----------------------------------------------------------
+  // template_set_update — переименование / публикация / глобальность.
+  // body: { template_set_id, name?, is_published?, make_global? }
+  //   - name: новое человекочитаемое имя (slug НЕ меняется).
+  //   - is_published: true=опубликован, false=черновик.
+  //   - make_global: true → tenant_id=NULL (виден всем);
+  //                  false → tenant_id=okeybook (только внутренний tenant).
+  //     Менять глобальность может ТОЛЬКО superadmin (это влияет на всех).
+  // ----------------------------------------------------------
+  if (body.action === 'template_set_update') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+    const tsId = String(body.template_set_id ?? '').trim()
+    if (!tsId) {
+      return NextResponse.json(
+        { error: 'template_set_id обязателен' },
+        { status: 400 },
+      )
+    }
+
+    // Загружаем набор и проверяем доступ.
+    const { data: ts, error: loadErr } = await supabaseAdmin
+      .from('template_sets')
+      .select('id, tenant_id, name')
+      .eq('id', tsId)
+      .maybeSingle()
+    if (loadErr) {
+      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+    }
+    if (!ts) {
+      return NextResponse.json({ error: 'Дизайн не найден' }, { status: 404 })
+    }
+    const tsTenantId = (ts as { tenant_id: string | null }).tenant_id
+    const isOwnOrGlobal =
+      tsTenantId === null || tsTenantId === auth.tenantId || auth.role === 'superadmin'
+    if (!isOwnOrGlobal) {
+      return NextResponse.json({ error: 'Дизайн не найден' }, { status: 404 })
+    }
+
+    const patch: Record<string, unknown> = {}
+
+    // name
+    if (body.name !== undefined) {
+      const newName = String(body.name).trim()
+      if (!newName) {
+        return NextResponse.json({ error: 'name не может быть пустым' }, { status: 400 })
+      }
+      patch.name = newName
+    }
+
+    // is_published
+    if (body.is_published !== undefined) {
+      patch.is_published = body.is_published === true
+    }
+
+    // make_global (смена tenant_id) — только superadmin
+    if (body.make_global !== undefined) {
+      if (auth.role !== 'superadmin') {
+        return NextResponse.json(
+          { error: 'Менять глобальность дизайна может только супер-админ' },
+          { status: 403 },
+        )
+      }
+      if (body.make_global === true) {
+        patch.tenant_id = null
+      } else {
+        const okId = await okeybookTenantId()
+        if (!okId) {
+          return NextResponse.json(
+            {
+              error:
+                'Не удалось определить внутренний tenant okeybook. Задайте DEFAULT_TENANT_ID или создайте tenant со slug=okeybook.',
+            },
+            { status: 500 },
+          )
+        }
+        patch.tenant_id = okId
+      }
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ error: 'Нет полей для обновления' }, { status: 400 })
+    }
+
+    const { error: updErr } = await supabaseAdmin
+      .from('template_sets')
+      .update(patch)
+      .eq('id', tsId)
+    if (updErr) {
+      return NextResponse.json({ error: updErr.message }, { status: 500 })
+    }
+
+    try {
+      await logAction(auth, 'template_set.update', 'template_set', tsId, patch)
+    } catch (e) {
+      console.warn('[template_set_update] audit log failed:', e)
+    }
+
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
+  // template_set_duplicate — копия дизайна 1-в-1 (без смены размера).
+  // Копирует строку набора + все мастера + категорийные фоны (с файлами
+  // в storage). Копия начинается как черновик (is_published=false).
+  // Альбомы НЕ копируются (это дизайн, а не заказы).
+  // body: { template_set_id }
+  // ----------------------------------------------------------
+  if (body.action === 'template_set_duplicate') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+    const sourceId = String(body.template_set_id ?? '').trim()
+    if (!sourceId) {
+      return NextResponse.json(
+        { error: 'template_set_id обязателен' },
+        { status: 400 },
+      )
+    }
+
+    // 1) Загружаем source.
+    const { data: source, error: srcErr } = await supabaseAdmin
+      .from('template_sets')
+      .select('*')
+      .eq('id', sourceId)
+      .maybeSingle()
+    if (srcErr) {
+      return NextResponse.json({ error: srcErr.message }, { status: 500 })
+    }
+    if (!source) {
+      return NextResponse.json({ error: 'Дизайн не найден' }, { status: 404 })
+    }
+    const srcTenantId = (source as { tenant_id: string | null }).tenant_id
+    if (srcTenantId !== null && srcTenantId !== auth.tenantId && auth.role !== 'superadmin') {
+      return NextResponse.json(
+        { error: 'Можно дублировать только глобальные или свои дизайны' },
+        { status: 403 },
+      )
+    }
+
+    // 2) Готовим новую строку набора.
+    const newSetId = crypto.randomUUID()
+    const {
+      id: _sid,
+      created_at: _sc,
+      updated_at: _su,
+      ...sourceRest
+    } = source as Record<string, unknown>
+    void _sid; void _sc; void _su
+
+    const srcName = (sourceRest.name as string) ?? 'Дизайн'
+    const slugBase = (sourceRest.slug as string) ?? 'set'
+    const insertSet = {
+      ...sourceRest,
+      id: newSetId,
+      slug: `${slugBase}-copy-${Date.now().toString(36)}`,
+      name: `${srcName} (копия)`,
+      is_published: false,
+    }
+
+    const { error: insSetErr } = await supabaseAdmin
+      .from('template_sets')
+      .insert(insertSet)
+    if (insSetErr) {
+      return NextResponse.json({ error: insSetErr.message }, { status: 500 })
+    }
+
+    // 3) Копируем мастера (новые id).
+    const { data: srcMasters, error: mErr } = await supabaseAdmin
+      .from('spread_templates')
+      .select('*')
+      .eq('template_set_id', sourceId)
+    if (mErr) {
+      await supabaseAdmin.from('template_sets').delete().eq('id', newSetId)
+      return NextResponse.json({ error: mErr.message }, { status: 500 })
+    }
+    const mastersToInsert = (srcMasters ?? []).map((m: Record<string, unknown>) => {
+      const { id: _mid, created_at: _mc, updated_at: _mu, ...rest } = m
+      void _mid; void _mc; void _mu
+      return { ...rest, id: crypto.randomUUID(), template_set_id: newSetId }
+    })
+    if (mastersToInsert.length > 0) {
+      const { error: insMErr } = await supabaseAdmin
+        .from('spread_templates')
+        .insert(mastersToInsert)
+      if (insMErr) {
+        await supabaseAdmin.from('template_sets').delete().eq('id', newSetId)
+        return NextResponse.json({ error: insMErr.message }, { status: 500 })
+      }
+    }
+
+    // 4) Копируем категорийные фоны + их файлы в storage (best-effort).
+    //    Файлы лежат в bucket template-backgrounds по пути <ts>/<category>/<bgId>.<ext>.
+    //    url в БД хранится как путь внутри bucket (см. backgrounds route).
+    const BG_BUCKET = 'template-backgrounds'
+    const { data: srcBgs } = await supabaseAdmin
+      .from('template_set_backgrounds')
+      .select('id, category, url, sort_order, side')
+      .eq('template_set_id', sourceId)
+    const bgWarnings: string[] = []
+    for (const bg of srcBgs ?? []) {
+      const b = bg as {
+        id: string; category: string; url: string
+        sort_order: number | null; side: string | null
+      }
+      const newBgId = crypto.randomUUID()
+      const ext = (b.url.split('.').pop() ?? 'jpg').split('?')[0]
+      const oldPath = b.url
+      const newPath = `${newSetId}/${b.category}/${newBgId}.${ext}`
+      const { error: copyErr } = await supabaseAdmin.storage
+        .from(BG_BUCKET)
+        .copy(oldPath, newPath)
+      if (copyErr) {
+        bgWarnings.push(`bg ${b.id}: ${copyErr.message}`)
+        continue
+      }
+      const { error: insBgErr } = await supabaseAdmin
+        .from('template_set_backgrounds')
+        .insert({
+          id: newBgId,
+          template_set_id: newSetId,
+          category: b.category,
+          url: newPath,
+          sort_order: b.sort_order ?? 0,
+          side: b.side,
+        })
+      if (insBgErr) bgWarnings.push(`bg ${b.id} insert: ${insBgErr.message}`)
+    }
+
+    try {
+      await logAction(auth, 'template_set.duplicate', 'template_set', newSetId, {
+        source_id: sourceId,
+        bg_warnings: bgWarnings,
+      })
+    } catch (e) {
+      console.warn('[template_set_duplicate] audit log failed:', e)
+    }
+
+    return NextResponse.json({ ok: true, id: newSetId, bg_warnings: bgWarnings })
+  }
+
   if (body.action === 'template_set_delete') {
     if (auth.role === 'viewer') {
       return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
@@ -3660,7 +3937,38 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Удаляем сначала мастера (нет ON DELETE CASCADE).
+    // Удаляем категорийные фоны: сначала файлы из storage, затем строки.
+    // url в template_set_backgrounds хранит путь внутри bucket
+    // (<ts>/<category>/<uuid>.ext), поэтому берём пути из строк БД, а не
+    // через storage.list (он не рекурсит в подпапки категорий).
+    // Best-effort: ошибки storage не блокируют удаление дизайна.
+    const BG_BUCKET = 'template-backgrounds'
+    const { data: bgRows } = await supabaseAdmin
+      .from('template_set_backgrounds')
+      .select('url')
+      .eq('template_set_id', tsId)
+    const bgPaths = (bgRows ?? [])
+      .map((r) => (r as { url: string }).url)
+      .filter(Boolean)
+    if (bgPaths.length > 0) {
+      try {
+        await supabaseAdmin.storage.from(BG_BUCKET).remove(bgPaths)
+      } catch (e) {
+        console.warn('[template_set_delete] storage cleanup failed:', e)
+      }
+    }
+    const { error: delBgErr } = await supabaseAdmin
+      .from('template_set_backgrounds')
+      .delete()
+      .eq('template_set_id', tsId)
+    if (delBgErr) {
+      return NextResponse.json(
+        { error: 'Не удалось удалить фоны: ' + delBgErr.message },
+        { status: 500 },
+      )
+    }
+
+    // Удаляем мастера (нет ON DELETE CASCADE).
     const { error: delMastersErr } = await supabaseAdmin
       .from('spread_templates')
       .delete()

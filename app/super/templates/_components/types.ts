@@ -4,6 +4,7 @@ export type TemplateSet = {
   slug: string
   print_type: 'layflat' | 'soft'
   is_global: boolean
+  is_published: boolean
   tenant_id: string | null
   page_width_mm: number
   page_height_mm: number
