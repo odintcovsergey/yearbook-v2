@@ -138,4 +138,24 @@ describe('decoration upload (Этап 2б)', () => {
     // но url декора — должен присутствовать.
     expect(serialized).toContain('template-decorations');
   });
+
+  it('Этап 6б: фото-фрейм со свечением получает цвет из декора', async () => {
+    const parsed = await parseIdml(readFileSync(SAMPLE_PATH));
+    const { client } = makeMockSupabase();
+
+    await uploadTemplateSetToSupabase(parsed, META, client);
+
+    // teacherphoto_1 имеет glow_size_pt (из IDML) и привязанный декор
+    // teacherphoto_1__over → должен получить glow_color из доминирующего цвета.
+    const photo = parsed.spread_templates
+      .flatMap((s) => s.placeholders)
+      .find((p) => p.label === 'teacherphoto_1') as
+      | (import('../types').PhotoPlaceholder)
+      | undefined;
+    expect(photo).toBeDefined();
+    expect(photo!.glow_size_pt).toBeGreaterThan(0);
+    // Цвет подобран (валидный hex). Точный оттенок зависит от картинки —
+    // проверяем только формат, не конкретное значение.
+    expect(photo!.glow_color).toMatch(/^#[0-9a-f]{6}$/);
+  });
 });

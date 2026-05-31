@@ -39,12 +39,13 @@ import {
   pushGraphicsState,
   popGraphicsState,
   moveTo,
+  lineTo,
   appendBezierCurve,
   closePath,
   clip,
   endPath,
 } from 'pdf-lib';
-import { mmToPixels, placeholderToPdfBox } from './units';
+import { mmToPixels, mmToPt, placeholderToPdfBox } from './units';
 import { computeCrop, computeAutoZoomForRotation } from '@/lib/photo-transform';
 import type {
   AlbumExportInput,
@@ -321,8 +322,15 @@ export async function embedPhotoOnPage(
   }
 
   // Рисуем — прямоугольник или с круглой clip-маской
+  // Часть 2 ТЗ (6б): скруглённые углы фото-фрейма (corner_radius_mm). Приблизительно
+  // в PDF — clip по rounded-rect. Применяем только без поворота (повёрнутое фото
+  // редко и со скруглением не встречается). Свечение (glow) в PDF не делаем:
+  // pdf-lib не умеет размытие (ТЗ допускает приблизительность / пропуск для PDF).
+  const cornerRadiusMm = (ph as { corner_radius_mm?: number }).corner_radius_mm ?? 0;
   if (ph.is_circle) {
     drawImageInCircle(page, image, box, ph.rotation_deg ?? 0);
+  } else if (cornerRadiusMm > 0 && (ph.rotation_deg ?? 0) === 0) {
+    drawImageInRoundedRect(page, image, box, mmToPt(cornerRadiusMm));
   } else {
     page.drawImage(image, {
       x: box.x_pt,
@@ -332,6 +340,44 @@ export async function embedPhotoOnPage(
       rotate: degrees(ph.rotation_deg ?? 0),
     });
   }
+}
+
+/**
+ * Рисует image, обрезанное по прямоугольнику со скруглёнными углами
+ * (Часть 2 ТЗ, 6б). Clip-path: 4 прямых стороны + 4 дуги (Bezier, k=0.5523).
+ * Радиус ограничен половиной меньшей стороны. Без поворота (caller это
+ * гарантирует).
+ */
+function drawImageInRoundedRect(
+  page: PDFPage,
+  image: PDFImage,
+  box: { x_pt: number; y_pt: number; width_pt: number; height_pt: number },
+  radius_pt: number,
+): void {
+  const x = box.x_pt;
+  const y = box.y_pt;
+  const w = box.width_pt;
+  const h = box.height_pt;
+  const r = Math.min(radius_pt, w / 2, h / 2);
+  const k = r * 0.5523; // bezier-приближение четверти окружности
+
+  // Путь по контуру со скруглениями (против часовой, начиная с низа левой стороны).
+  page.pushOperators(
+    pushGraphicsState(),
+    moveTo(x + r, y),
+    lineTo(x + w - r, y),
+    appendBezierCurve(x + w - r + k, y, x + w, y + r - k, x + w, y + r),
+    lineTo(x + w, y + h - r),
+    appendBezierCurve(x + w, y + h - r + k, x + w - r + k, y + h, x + w - r, y + h),
+    lineTo(x + r, y + h),
+    appendBezierCurve(x + r - k, y + h, x, y + h - r + k, x, y + h - r),
+    lineTo(x, y + r),
+    appendBezierCurve(x, y + r - k, x + r - k, y, x + r, y),
+    clip(),
+    endPath(),
+  );
+  page.drawImage(image, { x, y, width: w, height: h });
+  page.pushOperators(popGraphicsState());
 }
 
 /**

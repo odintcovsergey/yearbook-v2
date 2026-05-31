@@ -250,6 +250,20 @@ function PhotoSlot({
   // (regression-safe для обычных фото). Применяется к пустому слоту и к
   // прямоугольному (не повёрнутому) фото.
   const cornerRadius = placeholder.corner_radius_mm ?? 0
+  // Часть 2 ТЗ (6б): внешнее свечение (дымка) вокруг фото. Цвет подобран при
+  // загрузке из доминирующего цвета привязанного декора (glow_color). Без
+  // цвета/размера эффект выключен (regression-safe). Размер pt → mm.
+  const hasGlow =
+    !!placeholder.glow_color &&
+    !!placeholder.glow_size_pt &&
+    placeholder.glow_size_pt > 0
+  const glowProps = hasGlow
+    ? {
+        shadowColor: placeholder.glow_color as string,
+        shadowBlur: (placeholder.glow_size_pt as number) * PT_TO_MM,
+        shadowOpacity: 0.85,
+      }
+    : {}
 
   // Пустой слот → светло-серая заливка с видимой обводкой.
   // Партнёру важно видеть, где должно быть фото — на скейле миниатюры
@@ -265,6 +279,7 @@ function PhotoSlot({
         stroke="#cbd5e1"
         strokeWidth={0.5}
         cornerRadius={cornerRadius}
+        {...glowProps}
       />
     )
   }
@@ -343,6 +358,7 @@ function PhotoSlot({
         image={img}
         crop={crop}
         cornerRadius={cornerRadius}
+        {...glowProps}
       />
     )
   }

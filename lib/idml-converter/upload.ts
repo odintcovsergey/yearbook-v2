@@ -29,8 +29,13 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import sharp from 'sharp';
 import { getFamilyMapping } from './family-mapping';
-import type { DecorationPlaceholder, ParsedTemplateSet } from './types';
+import type {
+  DecorationPlaceholder,
+  ParsedTemplateSet,
+  PhotoPlaceholder,
+} from './types';
 
 /** Bucket для embedded-картинок привязанного декора (миграция 2026-05-31). */
 const DECORATIONS_BUCKET = 'template-decorations';
@@ -227,7 +232,13 @@ export async function uploadTemplateSetToSupabase(
   // Мутируем parsed.spread_templates[].placeholders на месте; spreadRows ниже
   // сериализует уже очищенные плейсхолдеры. Идёт ПОСЛЕ резолва templateSetId
   // (нужен для пути файла) и ДО формирования spreadRows.
-  await uploadDecorationImages(parsed, templateSetId, supabaseAdmin);
+  const decorDominant = await uploadDecorationImages(parsed, templateSetId, supabaseAdmin);
+
+  // ─── 6.6. Цвет свечения фото-фреймов (Часть 2 ТЗ, Этап 6б) ────────
+  // У фото-фрейма со свечением (glow_size_pt) в IDML НЕТ цвета свечения —
+  // берём доминирующий цвет привязанного к нему декора (зелёная ленточка →
+  // зелёное свечение). decorDominant: Map<attached_to label → hex>.
+  applyGlowColors(parsed, decorDominant);
 
   // ─── 7. Batch INSERT spread_templates ────────────────────────────
   // Поля family_id / page_type / density / params проставляются
@@ -337,13 +348,20 @@ export async function uploadTemplateSetToSupabase(
  *
  * Мутирует parsed на месте. При ошибке загрузки — throw (декор без картинки
  * бесполезен; неполный template_set лучше явно провалить, чем тихо испортить).
+ *
+ * Возвращает Map<attached_to label → доминирующий hex картинки декора> —
+ * используется applyGlowColors для подбора цвета свечения фото-фреймов
+ * (Часть 2 ТЗ, Этап 6б). Ключ — attached_to (label базового слота); если к
+ * одному слоту привязано несколько декоров, берётся первый с распознанным
+ * цветом. foreground-декор (attached_to='') в карту не попадает.
  */
 async function uploadDecorationImages(
   parsed: ParsedTemplateSet,
   templateSetId: string,
   supabaseAdmin: SupabaseClient,
-): Promise<void> {
+): Promise<Map<string, string>> {
   let uploaded = 0;
+  const dominantByAttached = new Map<string, string>();
   for (const spread of parsed.spread_templates) {
     for (const ph of spread.placeholders) {
       if (ph.type !== 'decoration') continue;
@@ -369,12 +387,60 @@ async function uploadDecorationImages(
         .from(DECORATIONS_BUCKET)
         .getPublicUrl(path);
       decor.url = data.publicUrl;
+
+      // Доминирующий цвет картинки декора для свечения фото-фрейма (6б).
+      // Best-effort: ошибка sharp не должна валить загрузку набора.
+      if (decor.attached_to && !dominantByAttached.has(decor.attached_to)) {
+        const hex = await dominantHex(buffer);
+        if (hex) dominantByAttached.set(decor.attached_to, hex);
+      }
+
       delete decor._embedded;
       uploaded += 1;
     }
   }
   if (uploaded > 0) {
     console.log(`[upload] Uploaded ${uploaded} decoration image(s) to ${DECORATIONS_BUCKET}`);
+  }
+  return dominantByAttached;
+}
+
+/**
+ * Этап 6б ТЗ: подбор цвета свечения фото-фреймов.
+ *
+ * Фото-фрейм с заданным glow_size_pt, но без glow_color (типично — IDML не
+ * экспортирует цвет внешнего свечения), получает доминирующий цвет привязанного
+ * к нему декора. Если декора нет (нет записи в карте) — glow_color остаётся
+ * пустым, и рендер свечение не рисует.
+ *
+ * Мутирует parsed на месте.
+ */
+function applyGlowColors(
+  parsed: ParsedTemplateSet,
+  dominantByAttached: ReadonlyMap<string, string>,
+): void {
+  for (const spread of parsed.spread_templates) {
+    for (const ph of spread.placeholders) {
+      if (ph.type !== 'photo') continue;
+      const photo = ph as PhotoPlaceholder;
+      if (!photo.glow_size_pt || photo.glow_color) continue;
+      const hex = dominantByAttached.get(photo.label);
+      if (hex) photo.glow_color = hex;
+    }
+  }
+}
+
+/**
+ * Доминирующий цвет картинки → '#rrggbb'. Через sharp .stats().dominant.
+ * Возвращает null при ошибке (best-effort — не валит загрузку набора).
+ */
+async function dominantHex(buffer: Buffer): Promise<string | null> {
+  try {
+    const { dominant } = await sharp(buffer).stats();
+    const h = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+    return `#${h(dominant.r)}${h(dominant.g)}${h(dominant.b)}`;
+  } catch {
+    return null;
   }
 }
 
