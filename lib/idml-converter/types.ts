@@ -51,13 +51,62 @@ export type TextPlaceholder = Common & {
   auto_fit: boolean;
   min_size_pt?: number;
   default_text?: string;
+  // ─── Часть 3 ТЗ: текстовые эффекты для читаемости на пёстром фоне ──────
+  // Обводка букв (stroke) и свечение/тень (glow). Все опциональны и
+  // обратносовместимы — у старых мастеров отсутствуют (= эффекта нет).
+  // Рендер: Konva нативно (stroke/strokeWidth, shadowColor/shadowBlur);
+  // PDF — приблизительно (обводка реально, свечение упрощённо). undefined
+  // в JSON эквивалентно «эффект выключен».
+  /** Цвет обводки букв (hex), null/undefined = без обводки. */
+  text_stroke_color?: string | null;
+  /** Толщина обводки в pt. */
+  text_stroke_width_pt?: number | null;
+  /** Цвет свечения/тени (hex), null/undefined = без свечения. */
+  text_glow_color?: string | null;
+  /** Размытие свечения в pt. */
+  text_glow_blur_pt?: number | null;
 };
 
 export type OvalPlaceholder = PhotoPlaceholder & {
   is_circle: true;
 };
 
-export type Placeholder = PhotoPlaceholder | TextPlaceholder | OvalPlaceholder;
+/**
+ * Часть 1 ТЗ: привязанный декор к слоту.
+ *
+ * Статичная картинка из IDML (вшитая embedded-картинка фрейма), привязанная
+ * к базовому слоту через Script Label вида `<base>__under` / `<base>__over`.
+ * В отличие от photo/text у декора НЕТ подстановки данных — это готовая
+ * картинка (рамка-теремок, ленточка-баннер, орнамент).
+ *
+ * Динамика (см. builder, Этап 3): декор следует за базовым слотом —
+ *   - базовый слот скрыт (`__hidden__<base>`) → декор тоже скрыт;
+ *   - базовый слот смещён (`__pos__<base>`) → декор смещается на ту же
+ *     дельту, сохраняя offset: deco_pos = new_base_pos + offset.
+ *
+ * Геометрия (x_mm/y_mm/width_mm/height_mm/rotation_deg из Common) — это
+ * ИСХОДНОЕ положение декора в мастере (когда базовый слот не двигали).
+ * offset_x_mm/offset_y_mm — смещение относительно базового слота, по нему
+ * пересчитываем позицию когда слот сдвинут.
+ */
+export type DecorationPlaceholder = Common & {
+  type: 'decoration';
+  /** label базового слота, к которому привязан декор (например 'teacherphoto_1'). */
+  attached_to: string;
+  /** Слой относительно базового слота: 'under' (z ниже) / 'over' (z выше). */
+  layer: 'under' | 'over';
+  /** URL картинки декора в storage (bucket template-decorations). */
+  url: string;
+  /** Смещение исходной позиции декора относительно базового слота, мм. */
+  offset_x_mm: number;
+  offset_y_mm: number;
+};
+
+export type Placeholder =
+  | PhotoPlaceholder
+  | TextPlaceholder
+  | OvalPlaceholder
+  | DecorationPlaceholder;
 
 // ─── Правила применения мастера ───────────────────────────────────────────
 
