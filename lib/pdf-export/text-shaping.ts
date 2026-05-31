@@ -204,6 +204,15 @@ export function drawTextShaped(
   // (idml_rotation_deg) — без инверсии.
   // Р.3 — override цвета имеет приоритет, иначе placeholder.color.
   const color = hexToRgb01(colorOverride ?? ph.color);
+  // Часть 3 ТЗ: обводка текста (приблизительно). Поля опциональны — если не
+  // заданы, stroke=null и рендер идентичен прежнему (regression-safe).
+  const stroke =
+    ph.text_stroke_color && ph.text_stroke_width_pt && ph.text_stroke_width_pt > 0
+      ? {
+          color: hexToRgb01(ph.text_stroke_color),
+          widthPt: ph.text_stroke_width_pt,
+        }
+      : null;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const baseline_x_pt = first_baseline_x_pt + i * line_step_x_pt;
@@ -220,7 +229,8 @@ export function drawTextShaped(
       effective_max_width_pt,
       ph.align,
       idml_rotation_deg,
-      is_last_line
+      is_last_line,
+      stroke
     );
   }
 }
@@ -325,6 +335,48 @@ function wrapWords(
  * - justify: распределяем пробелы между словами; последняя строка
  *            параграфа = left (визуально естественно)
  */
+/**
+ * Часть 3 ТЗ docs/tz-attached-decor.md: приблизительная обводка текста в PDF.
+ *
+ * pdf-lib не поддерживает stroke глифов нативно, поэтому имитируем: рисуем
+ * текст обводочным цветом 8 раз со смещением по кругу (радиус = толщина
+ * обводки), а основной текст — сверху в вызывающем коде. Свечение (glow) в
+ * PDF не делаем (Konva-превью его показывает; ТЗ допускает «приблизительно /
+ * пропустить» для PDF — тень глифов в pdf-lib потребовала бы растеризации).
+ */
+function drawTextStroke(
+  page: PDFPage,
+  text: string,
+  opts: {
+    x_pt: number;
+    y_pt: number;
+    size_pt: number;
+    font: PDFFont;
+    rotation_deg: number;
+    strokeColor: { r: number; g: number; b: number };
+    strokeWidthPt: number;
+  },
+): void {
+  const r = opts.strokeWidthPt;
+  const strokeRgb = rgb(opts.strokeColor.r, opts.strokeColor.g, opts.strokeColor.b);
+  // 8 направлений (оси + диагонали /√2) — равномерный контур по краю глифов.
+  const d = r / Math.SQRT2;
+  const offsets: Array<[number, number]> = [
+    [r, 0], [-r, 0], [0, r], [0, -r],
+    [d, d], [d, -d], [-d, d], [-d, -d],
+  ];
+  for (const [dx, dy] of offsets) {
+    page.drawText(text, {
+      x: opts.x_pt + dx,
+      y: opts.y_pt + dy,
+      size: opts.size_pt,
+      font: opts.font,
+      color: strokeRgb,
+      rotate: degrees(opts.rotation_deg),
+    });
+  }
+}
+
 function drawLine(
   page: PDFPage,
   line: string,
@@ -336,24 +388,41 @@ function drawLine(
   max_width_pt: number,
   align: TextPlaceholder['align'],
   rotation_deg: number,
-  is_last_line: boolean
+  is_last_line: boolean,
+  // Часть 3 ТЗ: обводка (опционально). null → без обводки (старое поведение).
+  stroke: { color: { r: number; g: number; b: number }; widthPt: number } | null = null,
 ): void {
   const text_width = font.widthOfTextAtSize(line, size_pt);
   const colorRgb = rgb(color.r, color.g, color.b);
+  // Хелпер: обводка (под текстом) + основной глиф поверх.
+  const drawGlyphs = (txt: string, gx: number, gy: number): void => {
+    if (stroke) {
+      drawTextStroke(page, txt, {
+        x_pt: gx,
+        y_pt: gy,
+        size_pt,
+        font,
+        rotation_deg,
+        strokeColor: stroke.color,
+        strokeWidthPt: stroke.widthPt,
+      });
+    }
+    page.drawText(txt, {
+      x: gx,
+      y: gy,
+      size: size_pt,
+      font,
+      color: colorRgb,
+      rotate: degrees(rotation_deg),
+    });
+  };
 
   if (align === 'justify' && !is_last_line) {
     // Justify: распределяем избыточное пространство между словами.
     const words = line.split(/\s+/).filter(Boolean);
     if (words.length <= 1) {
       // Одно слово или пусто — не justify, рисуем как left
-      page.drawText(line, {
-        x: x_pt,
-        y: baseline_y_pt,
-        size: size_pt,
-        font,
-        color: colorRgb,
-        rotate: degrees(rotation_deg),
-      });
+      drawGlyphs(line, x_pt, baseline_y_pt);
       return;
     }
 
@@ -368,14 +437,7 @@ function drawLine(
 
     let cursor_x_pt = x_pt;
     for (let i = 0; i < words.length; i++) {
-      page.drawText(words[i], {
-        x: cursor_x_pt,
-        y: baseline_y_pt,
-        size: size_pt,
-        font,
-        color: colorRgb,
-        rotate: degrees(rotation_deg),
-      });
+      drawGlyphs(words[i], cursor_x_pt, baseline_y_pt);
       cursor_x_pt += font.widthOfTextAtSize(words[i], size_pt) + gap;
     }
     return;
@@ -392,14 +454,7 @@ function drawLine(
     final_x_pt = x_pt;
   }
 
-  page.drawText(line, {
-    x: final_x_pt,
-    y: baseline_y_pt,
-    size: size_pt,
-    font,
-    color: colorRgb,
-    rotate: degrees(rotation_deg),
-  });
+  drawGlyphs(line, final_x_pt, baseline_y_pt);
 }
 
 // Re-export для использования напрямую из других модулей если нужно.

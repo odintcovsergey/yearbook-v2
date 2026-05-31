@@ -29,9 +29,10 @@
  * См. docs/phase-3-spec.md §3.4, §4.1 (фаза 3.4), §4.3 (фаза 3.5).
  */
 
-import { PDFDocument, PDFImage, PDFPage } from 'pdf-lib';
+import { PDFDocument, PDFImage, PDFPage, degrees } from 'pdf-lib';
 import sharp from 'sharp';
-import { computePageBoxes, mmToPt } from './units';
+import { computePageBoxes, mmToPt, placeholderToPdfBox } from './units';
+import { orderPlaceholdersForRender } from '@/lib/decorations/render-order';
 import type { FontRegistry } from './font-loader';
 import { embedPhotoOnPage, type PhotoEmbedContext } from './photo-embed';
 import { drawTextShaped } from './text-shaping';
@@ -54,6 +55,8 @@ import type {
   Placeholder,
   PhotoPlaceholder,
   TextPlaceholder,
+  DecorationPlaceholder,
+  RenderPlaceholder,
 } from '@/lib/album-builder/types';
 
 /**
@@ -252,10 +255,13 @@ async function renderSpread(
   // БТ.1.2/БТ.1.4: применяем балансировку (hidden + pos) до любого деления
   // на страницы. Использует shared модуль lib/balance-overrides — тот же
   // что AlbumSpreadCanvas, гарантирует согласованность preview ↔ PDF.
-  const effectivePlaceholders = applyBalanceFromData(
-    template.placeholders,
-    instance.data,
-  );
+  // Часть 1 ТЗ декора: z-порядок (__under перед базой, __over после) — тот же
+  // orderPlaceholdersForRender, что и канвас, чтобы превью = PDF. Скрытый декор
+  // уже отфильтрован applyBalanceFromData. Порядок выставляем ДО split на
+  // страницы (split сохраняет относительный порядок).
+  const effectivePlaceholders = orderPlaceholdersForRender(
+    applyBalanceFromData(template.placeholders, instance.data) as RenderPlaceholder[],
+  ) as Placeholder[];
 
   if (!template.is_spread) {
     await renderPage(ctx, instance, template, effectivePlaceholders, 'single');
@@ -385,11 +391,79 @@ async function drawPlaceholder(
     });
   }
 
+  // Часть 1 ТЗ: привязанный декор (type:'decoration') — статичная картинка.
+  // Тип Placeholder (фото|текст) не включает decoration (см. types.ts), поэтому
+  // распознаём на рантайме и кастуем. Идёт ДО ветки text — иначе декор ушёл бы
+  // в drawText и упал.
+  if ((ph as { type: string }).type === 'decoration') {
+    await drawDecoration(ctx, page, ph as unknown as DecorationPlaceholder, instance);
+    return;
+  }
+
   if (ph.type === 'photo') {
     await drawPhoto(ctx, page, ph, instance);
   } else {
     drawText(ctx, page, ph, instance);
   }
+}
+
+/**
+ * Рендер привязанного декора (Часть 1 ТЗ) в PDF.
+ *
+ * Декор — статичная картинка из storage (bucket template-decorations), без
+ * подстановки данных. Скачиваем по url, embed'им (PNG с альфой / JPEG),
+ * рисуем в рамке placeholder'а. Позиция/скрытие/смещение уже применены
+ * (applyBalanceFromData + orderPlaceholdersForRender) до этой точки.
+ *
+ * Ошибка скачивания/embed — warning, слот пустой (не валим весь экспорт ради
+ * одной картинки декора).
+ */
+async function drawDecoration(
+  ctx: RenderContext,
+  page: PDFPage,
+  ph: DecorationPlaceholder,
+  instance: SpreadInstance,
+): Promise<void> {
+  const url = ph.url;
+  if (!url) return; // декор без url (не загрузился на Этапе 2б) — пропускаем
+
+  let buffer: Buffer;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    buffer = Buffer.from(await res.arrayBuffer());
+  } catch (e) {
+    ctx.warnings.push({
+      code: 'photo_not_found',
+      detail: `Не удалось скачать декор: ${url} (${(e as Error).message})`,
+      context: { spread_index: instance.spread_index, label: ph.label },
+    });
+    return;
+  }
+
+  // PNG (с прозрачностью — типично для рамок/ленточек) или JPEG. Определяем
+  // по расширению url (upload кладёт .png/.jpg), с fallback на сигнатуру байт.
+  const isPng = url.toLowerCase().endsWith('.png') || buffer[0] === 0x89;
+  let image;
+  try {
+    image = isPng ? await ctx.pdfDoc.embedPng(buffer) : await ctx.pdfDoc.embedJpg(buffer);
+  } catch (e) {
+    ctx.warnings.push({
+      code: 'image_decode_failed',
+      detail: `pdf-lib embed декора ${url}: ${(e as Error).message}`,
+      context: { spread_index: instance.spread_index, label: ph.label },
+    });
+    return;
+  }
+
+  const box = placeholderToPdfBox(ph.x_mm, ph.y_mm, ph.width_mm, ph.height_mm, ctx.pageBoxes);
+  page.drawImage(image, {
+    x: box.x_pt,
+    y: box.y_pt,
+    width: box.width_pt,
+    height: box.height_pt,
+    rotate: degrees(ph.rotation_deg ?? 0),
+  });
 }
 
 /**
