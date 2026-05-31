@@ -9,6 +9,8 @@ import type {
   Placeholder,
   PhotoPlaceholder,
   TextPlaceholder,
+  DecorationPlaceholder,
+  RenderPlaceholder,
 } from '@/lib/album-builder/types'
 import {
   computeCrop,
@@ -22,6 +24,7 @@ import {
   parseBalanceOverrides,
   applyBalanceOverrides,
 } from '@/lib/balance-overrides'
+import { orderPlaceholdersForRender } from '@/lib/decorations/render-order'
 import {
   parseFontSizeMult,
   parseColor,
@@ -366,6 +369,35 @@ function PhotoSlot({
   )
 }
 
+// ─── DecorationSlot (привязанный декор, Часть 1 ТЗ) ─────────────────────────
+// Статичная картинка декора (рамка-теремок, ленточка). Рисуется в рамке
+// плейсхолдера, как дизайнер задал в IDML. Скрытие/смещение уже применены в
+// applyBalanceOverrides + orderPlaceholdersForRender ДО рендера — сюда приходит
+// видимый декор с финальной геометрией. Поворот — вокруг центра рамки.
+function DecorationSlot({ placeholder }: { placeholder: DecorationPlaceholder }) {
+  const url = placeholder.url ?? ''
+  const img = useImage(url || null)
+  if (!url || !img) return null
+
+  const w = placeholder.width_mm
+  const h = placeholder.height_mm
+  const rotation = placeholder.rotation_deg ?? 0
+
+  return (
+    <KonvaImage
+      image={img}
+      x={placeholder.x_mm + w / 2}
+      y={placeholder.y_mm + h / 2}
+      width={w}
+      height={h}
+      offsetX={w / 2}
+      offsetY={h / 2}
+      rotation={rotation}
+      listening={false}
+    />
+  )
+}
+
 // ─── Text placeholder ─────────────────────────────────────────────────────
 function TextSlot({
   placeholder,
@@ -427,6 +459,16 @@ function TextSlot({
   //   • rotation = 0 (или undefined): рисуем как раньше.
   // PDF-export уже работает с rotation_deg (lib/pdf-export/text-shaping.ts);
   // мы выравниваем поведение canvas с ним.
+  // Часть 3 ТЗ: текстовые эффекты (обводка + свечение) для читаемости на
+  // пёстром фоне. Поля опциональны — у старых мастеров отсутствуют (нет эффекта).
+  const hasStroke =
+    !!placeholder.text_stroke_color &&
+    !!placeholder.text_stroke_width_pt &&
+    placeholder.text_stroke_width_pt > 0
+  const hasGlow =
+    !!placeholder.text_glow_color &&
+    !!placeholder.text_glow_blur_pt &&
+    placeholder.text_glow_blur_pt > 0
   const rotationDeg = placeholder.rotation_deg ?? 0
   let renderX = placeholder.x_mm
   let renderY = placeholder.y_mm
@@ -457,6 +499,23 @@ function TextSlot({
       fill={finalColor}
       align={finalHAlign}
       verticalAlign={finalVAlign}
+      // Часть 3 ТЗ: обводка букв. fillAfterStrokeEnabled — заливка поверх
+      // обводки (контур по краю буквы, не перекрывает её).
+      {...(hasStroke
+        ? {
+            stroke: placeholder.text_stroke_color!,
+            strokeWidth: placeholder.text_stroke_width_pt! * PT_TO_MM,
+            fillAfterStrokeEnabled: true,
+          }
+        : {})}
+      // Часть 3 ТЗ: свечение/тень — Konva shadow без смещения.
+      {...(hasGlow
+        ? {
+            shadowColor: placeholder.text_glow_color!,
+            shadowBlur: placeholder.text_glow_blur_pt! * PT_TO_MM,
+            shadowOpacity: 0.9,
+          }
+        : {})}
     />
   )
 }
@@ -944,10 +1003,18 @@ export default function AlbumSpreadCanvas({
             />
           )}
 
-          {/* Контент из instance.data */}
-          {effectiveTemplate.placeholders.map((p: Placeholder, i) => {
+          {/* Контент из instance.data.
+              Часть 1 ТЗ: сортируем z-порядок — __under перед базой, __over
+              после (orderPlaceholdersForRender). Скрытый декор уже отфильтрован
+              в applyBalanceOverrides выше. */}
+          {orderPlaceholdersForRender(
+            effectiveTemplate.placeholders as RenderPlaceholder[],
+          ).map((p: RenderPlaceholder, i) => {
             const value = instance.data[p.label] ?? null
             const key = `${p.label}-${i}`
+            if (p.type === 'decoration') {
+              return <DecorationSlot key={key} placeholder={p} />
+            }
             if (p.type === 'photo') {
               // Скрываем Konva-копию фото на время drag — preview
               // отрисовывается через DOM-overlay в DropZone (CSS transform)

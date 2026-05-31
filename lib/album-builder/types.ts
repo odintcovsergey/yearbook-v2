@@ -270,6 +270,33 @@ export type TextPlaceholder = PlaceholderCommon & {
   auto_fit: boolean;
   min_size_pt?: number;
   default_text?: string;
+  // ─── Часть 3 ТЗ docs/tz-attached-decor.md: текстовые эффекты ───────────
+  // Обводка букв + свечение для читаемости на пёстром фоне. Опциональны —
+  // у старых мастеров отсутствуют (= эффекта нет). Совпадают с
+  // TextPlaceholder из lib/idml-converter/types.ts.
+  text_stroke_color?: string | null;
+  text_stroke_width_pt?: number | null;
+  text_glow_color?: string | null;
+  text_glow_blur_pt?: number | null;
+};
+
+/**
+ * Привязанный декор (Часть 1 ТЗ docs/tz-attached-decor.md). Статичная картинка
+ * из IDML (рамка-теремок, ленточка), привязанная к базовому слоту. Совпадает с
+ * DecorationPlaceholder из lib/idml-converter/types.ts (без транзитного
+ * _embedded — в БД хранится только url).
+ */
+export type DecorationPlaceholder = PlaceholderCommon & {
+  type: 'decoration';
+  /** label базового слота, за которым следует декор (например 'teacherphoto_1'). */
+  attached_to: string;
+  /** Слой относительно базового слота: 'under' (z ниже) / 'over' (z выше). */
+  layer: 'under' | 'over';
+  /** URL картинки декора в storage (bucket template-decorations). */
+  url: string;
+  /** Смещение исходной позиции декора относительно базового слота, мм. */
+  offset_x_mm: number;
+  offset_y_mm: number;
 };
 
 /**
@@ -285,8 +312,20 @@ export type OvalPlaceholder = PhotoPlaceholder & {
   is_circle: true;
 };
 
-/** Discriminated union по `type`. */
+/**
+ * Discriminated union по `type`.
+ *
+ * Привязанный декор (DecorationPlaceholder, Часть 1 ТЗ) НАМЕРЕННО не входит в
+ * этот union: он встречается только в рендере (канвас/PDF), где распознаётся
+ * на рантайме (как в lib/balance-overrides). Так движки album-builder /
+ * rule-engine / template-replace, исчерпывающе разбирающие photo|text, не
+ * требуют новой ветки под сущность, которая для них не данные.
+ */
 export type Placeholder = PhotoPlaceholder | TextPlaceholder;
+
+/** Placeholder + возможный декор — форма, в которой хранятся данные мастера
+ *  в БД и приходят на рендер (канвас/PDF). */
+export type RenderPlaceholder = Placeholder | DecorationPlaceholder;
 
 // ─── SpreadTemplate / TemplateSet (проекции таблиц) ───────────────────────
 
