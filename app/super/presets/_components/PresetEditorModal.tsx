@@ -92,6 +92,10 @@ export type Section =
   | { type: 'common_additional'; max_spreads: number }
   | { type: 'transition'; master_name?: string | null }
 
+// ВНИМАНИЕ: 'common' (legacy slots-режим) и 'vignette' (не реализован)
+// намеренно убраны из конструктора — нельзя создавать НОВЫЕ такие секции.
+// Обработчики в lib/rule-engine/build-from-section-structure.ts и тип-юнион
+// Section/SECTION_LABELS оставлены, чтобы старые пресеты продолжали работать.
 const ALL_SECTION_TYPES: Section['type'][] = [
   'soft_intro',
   'teachers',
@@ -99,8 +103,6 @@ const ALL_SECTION_TYPES: Section['type'][] = [
   'transition',
   'common_required',
   'common_additional',
-  'common',
-  'vignette',
   'soft_final',
 ]
 
