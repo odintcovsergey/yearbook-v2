@@ -8,6 +8,8 @@
 import type { StyleResolver } from './extract-styles';
 import type {
   BBox,
+  DecorationPlaceholder,
+  EmbeddedImage,
   ItemTransform,
   ParserWarning,
   Placeholder,
@@ -121,6 +123,12 @@ export function extractPlaceholders(
     });
   }
 
+  // Часть 1 ТЗ: вычислить offset каждого декора относительно базового слота.
+  // Делаем ПОСЛЕ сбора всех плейсхолдеров (базовый слот мог встретиться в
+  // любом порядке), но ДО dedupeLabels (суффиксы _left/_right не трогают
+  // привязку — декор и его база на одной странице).
+  computeDecorationOffsets(result, masterName, warnings);
+
   dedupeLabels(result, masterName, warnings);
   return result.map(({ _pageIndex: _, ...rest }) => rest as Placeholder);
 }
@@ -192,6 +200,30 @@ function frameToPlaceholder(
     height_mm: ptToMm(bbox.height),
     rotation_deg: rotation,
   };
+
+  // Часть 1 ТЗ: привязанный декор. Метка вида `<base>__under` / `<base>__over`
+  // → это статичная картинка-декор, а НЕ фото-слот. Перехватываем ДО
+  // kind-ветвления (иначе rectangle-декор стал бы фиктивным фото-слотом).
+  const decor = parseDecorationLabel(label);
+  if (decor) {
+    const embedded = extractEmbeddedImage(frame.node, masterName, label, warnings);
+    if (!embedded) {
+      // Декор без извлекаемой картинки бесполезен — пропускаем (warning внутри
+      // extractEmbeddedImage уже записан).
+      return null;
+    }
+    return {
+      ...common,
+      type: 'decoration',
+      attached_to: decor.attached_to,
+      layer: decor.layer,
+      url: '', // заполнится на Этапе 2б при загрузке в storage
+      offset_x_mm: 0, // пересчитается в computeDecorationOffsets
+      offset_y_mm: 0,
+      _embedded: embedded,
+      _pageIndex: pageIndex,
+    };
+  }
 
   // required = false всегда — обязательность это продуктовая логика album-builder'а.
   if (frame.kind === 'rectangle') {
@@ -272,6 +304,149 @@ function dedupeLabels(
       ph.label = `${label}${suffix}`;
     }
   });
+}
+
+// ─── Декор (Часть 1 ТЗ) ───────────────────────────────────────────────────
+
+/**
+ * Распознаёт метку привязанного декора `<base>__under` / `<base>__over`.
+ * Суффикс — РОВНО два подчёркивания + under|over в конце. Одиночные
+ * подчёркивания внутри base (`teacherphoto_1`) сохраняются.
+ *
+ * Возвращает null если метка не декоративная (обычный слот).
+ */
+function parseDecorationLabel(
+  label: string,
+): { attached_to: string; layer: 'under' | 'over' } | null {
+  const m = label.match(/^(.+)__(under|over)$/);
+  if (!m) return null;
+  return { attached_to: m[1], layer: m[2] as 'under' | 'over' };
+}
+
+/**
+ * Извлекает embedded-картинку из фрейма декора.
+ *
+ * В IDML вшитая картинка лежит в `<Image><Properties><Contents>…base64…`.
+ * У того же `<Image>` есть второй `<Contents>` под `MetadataPacketPreference`
+ * с XMP-метаданными (начинается с `<?xpacket`) — его игнорируем.
+ *
+ * Поддерживаем PNG и JPEG (sniff по началу base64). EPS/PDF/прочее не
+ * поддерживаем — пишем warning и возвращаем null.
+ */
+function extractEmbeddedImage(
+  frameNode: Record<string, unknown>,
+  masterName: string,
+  label: string,
+  warnings: ParserWarning[],
+): EmbeddedImage | null {
+  const image = findFirst(frameNode, 'Image');
+  if (!image) {
+    warnings.push({
+      message: 'decoration frame has no embedded <Image> (EPS/PDF/link not supported)',
+      master: masterName,
+      label,
+    });
+    return null;
+  }
+
+  // У <Image> ДВА <Contents>: картинка (Image>Properties) и XMP-метаданные
+  // (MetadataPacketPreference). Собираем оба и выбираем тот, что по сигнатуре
+  // base64 — настоящая картинка (PNG/JPEG). XMP начинается с '<?xpacket' и
+  // отсеивается автоматически (sniff вернёт null).
+  // fast-xml-parser отдаёт текст-only <Contents> как СТРОКУ, а не объект —
+  // поэтому собираем рекурсивно и строки, и {#text}-узлы.
+  const candidates = collectContentsTexts(image);
+  for (const raw of candidates) {
+    const format = sniffImageFormat(raw);
+    if (format) return { base64: raw, format };
+  }
+
+  warnings.push({
+    message:
+      candidates.length === 0
+        ? 'decoration <Image> has no <Contents> base64 data'
+        : 'decoration image is not PNG/JPEG (unsupported embedded format)',
+    master: masterName,
+    label,
+  });
+  return null;
+}
+
+/** Определяет формат картинки по началу base64 (PNG `iVBOR…`, JPEG `/9j/`). */
+function sniffImageFormat(base64: string): 'png' | 'jpeg' | null {
+  if (base64.startsWith('iVBORw0KGgo')) return 'png';
+  if (base64.startsWith('/9j/')) return 'jpeg';
+  return null;
+}
+
+/**
+ * Рекурсивно собирает текст всех `<Contents>` внутри узла.
+ * fast-xml-parser представляет текст-only элемент как строку, элемент с
+ * атрибутами — как объект с '#text', повторяющиеся — как массив. Покрываем
+ * все три формы.
+ */
+function collectContentsTexts(node: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const visit = (value: unknown): void => {
+    if (typeof value === 'string') {
+      if (value.trim()) out.push(value.trim());
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    const obj = value as Record<string, unknown>;
+    const text = obj['#text'];
+    if (typeof text === 'string' && text.trim()) out.push(text.trim());
+  };
+  const walk = (n: unknown): void => {
+    if (!n || typeof n !== 'object') return;
+    const obj = n as Record<string, unknown>;
+    for (const key of Object.keys(obj)) {
+      if (key.startsWith('@_') || key === '#text') continue;
+      const v = obj[key];
+      if (key === 'Contents') {
+        if (Array.isArray(v)) v.forEach(visit);
+        else visit(v);
+      }
+      if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === 'object') walk(v);
+    }
+  };
+  walk(node);
+  return out;
+}
+
+/**
+ * Часть 1 ТЗ (динамика): offset декора = его исходная позиция − позиция
+ * базового слота. По нему builder (Этап 3) пересчитает позицию декора, когда
+ * базовый слот сдвинут симметризацией (`__pos__`): deco = new_base + offset.
+ *
+ * Базовый слот ищется по точному совпадению label === attached_to. Если базы
+ * нет (опечатка в метке) — warning, offset остаётся 0 (декор останется на
+ * исходном месте, но не будет следовать за слотом).
+ */
+function computeDecorationOffsets(
+  placeholders: Array<Placeholder & { _pageIndex: number }>,
+  masterName: string,
+  warnings: ParserWarning[],
+): void {
+  const byLabel = new Map<string, Placeholder>();
+  for (const ph of placeholders) byLabel.set(ph.label, ph);
+
+  for (const ph of placeholders) {
+    if (ph.type !== 'decoration') continue;
+    const deco = ph as DecorationPlaceholder & { _pageIndex: number };
+    const base = byLabel.get(deco.attached_to);
+    if (!base) {
+      warnings.push({
+        message: `decoration attached_to '${deco.attached_to}' has no matching base slot`,
+        master: masterName,
+        label: deco.label,
+      });
+      continue;
+    }
+    deco.offset_x_mm = deco.x_mm - base.x_mm;
+    deco.offset_y_mm = deco.y_mm - base.y_mm;
+  }
 }
 
 // ─── Вспомогательные функции ──────────────────────────────────────────────

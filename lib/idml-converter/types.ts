@@ -72,6 +72,21 @@ export type OvalPlaceholder = PhotoPlaceholder & {
 };
 
 /**
+ * Встроенная (embedded) картинка декора, извлечённая из IDML.
+ *
+ * Транзитный носитель между Этапом 2а (парсер достаёт base64 из
+ * `Image > Properties > Contents`) и Этапом 2б (upload декодирует и грузит
+ * в storage bucket template-decorations, затем проставляет `url` и удаляет
+ * это поле перед записью JSON в БД). В саму БД `_embedded` не пишется.
+ */
+export type EmbeddedImage = {
+  /** base64-содержимое картинки (без XMP-метаданных). */
+  base64: string;
+  /** Формат — для MIME и расширения файла при загрузке. */
+  format: 'png' | 'jpeg';
+};
+
+/**
  * Часть 1 ТЗ: привязанный декор к слоту.
  *
  * Статичная картинка из IDML (вшитая embedded-картинка фрейма), привязанная
@@ -95,11 +110,20 @@ export type DecorationPlaceholder = Common & {
   attached_to: string;
   /** Слой относительно базового слота: 'under' (z ниже) / 'over' (z выше). */
   layer: 'under' | 'over';
-  /** URL картинки декора в storage (bucket template-decorations). */
+  /**
+   * URL картинки декора в storage (bucket template-decorations).
+   * После Этапа 2а (только парсинг) пусто '' — заполняется на Этапе 2б
+   * при загрузке `_embedded` в storage.
+   */
   url: string;
   /** Смещение исходной позиции декора относительно базового слота, мм. */
   offset_x_mm: number;
   offset_y_mm: number;
+  /**
+   * Транзитная embedded-картинка из IDML (Этап 2а → 2б). В БД не пишется:
+   * upload декодирует её, грузит в storage, ставит `url` и удаляет это поле.
+   */
+  _embedded?: EmbeddedImage;
 };
 
 export type Placeholder =
