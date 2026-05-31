@@ -326,10 +326,14 @@ function extractFrameProps(
 ): { corner_radius_mm?: number; glow_size_pt?: number } {
   const out: { corner_radius_mm?: number; glow_size_pt?: number } = {};
 
-  // Скруглённые углы: только если CornerOption=Rounded и радиус > 0.
-  const cornerOption = getAttr(frameNode, 'TopLeftCornerOption');
-  const cornerRadiusRaw = getAttr(frameNode, 'TopLeftCornerRadius');
-  if (cornerOption === 'Rounded' && cornerRadiusRaw) {
+  // Скруглённые углы: по наличию ненулевого радиуса. InDesign при экспорте
+  // в IDML НЕ пишет CornerOption (атрибут отсутствует), но пишет
+  // TopLeftCornerRadius — и рендерит скругление по нему. Поэтому ориентируемся
+  // на радиус, а не на CornerOption. Прямоугольные рамки (classphotoframe)
+  // радиуса не имеют → corner_radius_mm не ставится.
+  const cornerRadiusRaw =
+    getAttr(frameNode, 'TopLeftCornerRadius') ?? getAttr(frameNode, 'CornerRadius');
+  if (cornerRadiusRaw) {
     const r = Number(cornerRadiusRaw);
     if (Number.isFinite(r) && r > 0) out.corner_radius_mm = ptToMm(r);
   }
