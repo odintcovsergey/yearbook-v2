@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import TemplateSetCard from './_components/TemplateSetCard'
+import TemplateSetCard, { type CardAction } from './_components/TemplateSetCard'
 import UploadModal from './_components/UploadModal'
 import type { TemplateSet } from './_components/types'
 
@@ -25,6 +25,10 @@ const api = (path: string, opts?: RequestInit) =>
     headers: { 'Content-Type': 'application/json', ...opts?.headers },
   })
 
+// Действия с дизайном идут POST'ом в /api/tenant (superadmin видит все наборы).
+const tenantAction = (body: Record<string, unknown>) =>
+  api('/api/tenant', { method: 'POST', body: JSON.stringify(body) })
+
 export default function TemplatesPage() {
   const router = useRouter()
   const [authChecked, setAuthChecked] = useState(false)
@@ -32,6 +36,12 @@ export default function TemplatesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showUpload, setShowUpload] = useState(false)
+
+  // id набора, по которому идёт операция (блокирует его меню).
+  const [busyId, setBusyId] = useState<string | null>(null)
+  // Модалки.
+  const [renameFor, setRenameFor] = useState<TemplateSet | null>(null)
+  const [deleteFor, setDeleteFor] = useState<TemplateSet | null>(null)
 
   useEffect(() => {
     api('/api/auth')
@@ -58,6 +68,11 @@ export default function TemplatesPage() {
         ...rest,
         spread_count: spread_templates?.[0]?.count ?? 0,
       }))
+      // Сортировка: опубликованные сверху, внутри — по имени.
+      enriched.sort((a, b) => {
+        if (a.is_published !== b.is_published) return a.is_published ? -1 : 1
+        return a.name.localeCompare(b.name, 'ru')
+      })
       setTemplates(enriched)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось загрузить шаблоны')
@@ -69,6 +84,64 @@ export default function TemplatesPage() {
   useEffect(() => {
     if (authChecked) loadTemplates()
   }, [authChecked, loadTemplates])
+
+  // Выполнить серверное действие + перезагрузить список.
+  const runAction = useCallback(
+    async (id: string, body: Record<string, unknown>) => {
+      setBusyId(id)
+      try {
+        const r = await tenantAction(body)
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
+        await loadTemplates()
+        return { ok: true as const }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Ошибка операции'
+        return { ok: false as const, error: msg }
+      } finally {
+        setBusyId(null)
+      }
+    },
+    [loadTemplates],
+  )
+
+  // Роутинг действий из меню карточки.
+  const handleCardAction = (t: TemplateSet, action: CardAction) => {
+    switch (action) {
+      case 'rename':
+        setRenameFor(t)
+        break
+      case 'delete':
+        setDeleteFor(t)
+        break
+      case 'duplicate':
+        runAction(t.id, {
+          action: 'template_set_duplicate',
+          template_set_id: t.id,
+        }).then(res => {
+          if (!res.ok) alert('Не удалось дублировать: ' + res.error)
+        })
+        break
+      case 'toggle_global':
+        runAction(t.id, {
+          action: 'template_set_update',
+          template_set_id: t.id,
+          make_global: !t.is_global,
+        }).then(res => {
+          if (!res.ok) alert('Не удалось изменить глобальность: ' + res.error)
+        })
+        break
+      case 'toggle_published':
+        runAction(t.id, {
+          action: 'template_set_update',
+          template_set_id: t.id,
+          is_published: !t.is_published,
+        }).then(res => {
+          if (!res.ok) alert('Не удалось изменить статус публикации: ' + res.error)
+        })
+        break
+    }
+  }
 
   if (!authChecked) {
     return (
@@ -124,7 +197,9 @@ export default function TemplatesPage() {
               <TemplateSetCard
                 key={t.id}
                 template={t}
+                busy={busyId === t.id}
                 onOpen={() => router.push(`/super/templates/${t.id}`)}
+                onAction={(action) => handleCardAction(t, action)}
               />
             ))}
           </div>
@@ -136,6 +211,181 @@ export default function TemplatesPage() {
             onSuccess={() => { setShowUpload(false); loadTemplates() }}
           />
         )}
+
+        {renameFor && (
+          <RenameModal
+            template={renameFor}
+            onClose={() => setRenameFor(null)}
+            onSubmit={async (name) => {
+              const res = await runAction(renameFor.id, {
+                action: 'template_set_update',
+                template_set_id: renameFor.id,
+                name,
+              })
+              if (res.ok) setRenameFor(null)
+              return res
+            }}
+          />
+        )}
+
+        {deleteFor && (
+          <DeleteModal
+            template={deleteFor}
+            onClose={() => setDeleteFor(null)}
+            onConfirm={async () => {
+              const res = await runAction(deleteFor.id, {
+                action: 'template_set_delete',
+                template_set_id: deleteFor.id,
+              })
+              if (res.ok) setDeleteFor(null)
+              return res
+            }}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Модалка переименования
+// ──────────────────────────────────────────────────────────────────────────
+function RenameModal({
+  template,
+  onClose,
+  onSubmit,
+}: {
+  template: TemplateSet
+  onClose: () => void
+  onSubmit: (name: string) => Promise<{ ok: boolean; error?: string }>
+}) {
+  const [name, setName] = useState(template.name)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const submit = async () => {
+    const trimmed = name.trim()
+    if (!trimmed) { setErr('Имя не может быть пустым'); return }
+    setSaving(true)
+    setErr(null)
+    const res = await onSubmit(trimmed)
+    setSaving(false)
+    if (!res.ok) setErr(res.error ?? 'Ошибка')
+  }
+
+  return (
+    <ModalShell onClose={onClose} title="Переименовать дизайн">
+      <p className="text-sm text-gray-500 mb-3">
+        Меняется только отображаемое имя. Технический идентификатор (slug)
+        остаётся прежним.
+      </p>
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
+        className="w-full border rounded px-3 py-2 text-sm mb-1"
+        placeholder="Название дизайна"
+      />
+      <div className="text-xs text-gray-400 font-mono mb-3">{template.slug}</div>
+      {err && <div className="text-sm text-red-600 mb-3">{err}</div>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} disabled={saving} className="btn-secondary">
+          Отмена
+        </button>
+        <button onClick={submit} disabled={saving} className="btn-primary">
+          {saving ? 'Сохранение…' : 'Сохранить'}
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Модалка удаления (двойное подтверждение — ввод имени)
+// ──────────────────────────────────────────────────────────────────────────
+function DeleteModal({
+  template,
+  onClose,
+  onConfirm,
+}: {
+  template: TemplateSet
+  onClose: () => void
+  onConfirm: () => Promise<{ ok: boolean; error?: string }>
+}) {
+  const [confirm, setConfirm] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const matches = confirm.trim() === template.name.trim()
+
+  const run = async () => {
+    if (!matches) return
+    setDeleting(true)
+    setErr(null)
+    const res = await onConfirm()
+    setDeleting(false)
+    if (!res.ok) setErr(res.error ?? 'Ошибка')
+  }
+
+  return (
+    <ModalShell onClose={onClose} title="Удалить дизайн">
+      <p className="text-sm text-gray-700 mb-3">
+        Дизайн <b>«{template.name}»</b> будет удалён вместе со всеми его
+        мастерами и фонами. Действие необратимо.
+      </p>
+      <p className="text-sm text-gray-500 mb-2">
+        Если на дизайне есть альбомы или пресеты — сервер не даст его удалить.
+      </p>
+      <p className="text-sm text-gray-700 mb-1">
+        Для подтверждения введите название дизайна:
+      </p>
+      <input
+        autoFocus
+        value={confirm}
+        onChange={(e) => setConfirm(e.target.value)}
+        className="w-full border rounded px-3 py-2 text-sm mb-3"
+        placeholder={template.name}
+      />
+      {err && <div className="text-sm text-red-600 mb-3">{err}</div>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} disabled={deleting} className="btn-secondary">
+          Отмена
+        </button>
+        <button
+          onClick={run}
+          disabled={!matches || deleting}
+          className="px-4 py-2 text-sm rounded bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white"
+        >
+          {deleting ? 'Удаление…' : 'Удалить навсегда'}
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Общая обёртка модалки
+// ──────────────────────────────────────────────────────────────────────────
+function ModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string
+  onClose: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-semibold mb-4">{title}</h3>
+        {children}
       </div>
     </div>
   )

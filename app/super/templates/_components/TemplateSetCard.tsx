@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useRef, useEffect } from 'react'
 import type { TemplateSet } from './types'
 
 function formatDate(iso: string): string {
@@ -14,54 +15,146 @@ function formatDate(iso: string): string {
   }
 }
 
+export type CardAction =
+  | 'rename'
+  | 'duplicate'
+  | 'toggle_global'
+  | 'toggle_published'
+  | 'delete'
+
 export default function TemplateSetCard({
   template,
   onOpen,
+  onAction,
+  busy,
 }: {
   template: TemplateSet
   onOpen: () => void
+  onAction: (action: CardAction) => void
+  busy?: boolean
 }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Закрытие меню по клику вне него.
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDoc = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [menuOpen])
+
+  const pick = (action: CardAction) => {
+    setMenuOpen(false)
+    onAction(action)
+  }
+
   return (
-    <button
-      onClick={onOpen}
-      className="card p-5 text-left hover:shadow-md transition-shadow w-full"
-    >
-      <div className="flex gap-2 mb-3">
-        {template.is_global ? (
-          <span className="badge-blue">🌍 Global</span>
-        ) : (
-          <span className="badge-gray">Tenant</span>
+    <div className="card p-5 relative w-full hover:shadow-md transition-shadow">
+      {/* Меню действий (⋮) — поверх карточки, отдельно от области «Открыть». */}
+      <div ref={menuRef} className="absolute top-3 right-3 z-10">
+        <button
+          type="button"
+          aria-label="Действия с дизайном"
+          disabled={busy}
+          onClick={() => setMenuOpen(o => !o)}
+          className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100 text-gray-500 disabled:opacity-40"
+        >
+          <span className="text-xl leading-none">⋮</span>
+        </button>
+        {menuOpen && (
+          <div className="absolute right-0 mt-1 w-56 bg-white border rounded-lg shadow-lg py-1 text-sm">
+            <button
+              onClick={() => pick('rename')}
+              className="w-full text-left px-3 py-2 hover:bg-gray-50"
+            >
+              ✏️ Переименовать
+            </button>
+            <button
+              onClick={() => pick('duplicate')}
+              className="w-full text-left px-3 py-2 hover:bg-gray-50"
+            >
+              📑 Дублировать
+            </button>
+            <button
+              onClick={() => pick('toggle_global')}
+              className="w-full text-left px-3 py-2 hover:bg-gray-50"
+            >
+              {template.is_global ? '🔒 Убрать из глобальных' : '🌍 Сделать глобальным'}
+            </button>
+            <button
+              onClick={() => pick('toggle_published')}
+              className="w-full text-left px-3 py-2 hover:bg-gray-50"
+            >
+              {template.is_published ? '📥 В черновик' : '📤 Опубликовать'}
+            </button>
+            <div className="border-t my-1" />
+            <button
+              onClick={() => pick('delete')}
+              className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600"
+            >
+              🗑 Удалить
+            </button>
+          </div>
         )}
-        <span className="badge-gray">
-          {template.print_type === 'layflat' ? 'Layflat' : 'Soft'}
-        </span>
       </div>
 
-      <h3
-        className="text-lg mb-1 leading-tight"
-        style={{ fontFamily: 'var(--font-display)' }}
+      {/* Кликабельная область — открыть дизайн. */}
+      <button
+        type="button"
+        onClick={onOpen}
+        className="text-left w-full pr-8"
       >
-        {template.name}
-      </h3>
-
-      <div className="text-xs text-gray-500 font-mono mb-3">{template.slug}</div>
-
-      {template.description && (
-        <div className="text-sm text-gray-600 mb-3 line-clamp-2">
-          {template.description}
+        <div className="flex flex-wrap gap-2 mb-3">
+          {template.is_global ? (
+            <span className="badge-blue">🌍 Global</span>
+          ) : (
+            <span className="badge-gray">Локальный</span>
+          )}
+          {template.is_published ? (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+              Опубликован
+            </span>
+          ) : (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+              Черновик
+            </span>
+          )}
+          <span className="badge-gray">
+            {template.print_type === 'layflat' ? 'Layflat' : 'Soft'}
+          </span>
         </div>
-      )}
 
-      <div className="text-xs text-gray-500 space-y-0.5">
-        <div>
-          {template.spread_count} разворотов · {Math.round(template.page_width_mm)}×
-          {Math.round(template.page_height_mm)} мм ·{' '}
-          {template.facing_pages ? 'разворот' : 'одиночные'}
+        <h3
+          className="text-lg mb-1 leading-tight"
+          style={{ fontFamily: 'var(--font-display)' }}
+        >
+          {template.name}
+        </h3>
+
+        <div className="text-xs text-gray-500 font-mono mb-3">{template.slug}</div>
+
+        {template.description && (
+          <div className="text-sm text-gray-600 mb-3 line-clamp-2">
+            {template.description}
+          </div>
+        )}
+
+        <div className="text-xs text-gray-500 space-y-0.5">
+          <div>
+            {template.spread_count} разворотов · {Math.round(template.page_width_mm)}×
+            {Math.round(template.page_height_mm)} мм ·{' '}
+            {template.facing_pages ? 'разворот' : 'одиночные'}
+          </div>
+          <div>Создан {formatDate(template.created_at)}</div>
         </div>
-        <div>Создан {formatDate(template.created_at)}</div>
-      </div>
 
-      <div className="mt-3 text-sm text-blue-600 font-medium">Открыть →</div>
-    </button>
+        <div className="mt-3 text-sm text-blue-600 font-medium">Открыть →</div>
+      </button>
+    </div>
   )
 }
