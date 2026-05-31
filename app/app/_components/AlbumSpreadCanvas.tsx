@@ -246,6 +246,10 @@ function PhotoSlot({
   rotateDeg?: number
 }) {
   const img = useImage(url)
+  // Часть 2 ТЗ: скруглённые углы рамки (corner_radius_mm). 0 = прямые углы
+  // (regression-safe для обычных фото). Применяется к пустому слоту и к
+  // прямоугольному (не повёрнутому) фото.
+  const cornerRadius = placeholder.corner_radius_mm ?? 0
 
   // Пустой слот → светло-серая заливка с видимой обводкой.
   // Партнёру важно видеть, где должно быть фото — на скейле миниатюры
@@ -260,6 +264,7 @@ function PhotoSlot({
         fill="#f3f4f6"
         stroke="#cbd5e1"
         strokeWidth={0.5}
+        cornerRadius={cornerRadius}
       />
     )
   }
@@ -337,6 +342,7 @@ function PhotoSlot({
         height={placeholder.height_mm}
         image={img}
         crop={crop}
+        cornerRadius={cornerRadius}
       />
     )
   }

@@ -253,6 +253,13 @@ export type PhotoPlaceholder = PlaceholderCommon & {
   fit: 'fill_proportional' | 'contain' | 'fill';
   is_circle?: boolean;
   required: boolean;
+  // ─── Часть 2 ТЗ docs/tz-attached-decor.md: свойства фото-фрейма ─────────
+  /** Радиус скругления углов рамки, мм. Совпадает с idml-converter PhotoPlaceholder. */
+  corner_radius_mm?: number;
+  /** Размер внешнего свечения вокруг фото, pt. */
+  glow_size_pt?: number;
+  /** Цвет свечения (hex). На Этапе 6б берётся из доминирующего цвета декора. */
+  glow_color?: string | null;
 };
 
 /**

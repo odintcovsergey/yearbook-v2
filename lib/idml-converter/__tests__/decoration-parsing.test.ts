@@ -97,3 +97,30 @@ describe('decoration parsing (Этап 2а)', () => {
     expect(name!.type).toBe('text');
   });
 });
+
+describe('frame props (Часть 2 ТЗ): скругление + свечение фото-фрейма', () => {
+  it('читает corner_radius_mm и glow_size_pt у teacherphoto_1', async () => {
+    const set = await parseIdml(readFileSync(SAMPLE_PATH));
+    const phs = allPlaceholders(set);
+    const photo = phs.find((p) => p.label === 'teacherphoto_1');
+    expect(photo, 'teacherphoto_1 должен существовать').toBeDefined();
+    expect(photo!.type).toBe('photo');
+    const pp = photo as Extract<typeof photo, { type: 'photo' }> & {
+      corner_radius_mm?: number;
+      glow_size_pt?: number;
+    };
+    // Скругление: 20.4pt ≈ 7.2мм (>0).
+    expect(pp.corner_radius_mm).toBeGreaterThan(5);
+    // Внешнее свечение: Size=6.3pt.
+    expect(pp.glow_size_pt).toBeCloseTo(6.3, 1);
+  });
+
+  it('classphotoframe без скругления (прямые углы)', async () => {
+    const set = await parseIdml(readFileSync(SAMPLE_PATH));
+    const phs = allPlaceholders(set);
+    const cls = phs.find((p) => p.label === 'classphotoframe');
+    expect(cls).toBeDefined();
+    const pp = cls as { corner_radius_mm?: number };
+    expect(pp.corner_radius_mm).toBeUndefined();
+  });
+})

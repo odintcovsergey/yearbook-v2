@@ -38,6 +38,18 @@ export type PhotoPlaceholder = Common & {
   fit: 'fill_proportional' | 'contain' | 'fill';
   is_circle?: boolean;
   required: boolean;
+  // ─── Часть 2 ТЗ docs/tz-attached-decor.md: свойства фото-фрейма ─────────
+  // Скруглённые углы (CornerOption=Rounded в IDML) и внешнее свечение
+  // (OuterGlow). Опциональны — у обычных прямоугольных рамок отсутствуют.
+  /** Радиус скругления углов рамки, мм (все 4 угла одинаковые). */
+  corner_radius_mm?: number;
+  /** Размер внешнего свечения (дымки) вокруг фото, pt. */
+  glow_size_pt?: number;
+  /**
+   * Цвет свечения (hex). В IDML обычно НЕ хранится (только размер) — на
+   * Этапе 6б upload берёт его из доминирующего цвета привязанного декора.
+   */
+  glow_color?: string | null;
 };
 
 export type TextPlaceholder = Common & {

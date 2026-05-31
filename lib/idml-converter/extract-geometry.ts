@@ -227,11 +227,14 @@ function frameToPlaceholder(
 
   // required = false всегда — обязательность это продуктовая логика album-builder'а.
   if (frame.kind === 'rectangle') {
+    // Часть 2 ТЗ: свойства фото-фрейма — скруглённые углы + внешнее свечение.
+    const frameProps = extractFrameProps(frame.node);
     return {
       ...common,
       type: 'photo',
       fit: 'fill_proportional',
       required: false,
+      ...frameProps,
       _pageIndex: pageIndex,
     };
   }
@@ -304,6 +307,44 @@ function dedupeLabels(
       ph.label = `${label}${suffix}`;
     }
   });
+}
+
+// ─── Свойства фото-фрейма (Часть 2 ТЗ) ────────────────────────────────────
+
+/**
+ * Читает из <Rectangle> декоративные свойства рамки (Часть 2 ТЗ):
+ *   - скруглённые углы: `TopLeftCornerOption="Rounded"` + `*CornerRadius` (pt).
+ *     Берём TopLeft как репрезентативный (в наших мастерах все 4 угла равны).
+ *   - внешнее свечение: `<TransparencySetting><OuterGlowSetting Size="..."/>`.
+ *     Цвет в IDML обычно отсутствует — заполнится на 6б из цвета декора.
+ *
+ * Возвращает только заданные поля (пустой объект, если рамка обычная) —
+ * чтобы у прямоугольных фото без оформления не появлялись лишние ключи.
+ */
+function extractFrameProps(
+  frameNode: Record<string, unknown>,
+): { corner_radius_mm?: number; glow_size_pt?: number } {
+  const out: { corner_radius_mm?: number; glow_size_pt?: number } = {};
+
+  // Скруглённые углы: только если CornerOption=Rounded и радиус > 0.
+  const cornerOption = getAttr(frameNode, 'TopLeftCornerOption');
+  const cornerRadiusRaw = getAttr(frameNode, 'TopLeftCornerRadius');
+  if (cornerOption === 'Rounded' && cornerRadiusRaw) {
+    const r = Number(cornerRadiusRaw);
+    if (Number.isFinite(r) && r > 0) out.corner_radius_mm = ptToMm(r);
+  }
+
+  // Внешнее свечение: <OuterGlowSetting Size="..."> на любой глубине фрейма.
+  const glow = findFirst(frameNode, 'OuterGlowSetting');
+  if (glow) {
+    const sizeRaw = getAttr(glow, 'Size');
+    if (sizeRaw) {
+      const s = Number(sizeRaw);
+      if (Number.isFinite(s) && s > 0) out.glow_size_pt = s;
+    }
+  }
+
+  return out;
 }
 
 // ─── Декор (Часть 1 ТЗ) ───────────────────────────────────────────────────
