@@ -72,9 +72,41 @@ export function parseBalanceOverrides(
 }
 
 /**
+ * Привязанный декор (Часть 1 ТЗ docs/tz-attached-decor.md). Локальная
+ * рантайм-форма — balance-overrides не зависит от idml-converter; поля
+ * совпадают с DecorationPlaceholder (attached_to / offset_x_mm / offset_y_mm).
+ */
+type DecorationLike = {
+  type: 'decoration';
+  attached_to: string;
+  offset_x_mm: number;
+  offset_y_mm: number;
+};
+
+/** Рантайм-распознавание привязанного декора среди плейсхолдеров. */
+function asDecoration(ph: Placeholder): DecorationLike | null {
+  const p = ph as unknown as Record<string, unknown>;
+  if (
+    p.type === 'decoration' &&
+    typeof p.attached_to === 'string' &&
+    typeof p.offset_x_mm === 'number' &&
+    typeof p.offset_y_mm === 'number'
+  ) {
+    return p as unknown as DecorationLike;
+  }
+  return null;
+}
+
+/**
  * Применяет override'ы к списку placeholder'ов:
  *   - hidden=true → placeholder исключается из вывода
  *   - x_mm/y_mm → placeholder получает новые координаты
+ *
+ * Привязанный декор (type:'decoration', Часть 1 ТЗ) СЛЕДУЕТ за своим базовым
+ * слотом (`attached_to`), а НЕ за собственным label:
+ *   - база скрыта (__hidden__<base>)  → декор тоже исключается;
+ *   - база перемещена (__pos__<base>) → декор = новая позиция базы + offset;
+ *   - база на месте                   → декор на исходной позиции.
  *
  * Если overrides=null (нет ключей в data) — возвращает placeholders
  * как есть (identity). Если override.hidden=false и нет x_mm/y_mm —
@@ -88,17 +120,39 @@ export function applyBalanceOverrides(
   overrides: Record<string, Override> | null,
 ): Placeholder[] {
   if (!overrides) return placeholders;
-  return placeholders
-    .filter((p) => !overrides[p.label]?.hidden)
-    .map((p) => {
-      const ov = overrides[p.label];
-      if (!ov || (ov.x_mm === undefined && ov.y_mm === undefined)) return p;
-      return {
-        ...p,
-        x_mm: ov.x_mm ?? p.x_mm,
-        y_mm: ov.y_mm ?? p.y_mm,
-      };
+  const out: Placeholder[] = [];
+  for (const p of placeholders) {
+    // Декор привязан к базовому слоту — смотрим override базы, не свой label.
+    const decor = asDecoration(p);
+    if (decor) {
+      const baseOv = overrides[decor.attached_to];
+      if (baseOv?.hidden) continue; // база скрыта → декор скрыт
+      if (baseOv && baseOv.x_mm !== undefined && baseOv.y_mm !== undefined) {
+        // база сдвинута → декор = новая позиция базы + сохранённый offset
+        out.push({
+          ...p,
+          x_mm: baseOv.x_mm + decor.offset_x_mm,
+          y_mm: baseOv.y_mm + decor.offset_y_mm,
+        });
+      } else {
+        out.push(p); // база на месте → декор на исходной позиции
+      }
+      continue;
+    }
+
+    if (overrides[p.label]?.hidden) continue;
+    const ov = overrides[p.label];
+    if (!ov || (ov.x_mm === undefined && ov.y_mm === undefined)) {
+      out.push(p);
+      continue;
+    }
+    out.push({
+      ...p,
+      x_mm: ov.x_mm ?? p.x_mm,
+      y_mm: ov.y_mm ?? p.y_mm,
     });
+  }
+  return out;
 }
 
 /**
