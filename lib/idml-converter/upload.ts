@@ -30,7 +30,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getFamilyMapping } from './family-mapping';
-import type { ParsedTemplateSet } from './types';
+import type { DecorationPlaceholder, ParsedTemplateSet } from './types';
+
+/** Bucket для embedded-картинок привязанного декора (миграция 2026-05-31). */
+const DECORATIONS_BUCKET = 'template-decorations';
 
 const SLUG_REGEX = /^[a-z0-9-]+$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -216,6 +219,16 @@ export async function uploadTemplateSetToSupabase(
     console.log(`[upload] Inserted template_set ${templateSetId}`);
   }
 
+  // ─── 6.5. Загрузка embedded-картинок декора в storage ────────────
+  // Этап 2б ТЗ привязанного декора. Декор-плейсхолдеры пришли из парсера с
+  // транзитным полем `_embedded` (base64 картинки). Декодируем, грузим в
+  // bucket template-decorations, проставляем `url`, удаляем `_embedded` —
+  // ИНАЧЕ base64 (сотни КБ на декор) попадёт в jsonb-колонку placeholders.
+  // Мутируем parsed.spread_templates[].placeholders на месте; spreadRows ниже
+  // сериализует уже очищенные плейсхолдеры. Идёт ПОСЛЕ резолва templateSetId
+  // (нужен для пути файла) и ДО формирования spreadRows.
+  await uploadDecorationImages(parsed, templateSetId, supabaseAdmin);
+
   // ─── 7. Batch INSERT spread_templates ────────────────────────────
   // Поля family_id / page_type / density / params проставляются
   // через family-mapping.ts (РЭ.3.5). Если имя мастера неизвестно —
@@ -307,4 +320,65 @@ export async function uploadTemplateSetToSupabase(
     template_set_id: templateSetId,
     spread_count: parsed.spread_templates.length,
   };
+}
+
+/**
+ * Этап 2б ТЗ: загрузка embedded-картинок привязанного декора в storage.
+ *
+ * Проходит по всем placeholder'ам type:'decoration' с транзитным `_embedded`,
+ * декодирует base64 → Buffer, грузит в bucket template-decorations,
+ * проставляет публичный `url` и УДАЛЯЕТ `_embedded` (чтобы base64 не попал в
+ * jsonb-колонку placeholders и не раздул строки spread_templates).
+ *
+ * Путь файла стабилен по (templateSetId, имя мастера, label) → при повторной
+ * загрузке (--force) upsert:true перезаписывает картинку, а не плодит дубли.
+ * Имена санитизируются (только [a-z0-9._-]) — спецсимволы/кириллица из имён
+ * мастеров сломали бы storage key.
+ *
+ * Мутирует parsed на месте. При ошибке загрузки — throw (декор без картинки
+ * бесполезен; неполный template_set лучше явно провалить, чем тихо испортить).
+ */
+async function uploadDecorationImages(
+  parsed: ParsedTemplateSet,
+  templateSetId: string,
+  supabaseAdmin: SupabaseClient,
+): Promise<void> {
+  let uploaded = 0;
+  for (const spread of parsed.spread_templates) {
+    for (const ph of spread.placeholders) {
+      if (ph.type !== 'decoration') continue;
+      const decor = ph as DecorationPlaceholder;
+      const embedded = decor._embedded;
+      if (!embedded) continue; // декор уже с url (или парсер не дал картинку)
+
+      const ext = embedded.format === 'jpeg' ? 'jpg' : 'png';
+      const contentType = embedded.format === 'jpeg' ? 'image/jpeg' : 'image/png';
+      const path = `${templateSetId}/${sanitizePart(spread.name)}/${sanitizePart(decor.label)}.${ext}`;
+      const buffer = Buffer.from(embedded.base64, 'base64');
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from(DECORATIONS_BUCKET)
+        .upload(path, buffer, { contentType, upsert: true });
+      if (uploadError) {
+        throw new Error(
+          `Failed to upload decoration image ${path}: ${uploadError.message}`,
+        );
+      }
+
+      const { data } = supabaseAdmin.storage
+        .from(DECORATIONS_BUCKET)
+        .getPublicUrl(path);
+      decor.url = data.publicUrl;
+      delete decor._embedded;
+      uploaded += 1;
+    }
+  }
+  if (uploaded > 0) {
+    console.log(`[upload] Uploaded ${uploaded} decoration image(s) to ${DECORATIONS_BUCKET}`);
+  }
+}
+
+/** Санитизация части пути в storage: оставляем только [a-z0-9._-]. */
+function sanitizePart(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'x';
 }
