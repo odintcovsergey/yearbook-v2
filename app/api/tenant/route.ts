@@ -3685,8 +3685,12 @@ export async function POST(req: NextRequest) {
           { status: 403 },
         )
       }
+      // ВАЖНО: глобальность хранится В ДВУХ местах — колонка is_global И
+      // tenant_id (NULL = глобальный). Карточка в UI читает СТОЛБЕЦ is_global,
+      // поэтому обновляем оба, иначе изменение не видно и кнопка «не работает».
       if (body.make_global === true) {
         patch.tenant_id = null
+        patch.is_global = true
       } else {
         const okId = await okeybookTenantId()
         if (!okId) {
@@ -3699,6 +3703,7 @@ export async function POST(req: NextRequest) {
           )
         }
         patch.tenant_id = okId
+        patch.is_global = false
       }
     }
 
