@@ -324,7 +324,7 @@ function ProgramForm({
             <div className="bg-gradient-to-b from-blue-50 to-gray-50 rounded-xl p-4">
               <div className="text-[11px] text-gray-400 mb-2">Реферер — страница «Спасибо»</div>
               <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
-                {referrerImg && <img src={referrerImg} alt="" className="w-full h-auto block rounded-xl mb-3" />}
+                {referrerImg && <img src={referrerImg} alt="" className="max-h-64 w-auto max-w-full mx-auto block rounded-xl mb-3" />}
                 <p className="text-sm font-medium text-blue-800 mb-1">🎁 {referrerReward || 'Получите скидку 50%'}</p>
                 <p className="text-sm text-blue-700">Поделитесь ссылкой с друзьями — когда они оставят заявку, мы применим вашу награду.</p>
               </div>
@@ -336,7 +336,7 @@ function ProgramForm({
                 <p className="text-sm text-blue-700">Вас рекомендует <strong>Елена</strong></p>
               </div>
               <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
-                {inviteeImg && <img src={inviteeImg} alt="" className="w-full h-auto block" />}
+                {inviteeImg && <img src={inviteeImg} alt="" className="max-h-64 w-auto max-w-full mx-auto block" />}
                 <div className="p-4">
                   {inviteeReward && <p className="text-base font-semibold text-gray-800 mb-1">🎁 {inviteeReward}</p>}
                   {inviteeDescription && <p className="text-sm text-gray-600 whitespace-pre-wrap">{inviteeDescription}</p>}
@@ -374,7 +374,7 @@ function ImageField({
   return (
     <div>
       <label className="block text-xs text-gray-500 mb-1">{label}</label>
-      {url && <img src={url} alt="" className="w-full h-auto block rounded-lg border border-gray-200 mb-2" />}
+      {url && <img src={url} alt="" className="max-h-64 w-auto max-w-full mx-auto block rounded-lg border border-gray-200 mb-2" />}
       <div className="flex gap-2">
         <input
           ref={inputRef}

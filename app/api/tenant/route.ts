@@ -1737,7 +1737,7 @@ export async function GET(req: NextRequest) {
   if (action === 'leads') {
     let query = supabaseAdmin
       .from('referral_leads')
-      .select('id, name, phone, city, school, class_name, status, created_at, referrer_child_id')
+      .select('id, name, phone, city, school, class_name, status, created_at, referrer_child_id, program_id')
       .order('created_at', { ascending: false })
 
     if (auth.role !== 'superadmin') {
@@ -1773,6 +1773,15 @@ export async function GET(req: NextRequest) {
       : { data: [] }
     const albumMap = Object.fromEntries((albums ?? []).map((a: any) => [a.id, a.title]))
 
+    // По какой реферальной программе пришла заявка (program_id → название).
+    const programIds = Array.from(
+      new Set((data ?? []).map((d: any) => d.program_id).filter(Boolean))
+    )
+    const { data: programs } = programIds.length > 0
+      ? await supabaseAdmin.from('referral_programs').select('id, name').in('id', programIds)
+      : { data: [] }
+    const programMap = Object.fromEntries((programs ?? []).map((p: any) => [p.id, p.name]))
+
     const leads = (data ?? []).map((d: any) => ({
       ...d,
       referrer_name:
@@ -1780,6 +1789,7 @@ export async function GET(req: NextRequest) {
         childMap[d.referrer_child_id]?.full_name ||
         '—',
       referrer_album: albumMap[childMap[d.referrer_child_id]?.album_id] || '',
+      program_name: d.program_id ? (programMap[d.program_id] || '') : '',
     }))
 
     return NextResponse.json(leads)

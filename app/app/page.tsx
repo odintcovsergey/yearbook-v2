@@ -6437,6 +6437,7 @@ type Lead = {
   referrer_child_id: string | null
   referrer_name: string
   referrer_album: string
+  program_name: string
 }
 
 type LeadStatus = 'new' | 'in_progress' | 'done' | 'rejected'
@@ -6611,6 +6612,14 @@ function LeadsModal({
                     {(lead.city || lead.school || lead.class_name) && (
                       <p className="text-sm text-gray-600 mb-2">
                         {[lead.city, lead.school, lead.class_name].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+
+                    {lead.program_name && (
+                      <p className="text-xs mb-1">
+                        <span className="inline-block px-2 py-0.5 rounded bg-purple-50 text-purple-700">
+                          🎁 {lead.program_name}
+                        </span>
                       </p>
                     )}
 

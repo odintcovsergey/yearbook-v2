@@ -97,7 +97,7 @@ export default function ReferralPage() {
                   <img
                     src={program.image_url}
                     alt=""
-                    className="w-full h-auto block"
+                    className="max-h-80 w-auto max-w-full mx-auto block"
                   />
                 )}
                 <div className="p-5">
