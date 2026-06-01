@@ -405,6 +405,13 @@ export default function AppPage() {
             >
               📐 Шаблоны
             </button>
+            <button
+              onClick={() => router.push('/app/referral-programs')}
+              className="btn-secondary"
+              title="Реферальные программы: готовые и свои"
+            >
+              🎁 Рефералки
+            </button>
             <button onClick={handleLogout} className="btn-secondary">Выйти</button>
           </div>
         </div>
