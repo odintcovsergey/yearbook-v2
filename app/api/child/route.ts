@@ -19,12 +19,29 @@ export async function GET(req: NextRequest) {
 
   const { data: album } = await supabaseAdmin
     .from('albums')
-    .select('id, title, tenant_id, cover_mode, cover_price, deadline, group_enabled, group_min, group_max, group_exclusive, text_enabled, text_max_chars, text_type, text_assist_enabled, personal_spread_enabled, personal_spread_price, personal_spread_min, personal_spread_max')
+    .select('id, title, tenant_id, cover_mode, cover_price, deadline, group_enabled, group_min, group_max, group_exclusive, text_enabled, text_max_chars, text_type, text_assist_enabled, personal_spread_enabled, personal_spread_price, personal_spread_min, personal_spread_max, referral_program_id')
     .eq('id', child.album_id)
     .single()
 
   if (album?.deadline && new Date(album.deadline) < new Date())
     return NextResponse.json({ error: 'Срок выбора фотографий истёк.' }, { status: 410 })
+
+  // Реферальная программа альбома (сторона реферера: что родитель видит
+  // на «Спасибо»). NULL программа → отдаём null, страница покажет дефолт.
+  let referralProgram: { referrer_reward_text: string | null; referrer_image_url: string | null } | null = null
+  if ((album as any)?.referral_program_id) {
+    const { data: prog } = await supabaseAdmin
+      .from('referral_programs')
+      .select('referrer_reward_text, referrer_image_url, is_active')
+      .eq('id', (album as any).referral_program_id)
+      .maybeSingle()
+    if (prog && (prog as any).is_active) {
+      referralProgram = {
+        referrer_reward_text: (prog as any).referrer_reward_text ?? null,
+        referrer_image_url: (prog as any).referrer_image_url ?? null,
+      }
+    }
+  }
 
   // Tenant для брендинга на странице родителя (3.6)
   let tenant: any = null
@@ -144,7 +161,7 @@ export async function GET(req: NextRequest) {
     .select('quote_id').eq('child_id', child.id).maybeSingle()
 
   return NextResponse.json({
-    child, album, tenant, portraits, groups, referral: existingContact.data?.referral ?? null,
+    child, album, tenant, portraits, groups, referralProgram, referral: existingContact.data?.referral ?? null,
     quotes, takenQuoteIds,
     selectedQuoteId: myQuote.data?.quote_id ?? null,
     existing: {

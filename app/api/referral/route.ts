@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
 
   const { data: album } = await supabaseAdmin
     .from('albums')
-    .select('title, city, year')
+    .select('title, city, year, referral_program_id')
     .eq('id', child.album_id)
     .single()
 
@@ -29,10 +29,38 @@ export async function GET(req: NextRequest) {
     .eq('child_id', child.id)
     .maybeSingle()
 
+  const referrerName = contact?.parent_name || child.full_name
+
+  // Реферальная программа альбома (сторона реферала: что видит пришедший по
+  // ссылке). Заголовок — шаблон с {имя}, подставляем имя реферера на сервере.
+  let program: {
+    headline: string | null
+    reward_text: string | null
+    description: string | null
+    image_url: string | null
+  } | null = null
+  if ((album as any)?.referral_program_id) {
+    const { data: prog } = await supabaseAdmin
+      .from('referral_programs')
+      .select('invitee_headline, invitee_reward_text, invitee_description, invitee_image_url, is_active')
+      .eq('id', (album as any).referral_program_id)
+      .maybeSingle()
+    if (prog && (prog as any).is_active) {
+      const rawHeadline = (prog as any).invitee_headline ?? null
+      program = {
+        headline: rawHeadline ? String(rawHeadline).replace(/\{имя\}/g, referrerName) : null,
+        reward_text: (prog as any).invitee_reward_text ?? null,
+        description: (prog as any).invitee_description ?? null,
+        image_url: (prog as any).invitee_image_url ?? null,
+      }
+    }
+  }
+
   return NextResponse.json({
-    referrerName: contact?.parent_name || child.full_name,
+    referrerName,
     albumTitle: album?.title,
     city: album?.city,
+    program,
   })
 }
 
@@ -46,14 +74,23 @@ export async function POST(req: NextRequest) {
 
   const { data: child } = await supabaseAdmin
     .from('children')
-    .select('id')
+    .select('id, album_id')
     .eq('access_token', token)
     .single()
 
   if (!child) return NextResponse.json({ error: 'Ссылка недействительна' }, { status: 404 })
 
+  // Фиксируем по какой программе пришла заявка (мостик к аналитике Этапа 3).
+  // Берём referral_program_id из альбома реферера.
+  const { data: album } = await supabaseAdmin
+    .from('albums')
+    .select('referral_program_id')
+    .eq('id', child.album_id)
+    .maybeSingle()
+
   const { error } = await supabaseAdmin.from('referral_leads').insert({
     referrer_child_id: child.id,
+    program_id: (album as any)?.referral_program_id ?? null,
     name: name.trim(),
     phone: phone.trim(),
     city: city?.trim() || null,

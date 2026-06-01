@@ -74,6 +74,7 @@ type Album = {
   student_distribution?: 'auto' | 'equalize' | 'greedy'  // РЭ.40: стратегия grid-распределения
   symmetrize_students_tail_override?: boolean | null  // РЭ.46: override симметризации
                                                        // хвоста students (NULL=из пресета).
+  referral_program_id?: string | null  // Реферальная программа заказа (uuid|null).
   stats: { total: number; submitted: number; in_progress: number; purchased?: number }
   teacher_token: string | null
   teachers: { total: number; done: number } | null
@@ -1276,6 +1277,124 @@ function StudentDistributionControl({
 }
 
 
+// Реферальная программа заказа (ТЗ docs/tz-referral-programs.md, Этап 1).
+// Партнёр выбирает одну из доступных программ (свои + глобальные активные)
+// или «без программы». Что увидят родители на «Спасибо»/лендинге — берётся
+// из выбранной программы. Награды применяются вручную, без автоскидок.
+function ReferralProgramControl({
+  album,
+  apiVA,
+  onNotify,
+  onError,
+}: {
+  album: Album
+  apiVA: (url: string, opts?: RequestInit) => Promise<Response>
+  onNotify: (msg: string) => void
+  onError: (msg: string) => void
+}) {
+  type Program = {
+    id: string
+    name: string
+    is_global: boolean
+    referrer_reward_text: string | null
+    invitee_reward_text: string | null
+  }
+  const [programs, setPrograms] = useState<Program[]>([])
+  const [value, setValue] = useState<string>(album.referral_program_id ?? '')
+  const [saving, setSaving] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    apiVA('/api/tenant?action=list_referral_programs')
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return
+        setPrograms(Array.isArray(d.programs) ? d.programs : [])
+        setLoaded(true)
+      })
+      .catch(() => { if (!cancelled) setLoaded(true) })
+    return () => { cancelled = true }
+  }, [apiVA])
+
+  const handleChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const v = e.target.value
+    const prevValue = value
+    setValue(v)
+    setSaving(true)
+    try {
+      const r = await apiVA('/api/tenant', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'update_album',
+          album_id: album.id,
+          referral_program_id: v === '' ? null : v,
+        }),
+      })
+      if (r.ok) {
+        const prog = programs.find((p) => p.id === v)
+        onNotify(
+          v === ''
+            ? 'Реферальная программа отключена — родители увидят дефолтный текст.'
+            : `Реферальная программа: «${prog?.name ?? v}».`,
+        )
+      } else {
+        setValue(prevValue)
+        const d = await r.json().catch(() => ({}))
+        onError(d.error ?? 'Не удалось сохранить программу')
+      }
+    } catch (err: unknown) {
+      setValue(prevValue)
+      onError(err instanceof Error ? err.message : 'Ошибка сети')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Назначенная программа исчезла из активных (выключена/удалена) — покажем
+  // подсказку, что родители видят дефолт.
+  const assignedMissing =
+    loaded && value !== '' && !programs.some((p) => p.id === value)
+  const selected = programs.find((p) => p.id === value)
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200">
+      <div className="flex items-center gap-3 flex-wrap mb-2">
+        <div className="text-xs text-gray-500 uppercase">Реферальная программа</div>
+        <select
+          value={value}
+          onChange={handleChange}
+          disabled={saving || !loaded}
+          className="text-sm px-3 py-1 border border-gray-300 rounded bg-white text-gray-700 disabled:opacity-50"
+        >
+          <option value="">Без программы (дефолтный текст)</option>
+          {programs.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}{p.is_global ? ' · глобальная' : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+      {assignedMissing ? (
+        <div className="text-xs text-amber-600">
+          Назначенная программа сейчас недоступна (выключена или удалена) — родители
+          видят дефолтный текст. Выберите другую или «Без программы».
+        </div>
+      ) : selected ? (
+        <div className="text-xs text-gray-400">
+          Реферер: {selected.referrer_reward_text || '—'}. Реферал: {selected.invitee_reward_text || '—'}.
+          Награды применяются вручную.
+        </div>
+      ) : (
+        <div className="text-xs text-gray-400">
+          Что увидят родители на странице «Спасибо» и по реф-ссылке. «Без программы» —
+          дефолтный текст про скидку 50%.
+        </div>
+      )}
+    </div>
+  )
+}
+
 // РЭ.41.b — Inline-контрол для типа листов (layflat / soft).
 // Перенесён из формы редактирования на Обзор для быстрых переключений
 // при тестировании. На мягких листах недоступен мастер «фото на разворот».
@@ -2030,6 +2149,17 @@ function AlbumDetailModal({
                     {/* РЭ.46 — Симметризация хвоста students-секции. */}
                     {canEdit && (album.config_preset_id || album.section_structure_preset_id) && (
                       <SymmetrizeTailControl
+                        album={album}
+                        apiVA={apiVA}
+                        onNotify={onNotify}
+                        onError={onError}
+                      />
+                    )}
+
+                    {/* Реферальная программа заказа — не зависит от шаблона,
+                        показываем всегда при праве редактирования. */}
+                    {canEdit && (
+                      <ReferralProgramControl
                         album={album}
                         apiVA={apiVA}
                         onNotify={onNotify}

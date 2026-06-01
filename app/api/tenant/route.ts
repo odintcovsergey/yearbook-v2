@@ -608,6 +608,31 @@ export async function GET(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
+  // list_referral_programs — доступные программы для селекта в
+  // настройках заказа: свои (tenant'а) + глобальные, только активные.
+  // (ТЗ docs/tz-referral-programs.md, Этап 1, UI привязки к заказу.)
+  // ----------------------------------------------------------
+  if (action === 'list_referral_programs') {
+    let query = supabaseAdmin
+      .from('referral_programs')
+      .select(
+        'id, name, is_global, referrer_reward_text, referrer_image_url, ' +
+          'invitee_headline, invitee_reward_text, invitee_description, invitee_image_url',
+      )
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+
+    // superadmin видит все активные; партнёр — свои + глобальные.
+    if (auth.role !== 'superadmin') {
+      query = query.or(`tenant_id.is.null,tenant_id.eq.${tid}`)
+    }
+
+    const { data, error } = await query
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ programs: data ?? [] })
+  }
+
+  // ----------------------------------------------------------
   // dashboard — общая информация для главного экрана
   // ----------------------------------------------------------
   if (action === 'dashboard') {
@@ -4889,6 +4914,30 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Реферальная программа альбома: string | null. Проверяем что
+    // программа доступна tenant'у (своя или глобальная). NULL = снять.
+    if ('referral_program_id' in body && body.referral_program_id !== null) {
+      const pid = String(body.referral_program_id)
+      const { data: prog, error: progErr } = await supabaseAdmin
+        .from('referral_programs')
+        .select('id, tenant_id')
+        .eq('id', pid)
+        .maybeSingle()
+      if (progErr) {
+        return NextResponse.json({ error: progErr.message }, { status: 500 })
+      }
+      if (!prog) {
+        return NextResponse.json({ error: 'Реферальная программа не найдена' }, { status: 400 })
+      }
+      const accessible =
+        prog.tenant_id === null ||
+        prog.tenant_id === auth.tenantId ||
+        auth.role === 'superadmin'
+      if (!accessible) {
+        return NextResponse.json({ error: 'Реферальная программа недоступна' }, { status: 403 })
+      }
+    }
+
     // РЭ.53: валидация text_style_overrides (JSONB | null).
     // Доверяем parseAlbumTextStyleOverrides из lib/text-style/groups —
     // он сам отбросит невалидные поля. Здесь только базовая проверка
@@ -4930,6 +4979,8 @@ export async function POST(req: NextRequest) {
       'text_style_overrides',  // РЭ.53: глобальные стили текстов
                                 // (имена/цитаты учеников, ФИО/должности учителей).
                                 // JSONB с группами или null.
+      'referral_program_id',   // Реферальная программа заказа (uuid|null).
+                                // Что показывать родителям на «Спасибо»/лендинге.
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {

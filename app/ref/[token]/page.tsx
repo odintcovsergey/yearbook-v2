@@ -7,6 +7,12 @@ export default function ReferralPage() {
   const { token } = useParams<{ token: string }>()
   const [loading, setLoading] = useState(true)
   const [referrerName, setReferrerName] = useState('')
+  const [program, setProgram] = useState<{
+    headline: string | null
+    reward_text: string | null
+    description: string | null
+    image_url: string | null
+  } | null>(null)
   const [error, setError] = useState('')
   const [sent, setSent] = useState(false)
   const [sending, setSending] = useState(false)
@@ -23,6 +29,7 @@ export default function ReferralPage() {
       .then(data => {
         if (data.error) { setError(data.error); setLoading(false); return }
         setReferrerName(data.referrerName ?? '')
+        setProgram(data.program ?? null)
         setLoading(false)
       })
       .catch(() => { setError('Ошибка загрузки'); setLoading(false) })
@@ -74,33 +81,57 @@ export default function ReferralPage() {
           </div>
         ) : (
           <>
-            {/* Referrer badge */}
-            {referrerName && (
+            {/* Referrer badge — заголовок из программы (с подставленным
+                именем) либо дефолтный «Вас рекомендует …». */}
+            {(program?.headline || referrerName) && (
               <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-6 text-center">
                 <p className="text-sm text-blue-700">
-                  Вас рекомендует <strong>{referrerName}</strong>
+                  {program?.headline
+                    ? program.headline
+                    : <>Вас рекомендует <strong>{referrerName}</strong></>}
                 </p>
               </div>
             )}
 
-            {/* Benefits */}
-            <div className="card p-5 mb-6">
-              <h2 className="text-base font-medium text-gray-800 mb-3">Что вы получите</h2>
-              <div className="space-y-3">
-                <div className="flex gap-3 items-start">
-                  <span className="text-lg">🎨</span>
-                  <p className="text-sm text-gray-600">Профессиональная фотосъёмка и вёрстка альбома</p>
-                </div>
-                <div className="flex gap-3 items-start">
-                  <span className="text-lg">📱</span>
-                  <p className="text-sm text-gray-600">Удобная онлайн-система — родители сами выбирают фото</p>
-                </div>
-                <div className="flex gap-3 items-start">
-                  <span className="text-lg">📖</span>
-                  <p className="text-sm text-gray-600">Готовый альбом в твёрдой обложке с индивидуальным дизайном</p>
+            {program ? (
+              /* Награда реферала из программы: картинка + текст + условия. */
+              <div className="card overflow-hidden mb-6">
+                {program.image_url && (
+                  <img
+                    src={program.image_url}
+                    alt=""
+                    className="w-full max-h-64 object-cover"
+                  />
+                )}
+                <div className="p-5">
+                  {program.reward_text && (
+                    <p className="text-lg font-semibold text-gray-800 mb-2">🎁 {program.reward_text}</p>
+                  )}
+                  {program.description && (
+                    <p className="text-sm text-gray-600 whitespace-pre-wrap">{program.description}</p>
+                  )}
                 </div>
               </div>
-            </div>
+            ) : (
+              /* Дефолтный блок «Что вы получите» (программа не назначена). */
+              <div className="card p-5 mb-6">
+                <h2 className="text-base font-medium text-gray-800 mb-3">Что вы получите</h2>
+                <div className="space-y-3">
+                  <div className="flex gap-3 items-start">
+                    <span className="text-lg">🎨</span>
+                    <p className="text-sm text-gray-600">Профессиональная фотосъёмка и вёрстка альбома</p>
+                  </div>
+                  <div className="flex gap-3 items-start">
+                    <span className="text-lg">📱</span>
+                    <p className="text-sm text-gray-600">Удобная онлайн-система — родители сами выбирают фото</p>
+                  </div>
+                  <div className="flex gap-3 items-start">
+                    <span className="text-lg">📖</span>
+                    <p className="text-sm text-gray-600">Готовый альбом в твёрдой обложке с индивидуальным дизайном</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Form */}
             <div className="card p-5">

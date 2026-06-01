@@ -52,6 +52,12 @@ export default function ParentPage() {
 
   const [childName, setChildName] = useState('')
   const [albumTitle, setAlbumTitle] = useState('')
+  // Реферальная программа альбома (сторона реферера). null = показываем
+  // дефолтный блок «скидка 50%».
+  const [referralProgram, setReferralProgram] = useState<{
+    referrer_reward_text: string | null
+    referrer_image_url: string | null
+  } | null>(null)
   const [albumDeadline, setAlbumDeadline] = useState<string | null>(null)
   const [coverMode, setCoverMode] = useState<string>('none')
   const [coverPrice, setCoverPrice] = useState(0)
@@ -186,6 +192,7 @@ export default function ParentPage() {
         // ребёнок участвует.
         setIsPurchased(data.child.is_purchased !== false)
         setAlbumTitle(data.album?.title ?? '')
+        setReferralProgram(data.referralProgram ?? null)
         setAlbumDeadline(data.album?.deadline ?? null)
         setCoverMode(data.album?.cover_mode ?? 'none')
         if (data.album?.cover_mode === 'required') setCoverOption('other')
@@ -429,24 +436,11 @@ export default function ParentPage() {
             </div>
           </label>
         </div>
-        <div className="card p-5">
-          <p className="text-sm font-medium text-blue-800 mb-1">🎁 Получите скидку 50%</p>
-          <p className="text-sm text-blue-700 mb-4">
-            Поделитесь ссылкой с друзьями из других классов или садов. Если они закажут альбом — вы получите скидку 50% на свой!
-          </p>
-          <div className="flex gap-2">
-            <input readOnly value={`${typeof window !== 'undefined' ? window.location.origin : ''}/ref/${token}`} className="input text-xs flex-1 bg-white" />
-            <button
-              className="btn-primary text-sm px-4 whitespace-nowrap"
-              onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/ref/${token}`)
-                const btn = document.getElementById('copy-ref-btn2')
-                if (btn) { btn.textContent = 'Скопировано ✓'; setTimeout(() => { btn.textContent = 'Копировать' }, 2000) }
-              }}
-              id="copy-ref-btn2"
-            >Копировать</button>
-          </div>
-        </div>
+        <ReferralRewardCard
+          program={referralProgram}
+          refLink={`${typeof window !== 'undefined' ? window.location.origin : ''}/ref/${token}`}
+          copyBtnId="copy-ref-btn2"
+        />
       </div>
     </div>
   )
@@ -1224,24 +1218,7 @@ export default function ParentPage() {
             <h2 className="text-xl font-medium text-gray-800 mb-2">Спасибо!</h2>
             <p className="text-gray-500 text-sm mb-6">Выбор для <strong>{childName}</strong> сохранён.<br />Сообщим когда альбом будет готов.</p>
 
-            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-left">
-              <p className="text-sm font-medium text-blue-800 mb-1">🎁 Получите скидку 50%</p>
-              <p className="text-sm text-blue-700 mb-4">
-                Поделитесь ссылкой с друзьями из других классов или садов. Если они закажут альбом — вы получите скидку 50% на свой!
-              </p>
-              <div className="flex gap-2">
-                <input readOnly value={refLink} className="input text-xs flex-1 bg-white" />
-                <button
-                  className="btn-primary text-sm px-4 whitespace-nowrap"
-                  onClick={() => {
-                    navigator.clipboard.writeText(refLink)
-                    const btn = document.getElementById('copy-ref-btn')
-                    if (btn) { btn.textContent = 'Скопировано ✓'; setTimeout(() => { btn.textContent = 'Копировать' }, 2000) }
-                  }}
-                  id="copy-ref-btn"
-                >Копировать</button>
-              </div>
-            </div>
+            <ReferralRewardCard program={referralProgram} refLink={refLink} copyBtnId="copy-ref-btn" />
           </div>
           )
         })()}
@@ -1542,6 +1519,52 @@ function SummaryRow({ label, value, multiline }: { label: string; value: string;
     <div className="flex gap-3 py-2 border-b border-gray-100 last:border-0">
       <span className="text-xs text-gray-400 w-28 flex-shrink-0 pt-0.5">{label}</span>
       <span className={`text-sm text-gray-700 flex-1 break-words min-w-0 ${multiline ? 'whitespace-pre-wrap' : ''}`}>{value}</span>
+    </div>
+  )
+}
+
+// Блок награды реферера на «Спасибо». Если у альбома назначена реферальная
+// программа — показываем её картинку и текст награды; иначе дефолтный
+// «скидка 50%». Реф-ссылка остаётся всегда.
+function ReferralRewardCard({
+  program,
+  refLink,
+  copyBtnId,
+}: {
+  program: { referrer_reward_text: string | null; referrer_image_url: string | null } | null
+  refLink: string
+  copyBtnId: string
+}) {
+  const hasProgram = !!program
+  return (
+    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-left">
+      {program?.referrer_image_url && (
+        <img
+          src={program.referrer_image_url}
+          alt=""
+          className="w-full max-h-56 object-cover rounded-xl mb-3"
+        />
+      )}
+      <p className="text-sm font-medium text-blue-800 mb-1">
+        🎁 {program?.referrer_reward_text || 'Получите скидку 50%'}
+      </p>
+      <p className="text-sm text-blue-700 mb-4">
+        {hasProgram
+          ? 'Поделитесь ссылкой с друзьями из других классов или садов. Когда они оставят заявку — мы свяжемся и применим вашу награду.'
+          : 'Поделитесь ссылкой с друзьями из других классов или садов. Если они закажут альбом — вы получите скидку 50% на свой!'}
+      </p>
+      <div className="flex gap-2">
+        <input readOnly value={refLink} className="input text-xs flex-1 bg-white" />
+        <button
+          className="btn-primary text-sm px-4 whitespace-nowrap"
+          onClick={() => {
+            navigator.clipboard.writeText(refLink)
+            const btn = document.getElementById(copyBtnId)
+            if (btn) { btn.textContent = 'Скопировано ✓'; setTimeout(() => { btn.textContent = 'Копировать' }, 2000) }
+          }}
+          id={copyBtnId}
+        >Копировать</button>
+      </div>
     </div>
   )
 }

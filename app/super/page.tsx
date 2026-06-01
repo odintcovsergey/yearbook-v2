@@ -218,6 +218,10 @@ export default function SuperPage() {
             className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
             🎛️ Пресеты →
           </button>
+          <button onClick={() => router.push('/super/referral-programs')}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            🎁 Реферальные программы →
+          </button>
         </div>
 
         {superTab === 'partners' && (
