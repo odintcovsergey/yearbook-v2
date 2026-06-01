@@ -36,6 +36,7 @@ const api = (path: string, opts?: RequestInit) =>
   })
 
 export default function ReferralProgramsManager({ apiBase }: { apiBase: string }) {
+  const [view, setView] = useState<'programs' | 'analytics'>('programs')
   const [programs, setPrograms] = useState<Program[]>([])
   const [canSetGlobal, setCanSetGlobal] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -109,11 +110,32 @@ export default function ReferralProgramsManager({ apiBase }: { apiBase: string }
 
   return (
     <>
-      <div className="flex justify-end mb-4">
-        <button onClick={handleCreate} disabled={busyId === 'new'} className="btn-primary whitespace-nowrap">
-          {busyId === 'new' ? 'Создаю…' : '+ Создать программу'}
-        </button>
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+          {([
+            { key: 'programs' as const, label: 'Программы' },
+            { key: 'analytics' as const, label: 'Аналитика' },
+          ]).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setView(t.key)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${view === t.key ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {view === 'programs' && (
+          <button onClick={handleCreate} disabled={busyId === 'new'} className="btn-primary whitespace-nowrap">
+            {busyId === 'new' ? 'Создаю…' : '+ Создать программу'}
+          </button>
+        )}
       </div>
+
+      {view === 'analytics' && <AnalyticsView apiBase={apiBase} />}
+
+      {view === 'programs' && (
+      <>{/* — вкладка «Программы» — */}
 
       {notice && (
         <div className="bg-green-50 border border-green-100 text-green-700 rounded-lg p-3 text-sm mb-4">{notice}</div>
@@ -178,6 +200,9 @@ export default function ReferralProgramsManager({ apiBase }: { apiBase: string }
         </div>
       )}
 
+      </>
+      )}
+
       {editing && (
         <ProgramForm
           program={editing}
@@ -186,6 +211,150 @@ export default function ReferralProgramsManager({ apiBase }: { apiBase: string }
           post={post}
         />
       )}
+    </>
+  )
+}
+
+// ============================================================
+// Вкладка «Аналитика»: воронка переходы → заявки → заказы по программам,
+// с разрезом по сегменту. Данные скоупятся на сервере по роли.
+// ============================================================
+const SEGMENT_LABELS: Record<string, string> = {
+  garden: 'Детский сад',
+  grade4: '4 класс',
+  grade11: '9–11 класс',
+  free: 'Свободный',
+}
+
+type Funnel = { visits: number; leads: number; conversions: number }
+type AnalyticsRow = {
+  program_id: string | null
+  name: string
+  totals: Funnel
+  segments: Record<string, Funnel>
+}
+
+function pct(part: number, whole: number): string {
+  if (!whole) return '—'
+  return `${Math.round((part / whole) * 100)}%`
+}
+
+function AnalyticsView({ apiBase }: { apiBase: string }) {
+  const [rows, setRows] = useState<AnalyticsRow[]>([])
+  const [segments, setSegments] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [openId, setOpenId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    api(`${apiBase}?analytics=1`)
+      .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (cancelled) return
+        if (!ok) { setError(d.error ?? 'Ошибка загрузки'); return }
+        setRows(d.analytics ?? [])
+        setSegments(d.segments ?? [])
+      })
+      .catch(() => { if (!cancelled) setError('Ошибка сети') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [apiBase])
+
+  if (loading) return <div className="text-center text-gray-400 py-12">Загрузка…</div>
+  if (error) return <div className="bg-red-50 border border-red-100 text-red-600 rounded-lg p-3 text-sm">{error}</div>
+
+  const hasAny = rows.some((r) => r.totals.visits + r.totals.leads > 0)
+  if (!hasAny) {
+    return (
+      <div className="text-center text-gray-400 py-12">
+        Пока нет данных. Цифры появятся, когда родители начнут переходить по реф-ссылкам и оставлять заявки.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-gray-400">
+        Воронка: переходы по ссылке → заявки → заказы. «% заявок» — из переходов, «% заказов» — из заявок.
+        Нажмите на программу, чтобы увидеть разрез по сегментам.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-400 border-b border-gray-200">
+              <th className="py-2 pr-3">Программа</th>
+              <th className="py-2 px-3 text-right">Переходы</th>
+              <th className="py-2 px-3 text-right">Заявки</th>
+              <th className="py-2 px-3 text-right">% заявок</th>
+              <th className="py-2 px-3 text-right">Заказы</th>
+              <th className="py-2 pl-3 text-right">% заказов</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const key = r.program_id ?? '__none__'
+              const open = openId === key
+              const segRows = segments.filter((s) => {
+                const f = r.segments[s]
+                return f && (f.visits + f.leads) > 0
+              })
+              return (
+                <FragmentRow
+                  key={key}
+                  row={r}
+                  open={open}
+                  onToggle={() => setOpenId(open ? null : key)}
+                  segRows={segRows}
+                />
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function FunnelCells({ f }: { f: Funnel }) {
+  return (
+    <>
+      <td className="py-2 px-3 text-right tabular-nums">{f.visits}</td>
+      <td className="py-2 px-3 text-right tabular-nums">{f.leads}</td>
+      <td className="py-2 px-3 text-right tabular-nums text-gray-500">{pct(f.leads, f.visits)}</td>
+      <td className="py-2 px-3 text-right tabular-nums font-medium text-green-700">{f.conversions}</td>
+      <td className="py-2 pl-3 text-right tabular-nums text-gray-500">{pct(f.conversions, f.leads)}</td>
+    </>
+  )
+}
+
+function FragmentRow({
+  row,
+  open,
+  onToggle,
+  segRows,
+}: {
+  row: AnalyticsRow
+  open: boolean
+  onToggle: () => void
+  segRows: string[]
+}) {
+  return (
+    <>
+      <tr className="border-b border-gray-100 cursor-pointer hover:bg-gray-50" onClick={onToggle}>
+        <td className="py-2 pr-3 font-medium text-gray-800">
+          <span className="text-gray-400 mr-1">{segRows.length > 0 ? (open ? '▾' : '▸') : ' '}</span>
+          {row.name}
+        </td>
+        <FunnelCells f={row.totals} />
+      </tr>
+      {open && segRows.map((s) => (
+        <tr key={s} className="border-b border-gray-100 bg-gray-50/50 text-xs">
+          <td className="py-1.5 pr-3 pl-6 text-gray-500">{SEGMENT_LABELS[s] ?? s}</td>
+          <FunnelCells f={row.segments[s]} />
+        </tr>
+      ))}
     </>
   )
 }

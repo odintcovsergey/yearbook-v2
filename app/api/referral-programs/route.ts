@@ -108,11 +108,101 @@ function pickTextFields(body: Record<string, unknown>): Record<string, unknown> 
 }
 
 // ============================================================
+// Аналитика воронки по программам (Этап 3).
+// Переходы (referral_visits) → заявки (referral_leads) → конверсии
+// (заявка со статусом 'done'). С разрезом по сегменту (text_type альбома).
+// Скоуп: superadmin — все события; партнёр — только своего tenant.
+// ============================================================
+const SEGMENTS = ['garden', 'grade4', 'grade11', 'free'] as const
+
+type Funnel = { visits: number; leads: number; conversions: number }
+function emptyFunnel(): Funnel {
+  return { visits: 0, leads: 0, conversions: 0 }
+}
+function emptySegments(): Record<string, Funnel> {
+  const s: Record<string, Funnel> = {}
+  for (const seg of SEGMENTS) s[seg] = emptyFunnel()
+  return s
+}
+// Неизвестный/пустой сегмент сваливаем в 'free' (свободный).
+function segKey(raw: unknown): string {
+  const v = String(raw ?? '')
+  return (SEGMENTS as readonly string[]).includes(v) ? v : 'free'
+}
+
+async function analytics(auth: AuthContext): Promise<NextResponse> {
+  const isSuper = auth.role === 'superadmin'
+
+  // Программы в зоне видимости (свои + глобальные / все).
+  let progQ = supabaseAdmin
+    .from('referral_programs')
+    .select('id, name, is_global, tenant_id')
+    .order('created_at', { ascending: false })
+  if (!isSuper) progQ = progQ.or(`tenant_id.is.null,tenant_id.eq.${auth.tenantId}`)
+  const { data: progs } = await progQ
+
+  let visitsQ = supabaseAdmin.from('referral_visits').select('program_id, segment')
+  let leadsQ = supabaseAdmin.from('referral_leads').select('program_id, segment, status')
+  if (!isSuper) {
+    visitsQ = visitsQ.eq('tenant_id', auth.tenantId)
+    leadsQ = leadsQ.eq('tenant_id', auth.tenantId)
+  }
+  const [{ data: visits }, { data: leads }] = await Promise.all([visitsQ, leadsQ])
+
+  // Аккумулятор по program_id ('' = «без программы»).
+  const acc: Record<string, { totals: Funnel; segments: Record<string, Funnel> }> = {}
+  const ensure = (pid: string) => {
+    if (!acc[pid]) acc[pid] = { totals: emptyFunnel(), segments: emptySegments() }
+    return acc[pid]
+  }
+  // Заводим строки для всех видимых программ (в т.ч. с нулевой активностью).
+  for (const p of progs ?? []) ensure((p as any).id)
+
+  for (const v of visits ?? []) {
+    const pid = (v as any).program_id ?? ''
+    const seg = segKey((v as any).segment)
+    const e = ensure(pid)
+    e.totals.visits++; e.segments[seg].visits++
+  }
+  for (const l of leads ?? []) {
+    const pid = (l as any).program_id ?? ''
+    const seg = segKey((l as any).segment)
+    const isConv = (l as any).status === 'done'
+    const e = ensure(pid)
+    e.totals.leads++; e.segments[seg].leads++
+    if (isConv) { e.totals.conversions++; e.segments[seg].conversions++ }
+  }
+
+  const nameById: Record<string, string> = {}
+  for (const p of progs ?? []) nameById[(p as any).id] = (p as any).name
+
+  const rows = Object.entries(acc).map(([pid, agg]) => ({
+    program_id: pid || null,
+    name: pid ? (nameById[pid] ?? 'Программа') : 'Без программы',
+    ...agg,
+  }))
+  // Программы с активностью сверху, затем по названию.
+  rows.sort((a, b) => {
+    const ta = a.totals.visits + a.totals.leads
+    const tb = b.totals.visits + b.totals.leads
+    if (ta !== tb) return tb - ta
+    return a.name.localeCompare(b.name, 'ru')
+  })
+
+  return NextResponse.json({ ok: true, analytics: rows, segments: SEGMENTS })
+}
+
+// ============================================================
 // GET — список программ (с учётом роли).
 // ============================================================
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req, ['superadmin', 'owner', 'manager'])
   if (isAuthError(auth)) return auth
+
+  // ── Аналитика воронки (Этап 3): переходы → заявки → конверсии ──────────────
+  if (req.nextUrl.searchParams.get('analytics')) {
+    return analytics(auth)
+  }
 
   let query = supabaseAdmin
     .from('referral_programs')

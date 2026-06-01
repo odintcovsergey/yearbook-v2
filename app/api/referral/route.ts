@@ -18,9 +18,20 @@ export async function GET(req: NextRequest) {
 
   const { data: album } = await supabaseAdmin
     .from('albums')
-    .select('title, city, year, referral_program_id')
+    .select('title, city, year, referral_program_id, tenant_id, text_type')
     .eq('id', child.album_id)
     .single()
+
+  // Этап 3: фиксируем переход по реф-ссылке (для аналитики воронки).
+  // Fire-and-forget — не блокируем выдачу лендинга, ошибку глотаем.
+  void supabaseAdmin.from('referral_visits').insert({
+    program_id: (album as any)?.referral_program_id ?? null,
+    tenant_id: (album as any)?.tenant_id ?? null,
+    referrer_child_id: child.id,
+    segment: (album as any)?.text_type ?? null,
+  }).then(({ error }) => {
+    if (error) console.error('referral_visits insert failed:', error.message)
+  })
 
   // Get parent name if available
   const { data: contact } = await supabaseAdmin
@@ -83,7 +94,7 @@ export async function POST(req: NextRequest) {
   // в его списке «Заявки» (он фильтруется по tenant_id).
   const { data: album } = await supabaseAdmin
     .from('albums')
-    .select('referral_program_id, tenant_id')
+    .select('referral_program_id, tenant_id, text_type')
     .eq('id', child.album_id)
     .maybeSingle()
 
@@ -91,6 +102,7 @@ export async function POST(req: NextRequest) {
     referrer_child_id: child.id,
     tenant_id: (album as any)?.tenant_id ?? null,
     program_id: (album as any)?.referral_program_id ?? null,
+    segment: (album as any)?.text_type ?? null,
     name: name.trim(),
     phone: phone.trim(),
     city: city?.trim() || null,
