@@ -281,7 +281,6 @@ function ProgramForm({
 }) {
   const [name, setName] = useState(program.name)
   const [referrerReward, setReferrerReward] = useState(program.referrer_reward_text ?? '')
-  const [inviteeHeadline, setInviteeHeadline] = useState(program.invitee_headline ?? '')
   const [inviteeReward, setInviteeReward] = useState(program.invitee_reward_text ?? '')
   const [inviteeDescription, setInviteeDescription] = useState(program.invitee_description ?? '')
   const [referrerImg, setReferrerImg] = useState(program.referrer_image_url)
@@ -303,7 +302,6 @@ function ProgramForm({
         id: program.id,
         name: name.trim(),
         referrer_reward_text: referrerReward.trim() || null,
-        invitee_headline: inviteeHeadline.trim() || null,
         invitee_reward_text: inviteeReward.trim() || null,
         invitee_description: inviteeDescription.trim() || null,
       })
@@ -350,9 +348,6 @@ function ProgramForm({
     }
   }
 
-  // Превью заголовка реферала: {имя} → пример.
-  const previewHeadline = (inviteeHeadline || 'Вас рекомендует {имя}').replace(/\{имя\}/g, 'Елена')
-
   return (
     <div className="fixed inset-0 bg-black/40 flex items-start justify-center p-4 z-50 overflow-y-auto" onClick={onClose}>
       <div className="bg-white rounded-2xl max-w-4xl w-full my-8 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -389,8 +384,9 @@ function ProgramForm({
             {/* Блок реферала */}
             <div className="border border-gray-200 rounded-xl p-4">
               <div className="text-sm font-medium text-gray-800 mb-3">Реферал (кто приходит)</div>
-              <label className="block text-xs text-gray-500 mb-1">Заголовок (можно {'{имя}'} — подставится имя реферера)</label>
-              <input className="input mb-3" value={inviteeHeadline} onChange={(e) => setInviteeHeadline(e.target.value)} placeholder="Вас рекомендует {имя}" />
+              <p className="text-xs text-gray-400 mb-3">
+                Имя того, кто поделился ссылкой, подставится автоматически («Вас рекомендует …»).
+              </p>
               <label className="block text-xs text-gray-500 mb-1">Награда</label>
               <textarea className="input mb-3" rows={2} value={inviteeReward} onChange={(e) => setInviteeReward(e.target.value)} placeholder="Скидка 500₽ на первый заказ" />
               <label className="block text-xs text-gray-500 mb-1">Описание / условия</label>
@@ -413,7 +409,7 @@ function ProgramForm({
             <div className="bg-gradient-to-b from-blue-50 to-gray-50 rounded-xl p-4">
               <div className="text-[11px] text-gray-400 mb-2">Реферер — страница «Спасибо»</div>
               <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
-                {referrerImg && <img src={referrerImg} alt="" className="w-full max-h-40 object-cover rounded-xl mb-3" />}
+                {referrerImg && <img src={referrerImg} alt="" className="w-full h-auto block rounded-xl mb-3" />}
                 <p className="text-sm font-medium text-blue-800 mb-1">🎁 {referrerReward || 'Получите скидку 50%'}</p>
                 <p className="text-sm text-blue-700">Поделитесь ссылкой с друзьями — когда они оставят заявку, мы применим вашу награду.</p>
               </div>
@@ -422,10 +418,10 @@ function ProgramForm({
             <div className="bg-gradient-to-b from-blue-50 to-gray-50 rounded-xl p-4">
               <div className="text-[11px] text-gray-400 mb-2">Реферал — лендинг по ссылке</div>
               <div className="bg-blue-50 border border-blue-100 rounded-2xl p-3 mb-3 text-center">
-                <p className="text-sm text-blue-700">{previewHeadline}</p>
+                <p className="text-sm text-blue-700">Вас рекомендует <strong>Елена</strong></p>
               </div>
               <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
-                {inviteeImg && <img src={inviteeImg} alt="" className="w-full max-h-40 object-cover" />}
+                {inviteeImg && <img src={inviteeImg} alt="" className="w-full h-auto block" />}
                 <div className="p-4">
                   {inviteeReward && <p className="text-base font-semibold text-gray-800 mb-1">🎁 {inviteeReward}</p>}
                   {inviteeDescription && <p className="text-sm text-gray-600 whitespace-pre-wrap">{inviteeDescription}</p>}
@@ -463,7 +459,7 @@ function ImageField({
   return (
     <div>
       <label className="block text-xs text-gray-500 mb-1">{label}</label>
-      {url && <img src={url} alt="" className="w-full max-h-40 object-cover rounded-lg border border-gray-200 mb-2" />}
+      {url && <img src={url} alt="" className="w-full h-auto block rounded-lg border border-gray-200 mb-2" />}
       <div className="flex gap-2">
         <input
           ref={inputRef}

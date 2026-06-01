@@ -2156,16 +2156,6 @@ function AlbumDetailModal({
                       />
                     )}
 
-                    {/* Реферальная программа заказа — не зависит от шаблона,
-                        показываем всегда при праве редактирования. */}
-                    {canEdit && (
-                      <ReferralProgramControl
-                        album={album}
-                        apiVA={apiVA}
-                        onNotify={onNotify}
-                        onError={onError}
-                      />
-                    )}
 
                     {layout && (
                       <div className="mt-3 pt-3 border-t border-gray-200">
@@ -3801,6 +3791,21 @@ function AlbumFormModal({
               </div>
             )}
           </div>
+
+          {/* Реферальная программа заказа. Доступна при редактировании
+              (нужен существующий album.id). Самосохраняется при выборе —
+              не зависит от кнопки «Сохранить изменения». */}
+          {mode === 'edit' && album && (
+            <div className="border-t-2 border-gray-200 pt-5 mt-1">
+              <span className="font-semibold text-blue-700">🎁 Реферальная программа</span>
+              <ReferralProgramControl
+                album={album}
+                apiVA={api}
+                onNotify={() => {}}
+                onError={onError}
+              />
+            </div>
+          )}
 
           {/* Действия */}
           <div className="flex gap-3 pt-4 border-t border-gray-100">

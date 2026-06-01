@@ -1542,7 +1542,7 @@ function ReferralRewardCard({
         <img
           src={program.referrer_image_url}
           alt=""
-          className="w-full max-h-56 object-cover rounded-xl mb-3"
+          className="w-full h-auto block rounded-xl mb-3"
         />
       )}
       <p className="text-sm font-medium text-blue-800 mb-1">

@@ -8,7 +8,6 @@ export default function ReferralPage() {
   const [loading, setLoading] = useState(true)
   const [referrerName, setReferrerName] = useState('')
   const [program, setProgram] = useState<{
-    headline: string | null
     reward_text: string | null
     description: string | null
     image_url: string | null
@@ -81,26 +80,24 @@ export default function ReferralPage() {
           </div>
         ) : (
           <>
-            {/* Referrer badge — заголовок из программы (с подставленным
-                именем) либо дефолтный «Вас рекомендует …». */}
-            {(program?.headline || referrerName) && (
+            {/* Referrer badge — имя того, кто рекомендует, показываем всегда. */}
+            {referrerName && (
               <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-6 text-center">
                 <p className="text-sm text-blue-700">
-                  {program?.headline
-                    ? program.headline
-                    : <>Вас рекомендует <strong>{referrerName}</strong></>}
+                  Вас рекомендует <strong>{referrerName}</strong>
                 </p>
               </div>
             )}
 
             {program ? (
-              /* Награда реферала из программы: картинка + текст + условия. */
+              /* Награда реферала из программы: картинка + текст + условия.
+                 Картинку показываем целиком (по ширине), без обрезки. */
               <div className="card overflow-hidden mb-6">
                 {program.image_url && (
                   <img
                     src={program.image_url}
                     alt=""
-                    className="w-full max-h-64 object-cover"
+                    className="w-full h-auto block"
                   />
                 )}
                 <div className="p-5">
