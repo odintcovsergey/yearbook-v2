@@ -16,7 +16,11 @@
 
 import JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
-import { computeSpreadGeometry, extractPlaceholders } from './extract-geometry';
+import {
+  computeCoverZones,
+  computeSpreadGeometry,
+  extractPlaceholders,
+} from './extract-geometry';
 import { loadStyleResolver } from './extract-styles';
 import type { StyleResolver } from './extract-styles';
 import type {
@@ -156,22 +160,39 @@ function parseMasterSpread(
     return null;
   }
 
+  const type = typeFromName(name);
+
+  // Обложка: разбираем полотно на три зоны (задняя/корешок/передняя) из
+  // 3-страничного разворота. coverZones=null → разметка не распознана.
+  const coverZones =
+    type === 'cover' ? computeCoverZones(geometry.pages_x_ranges) : null;
+  if (type === 'cover' && !coverZones) {
+    warnings.push({
+      message:
+        'cover-мастер не распознан как 3-страничный разворот (задняя|корешок|передняя); ' +
+        'зоны не определены (см. docs/designer-cover-instructions.md)',
+      master: name,
+    });
+  }
+
   const placeholders = extractPlaceholders(
     masterSpread,
     geometry,
     name,
     warnings,
     resolver,
+    coverZones,
   );
 
   return {
     name,
-    type: typeFromName(name),
+    type,
     is_spread: geometry.is_spread,
     width_mm: geometry.width_mm,
     height_mm: geometry.height_mm,
     placeholders,
     rules: null,
+    cover_zones: coverZones?.zones ?? null,
   };
 }
 
@@ -191,6 +212,8 @@ function typeFromName(name: string): SpreadTemplateType {
       return 'common';
     case 'S':
       return 'intro';
+    case 'C':
+      return 'cover';
     default:
       return 'common';
   }

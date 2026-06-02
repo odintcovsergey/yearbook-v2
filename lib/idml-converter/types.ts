@@ -31,6 +31,26 @@ export type Common = {
   height_mm: number;
   /** Угол поворота фрейма в градусах, нормализован к [-180, 180]. */
   rotation_deg?: number;
+  /**
+   * Зона обложки, в которой лежит плейсхолдер (только для type='cover').
+   * Определяется по странице 3-страничного разворота: задняя | корешок | передняя.
+   * См. computeCoverZones в extract-geometry.ts.
+   */
+  zone?: CoverZone;
+};
+
+/** Зона полотна обложки. back = задняя, spine = корешок, front = передняя. */
+export type CoverZone = 'back' | 'spine' | 'front';
+
+/**
+ * Ширины трёх зон обложки (мм), извлечённые из 3-страничного разворота.
+ * spine_width_mm здесь — НОМИНАЛЬНАЯ ширина из макета; реальный корешок
+ * пересчитывается из числа листов в lib/cover/spine.ts (Этап 3).
+ */
+export type CoverZones = {
+  back_width_mm: number;
+  spine_width_mm: number;
+  front_width_mm: number;
 };
 
 export type PhotoPlaceholder = Common & {
@@ -170,6 +190,12 @@ export type ParsedSpreadTemplate = {
   height_mm: number;
   placeholders: Placeholder[];
   rules: SpreadTemplateRules | null;
+  /**
+   * Ширины зон обложки (только для type='cover', иначе null/undefined).
+   * null у cover-мастера = разметка не распознана (не 3-страничный разворот) —
+   * см. warning в parse.ts.
+   */
+  cover_zones?: CoverZones | null;
 };
 
 // ─── Предупреждения парсера ───────────────────────────────────────────────

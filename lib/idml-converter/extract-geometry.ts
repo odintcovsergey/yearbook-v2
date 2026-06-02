@@ -8,6 +8,8 @@
 import type { StyleResolver } from './extract-styles';
 import type {
   BBox,
+  CoverZone,
+  CoverZones,
   DecorationPlaceholder,
   EmbeddedImage,
   ItemTransform,
@@ -82,6 +84,56 @@ export function computeSpreadGeometry(
   };
 }
 
+// ─── Зоны обложки (Этап 2 ТЗ обложки) ─────────────────────────────────────
+
+/**
+ * Результат разбора зон обложки.
+ * - `zones` — ширины задней/корешка/передней в мм.
+ * - `zoneByPageIndex` — зона для каждой страницы по ИСХОДНОМУ индексу
+ *   (как в geometry.pages_x_ranges / как возвращает pickPageIndex), чтобы
+ *   помечать плейсхолдеры и строить суффиксы _back/_spine/_front.
+ */
+export type CoverZoneResult = {
+  zones: CoverZones;
+  zoneByPageIndex: CoverZone[];
+};
+
+/**
+ * Разбирает обложку-полотно на три зоны из 3-страничного разворота.
+ * Конвенция (см. docs/designer-cover-instructions.md): обложка рисуется как
+ * ОДИН разворот из 3 страниц — слева задняя, по центру корешок, справа передняя.
+ *
+ * Сопоставление зон идёт по координате x (слева направо), а НЕ по порядку
+ * страниц в XML: самая левая страница = задняя, средняя = корешок, правая =
+ * передняя. Возвращает null, если страниц не ровно 3 (тогда parse.ts пишет
+ * warning, а cover_zones остаётся null).
+ */
+export function computeCoverZones(
+  pagesXRanges: ReadonlyArray<{ x_min: number; x_max: number }>,
+): CoverZoneResult | null {
+  if (pagesXRanges.length !== 3) return null;
+
+  const order: CoverZone[] = ['back', 'spine', 'front'];
+  // Индексы страниц, отсортированные слева направо по левому краю.
+  const byX = pagesXRanges
+    .map((r, i) => ({ i, ...r }))
+    .sort((a, b) => a.x_min - b.x_min);
+
+  const zoneByPageIndex: CoverZone[] = new Array(3);
+  byX.forEach((page, rank) => {
+    zoneByPageIndex[page.i] = order[rank];
+  });
+
+  return {
+    zones: {
+      back_width_mm: ptToMm(byX[0].x_max - byX[0].x_min),
+      spine_width_mm: ptToMm(byX[1].x_max - byX[1].x_min),
+      front_width_mm: ptToMm(byX[2].x_max - byX[2].x_min),
+    },
+    zoneByPageIndex,
+  };
+}
+
 // ─── extractPlaceholders ──────────────────────────────────────────────────
 
 export function extractPlaceholders(
@@ -90,6 +142,7 @@ export function extractPlaceholders(
   masterName: string,
   warnings: ParserWarning[],
   resolver: StyleResolver,
+  coverZones: CoverZoneResult | null = null,
 ): Placeholder[] {
   const frames = collectFrames(masterSpread);
   const result: Array<Placeholder & { _pageIndex: number }> = [];
@@ -129,7 +182,16 @@ export function extractPlaceholders(
   // привязку — декор и его база на одной странице).
   computeDecorationOffsets(result, masterName, warnings);
 
-  dedupeLabels(result, masterName, warnings);
+  dedupeLabels(result, masterName, warnings, coverZones?.zoneByPageIndex ?? null);
+
+  // Обложка: помечаем каждый плейсхолдер зоной (задняя/корешок/передняя) по
+  // странице 3-страничного разворота. _pageIndex — индекс страницы из pickPageIndex.
+  if (coverZones) {
+    for (const ph of result) {
+      ph.zone = coverZones.zoneByPageIndex[ph._pageIndex] ?? undefined;
+    }
+  }
+
   return result.map(({ _pageIndex: _, ...rest }) => rest as Placeholder);
 }
 
@@ -281,6 +343,7 @@ function dedupeLabels(
   placeholders: Array<Placeholder & { _pageIndex: number }>,
   masterName: string,
   warnings: ParserWarning[],
+  coverZoneByPageIndex: readonly CoverZone[] | null = null,
 ): void {
   // Группируем по label, в группах с >1 — добавляем суффиксы по pageIndex.
   const byLabel = new Map<
@@ -297,13 +360,20 @@ function dedupeLabels(
     if (group.length === 1) return;
 
     warnings.push({
-      message: 'duplicate label, generated _left/_right suffixes',
+      message: coverZoneByPageIndex
+        ? 'duplicate label, generated _back/_spine/_front suffixes'
+        : 'duplicate label, generated _left/_right suffixes',
       master: masterName,
       label,
     });
 
     for (const ph of group) {
-      const suffix = ph._pageIndex === 0 ? '_left' : '_right';
+      // Обложка: суффикс по зоне (_back/_spine/_front), иначе _left/_right.
+      const suffix = coverZoneByPageIndex
+        ? `_${coverZoneByPageIndex[ph._pageIndex] ?? 'back'}`
+        : ph._pageIndex === 0
+          ? '_left'
+          : '_right';
       ph.label = `${label}${suffix}`;
     }
   });

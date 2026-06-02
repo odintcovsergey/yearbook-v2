@@ -55,6 +55,11 @@ export type UploadMeta = {
 export type UploadResult = {
   template_set_id: string;
   spread_count: number;
+  /**
+   * Имена cover-мастеров (type='cover'), которые НЕ записаны в spread_templates.
+   * Запись обложек в таблицу `covers` + UI библиотеки — Этап 6 ТЗ обложки.
+   */
+  skipped_cover_masters?: string[];
 };
 
 export async function uploadTemplateSetToSupabase(
@@ -245,8 +250,21 @@ export async function uploadTemplateSetToSupabase(
   // через family-mapping.ts (РЭ.3.5). Если имя мастера неизвестно —
   // эти поля остаются NULL/{}, мастер всё равно загрузится, но не
   // попадёт в правила rule engine пока админ не проставит вручную.
+  // Обложки (type='cover') пока НЕ пишем в spread_templates — у них своя
+  // таблица covers (Этап 1 ТЗ обложки) и отдельный путь загрузки (Этап 6).
+  // Исключаем здесь, чтобы не засорять внутренние мастера набора.
+  const coverMasters = parsed.spread_templates.filter((s) => s.type === 'cover');
+  const innerMasters = parsed.spread_templates.filter((s) => s.type !== 'cover');
+  if (coverMasters.length > 0) {
+    console.warn(
+      `[upload] ${coverMasters.length} cover-мастер(ов) пропущено (не пишутся в ` +
+        `spread_templates, ждут таблицы covers / Этап 6): ` +
+        coverMasters.map((s) => s.name).join(', '),
+    );
+  }
+
   const unmappedMasters: string[] = [];
-  const spreadRows = parsed.spread_templates.map((spread, index) => {
+  const spreadRows = innerMasters.map((spread, index) => {
     const mapping = getFamilyMapping(spread.name);
     if (!mapping) {
       unmappedMasters.push(spread.name);
@@ -329,7 +347,10 @@ export async function uploadTemplateSetToSupabase(
   // ─── 9. Return ───────────────────────────────────────────────────
   return {
     template_set_id: templateSetId,
-    spread_count: parsed.spread_templates.length,
+    spread_count: spreadRows.length,
+    ...(coverMasters.length > 0
+      ? { skipped_cover_masters: coverMasters.map((s) => s.name) }
+      : {}),
   };
 }
 
