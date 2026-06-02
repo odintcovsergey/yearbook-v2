@@ -41,11 +41,17 @@ export type CoverGenderHint = 'neutral' | 'boys' | 'girls';
  * Декор привязывается теми же суффиксами __over/__under (механизм уже есть).
  */
 export type CoverPlaceholderName =
-  // Передняя обложка
+  // Передняя обложка — фото
   | 'cover_portrait'      // портрет ученика (персональный)
   | 'cover_common_photo'  // общее фото
-  | 'cover_title'         // название альбома/текст
-  | 'cover_subtitle'      // год/класс/подзаголовок
+  // Передняя обложка — текстовые подписи
+  | 'cover_student_name'  // ФИО выпускника (children.full_name, персональная)
+  | 'cover_school_name'   // название учебного заведения (albums.school_name)
+  | 'cover_city'          // город (albums.city)
+  | 'cover_year'          // год выпуска (albums.year)
+  | 'cover_class'         // класс/группа (children.class / albums.classes)
+  | 'cover_title'         // общее название/заголовок (albums.title)
+  | 'cover_subtitle'      // подзаголовок (свободный)
   // Корешок
   | 'spine_text'          // текст на корешке (вертикальный)
   // Задняя обложка

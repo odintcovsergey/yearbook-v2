@@ -1015,6 +1015,43 @@ export async function GET(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
+  // covers_list (Этап 7 ТЗ обложки) — опубликованные обложки для блока
+  // «Обложка» в форме заказа: глобальные + свои. Только для выбора партнёром
+  // (какие показывать родителю). Возвращает лёгкие поля (без placeholders).
+  // ----------------------------------------------------------
+  if (action === 'covers_list') {
+    const { data, error } = await supabaseAdmin
+      .from('covers')
+      .select('id, name, cover_type, gender_hint, variant_label, is_global, tenant_id, template_set_id')
+      .eq('is_published', true)
+      .or(`tenant_id.is.null,tenant_id.eq.${tid}`)
+      .order('cover_type')
+      .order('name')
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ covers: data ?? [] })
+  }
+
+  // ----------------------------------------------------------
+  // print_presets_list (Этап 7 ТЗ обложки) — пресеты печати (config_presets
+  // с заданным print_spec) для расчёта корешка. Глобальные + свои.
+  // Возвращает print_spec, чтобы UI показал доступные типы листа.
+  // ----------------------------------------------------------
+  if (action === 'print_presets_list') {
+    const { data, error } = await supabaseAdmin
+      .from('config_presets')
+      .select('id, slug, name, print_type, print_spec')
+      .not('print_spec', 'is', null)
+      .or(`tenant_id.is.null,tenant_id.eq.${tid}`)
+      .order('name')
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ presets: data ?? [] })
+  }
+
+  // ----------------------------------------------------------
   // rule_presets_list (РЭ.21.3) — список пресетов из таблицы `presets`.
   // Раньше использовалось только rule engine'ом (движок 2, удалён в
   // РЭ.21.8.чистка-1). Теперь это общая таблица для section_structure
@@ -4169,6 +4206,12 @@ export async function POST(req: NextRequest) {
         classes: body.classes ?? [],
         cover_mode: body.cover_mode ?? 'none',
         cover_price: body.cover_price ?? 0,
+        // Обложка (НОВАЯ система, Этап 7 ТЗ обложки). Не путать с cover_mode/price.
+        cover_layout_mode: body.cover_layout_mode ?? null,
+        cover_default_type: body.cover_default_type ?? null,
+        cover_available_ids: Array.isArray(body.cover_available_ids) ? body.cover_available_ids : [],
+        print_preset_id: body.print_preset_id ?? null,
+        sheet_type_id: body.sheet_type_id ?? null,
         deadline: body.deadline ?? null,
         group_enabled: body.group_enabled ?? true,
         group_min: body.group_min ?? 2,
@@ -4184,6 +4227,7 @@ export async function POST(req: NextRequest) {
         template_title: body.template_title ?? null,
         city: body.city ?? null,
         year: body.year ?? new Date().getFullYear(),
+        school_name: body.school_name ?? null,
         config_preset_id: configPresetId,
         template_set_id: templateSetId,
         print_type: resolvedPrintType,
@@ -4964,7 +5008,7 @@ export async function POST(req: NextRequest) {
 
     // Список разрешённых полей
     const allowedFields = [
-      'title', 'city', 'year', 'deadline',
+      'title', 'city', 'year', 'school_name', 'deadline',
       'cover_mode', 'cover_price',
       'group_enabled', 'group_min', 'group_max', 'group_exclusive',
       'personal_spread_enabled', 'personal_spread_price', 'personal_spread_min', 'personal_spread_max',
@@ -4991,6 +5035,12 @@ export async function POST(req: NextRequest) {
                                 // JSONB с группами или null.
       'referral_program_id',   // Реферальная программа заказа (uuid|null).
                                 // Что показывать родителям на «Спасибо»/лендинге.
+      // Обложка (НОВАЯ система, Этап 7 ТЗ обложки). Не путать с cover_mode/price.
+      'cover_layout_mode',     // 'fixed'|'default_editable'|'parent_choice'|null
+      'cover_default_type',    // 'portrait_photo'|'common_photo'|'design_only'|null
+      'cover_available_ids',   // uuid[] — какие обложки показывать родителю
+      'print_preset_id',       // uuid|null — пресет печати (расчёт корешка)
+      'sheet_type_id',         // string|null — тип листа внутри пресета
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {

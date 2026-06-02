@@ -50,7 +50,8 @@ export async function loadAlbumCovers(
   const { data: album, error: albumErr } = await supabase
     .from('albums')
     .select(
-      'id, title, classes, tenant_id, template_set_id, deadline, created_at, ' +
+      'id, title, classes, city, year, school_name, tenant_id, template_set_id, ' +
+        'deadline, created_at, ' +
         'cover_layout_mode, cover_default_type, cover_available_ids, ' +
         'print_preset_id, sheet_type_id',
     )
@@ -137,10 +138,19 @@ export async function loadAlbumCovers(
     choice: choiceByChild[c.id] ?? null,
   }));
 
-  const year = albumYear((a.deadline as string | null) ?? null, (a.created_at as string | null) ?? null);
+  // Год: явное поле albums.year приоритетнее, иначе из дедлайна/даты создания.
+  const year =
+    a.year != null
+      ? String(a.year)
+      : albumYear((a.deadline as string | null) ?? null, (a.created_at as string | null) ?? null);
+  const classes = Array.isArray(a.classes) ? (a.classes as string[]).join(', ') : null;
   const shared: CoverSharedContent = {
     title: (a.title as string | null) ?? null,
-    subtitle: year,
+    subtitle: null, // свободный подзаголовок — заполнит партнёр в редакторе
+    school_name: (a.school_name as string | null) ?? null,
+    city: (a.city as string | null) ?? null,
+    year,
+    classes: classes || null,
     spine_text: (a.title as string | null) ?? null,
     common_photo_url: null,       // общее фото класса — подключим на рендере
     back_common_photo_url: null,

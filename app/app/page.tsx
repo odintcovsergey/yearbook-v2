@@ -2878,6 +2878,7 @@ type FormData = {
   title: string
   city: string
   year: string
+  school_name: string
   deadline: string
   cover_mode: string
   cover_price: string
@@ -2908,6 +2909,12 @@ type FormData = {
   section_structure_preset_name: string | null
   /** Для отображения в кнопке — название дизайна выбранного шаблона. */
   section_structure_design_name: string | null
+  // ── Обложка (НОВАЯ система, Этап 7 ТЗ обложки). Не путать с cover_mode. ──
+  cover_layout_mode: string | null   // 'fixed'|'default_editable'|'parent_choice'|null
+  cover_default_type: string | null  // 'portrait_photo'|'common_photo'|'design_only'|null
+  cover_available_ids: string[]      // какие обложки показывать родителю
+  print_preset_id: string | null     // пресет печати (расчёт корешка)
+  sheet_type_id: string | null       // тип листа внутри пресета
 }
 
 const textTypeOptions = [
@@ -2917,11 +2924,19 @@ const textTypeOptions = [
   { v: 'grade11', l: '9-11 класс' },
 ]
 
+// Обложка (Этап 7): подписи типов обложки для блока «Обложка альбома».
+const COVER_TYPE_LABEL: Record<string, string> = {
+  portrait_photo: 'Портрет ученика',
+  common_photo: 'Общее фото',
+  design_only: 'Дизайн без фото',
+}
+
 function emptyForm(): FormData {
   return {
     title: '',
     city: '',
     year: String(new Date().getFullYear()),
+    school_name: '',
     deadline: '',
     cover_mode: 'optional',
     cover_price: '300',
@@ -2944,6 +2959,11 @@ function emptyForm(): FormData {
     section_structure_preset_id: null,
     section_structure_preset_name: null,
     section_structure_design_name: null,
+    cover_layout_mode: null,
+    cover_default_type: null,
+    cover_available_ids: [],
+    print_preset_id: null,
+    sheet_type_id: null,
   }
 }
 
@@ -3040,6 +3060,7 @@ function AlbumFormModal({
         title: album.title,
         city: album.city ?? '',
         year: String(album.year ?? new Date().getFullYear()),
+        school_name: (album as any).school_name ?? '',
         deadline: album.deadline ? album.deadline.slice(0, 10) : '',
         cover_mode: album.cover_mode,
         cover_price: String(album.cover_price ?? 0),
@@ -3065,6 +3086,11 @@ function AlbumFormModal({
         section_structure_preset_id: (album as any).section_structure_preset_id ?? null,
         section_structure_preset_name: null,
         section_structure_design_name: null,
+        cover_layout_mode: (album as any).cover_layout_mode ?? null,
+        cover_default_type: (album as any).cover_default_type ?? null,
+        cover_available_ids: (album as any).cover_available_ids ?? [],
+        print_preset_id: (album as any).print_preset_id ?? null,
+        sheet_type_id: (album as any).sheet_type_id ?? null,
       }
     }
     return emptyForm()
@@ -3086,6 +3112,15 @@ function AlbumFormModal({
     newName: string | null
     newDesignName: string | null
   } | null>(null)
+  // Обложка (Этап 7): библиотека обложек + пресеты печати для блока «Обложка».
+  const [coverLibrary, setCoverLibrary] = useState<Array<{
+    id: string; name: string; cover_type: string
+    gender_hint: string | null; variant_label: string | null; is_global: boolean
+  }>>([])
+  const [printPresets, setPrintPresets] = useState<Array<{
+    id: string; name: string
+    print_spec: { sheet_types?: Array<{ id: string; label: string }> } | null
+  }>>([])
 
   const handleBackdropMouseDown = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) setBackdropStart(true)
@@ -3107,6 +3142,18 @@ function AlbumFormModal({
         .catch(() => setTemplates([]))
     }
   }, [mode])
+
+  // Обложка (Этап 7): библиотека обложек + пресеты печати — в обоих режимах.
+  useEffect(() => {
+    api('/api/tenant?action=covers_list')
+      .then(r => r.ok ? r.json() : { covers: [] })
+      .then(d => setCoverLibrary(d.covers ?? []))
+      .catch(() => setCoverLibrary([]))
+    api('/api/tenant?action=print_presets_list')
+      .then(r => r.ok ? r.json() : { presets: [] })
+      .then(d => setPrintPresets(d.presets ?? []))
+      .catch(() => setPrintPresets([]))
+  }, [])
 
   // РЭ.30.6: useEffect для загрузки presets_list удалён —
   // он питал dropdown'ы блока «Пресет вёрстки», которого больше нет.
@@ -3224,9 +3271,16 @@ function AlbumFormModal({
       title: form.title.trim(),
       city: form.city.trim() || null,
       year: parseInt(form.year) || new Date().getFullYear(),
+      school_name: form.school_name.trim() || null,
       deadline: form.deadline ? new Date(form.deadline + 'T23:59:59').toISOString() : null,
       cover_mode: form.cover_mode,
       cover_price: parseInt(form.cover_price) || 0,
+      // Обложка (НОВАЯ система, Этап 7 ТЗ обложки).
+      cover_layout_mode: form.cover_layout_mode,
+      cover_default_type: form.cover_default_type,
+      cover_available_ids: form.cover_available_ids,
+      print_preset_id: form.print_preset_id,
+      sheet_type_id: form.sheet_type_id,
       group_enabled: form.group_enabled,
       group_min: parseInt(form.group_min) || 0,
       group_max: parseInt(form.group_max) || 0,
@@ -3489,6 +3543,21 @@ function AlbumFormModal({
             </div>
           </div>
 
+          {/* Учебное заведение (для подписи на обложке) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Учебное заведение <span className="font-normal text-gray-400 text-xs">(для подписи на обложке)</span>
+            </label>
+            <input
+              type="text"
+              value={form.school_name}
+              onChange={(e) => set('school_name', e.target.value)}
+              className="input"
+              placeholder="Гимназия №1"
+              disabled={loading}
+            />
+          </div>
+
           {/* Дедлайн */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -3620,6 +3689,139 @@ function AlbumFormModal({
                   disabled={loading}
                 />
               </div>
+            )}
+          </div>
+
+          {/* Обложка альбома (твёрдый переплёт) — НОВАЯ система (Этап 7) */}
+          <div className="border-t-2 border-gray-200 pt-5 mt-1">
+            <p className="text-sm font-semibold text-blue-700 mb-1">
+              Обложка альбома <span className="font-normal text-gray-400 text-xs">(твёрдый переплёт)</span>
+            </p>
+            <p className="text-xs text-gray-400 mb-3">
+              Кто выбирает обложку и какая стоит по умолчанию. Деньги (если докупают персонализацию) считаются вне системы.
+            </p>
+
+            <label className="block text-xs text-gray-500 mb-1">Кто выбирает обложку</label>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {[
+                { v: '', l: 'Не настраивать' },
+                { v: 'fixed', l: 'Партнёр (жёстко)' },
+                { v: 'default_editable', l: 'Дефолт, родитель может сменить' },
+                { v: 'parent_choice', l: 'Родитель выбирает' },
+              ].map(({ v, l }) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => set('cover_layout_mode', v || null)}
+                  className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${
+                    (form.cover_layout_mode ?? '') === v
+                      ? 'border-gray-900 bg-gray-900 text-white'
+                      : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+                  disabled={loading}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            {form.cover_layout_mode && (
+              <>
+                <label className="block text-xs text-gray-500 mb-1">Тип обложки по умолчанию</label>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {(['portrait_photo', 'common_photo', 'design_only'] as const).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => set('cover_default_type', v)}
+                      className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${
+                        form.cover_default_type === v
+                          ? 'border-gray-900 bg-gray-900 text-white'
+                          : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                      }`}
+                      disabled={loading}
+                    >
+                      {COVER_TYPE_LABEL[v]}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="block text-xs text-gray-500 mb-1">
+                  Какие обложки показывать родителю {form.cover_layout_mode === 'fixed' && '(при «жёстко» родитель не выбирает)'}
+                </label>
+                {coverLibrary.length === 0 ? (
+                  <div className="text-xs text-gray-400 mb-3">
+                    Библиотека обложек пуста. Загрузите обложки в супер-админке (📕 Обложки).
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2">
+                    {coverLibrary.map((c) => {
+                      const checked = form.cover_available_ids.includes(c.id)
+                      return (
+                        <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={loading}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                                ? [...form.cover_available_ids, c.id]
+                                : form.cover_available_ids.filter((id) => id !== c.id)
+                              set('cover_available_ids', next)
+                            }}
+                          />
+                          <span>{c.name}</span>
+                          <span className="text-xs text-gray-400">
+                            {COVER_TYPE_LABEL[c.cover_type] ?? c.cover_type}
+                            {c.gender_hint ? ` · ${c.gender_hint}` : ''}
+                            {c.is_global ? '' : ' · своя'}
+                          </span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+
+                <label className="block text-xs text-gray-500 mb-1">Пресет печати (для расчёта корешка)</label>
+                <select
+                  value={form.print_preset_id ?? ''}
+                  disabled={loading}
+                  onChange={(e) => {
+                    set('print_preset_id', e.target.value || null)
+                    set('sheet_type_id', null)
+                  }}
+                  className="input mb-2"
+                >
+                  <option value="">Не выбран</option>
+                  {printPresets.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                {printPresets.length === 0 && (
+                  <div className="text-xs text-gray-400 mb-2">
+                    Пресетов печати пока нет (нужны параметры корешка в пресете).
+                  </div>
+                )}
+
+                {(() => {
+                  const preset = printPresets.find((p) => p.id === form.print_preset_id)
+                  const sheets = preset?.print_spec?.sheet_types ?? []
+                  if (!form.print_preset_id || sheets.length === 0) return null
+                  return (
+                    <select
+                      value={form.sheet_type_id ?? ''}
+                      disabled={loading}
+                      onChange={(e) => set('sheet_type_id', e.target.value || null)}
+                      className="input"
+                    >
+                      <option value="">Тип листа по умолчанию</option>
+                      {sheets.map((s) => (
+                        <option key={s.id} value={s.id}>{s.label}</option>
+                      ))}
+                    </select>
+                  )
+                })()}
+              </>
             )}
           </div>
 

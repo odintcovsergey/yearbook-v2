@@ -60,6 +60,10 @@ function student(id: string, over?: Partial<CoverStudentInput>): CoverStudentInp
 const SHARED: CoverSharedContent = {
   title: 'Выпуск 11А',
   subtitle: '2026',
+  school_name: 'Гимназия №1',
+  city: 'Москва',
+  year: '2026',
+  classes: '11А',
   spine_text: 'Выпуск 2026',
   common_photo_url: 'https://cdn/class.jpg',
   back_common_photo_url: null,
@@ -168,6 +172,31 @@ describe('fillCoverData', () => {
 
   it('cover=null → пустые данные', () => {
     expect(fillCoverData(null, 'portrait_photo', student('1'), SHARED)).toEqual({});
+  });
+
+  it('семантические подписи: ФИО персонально, заведение/город/год общие', () => {
+    const c = makeCover({
+      type: 'portrait_photo',
+      labels: ['cover_student_name', 'cover_school_name', 'cover_city', 'cover_year', 'cover_class'],
+    });
+    const data = fillCoverData(c, 'portrait_photo', student('7'), SHARED);
+    expect(data.cover_student_name).toBe('Ученик 7'); // children.full_name
+    expect(data.cover_school_name).toBe('Гимназия №1');
+    expect(data.cover_city).toBe('Москва');
+    expect(data.cover_year).toBe('2026');
+    expect(data.cover_class).toBe('11А'); // класс ученика (student.class)
+  });
+
+  it('класс берётся общий, если ученика нет (общая обложка)', () => {
+    const c = makeCover({ type: 'design_only', labels: ['cover_class'] });
+    const data = fillCoverData(c, 'design_only', null, SHARED);
+    expect(data.cover_class).toBe('11А'); // shared.classes
+  });
+
+  it('ФИО выпускника пусто на общей обложке (нет ученика)', () => {
+    const c = makeCover({ type: 'design_only', labels: ['cover_student_name'] });
+    const data = fillCoverData(c, 'design_only', null, SHARED);
+    expect(data.cover_student_name).toBeNull();
   });
 });
 

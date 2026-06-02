@@ -46,9 +46,13 @@ export type CoverAssemblyConfig = {
 
 /** Общее (одинаковое для всех) содержимое обложки: тексты и общие фото. */
 export type CoverSharedContent = {
-  title: string | null;       // cover_title
-  subtitle: string | null;    // cover_subtitle (год/класс)
-  spine_text: string | null;  // spine_text
+  title: string | null;        // cover_title
+  subtitle: string | null;     // cover_subtitle (свободный)
+  school_name: string | null;  // cover_school_name (albums.school_name)
+  city: string | null;         // cover_city (albums.city)
+  year: string | null;         // cover_year (albums.year)
+  classes: string | null;      // cover_class (albums.classes, если нет ученика)
+  spine_text: string | null;   // spine_text
   common_photo_url: string | null;      // cover_common_photo
   back_common_photo_url: string | null; // back_common_photo
   back_logo_url: string | null;         // back_logo
@@ -144,6 +148,23 @@ export function fillCoverData(
         break;
       case 'cover_common_photo':
         data[ph.label] = shared.common_photo_url;
+        break;
+      // ФИО выпускника — персональное (только когда есть ученик).
+      case 'cover_student_name':
+        data[ph.label] = student?.full_name || null;
+        break;
+      case 'cover_school_name':
+        data[ph.label] = shared.school_name;
+        break;
+      case 'cover_city':
+        data[ph.label] = shared.city;
+        break;
+      case 'cover_year':
+        data[ph.label] = shared.year;
+        break;
+      // Класс — личный (класс ученика), иначе общий (классы заказа).
+      case 'cover_class':
+        data[ph.label] = student?.class || shared.classes;
         break;
       case 'cover_title':
         data[ph.label] = shared.title;
