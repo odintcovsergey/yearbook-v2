@@ -640,7 +640,10 @@ export async function GET(req: NextRequest) {
     const [albumsRes, childrenRes, teacherTokensRes, teachersRes, leadsRes] = await Promise.all([
       supabaseAdmin
         .from('albums')
-        .select('*, config_presets(slug, name)')
+        // Явно указываем связь config_preset_id: у albums теперь ДВЕ ссылки на
+        // config_presets (config_preset_id + print_preset_id обложки), иначе
+        // PostgREST не может выбрать связь и запрос падает (альбомы пропадают).
+        .select('*, config_presets!config_preset_id(slug, name)')
         .eq('tenant_id', tid)
         .order('created_at', { ascending: false }),
       supabaseAdmin
