@@ -99,36 +99,59 @@ export type CoverZoneResult = {
 };
 
 /**
- * Разбирает обложку-полотно на три зоны из 3-страничного разворота.
- * Конвенция (см. docs/designer-cover-instructions.md): обложка рисуется как
- * ОДИН разворот из 3 страниц — слева задняя, по центру корешок, справа передняя.
+ * Разбирает обложку-полотно на зоны (задняя | корешок | передняя).
+ * Поддерживает ДВА способа рисования (см. docs/designer-cover-instructions.md):
+ *
+ *  - 2-страничный разворот (facing pages, ЕСТЕСТВЕННЫЙ для InDesign):
+ *    слева ЗАДНЯЯ, справа ПЕРЕДНЯЯ. Корешок отдельной страницы НЕ имеет —
+ *    его номинальная ширина = зазор между страницами (обычно 0); реальный
+ *    корешок вставляется между задней и передней при печати (layoutCover).
+ *
+ *  - 3-страничный разворот: слева задняя, ПО ЦЕНТРУ корешок, справа передняя
+ *    (нужен, если на самом корешке есть контент — spine_text).
  *
  * Сопоставление зон идёт по координате x (слева направо), а НЕ по порядку
- * страниц в XML: самая левая страница = задняя, средняя = корешок, правая =
- * передняя. Возвращает null, если страниц не ровно 3 (тогда parse.ts пишет
- * warning, а cover_zones остаётся null).
+ * страниц в XML. Возвращает null, если страниц не 2 и не 3 (тогда parse.ts
+ * пишет warning, cover_zones остаётся null).
  */
 export function computeCoverZones(
   pagesXRanges: ReadonlyArray<{ x_min: number; x_max: number }>,
 ): CoverZoneResult | null {
-  if (pagesXRanges.length !== 3) return null;
+  const n = pagesXRanges.length;
+  if (n !== 2 && n !== 3) return null;
 
-  const order: CoverZone[] = ['back', 'spine', 'front'];
   // Индексы страниц, отсортированные слева направо по левому краю.
   const byX = pagesXRanges
     .map((r, i) => ({ i, ...r }))
     .sort((a, b) => a.x_min - b.x_min);
 
-  const zoneByPageIndex: CoverZone[] = new Array(3);
-  byX.forEach((page, rank) => {
-    zoneByPageIndex[page.i] = order[rank];
-  });
+  if (n === 3) {
+    const order: CoverZone[] = ['back', 'spine', 'front'];
+    const zoneByPageIndex: CoverZone[] = new Array(3);
+    byX.forEach((page, rank) => {
+      zoneByPageIndex[page.i] = order[rank];
+    });
+    return {
+      zones: {
+        back_width_mm: ptToMm(byX[0].x_max - byX[0].x_min),
+        spine_width_mm: ptToMm(byX[1].x_max - byX[1].x_min),
+        front_width_mm: ptToMm(byX[2].x_max - byX[2].x_min),
+      },
+      zoneByPageIndex,
+    };
+  }
 
+  // 2 страницы: задняя (слева) + передняя (справа). Корешок между ними —
+  // номинально это зазор между страницами (обычно 0).
+  const zoneByPageIndex: CoverZone[] = new Array(2);
+  zoneByPageIndex[byX[0].i] = 'back';
+  zoneByPageIndex[byX[1].i] = 'front';
+  const gapPt = Math.max(0, byX[1].x_min - byX[0].x_max);
   return {
     zones: {
       back_width_mm: ptToMm(byX[0].x_max - byX[0].x_min),
-      spine_width_mm: ptToMm(byX[1].x_max - byX[1].x_min),
-      front_width_mm: ptToMm(byX[2].x_max - byX[2].x_min),
+      spine_width_mm: ptToMm(gapPt),
+      front_width_mm: ptToMm(byX[1].x_max - byX[1].x_min),
     },
     zoneByPageIndex,
   };

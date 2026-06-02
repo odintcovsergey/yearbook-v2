@@ -40,14 +40,31 @@ describe('computeCoverZones', () => {
     expect(r.zones.spine_width_mm).toBeCloseTo(ptToMm(40), 5);
   });
 
-  it('возвращает null, если страниц не ровно 3', () => {
+  it('2 страницы (facing): задняя слева + передняя справа, корешок = зазор', () => {
+    // Реальный кейс InDesign: левая [-595..0] задняя, правая [0..595] передняя.
+    const ranges = [
+      { x_min: 0, x_max: 595 },     // index 0 — правая → front
+      { x_min: -595, x_max: 0 },    // index 1 — левая → back
+    ];
+    const r = computeCoverZones(ranges)!;
+    expect(r).not.toBeNull();
+    expect(r.zoneByPageIndex).toEqual(['front', 'back']);
+    expect(r.zones.back_width_mm).toBeCloseTo(ptToMm(595), 5);
+    expect(r.zones.front_width_mm).toBeCloseTo(ptToMm(595), 5);
+    expect(r.zones.spine_width_mm).toBe(0); // страницы вплотную → корешок 0
+  });
+
+  it('2 страницы с зазором → корешок = ширина зазора', () => {
+    const ranges = [
+      { x_min: 0, x_max: 200 },
+      { x_min: 210, x_max: 410 }, // зазор 10pt
+    ];
+    const r = computeCoverZones(ranges)!;
+    expect(r.zones.spine_width_mm).toBeCloseTo(ptToMm(10), 5);
+  });
+
+  it('возвращает null, если страниц не 2 и не 3', () => {
     expect(computeCoverZones([{ x_min: 0, x_max: 600 }])).toBeNull();
-    expect(
-      computeCoverZones([
-        { x_min: 0, x_max: 600 },
-        { x_min: 600, x_max: 1200 },
-      ]),
-    ).toBeNull();
     expect(
       computeCoverZones([
         { x_min: 0, x_max: 1 },
