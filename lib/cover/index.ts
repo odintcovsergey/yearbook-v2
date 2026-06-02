@@ -24,3 +24,9 @@ export type {
   CoverCanvasInput,
   CoverCanvasSize,
 } from './spine';
+
+export {
+  countAlbumSheets,
+  computeAlbumSpineWidthMm,
+  resolveAlbumSpineWidthMm,
+} from './album-spine';
