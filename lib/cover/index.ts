@@ -47,3 +47,13 @@ export type {
 
 export { loadAlbumCovers } from './load-covers';
 export type { AssembledCoversResult } from './load-covers';
+
+export { layoutCover } from './layout';
+export type {
+  CoverZoneName,
+  CoverLayoutInput,
+  CoverLayoutResult,
+} from './layout';
+
+export { renderCoverPreviewSvg } from './preview-svg';
+export type { CoverPreviewInput } from './preview-svg';
