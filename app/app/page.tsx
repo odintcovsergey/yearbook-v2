@@ -3121,6 +3121,14 @@ function AlbumFormModal({
     id: string; name: string
     print_spec: { sheet_types?: Array<{ id: string; label: string }> } | null
   }>>([])
+  // Превью собранной обложки на альбом (edit mode).
+  const [coverPreviewOpen, setCoverPreviewOpen] = useState(false)
+  const [coverPreviewLoading, setCoverPreviewLoading] = useState(false)
+  const [coverPreviewData, setCoverPreviewData] = useState<{
+    previews: Array<{ child_id: string | null; child_name: string | null; cover_name: string | null; cover_type: string; has_cover: boolean; svg: string }>
+    spine_width_mm: number | null
+    warnings: string[]
+  } | null>(null)
 
   const handleBackdropMouseDown = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) setBackdropStart(true)
@@ -3154,6 +3162,24 @@ function AlbumFormModal({
       .then(d => setPrintPresets(d.presets ?? []))
       .catch(() => setPrintPresets([]))
   }, [])
+
+  // Загрузить превью собранной обложки на текущий альбом (edit).
+  const loadCoverPreview = async () => {
+    if (!album?.id) return
+    setCoverPreviewOpen(true)
+    setCoverPreviewLoading(true)
+    setCoverPreviewData(null)
+    try {
+      const r = await api(`/api/tenant?action=cover_album_preview&album_id=${album.id}`)
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
+      setCoverPreviewData({ previews: d.previews ?? [], spine_width_mm: d.spine_width_mm ?? null, warnings: d.warnings ?? [] })
+    } catch (e) {
+      setCoverPreviewData({ previews: [], spine_width_mm: null, warnings: [e instanceof Error ? e.message : 'Ошибка'] })
+    } finally {
+      setCoverPreviewLoading(false)
+    }
+  }
 
   // РЭ.30.6: useEffect для загрузки presets_list удалён —
   // он питал dropdown'ы блока «Пресет вёрстки», которого больше нет.
@@ -3426,6 +3452,59 @@ function AlbumFormModal({
       onMouseDown={handleBackdropMouseDown}
       onMouseUp={handleBackdropMouseUp}
     >
+      {coverPreviewOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center py-8 px-4 overflow-y-auto"
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
+          onClick={(e) => { if (e.target === e.currentTarget) setCoverPreviewOpen(false) }}
+        >
+          <div className="bg-white rounded-2xl max-w-5xl w-full shadow-xl my-auto p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Превью обложки</h3>
+              <button type="button" onClick={() => setCoverPreviewOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            {coverPreviewLoading && <div className="text-center py-8 text-gray-400">Собираю обложку…</div>}
+            {!coverPreviewLoading && coverPreviewData && (
+              <>
+                <div className="text-sm text-gray-500 mb-3">
+                  Корешок: {coverPreviewData.spine_width_mm != null
+                    ? `${coverPreviewData.spine_width_mm.toFixed(1)} мм`
+                    : 'не посчитан (нет пресета печати или сохранённого макета альбома)'}
+                </div>
+                {coverPreviewData.warnings.length > 0 && (
+                  <div className="card p-3 bg-amber-50 border-amber-200 text-xs text-amber-800 mb-3">
+                    <ul className="list-disc pl-4 space-y-0.5">
+                      {coverPreviewData.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                    </ul>
+                  </div>
+                )}
+                {coverPreviewData.previews.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    Нет собранных обложек. Проверьте режим, тип и отмеченные доступные обложки.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto">
+                    {coverPreviewData.previews.map((p, i) => (
+                      <div key={i} className="card p-3">
+                        <div
+                          className="w-full bg-gray-50 border border-gray-200 rounded mb-2 overflow-hidden flex items-center justify-center"
+                          style={{ aspectRatio: '2 / 1', minHeight: '80px' }}
+                          dangerouslySetInnerHTML={{ __html: p.has_cover ? p.svg : '' }}
+                        />
+                        <div className="text-sm font-medium truncate">{p.child_name ?? 'Общая обложка'}</div>
+                        <div className="text-xs text-gray-400 truncate">
+                          {p.cover_name ?? '—'}{p.has_cover ? '' : ' · обложка не назначена'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-2xl max-w-2xl w-full shadow-xl my-auto">
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl">
           <h3 className="text-lg font-semibold">
@@ -3821,6 +3900,22 @@ function AlbumFormModal({
                     </select>
                   )
                 })()}
+
+                {mode === 'edit' && album?.id && (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={loadCoverPreview}
+                      className="btn-secondary text-sm"
+                      disabled={loading}
+                    >
+                      👁 Превью обложки
+                    </button>
+                    <div className="text-xs text-gray-400 mt-1">
+                      Соберёт обложку с реальными ФИО/городом/годом и посчитанным корешком.
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>

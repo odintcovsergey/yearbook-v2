@@ -48,6 +48,9 @@ export type {
 export { loadAlbumCovers } from './load-covers';
 export type { AssembledCoversResult } from './load-covers';
 
+export { buildAlbumCoverPreviews } from './preview-album';
+export type { AlbumCoverPreview, AlbumCoverPreviewResult } from './preview-album';
+
 export { layoutCover } from './layout';
 export type {
   CoverZoneName,

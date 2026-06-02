@@ -3,6 +3,7 @@ import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, type AuthContext } from '@/lib/auth'
 import { ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
 import { renderPreviewSvg } from '@/lib/album-builder/render-preview-svg'
+import { buildAlbumCoverPreviews } from '@/lib/cover/preview-album'
 import { validatePreset } from '@/lib/presets/validate'
 import { buildPresetPreviewBundle } from '@/lib/presets/preview-bundle'
 import { loadBundle } from '@/lib/rule-engine/loaders'
@@ -727,6 +728,23 @@ export async function GET(req: NextRequest) {
   // ----------------------------------------------------------
   // album — данные конкретного альбома (с проверкой доступа)
   // ----------------------------------------------------------
+  // ----------------------------------------------------------
+  // cover_album_preview (Этап обложки) — собранная обложка на альбом:
+  // реальные ФИО/город/год/класс + посчитанный корешок. Read-only.
+  // ----------------------------------------------------------
+  if (action === 'cover_album_preview' && albumId) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    try {
+      const result = await buildAlbumCoverPreviews(supabaseAdmin, albumId)
+      return NextResponse.json(result)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'preview failed'
+      return NextResponse.json({ error: message }, { status: 500 })
+    }
+  }
+
   if (action === 'album' && albumId) {
     if (!(await assertAlbumAccess(auth, albumId, tid))) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
