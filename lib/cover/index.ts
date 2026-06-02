@@ -30,3 +30,20 @@ export {
   computeAlbumSpineWidthMm,
   resolveAlbumSpineWidthMm,
 } from './album-spine';
+
+export {
+  resolveCoverForStudent,
+  fillCoverData,
+  assembleCovers,
+} from './assemble';
+
+export type {
+  CoverStudentInput,
+  CoverChoiceInput,
+  CoverAssemblyConfig,
+  CoverSharedContent,
+  CoverInstance,
+} from './assemble';
+
+export { loadAlbumCovers } from './load-covers';
+export type { AssembledCoversResult } from './load-covers';
