@@ -2910,6 +2910,7 @@ type FormData = {
   /** Для отображения в кнопке — название дизайна выбранного шаблона. */
   section_structure_design_name: string | null
   // ── Обложка (НОВАЯ система, Этап 7 ТЗ обложки). Не путать с cover_mode. ──
+  cover_portrait_charge: string      // 'none'|'different_photo'|'any_portrait' — доплата за портрет на обложке
   cover_layout_mode: string | null   // 'fixed'|'default_editable'|'parent_choice'|null
   cover_default_type: string | null  // 'portrait_photo'|'common_photo'|'design_only'|null
   cover_available_ids: string[]      // какие обложки показывать родителю
@@ -2930,6 +2931,27 @@ const COVER_TYPE_LABEL: Record<string, string> = {
   common_photo: 'Общее фото',
   design_only: 'Дизайн без фото',
 }
+
+// Обложка-объединение (Этап 2): единая настройка доплаты за портрет на обложке
+// (cover_portrait_charge) — но СТАРЫЙ родительский поток ещё живёт на cover_mode
+// (см. app/[token]/page.tsx). Чтобы он работал консистентно, выводим cover_mode
+// из cover_portrait_charge при сохранении, и наоборот при инициализации.
+// none → optional_blind (выбор без цен), different_photo → optional (другое +доплата),
+// any_portrait → required (все платят). Удалим связку на этапе 4 (снос старой системы).
+const CHARGE_TO_COVER_MODE: Record<string, string> = {
+  none: 'optional_blind',
+  different_photo: 'optional',
+  any_portrait: 'required',
+}
+const COVER_MODE_TO_CHARGE: Record<string, string> = {
+  optional_blind: 'none',
+  same: 'none',
+  none: 'none',
+  optional: 'different_photo',
+  required: 'any_portrait',
+}
+const coverModeToCharge = (m: string | null | undefined): string =>
+  (m && COVER_MODE_TO_CHARGE[m]) || 'different_photo'
 
 function emptyForm(): FormData {
   return {
@@ -2959,6 +2981,7 @@ function emptyForm(): FormData {
     section_structure_preset_id: null,
     section_structure_preset_name: null,
     section_structure_design_name: null,
+    cover_portrait_charge: 'different_photo',
     cover_layout_mode: null,
     cover_default_type: null,
     cover_available_ids: [],
@@ -3086,6 +3109,8 @@ function AlbumFormModal({
         section_structure_preset_id: (album as any).section_structure_preset_id ?? null,
         section_structure_preset_name: null,
         section_structure_design_name: null,
+        // cover_portrait_charge: если в БД пусто (старый альбом) — выводим из cover_mode.
+        cover_portrait_charge: (album as any).cover_portrait_charge ?? coverModeToCharge(album.cover_mode),
         cover_layout_mode: (album as any).cover_layout_mode ?? null,
         cover_default_type: (album as any).cover_default_type ?? null,
         cover_available_ids: (album as any).cover_available_ids ?? [],
@@ -3220,6 +3245,7 @@ function AlbumFormModal({
       ...f,
       cover_mode: t.cover_mode,
       cover_price: String(t.cover_price ?? 0),
+      cover_portrait_charge: coverModeToCharge(t.cover_mode),
       group_enabled: t.group_enabled,
       group_min: String(t.group_min),
       group_max: String(t.group_max),
@@ -3299,9 +3325,12 @@ function AlbumFormModal({
       year: parseInt(form.year) || new Date().getFullYear(),
       school_name: form.school_name.trim() || null,
       deadline: form.deadline ? new Date(form.deadline + 'T23:59:59').toISOString() : null,
-      cover_mode: form.cover_mode,
+      // cover_mode выводим из единой настройки cover_portrait_charge, чтобы
+      // живой старый родительский поток ([token]) работал консистентно.
+      cover_mode: CHARGE_TO_COVER_MODE[form.cover_portrait_charge] ?? form.cover_mode,
       cover_price: parseInt(form.cover_price) || 0,
       // Обложка (НОВАЯ система, Этап 7 ТЗ обложки).
+      cover_portrait_charge: form.cover_portrait_charge,
       cover_layout_mode: form.cover_layout_mode,
       cover_default_type: form.cover_default_type,
       cover_available_ids: form.cover_available_ids,
@@ -3730,61 +3759,22 @@ function AlbumFormModal({
               через старый движок buildAlbum), но новые альбомы её
               больше не заполняют. */}
 
-          {/* Обложка */}
-          <div className="border-t-2 border-gray-200 pt-5 mt-1">
-            <p className="text-sm font-semibold text-blue-700 mb-2">Обложка <span className="font-normal text-gray-400 text-xs">(второе портретное фото)</span></p>
-            <div className="flex flex-wrap gap-2 mb-3">
-              {[
-                { v: 'required', l: 'Обязательна (все платят)' },
-                { v: 'optional', l: 'На выбор (+ доплата)' },
-                { v: 'optional_blind', l: 'На выбор (без цен)' },
-              ].map(({ v, l }) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => set('cover_mode', v)}
-                  className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${
-                    form.cover_mode === v
-                      ? 'border-gray-900 bg-gray-900 text-white'
-                      : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                  }`}
-                  disabled={loading}
-                >
-                  {l}
-                </button>
-              ))}
-            </div>
-            {(form.cover_mode === 'optional' || form.cover_mode === 'optional_blind') && (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Доплата за другое фото на обложку (₽)
-                </label>
-                <input
-                  type="number"
-                  value={form.cover_price}
-                  onChange={(e) => set('cover_price', e.target.value)}
-                  className="input"
-                  min={0}
-                  disabled={loading}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Обложка альбома (твёрдый переплёт) — НОВАЯ система (Этап 7) */}
+          {/* Обложка альбома — ЕДИНАЯ система (объединение, Этап 2).
+              Один раздел: (1) кто выбирает обложку + галерея,
+              (2) портрет на обложке + доплата (бывший блок «второе фото»). */}
           <div className="border-t-2 border-gray-200 pt-5 mt-1">
             <p className="text-sm font-semibold text-blue-700 mb-1">
               Обложка альбома <span className="font-normal text-gray-400 text-xs">(твёрдый переплёт)</span>
             </p>
-            <p className="text-xs text-gray-400 mb-3">
-              Кто выбирает обложку и какая стоит по умолчанию. Деньги (если докупают персонализацию) считаются вне системы.
+            <p className="text-xs text-gray-400 mb-4">
+              Какая обложка у альбома, кто её выбирает и доплата за портрет на обложке. Деньги считаются вне системы.
             </p>
 
             <label className="block text-xs text-gray-500 mb-1">Кто выбирает обложку</label>
             <div className="flex flex-wrap gap-2 mb-3">
               {[
                 { v: '', l: 'Не настраивать' },
-                { v: 'fixed', l: 'Партнёр (жёстко)' },
+                { v: 'fixed', l: 'Партнёр фиксирует одну' },
                 { v: 'default_editable', l: 'Дефолт, родитель может сменить' },
                 { v: 'parent_choice', l: 'Родитель выбирает' },
               ].map(({ v, l }) => (
@@ -3830,7 +3820,7 @@ function AlbumFormModal({
                 </label>
                 {coverLibrary.length === 0 ? (
                   <div className="text-xs text-gray-400 mb-3">
-                    Библиотека обложек пуста. Загрузите обложки в супер-админке (📕 Обложки).
+                    Обложки ещё не загружены — раздел заработает после загрузки (📕 Обложки в супер-админке).
                   </div>
                 ) : (
                   <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2">
@@ -3918,6 +3908,64 @@ function AlbumFormModal({
                 )}
               </>
             )}
+
+            {/* ── Портрет на обложке: доплата (бывший блок «второе фото»). ──
+                Показываем когда обложка ещё не настроена (живёт старый поток
+                родителя) ИЛИ когда среди обложек есть портретная. */}
+            {(() => {
+              const newActive = !!form.cover_layout_mode && form.cover_available_ids.length > 0
+              const portraitInAvail = form.cover_available_ids.some(
+                (id) => coverLibrary.find((c) => c.id === id)?.cover_type === 'portrait_photo'
+              )
+              const show = !newActive || form.cover_default_type === 'portrait_photo' || portraitInAvail
+              if (!show) return null
+              return (
+                <div className="border-t border-gray-100 pt-4 mt-4">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Портрет на обложке</label>
+                  <p className="text-xs text-gray-400 mb-2">
+                    Когда брать доплату, если на обложке портрет ученика.
+                  </p>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {[
+                      { v: 'none', l: 'Бесплатно' },
+                      { v: 'different_photo', l: 'Только за другое фото' },
+                      { v: 'any_portrait', l: 'За любой портрет' },
+                    ].map(({ v, l }) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => set('cover_portrait_charge', v)}
+                        className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${
+                          form.cover_portrait_charge === v
+                            ? 'border-gray-900 bg-gray-900 text-white'
+                            : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                        }`}
+                        disabled={loading}
+                      >
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                  {form.cover_portrait_charge !== 'none' && (
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">
+                        {form.cover_portrait_charge === 'any_portrait'
+                          ? 'Доплата за портрет на обложке (₽)'
+                          : 'Доплата за другое фото на обложку (₽)'}
+                      </label>
+                      <input
+                        type="number"
+                        value={form.cover_price}
+                        onChange={(e) => set('cover_price', e.target.value)}
+                        className="input"
+                        min={0}
+                        disabled={loading}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </div>
 
           {/* Групповые фото */}

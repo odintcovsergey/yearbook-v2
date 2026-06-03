@@ -4228,6 +4228,7 @@ export async function POST(req: NextRequest) {
         cover_mode: body.cover_mode ?? 'none',
         cover_price: body.cover_price ?? 0,
         // Обложка (НОВАЯ система, Этап 7 ТЗ обложки). Не путать с cover_mode/price.
+        cover_portrait_charge: body.cover_portrait_charge ?? null,
         cover_layout_mode: body.cover_layout_mode ?? null,
         cover_default_type: body.cover_default_type ?? null,
         cover_available_ids: Array.isArray(body.cover_available_ids) ? body.cover_available_ids : [],
@@ -4395,6 +4396,7 @@ export async function POST(req: NextRequest) {
       classes: sourceAlbum.classes ?? [],
       cover_mode: sourceAlbum.cover_mode ?? 'none',
       cover_price: sourceAlbum.cover_price ?? 0,
+      cover_portrait_charge: sourceAlbum.cover_portrait_charge ?? null,
       deadline: sourceAlbum.deadline ?? null,
       group_enabled: sourceAlbum.group_enabled ?? true,
       group_min: sourceAlbum.group_min ?? 2,
@@ -5057,6 +5059,7 @@ export async function POST(req: NextRequest) {
       'referral_program_id',   // Реферальная программа заказа (uuid|null).
                                 // Что показывать родителям на «Спасибо»/лендинге.
       // Обложка (НОВАЯ система, Этап 7 ТЗ обложки). Не путать с cover_mode/price.
+      'cover_portrait_charge', // 'none'|'different_photo'|'any_portrait'|null — доплата за портрет на обложке
       'cover_layout_mode',     // 'fixed'|'default_editable'|'parent_choice'|null
       'cover_default_type',    // 'portrait_photo'|'common_photo'|'design_only'|null
       'cover_available_ids',   // uuid[] — какие обложки показывать родителю
