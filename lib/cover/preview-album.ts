@@ -31,7 +31,7 @@ export type AlbumCoverPreviewResult = {
   warnings: string[];
 };
 
-type CoverMasterRow = {
+export type CoverMasterRow = {
   id: string;
   placeholders: Placeholder[] | null;
   back_width_mm: number | null;
@@ -75,14 +75,18 @@ export async function buildAlbumCoverPreviews(
       cover_name: inst.cover_name,
       cover_type: inst.cover_type,
       has_cover: !!master,
-      svg: master ? renderMaster(master, assembled.spine_width_mm, inst.data) : '',
+      svg: master ? renderCoverMasterSvg(master, assembled.spine_width_mm, inst.data) : '',
     };
   });
 
   return { previews, spine_width_mm: assembled.spine_width_mm, warnings: assembled.warnings };
 }
 
-function renderMaster(
+/**
+ * Рендерит SVG-превью одного cover-мастера (геометрия + плавающий корешок +
+ * данные/заглушки). Переиспользуется родительской галереей обложек (Этап 3).
+ */
+export function renderCoverMasterSvg(
   m: CoverMasterRow,
   realSpineMm: number | null,
   data: Record<string, string | null>,

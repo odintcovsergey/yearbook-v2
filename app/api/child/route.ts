@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
+import { buildCoverGallery } from '@/lib/cover/parent-gallery'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
 
   const { data: album } = await supabaseAdmin
     .from('albums')
-    .select('id, title, tenant_id, cover_mode, cover_price, deadline, group_enabled, group_min, group_max, group_exclusive, text_enabled, text_max_chars, text_type, text_assist_enabled, personal_spread_enabled, personal_spread_price, personal_spread_min, personal_spread_max, referral_program_id')
+    .select('id, title, tenant_id, cover_mode, cover_price, cover_portrait_charge, cover_layout_mode, cover_default_type, cover_available_ids, deadline, group_enabled, group_min, group_max, group_exclusive, text_enabled, text_max_chars, text_type, text_assist_enabled, personal_spread_enabled, personal_spread_price, personal_spread_min, personal_spread_max, referral_program_id')
     .eq('id', child.album_id)
     .single()
 
@@ -126,12 +127,17 @@ export async function GET(req: NextRequest) {
     locked: album?.group_exclusive !== false && groupLockedByOther.has(p.id),
   }))
 
-  const [existingSelections, existingContact, existingText, existingCover] = await Promise.all([
+  const [existingSelections, existingContact, existingText, existingCover, existingCoverChoice] = await Promise.all([
     supabaseAdmin.from('selections').select('photo_id, selection_type').eq('child_id', child.id),
     supabaseAdmin.from('parent_contacts').select('parent_name, phone, referral').eq('child_id', child.id).maybeSingle(),
     supabaseAdmin.from('student_texts').select('text').eq('child_id', child.id).maybeSingle(),
     supabaseAdmin.from('cover_selections').select('cover_option, photo_id, surcharge').eq('child_id', child.id).maybeSingle(),
+    // НОВАЯ система: выбор обложки (cover_choices). Используется если галерея активна.
+    supabaseAdmin.from('cover_choices').select('cover_id, cover_type, photo_option, surcharge').eq('child_id', child.id).maybeSingle(),
   ])
+
+  // Галерея обложек для родителя (НОВАЯ система). active=false → старый поток.
+  const coverGallery = await buildCoverGallery(supabaseAdmin, child.album_id, child.id)
 
   // Загружаем цитаты если это альбом 9-11 класса
   let quotes: any[] = []
@@ -164,11 +170,13 @@ export async function GET(req: NextRequest) {
     child, album, tenant, portraits, groups, referralProgram, referral: existingContact.data?.referral ?? null,
     quotes, takenQuoteIds,
     selectedQuoteId: myQuote.data?.quote_id ?? null,
+    coverGallery,
     existing: {
       selections: existingSelections.data ?? [],
       contact: existingContact.data,
       text: existingText.data?.text ?? '',
       cover: existingCover.data,
+      coverChoice: existingCoverChoice.data,
     },
   })
 }

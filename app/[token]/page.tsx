@@ -97,6 +97,12 @@ export default function ParentPage() {
   const [portraitPage, setPortraitPage] = useState<string | null>(null)
   const [coverOption, setCoverOption] = useState<'none' | 'same' | 'other'>('none')
   const [portraitCover, setPortraitCover] = useState<string | null>(null)
+  // Обложка — НОВАЯ система (объединение, Этап 3). Галерея активна, когда
+  // партнёр настроил обложку и выбрал доступные варианты; иначе старый поток.
+  type CoverGalleryItem = { id: string; name: string; cover_type: 'portrait_photo' | 'common_photo' | 'design_only'; gender_hint: string | null; variant_label: string | null; svg: string }
+  type CoverGallery = { active: boolean; layout_mode: string | null; default_type: string | null; default_cover_id: string | null; portrait_charge: string | null; price: number; items: CoverGalleryItem[] }
+  const [coverGallery, setCoverGallery] = useState<CoverGallery | null>(null)
+  const [coverChoiceId, setCoverChoiceId] = useState<string | null>(null)
   const [studentText, setStudentText] = useState('')
   const [groupPhotos, setGroupPhotos] = useState<string[]>([])
 
@@ -232,11 +238,25 @@ export default function ParentPage() {
           setTenantFooterText(data.tenant.settings?.footer_text ?? '')
         }
 
+        // НОВАЯ система обложки: галерея + выбор. Если активна — родитель
+        // выбирает обложку из галереи; иначе работает старый поток (cover_mode).
+        const gallery = data.coverGallery ?? null
+        setCoverGallery(gallery)
+        if (gallery?.active) {
+          const ch = data.existing?.coverChoice
+          setCoverChoiceId(ch?.cover_id ?? gallery.default_cover_id ?? null)
+          // Для портретной обложки дефолт фото — «то же».
+          const chosen = gallery.items.find((i: CoverGalleryItem) => i.id === (ch?.cover_id ?? gallery.default_cover_id))
+          if (chosen?.cover_type === 'portrait_photo') setCoverOption(ch?.photo_option === 'other' ? 'other' : 'same')
+          else setCoverOption('none')
+        }
+
         const ex = data.existing
         if (ex.contact) { setParentName(ex.contact.parent_name); setPhone(ex.contact.phone) }
         if (ex.referral) setReferral(ex.referral)
         if (ex.text) setStudentText(ex.text)
-        if (ex.cover) { setCoverOption(ex.cover.cover_option); setPortraitCover(ex.cover.photo_id) }
+        if (ex.cover && !gallery?.active) { setCoverOption(ex.cover.cover_option); setPortraitCover(ex.cover.photo_id) }
+        if (ex.cover?.photo_id) setPortraitCover(ex.cover.photo_id)
         const pg = ex.selections.find((s: any) => s.selection_type === 'portrait_page')
         if (pg) setPortraitPage(pg.photo_id)
         const gr = ex.selections.filter((s: any) => s.selection_type === 'group').map((s: any) => s.photo_id)
@@ -362,7 +382,12 @@ export default function ParentPage() {
     const res = await fetch('/api/select', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, parentName, phone, portraitPage, coverOption, portraitCover, studentText, groupPhotos }),
+      body: JSON.stringify({
+        token, parentName, phone, portraitPage, coverOption, portraitCover, studentText, groupPhotos,
+        // НОВАЯ система: выбранная обложка из галереи (если активна).
+        coverId: coverGallery?.active ? coverChoiceId : undefined,
+        coverType: coverGallery?.active ? (coverGallery.items.find(i => i.id === coverChoiceId)?.cover_type ?? null) : undefined,
+      }),
     })
     const data = await res.json()
     setSaving(false)
@@ -378,7 +403,7 @@ export default function ParentPage() {
     setStep(6)
   }
 
-  const effectiveSteps = STEPS.filter(s => !(s.id === 2 && coverMode === 'none') && !(s.id === 4 && !groupEnabled) && !(s.id === 3 && !textEnabled) && !(s.id === 7 && !personalSpreadEnabled))
+  const effectiveSteps = STEPS.filter(s => !(s.id === 2 && coverMode === 'none' && !coverGallery?.active) && !(s.id === 4 && !groupEnabled) && !(s.id === 3 && !textEnabled) && !(s.id === 7 && !personalSpreadEnabled))
   const totalSteps = effectiveSteps.length
   const currentIdx = effectiveSteps.findIndex(s => s.id === step)
   const progress = ((currentIdx + 1) / totalSteps) * 100
@@ -583,7 +608,7 @@ export default function ParentPage() {
           </div>
         )}
 
-        {step === 2 && coverMode !== 'none' && (
+        {step === 2 && coverMode !== 'none' && !coverGallery?.active && (
           <StepCard wide
             title={coverMode === 'required' ? 'Выберите второй портрет на обложку' : 'Портрет для обложки'}
             subtitle={coverMode === 'required'
@@ -628,7 +653,7 @@ export default function ParentPage() {
             </div>
           </StepCard>
         )}
-        {step === 2 && coverMode !== 'none' && (
+        {step === 2 && coverMode !== 'none' && !coverGallery?.active && (
           <div className="sticky bottom-0 z-20 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
             {coverOption === 'other' && portraitCover && (() => { const p = portraits.find(ph => ph.id === portraitCover); return p ? (
               <div className="flex items-center gap-3 mb-3">
@@ -638,6 +663,113 @@ export default function ParentPage() {
             ) : null })()}
             <div className="flex justify-end">
               <button className="btn-primary px-8" onClick={goNext} disabled={coverOption === 'other' && !portraitCover}>Далее →</button>
+            </div>
+          </div>
+        )}
+
+        {/* НОВАЯ система обложки — выбор обложки из галереи (объединение, Этап 3) */}
+        {step === 2 && coverGallery?.active && (() => {
+          const g = coverGallery
+          const fixed = g.layout_mode === 'fixed'
+          const selected = g.items.find(i => i.id === coverChoiceId) ?? null
+          const isPortrait = selected?.cover_type === 'portrait_photo'
+          const charge = g.portrait_charge
+          const price = g.price ?? 0
+          const portraitCostsAlways = charge === 'any_portrait' && price > 0
+          const otherCosts = charge === 'different_photo' && price > 0
+          const pickCover = (item: CoverGalleryItem) => {
+            setCoverChoiceId(item.id)
+            if (item.cover_type !== 'portrait_photo') setCoverOption('none')
+            else if (coverOption === 'none') setCoverOption('same')
+          }
+          return (
+            <StepCard wide
+              title={fixed ? 'Обложка вашего альбома' : 'Выберите обложку'}
+              subtitle={fixed ? 'Обложку выбрал организатор' : 'Какая обложка вам нравится'}>
+
+              <div className={`grid gap-3 mb-6 ${fixed ? 'grid-cols-1 max-w-xs' : 'grid-cols-2 sm:grid-cols-3'}`}>
+                {(fixed ? g.items.filter(i => i.id === coverChoiceId) : g.items).map(item => {
+                  const active = item.id === coverChoiceId
+                  const portraitFee = item.cover_type === 'portrait_photo' && portraitCostsAlways
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => !fixed && pickCover(item)}
+                      className={`text-left rounded-xl border-2 p-2 transition-colors ${
+                        active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      } ${fixed ? 'cursor-default' : ''}`}
+                    >
+                      <div
+                        className="flex items-center justify-center bg-white rounded-lg overflow-hidden h-28 mb-2 [&>svg]:max-h-full [&>svg]:max-w-full"
+                        dangerouslySetInnerHTML={{ __html: item.svg }}
+                      />
+                      <div className="text-sm font-medium text-gray-800 truncate">{item.name}</div>
+                      <div className="text-xs text-gray-400">
+                        {item.cover_type === 'portrait_photo' ? 'С портретом' : item.cover_type === 'common_photo' ? 'Общее фото' : 'Дизайн'}
+                        {item.variant_label ? ` · ${item.variant_label}` : ''}
+                        {portraitFee ? ` · +${price} ₽` : ''}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Под-шаг: какое фото на портретной обложке */}
+              {isPortrait && (
+                <div className="border-t border-gray-100 pt-5">
+                  <p className="text-sm font-medium text-gray-700 mb-3">
+                    Какое фото на обложку{portraitCostsAlways ? ` · + ${price} ₽` : ''}
+                  </p>
+                  <div className="space-y-3 mb-4">
+                    <RadioCard active={coverOption === 'same'} onClick={() => setCoverOption('same')} label="Тот же портрет что на странице" sub={portraitCostsAlways ? `+ ${price} ₽` : 'Бесплатно'} paid={portraitCostsAlways} />
+                    {portraits.length > 1 && (
+                      <RadioCard active={coverOption === 'other'} onClick={() => setCoverOption('other')} label="Другое фото на обложку" sub={otherCosts || portraitCostsAlways ? `+ ${price} ₽` : 'Бесплатно'} paid={otherCosts || portraitCostsAlways} />
+                    )}
+                  </div>
+                  {coverOption === 'other' && (
+                    <div className="mb-2">
+                      <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitCover ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
+                        {portraitCover ? '✅ Фото для обложки выбрано — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать его для обложки'}
+                      </div>
+                      <PhotoGrid
+                        photos={portraits.map(p => p.id === portraitPage ? {...p, locked: true} : p)}
+                        selected={portraitCover ? [portraitCover] : []}
+                        limit={1}
+                        onToggle={(id) => { if (id !== portraitPage) setPortraitCover(prev => prev === id ? null : id) }}
+                        onLightbox={(idx) => {
+                          const available = portraits.map(p => p.id === portraitPage ? {...p, locked: true} : p)
+                          setLightbox({
+                            photos: available,
+                            index: idx,
+                            onSelect: (id) => { if (id !== portraitPage) setPortraitCover(prev => prev === id ? null : id) },
+                          })
+                        }}
+                        small
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <button className="btn-ghost" onClick={goPrev}>← Назад</button>
+              </div>
+            </StepCard>
+          )
+        })()}
+        {step === 2 && coverGallery?.active && (
+          <div className="sticky bottom-0 z-20 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
+            <div className="flex justify-end">
+              <button
+                className="btn-primary px-8"
+                onClick={goNext}
+                disabled={
+                  !coverChoiceId ||
+                  (coverGallery.items.find(i => i.id === coverChoiceId)?.cover_type === 'portrait_photo'
+                    && coverOption === 'other' && !portraitCover)
+                }
+              >Далее →</button>
             </div>
           </div>
         )}

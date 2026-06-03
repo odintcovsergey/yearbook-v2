@@ -92,7 +92,7 @@ export async function PUT(req: NextRequest) {
 // POST /api/select — финальное сохранение всего выбора
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { token, parentName, phone, portraitPage, coverOption, portraitCover, studentText, groupPhotos, referral } = body
+  const { token, parentName, phone, portraitPage, coverOption, portraitCover, studentText, groupPhotos, referral, coverId, coverType } = body
 
   if (!token) return NextResponse.json({ error: 'Токен не указан' }, { status: 400 })
 
@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
   // Получить данные альбома для валидации и расчёта
   const { data: album } = await supabaseAdmin
     .from('albums')
-    .select('cover_mode, cover_price, group_enabled, group_min, group_max, group_exclusive, text_enabled')
+    .select('cover_mode, cover_price, cover_portrait_charge, group_enabled, group_min, group_max, group_exclusive, text_enabled')
     .eq('id', child.album_id).single()
 
   // Валидация
@@ -126,8 +126,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Доплата за портрет на обложке.
+  // НОВАЯ система (выбрана обложка из галереи, coverId задан): правило из
+  // album.cover_portrait_charge. СТАРАЯ (coverId нет): доплата за «другое фото».
+  const price = album?.cover_price ?? 0
   let surcharge = 0
-  if (coverOption === 'other') surcharge = album?.cover_price ?? 0
+  if (coverId) {
+    if (coverType === 'portrait_photo') {
+      const charge = (album as any)?.cover_portrait_charge
+      if (charge === 'any_portrait') surcharge = price
+      else if (charge === 'different_photo' && coverOption === 'other') surcharge = price
+    }
+  } else if (coverOption === 'other') {
+    surcharge = price
+  }
 
   // Проверить что групповые фото не заняты другими (финальная проверка, только если exclusive)
   for (const photoId of (album?.group_exclusive !== false ? groupPhotos : [])) {
@@ -158,11 +170,30 @@ export async function POST(req: NextRequest) {
     { onConflict: 'child_id' }
   )
 
-  // 3. Выбор обложки
+  // 3. Выбор обложки.
+  // cover_selections (СТАРАЯ) пишем всегда — на ней живёт CRM/PDF до этапа 4.
   await supabaseAdmin.from('cover_selections').upsert(
     { child_id: childId, cover_option: coverOption ?? 'none', photo_id: portraitCover ?? null, surcharge },
     { onConflict: 'child_id' }
   )
+  // cover_choices (НОВАЯ) — только когда родитель выбрал обложку из галереи.
+  // photo_option хранит «то же/другое» для портретной обложки.
+  if (coverId) {
+    const photoOption = coverType === 'portrait_photo'
+      ? (coverOption === 'other' ? 'other' : 'same')
+      : null
+    await supabaseAdmin.from('cover_choices').upsert(
+      {
+        child_id: childId,
+        cover_id: coverId,
+        cover_type: coverType ?? null,
+        photo_option: photoOption,
+        surcharge,
+        paid_personalization: surcharge > 0,
+      },
+      { onConflict: 'child_id' }
+    )
+  }
 
   // 4. Выборы фото — сначала удаляем старые
   await supabaseAdmin.from('selections').delete().eq('child_id', childId)
