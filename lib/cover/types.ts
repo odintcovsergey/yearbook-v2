@@ -37,6 +37,27 @@ export type CoverLayoutMode = 'fixed' | 'default_editable' | 'parent_choice';
 export type CoverGenderHint = 'neutral' | 'boys' | 'girls';
 
 /**
+ * Когда брать доплату за портрет на обложке (НОВАЯ система,
+ * albums.cover_portrait_charge). Заменяет смысловую роль старого cover_mode
+ * в части денег и покрывает оба реальных случая партнёров. Сумма доплаты —
+ * в albums.cover_price (не дублируется).
+ * - `none`            — портрет на обложке бесплатен всегда.
+ * - `different_photo` — тот же портрет, что внутри, бесплатно; другое фото
+ *                       за доплату (старый cover_mode='optional').
+ * - `any_portrait`    — любой портрет на обложке платный (старый
+ *                       cover_mode='required', «все платят»).
+ */
+export type CoverPortraitCharge = 'none' | 'different_photo' | 'any_portrait';
+
+/**
+ * Какой портрет родитель выбрал на обложку (cover_choices.photo_option).
+ * Само фото хранится в selections (selection_type='portrait_cover').
+ * - `same`  — тот же портрет, что на странице.
+ * - `other` — другое фото (может стоить доплату по cover_portrait_charge).
+ */
+export type CoverPhotoOption = 'same' | 'other';
+
+/**
  * Канонические метки плейсхолдеров обложки (Script Labels из IDML).
  * Декор привязывается теми же суффиксами __over/__under (механизм уже есть).
  */
@@ -137,5 +158,12 @@ export type CoverChoice = {
   cover_id: string | null;
   /** Метка «родитель захотел докупить персонализацию». Деньги — вне системы. */
   paid_personalization: boolean;
+  /**
+   * Какой портрет на обложке (для cover_type='portrait_photo'). Само фото —
+   * в selections (selection_type='portrait_cover'). NULL для не-портретных.
+   */
+  photo_option: CoverPhotoOption | null;
+  /** Зафиксированная доплата (₽) на момент заказа. Snapshot albums.cover_price. */
+  surcharge: number;
   created_at: string;
 };
