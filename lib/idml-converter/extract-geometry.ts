@@ -393,7 +393,11 @@ export function extractTextGlow(
   const size = Number(sizeRaw);
   if (!Number.isFinite(size) || size <= 0) return {};
 
-  const color = resolver.resolveColorRef(getAttr(glow, 'EffectColor')) ?? '#000000';
+  // Цвет свечения: InDesign в разных версиях пишет его как EffectColor либо
+  // GlowColor (свотч-ссылка вида Color/...). Берём что есть; если ни того ни
+  // другого — дефолтный чёрный (так свечение выглядит в самом InDesign).
+  const colorRef = getAttr(glow, 'EffectColor') ?? getAttr(glow, 'GlowColor');
+  const color = resolver.resolveColorRef(colorRef) ?? '#000000';
   return { text_glow_color: color, text_glow_blur_pt: size };
 }
 
