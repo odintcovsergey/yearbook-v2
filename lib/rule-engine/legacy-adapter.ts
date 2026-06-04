@@ -8,8 +8,8 @@
  *   - legacy.common_photos.half → rules.common_photos.half_class
  *     (исторически legacy использовал короткое 'half', spec rule engine
  *     стандартизировал 'half_class')
- *   - legacy имеет CommonPhotos.collage (DEPRECATED), у rules его нет.
- *     Не маппим (если есть данные — уже мигрированы в sixth до smart-fill).
+ *   - legacy.common_photos.collage → rules.common_photos.collage
+ *     (04.06.2026: collage разведён с sixth, см. tz-sixth-collage-split.md).
  *   - legacy students имеют больше полей (template_set_id зависимый
  *     student.text, secondary_portraits), но rules.RulesStudentInput
  *     совместима по подмножеству (full_name, portrait, quote, friend_photos).
@@ -63,6 +63,7 @@ export function adaptLegacyAlbumInput(legacy: AlbumInput): RulesAlbumInput {
     spread: legacy.common_photos.spread,
     quarter: legacy.common_photos.quarter,
     sixth: legacy.common_photos.sixth,
+    collage: legacy.common_photos.collage,
   };
 
   return {

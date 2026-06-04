@@ -28,6 +28,7 @@ const empty: CommonPhotoCounts = {
   half_class: 0,
   quarter: 0,
   sixth: 0,
+  collage: 0,
 };
 
 const all: CommonPhotoCounts = {
@@ -35,6 +36,7 @@ const all: CommonPhotoCounts = {
   half_class: 5,
   quarter: 5,
   sixth: 12,
+  collage: 0,
 };
 
 // ─── H ──────────────────────────────────────────────────────────────────────
@@ -103,17 +105,17 @@ describe('slot-chains: FULL (общее фото)', () => {
 describe('slot-chains: flex_A (крупный приоритет)', () => {
   it('priority 1: J-Collage когда sixth >= 6', () => {
     const r = tryFillFlexA(
-      { full_class: 1, half_class: 2, quarter: 0, sixth: 6 },
+      { full_class: 1, half_class: 2, quarter: 0, sixth: 6, collage: 0 },
       'left',
     );
-    expect(r!.master_name).toBe('J-Collage-6');
+    expect(r!.master_name).toBe('J-Sixth-6');
     expect(r!.consumes).toEqual({ sixth: 6 });
-    expect(r!.trace).toBe('flex_A → J-Collage-6 (6 sixth)');
+    expect(r!.trace).toBe('flex_A → J-Sixth-6 (6 sixth)');
   });
 
   it('priority 2: J-Half когда sixth < 6 но half_class >= 2', () => {
     const r = tryFillFlexA(
-      { full_class: 1, half_class: 2, quarter: 0, sixth: 5 },
+      { full_class: 1, half_class: 2, quarter: 0, sixth: 5, collage: 0 },
       'left',
     );
     expect(r!.master_name).toBe('J-Half');
@@ -121,7 +123,7 @@ describe('slot-chains: flex_A (крупный приоритет)', () => {
 
   it('priority 3: J-ClassPhoto когда нет sixth/half но есть full', () => {
     const r = tryFillFlexA(
-      { full_class: 1, half_class: 1, quarter: 0, sixth: 5 },
+      { full_class: 1, half_class: 1, quarter: 0, sixth: 5, collage: 0 },
       'left',
     );
     expect(r!.master_name).toBe('J-Full');
@@ -129,7 +131,7 @@ describe('slot-chains: flex_A (крупный приоритет)', () => {
 
   it('priority 3 на right: J-ClassPhoto-Right', () => {
     const r = tryFillFlexA(
-      { full_class: 1, half_class: 1, quarter: 0, sixth: 5 },
+      { full_class: 1, half_class: 1, quarter: 0, sixth: 5, collage: 0 },
       'right',
     );
     expect(r!.master_name).toBe('J-Full');
@@ -141,7 +143,7 @@ describe('slot-chains: flex_A (крупный приоритет)', () => {
 
   it('quarter игнорируется в flex_A (шага нет)', () => {
     const r = tryFillFlexA(
-      { full_class: 0, half_class: 0, quarter: 10, sixth: 0 },
+      { full_class: 0, half_class: 0, quarter: 10, sixth: 0, collage: 0 },
       'left',
     );
     expect(r).toBeNull();
@@ -159,15 +161,15 @@ describe('slot-chains: flex_B (всё попробовать)', () => {
 
   it('priority 2: J-Collage когда quarter < 2 но sixth >= 6', () => {
     const r = tryFillFlexB(
-      { full_class: 1, half_class: 2, quarter: 1, sixth: 6 },
+      { full_class: 1, half_class: 2, quarter: 1, sixth: 6, collage: 0 },
       'left',
     );
-    expect(r!.master_name).toBe('J-Collage-6');
+    expect(r!.master_name).toBe('J-Sixth-6');
   });
 
   it('priority 3: J-Half когда quarter/sixth малы но half_class >= 2', () => {
     const r = tryFillFlexB(
-      { full_class: 1, half_class: 2, quarter: 0, sixth: 5 },
+      { full_class: 1, half_class: 2, quarter: 0, sixth: 5, collage: 0 },
       'left',
     );
     expect(r!.master_name).toBe('J-Half');
@@ -175,7 +177,7 @@ describe('slot-chains: flex_B (всё попробовать)', () => {
 
   it('priority 4: J-ClassPhoto в конце цепочки', () => {
     const r = tryFillFlexB(
-      { full_class: 1, half_class: 1, quarter: 1, sixth: 5 },
+      { full_class: 1, half_class: 1, quarter: 1, sixth: 5, collage: 0 },
       'left',
     );
     expect(r!.master_name).toBe('J-Full');
@@ -183,7 +185,7 @@ describe('slot-chains: flex_B (всё попробовать)', () => {
 
   it('priority 4 на right: J-ClassPhoto-Right', () => {
     const r = tryFillFlexB(
-      { full_class: 1, half_class: 1, quarter: 1, sixth: 5 },
+      { full_class: 1, half_class: 1, quarter: 1, sixth: 5, collage: 0 },
       'right',
     );
     expect(r!.master_name).toBe('J-Full');
@@ -199,7 +201,7 @@ describe('slot-chains: flex_B (всё попробовать)', () => {
 describe('slot-chains: flex_C (правая нечётная)', () => {
   it('priority 1: J-Half — half перед collage (в отличие от flex_A)', () => {
     const r = tryFillFlexC(
-      { full_class: 1, half_class: 2, quarter: 0, sixth: 6 },
+      { full_class: 1, half_class: 2, quarter: 0, sixth: 6, collage: 0 },
       'right',
     );
     expect(r!.master_name).toBe('J-Half');
@@ -208,15 +210,15 @@ describe('slot-chains: flex_C (правая нечётная)', () => {
 
   it('priority 2: J-Collage когда half < 2 но sixth >= 6', () => {
     const r = tryFillFlexC(
-      { full_class: 1, half_class: 1, quarter: 0, sixth: 6 },
+      { full_class: 1, half_class: 1, quarter: 0, sixth: 6, collage: 0 },
       'right',
     );
-    expect(r!.master_name).toBe('J-Collage-6');
+    expect(r!.master_name).toBe('J-Sixth-6');
   });
 
   it('priority 3: J-ClassPhoto-Right на position=right', () => {
     const r = tryFillFlexC(
-      { full_class: 1, half_class: 1, quarter: 0, sixth: 5 },
+      { full_class: 1, half_class: 1, quarter: 0, sixth: 5, collage: 0 },
       'right',
     );
     expect(r!.master_name).toBe('J-Full');
@@ -224,7 +226,7 @@ describe('slot-chains: flex_C (правая нечётная)', () => {
 
   it('priority 3: J-ClassPhoto-Right ДАЖЕ на position=left (слот всегда правый)', () => {
     const r = tryFillFlexC(
-      { full_class: 1, half_class: 1, quarter: 0, sixth: 5 },
+      { full_class: 1, half_class: 1, quarter: 0, sixth: 5, collage: 0 },
       'left',
     );
     expect(r!.master_name).toBe('J-Full');
@@ -249,8 +251,8 @@ describe('slot-chains: tryFillSlot диспетчер', () => {
       tryFillSlot('FULL', { ...empty, full_class: 1 }, 'right')!.master_name,
     ).toBe('J-Full');
     expect(
-      tryFillSlot('flex_A', { ...empty, sixth: 6 }, 'left')!.master_name,
-    ).toBe('J-Collage-6');
+      tryFillSlot('flex_A', { ...empty, sixth: 6, collage: 0 }, 'left')!.master_name,
+    ).toBe('J-Sixth-6');
     expect(
       tryFillSlot('flex_B', { ...empty, quarter: 2 }, 'left')!.master_name,
     ).toBe('J-Quarter-Left');

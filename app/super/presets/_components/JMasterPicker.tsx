@@ -19,7 +19,7 @@ const AlbumSpreadCanvas = dynamic(
 //     Фильтр гибридный (решение Q1 в spec'е РЭ.32):
 //       - page_role === 'common'  ИЛИ
 //       - placeholders содержит classphotoframe / halfphoto_* / quarterphoto_*
-//         / collagephoto_* / spreadphoto (анализ как страховка)
+//         / sixthphoto_* / collagephoto_* / spreadphoto (анализ как страховка)
 //   - Скрывает -Right варианты зеркальных мастеров (решение Q7). При сборке
 //     engine сам подставит -Right если страница на правой позиции.
 //   - Группирует по «вместимости» (что внутри): 1 общая / 2 половины / 4
@@ -28,7 +28,7 @@ const AlbumSpreadCanvas = dynamic(
 // Превью каждого мастера рисуется через AlbumSpreadCanvas с пустым
 // instance (data={}).
 
-type Capacity = 'full' | 'half' | 'quarter' | 'sixth' | 'collage4' | 'spread' | 'other'
+type Capacity = 'full' | 'half' | 'quarter' | 'sixth' | 'collage' | 'spread' | 'other'
 
 type Props = {
   templates: SpreadTemplate[]
@@ -46,13 +46,13 @@ const CAPACITY_LABELS: Record<Capacity, string> = {
   // 'четверти 4' — путало партнёра, который думал что 4 фото на ОДНОЙ
   // странице.
   quarter: '2 фото по 1/4',
-  collage4: '4 коллажа',
-  sixth: '6 фото по 1/6 (коллаж)',
+  collage: 'Коллаж',
+  sixth: '6 фото по 1/6 класса',
   spread: 'На разворот',
   other: 'Прочее',
 }
 
-const CAPACITY_ORDER: Capacity[] = ['full', 'half', 'quarter', 'collage4', 'sixth', 'spread', 'other']
+const CAPACITY_ORDER: Capacity[] = ['full', 'half', 'quarter', 'sixth', 'collage', 'spread', 'other']
 
 /**
  * Анализирует placeholders мастера и определяет его «вместимость» —
@@ -62,6 +62,7 @@ function classifyMaster(master: SpreadTemplate): Capacity {
   let hasFull = false
   let halfCount = 0
   let quarterCount = 0
+  let sixthCount = 0
   let collageCount = 0
   let hasSpread = false
 
@@ -70,13 +71,14 @@ function classifyMaster(master: SpreadTemplate): Capacity {
     if (label === 'classphotoframe') hasFull = true
     else if (label.match(/^halfphoto_\d+$/)) halfCount++
     else if (label.match(/^quarterphoto_\d+$/)) quarterCount++
+    else if (label.match(/^sixthphoto_\d+$/)) sixthCount++
     else if (label.match(/^collagephoto_\d+$/)) collageCount++
     else if (label === 'spreadphoto') hasSpread = true
   }
 
   if (hasSpread) return 'spread'
-  if (collageCount === 6) return 'sixth'
-  if (collageCount === 4) return 'collage4'
+  if (sixthCount > 0) return 'sixth'
+  if (collageCount > 0) return 'collage'
   // J-Quarter-Left / J-Quarter-Right в постраничной модели содержат
   // ПО 2 quarterphoto_N на странице (всего 4 на разворот). Поэтому
   // >= 2, а не >= 4. Раньше Quarter-мастера попадали в 'other' и

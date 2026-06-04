@@ -740,6 +740,7 @@ export interface RulesCommonPhotosInput {
   spread: string[];
   quarter: string[];
   sixth: string[];
+  collage: string[];
 }
 
 export interface RulesAlbumInput {
@@ -878,6 +879,7 @@ export interface RuleContext {
     spread: { count: number; has_any?: boolean };
     quarter: { count: number; has_any?: boolean };
     sixth: { count: number; has_any?: boolean };
+    collage: { count: number; has_any?: boolean };
   };
   print_type: PrintType;
   /**

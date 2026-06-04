@@ -23,7 +23,7 @@
  *
  * Пример: «либо 6 фото 1/6, либо 2 по 1/2 класса, либо 1 общая» =
  *   [
- *     { master: 'J-Collage-6', category: 'sixth',      count: 6 },
+ *     { master: 'J-Sixth-6',   category: 'sixth',      count: 6 },
  *     { master: 'J-Half',      category: 'half_class', count: 2 },
  *     { master: 'J-Full',      category: 'full_class', count: 1 },
  *   ]
@@ -49,7 +49,12 @@ import type { Density, PresetDensity, SheetType } from './types';
 
 // ─── Типы записи таблицы ────────────────────────────────────────────────────
 
-export type CommonCategory = 'full_class' | 'half_class' | 'quarter' | 'sixth';
+export type CommonCategory =
+  | 'full_class'
+  | 'half_class'
+  | 'quarter'
+  | 'sixth'
+  | 'collage';
 
 /**
  * Один шаг попытки заполнения страницы. Если в пуле есть `count` фото
@@ -170,7 +175,7 @@ const ONE_FULL: PageDescriptor = [
 
 /** «либо 6 фото 1/6, либо 2 по 1/2 класса, либо 1 общая». */
 const COLLAGE_OR_HALVES_OR_FULL: PageDescriptor = [
-  { master: 'J-Collage-6', category: 'sixth', count: 6 },
+  { master: 'J-Sixth-6', category: 'sixth', count: 6 },
   { master: 'J-Half', category: 'half_class', count: 2 },
   { master: 'J-Full', category: 'full_class', count: 1 },
 ];
@@ -183,7 +188,7 @@ const COLLAGE_OR_HALVES_OR_FULL: PageDescriptor = [
  */
 const QUARTERS_OR_COLLAGE_OR_HALVES_OR_FULL: PageDescriptor = [
   { master: 'J-Quarter-Left', category: 'quarter', count: 2 },
-  { master: 'J-Collage-6', category: 'sixth', count: 6 },
+  { master: 'J-Sixth-6', category: 'sixth', count: 6 },
   { master: 'J-Half', category: 'half_class', count: 2 },
   { master: 'J-Full', category: 'full_class', count: 1 },
 ];

@@ -81,6 +81,7 @@ function makeFakeInput(): RulesAlbumInput {
       spread: [],
       quarter: [],
       sixth: [],
+      collage: [],
     },
   };
 }

@@ -67,12 +67,13 @@ const J_QUARTER_RIGHT = makeMaster('J-Quarter-Right', [
   photoSlot('quarterphoto_1'),
   photoSlot('quarterphoto_2'),
 ]);
-const J_COLLAGE_6 = makeMaster(
-  'J-Collage-6',
-  Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
+// 04.06.2026: J-Sixth-6 = «1/6 класса» (метки sixthphoto_N → пул sixth).
+const J_SIXTH_6 = makeMaster(
+  'J-Sixth-6',
+  Array.from({ length: 6 }, (_, i) => photoSlot(`sixthphoto_${i + 1}`)),
 );
 
-const ALL_MASTERS = [J_FULL, J_HALF, J_QUARTER_LEFT, J_QUARTER_RIGHT, J_COLLAGE_6];
+const ALL_MASTERS = [J_FULL, J_HALF, J_QUARTER_LEFT, J_QUARTER_RIGHT, J_SIXTH_6];
 
 function makePreset(opts: Partial<Preset> & Pick<Preset, 'id'>): Preset {
   return {
@@ -122,6 +123,7 @@ function makeInput(opts: {
   half_class?: number;
   quarter?: number;
   sixth?: number;
+  collage?: number;
 }): RulesAlbumInput {
   const urls = (n: number, label: string) =>
     Array.from({ length: n }, (_, i) => `https://cdn/${label}_${i}.jpg`);
@@ -140,6 +142,7 @@ function makeInput(opts: {
       spread: [],
       quarter: urls(opts.quarter ?? 0, 'q'),
       sixth: urls(opts.sixth ?? 0, 'sixth'),
+      collage: urls(opts.collage ?? 0, 'collage'),
     },
   };
 }
@@ -176,19 +179,19 @@ describe('common_additional: основные сценарии', () => {
       }),
     );
     // Чтобы все 4 страницы построились — нужно фото для каждой попытки.
-    // Первая попытка везде — J-Collage-6 (6 sixth) или J-Quarter (2 quarter).
+    // Первая попытка везде — J-Sixth-6 (6 sixth) или J-Quarter (2 quarter).
     const result = buildFromSectionStructure(
       bundle,
       makeInput({
         students_count: 20,
-        sixth: 12, // на 2 J-Collage-6 страницы
+        sixth: 12, // на 2 J-Sixth-6 страницы
         quarter: 4, // на 2 J-Quarter (left+right) страницы
       }),
     );
     expect(result.spreads).toHaveLength(2);
-    // Страницы 1-2 — J-Collage-6 (по первой попытке COLLAGE_OR_HALVES_OR_FULL)
-    expect(result.spreads[0].left?.master_id).toBe('id-J-Collage-6');
-    expect(result.spreads[0].right?.master_id).toBe('id-J-Collage-6');
+    // Страницы 1-2 — J-Sixth-6 (по первой попытке COLLAGE_OR_HALVES_OR_FULL)
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Sixth-6');
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Sixth-6');
     // Страницы 3-4 — J-Quarter-Left и -Right (первая попытка QUARTERS_OR_...)
     expect(result.spreads[1].left?.master_id).toBe('id-J-Quarter-Left');
     expect(result.spreads[1].right?.master_id).toBe('id-J-Quarter-Right');
@@ -218,7 +221,7 @@ describe('common_additional: основные сценарии', () => {
     );
     // РЭ.37.3.c: для soft binding pageInstances[0] идёт на RIGHT первого
     // разворота. Затем парная группировка с индекса 1:
-    //   spread 0 = { right: J-Collage-6 }
+    //   spread 0 = { right: J-Sixth-6 }
     //   spread 1 = { left: J-Quarter-Right, right: J-Quarter-Left }
     //
     // Имена J-Quarter-Right / -Left наследуются от common_additional table,
@@ -229,7 +232,7 @@ describe('common_additional: основные сценарии', () => {
     // Семантическая правка common_additional — отдельная фаза.
     expect(result.spreads).toHaveLength(2);
     expect(result.spreads[0].left).toBeUndefined();
-    expect(result.spreads[0].right?.master_id).toBe('id-J-Collage-6');
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Sixth-6');
     expect(result.spreads[1].left?.master_id).toBe('id-J-Quarter-Right');
     expect(result.spreads[1].right?.master_id).toBe('id-J-Quarter-Left');
   });
@@ -270,8 +273,8 @@ describe('common_additional: основные сценарии', () => {
       makeInput({ students_count: 20, sixth: 24, quarter: 8 }),
     );
     expect(result.spreads).toHaveLength(1);
-    expect(result.spreads[0].left?.master_id).toBe('id-J-Collage-6');
-    expect(result.spreads[0].right?.master_id).toBe('id-J-Collage-6');
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Sixth-6');
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Sixth-6');
   });
 
   it('Bindings: classphotoframe заполняется фото', () => {

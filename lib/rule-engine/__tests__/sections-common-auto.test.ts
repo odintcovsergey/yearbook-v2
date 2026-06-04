@@ -10,8 +10,8 @@
  *  - Auto режим: вообще нет фото → 0 разворотов + underflow
  *  - Auto режим: max_spreads=0 → секция пропущена с warning, если фото есть
  *  - Spread фото игнорируются с warning common_no_spread_master
- *  - Bindings: classphotoframe, halfphoto_N, quarterphoto_N, collagephoto_N
- *    заполняются реальными фото с cursor-логикой
+ *  - Bindings: classphotoframe, halfphoto_N, quarterphoto_N, sixthphoto_N,
+ *    collagephoto_N заполняются реальными фото с cursor-логикой
  *  - Manual режим тоже теперь имеет реальные bindings (регрессионный тест)
  *  - Cursor: teachers G-FullClass + common auto → разные фото full_class
  */
@@ -83,9 +83,11 @@ const J_QUARTER_RIGHT = makeMaster('J-Quarter-Right', [
   photoSlot('quarterphoto_1'),
   photoSlot('quarterphoto_2'),
 ]);
-const J_COLLAGE_6 = makeMaster(
-  'J-Collage-6',
-  Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
+// 04.06.2026 (tz-sixth-collage-split.md): «1/6 класса» (sixthphoto_N → пул
+// sixth) и «Коллаж» (collagephoto_N → пул collage) разведены.
+const J_SIXTH_6 = makeMaster(
+  'J-Sixth-6',
+  Array.from({ length: 6 }, (_, i) => photoSlot(`sixthphoto_${i + 1}`)),
 );
 const J_COLLAGE_4 = makeMaster(
   'J-Collage-4',
@@ -97,7 +99,7 @@ const ALL_MASTERS = [
   J_HALF,
   J_QUARTER_LEFT,
   J_QUARTER_RIGHT,
-  J_COLLAGE_6,
+  J_SIXTH_6,
   J_COLLAGE_4,
 ];
 
@@ -152,6 +154,7 @@ function makeInput(common: {
   half_class?: number;
   quarter?: number;
   sixth?: number;
+  collage?: number;
   spread?: number;
 }): RulesAlbumInput {
   function urls(n: number, label: string): string[] {
@@ -169,6 +172,7 @@ function makeInput(common: {
       spread: urls(common.spread ?? 0, 'spread'),
       quarter: urls(common.quarter ?? 0, 'q'),
       sixth: urls(common.sixth ?? 0, 'sixth'),
+      collage: urls(common.collage ?? 0, 'collage'),
     },
   };
 }
@@ -197,7 +201,7 @@ describe('common auto: основные сценарии', () => {
     ).toBe(true);
   });
 
-  it('12 sixth + лимит 2 → 1 разворот J-Collage-6 + J-Collage-6 (полностью), underflow', () => {
+  it('12 sixth + лимит 2 → 1 разворот J-Sixth-6 + J-Sixth-6 (полностью), underflow', () => {
     const bundle = makeBundle({
       preset: makePreset({
         id: 'p',
@@ -206,8 +210,8 @@ describe('common auto: основные сценарии', () => {
     });
     const result = buildFromSectionStructure(bundle, makeInput({ sixth: 12 }));
     expect(result.spreads).toHaveLength(1);
-    expect(result.spreads[0].left?.master_id).toBe('id-J-Collage-6');
-    expect(result.spreads[0].right?.master_id).toBe('id-J-Collage-6');
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Sixth-6');
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Sixth-6');
     expect(
       result.warnings.some((w) =>
         w.startsWith('common_autopack_underflow'),
@@ -215,7 +219,7 @@ describe('common auto: основные сценарии', () => {
     ).toBe(true);
   });
 
-  it('24 sixth + лимит 2 → 2 разворота J-Collage-6 × 4, без underflow', () => {
+  it('24 sixth + лимит 2 → 2 разворота J-Sixth-6 × 4, без underflow', () => {
     const bundle = makeBundle({
       preset: makePreset({
         id: 'p',
@@ -224,8 +228,8 @@ describe('common auto: основные сценарии', () => {
     });
     const result = buildFromSectionStructure(bundle, makeInput({ sixth: 24 }));
     expect(result.spreads).toHaveLength(2);
-    expect(result.spreads.every((s) => s.left?.master_id === 'id-J-Collage-6')).toBe(true);
-    expect(result.spreads.every((s) => s.right?.master_id === 'id-J-Collage-6')).toBe(true);
+    expect(result.spreads.every((s) => s.left?.master_id === 'id-J-Sixth-6')).toBe(true);
+    expect(result.spreads.every((s) => s.right?.master_id === 'id-J-Sixth-6')).toBe(true);
     expect(
       result.warnings.some((w) => w.startsWith('common_autopack_underflow')),
     ).toBe(false);
@@ -245,7 +249,7 @@ describe('common auto: основные сценарии', () => {
     // Page 0 (L): full → J-Full
     // Page 1 (R): full → J-Full (ещё осталось 1)
     // На самом деле full=2 даст 2 страницы J-Full, потом half=4 → 2 страницы J-Half,
-    // потом sixth=6 → 1 страница J-Collage-6, но это будет 5 страниц = не кратно 2
+    // потом sixth=6 → 1 страница J-Sixth-6, но это будет 5 страниц = не кратно 2
     // На развороте 3 (4-я и 5-я страницы): half + collage. Дальше фото нет.
     expect(result.spreads.length).toBeGreaterThanOrEqual(2);
     expect(result.spreads[0].left?.master_id).toBe('id-J-Full');
@@ -328,20 +332,48 @@ describe('common auto: spread фото без мастера', () => {
   });
 });
 
-// ─── 3. Auto: J-Collage-4 fallback ──────────────────────────────────────────
+// ─── 3. Auto: разведение sixth и collage по разным мастерам ─────────────────
 
-describe('common auto: J-Collage-4 для остатка sixth', () => {
-  it('10 sixth + лимит 2 → J-Collage-6 + J-Collage-4 в первом развороте', () => {
+describe('common auto: sixth → J-Sixth-6, collage → J-Collage-4', () => {
+  it('6 sixth + 4 collage + лимит 2 → J-Sixth-6 (L) + J-Collage-4 (R)', () => {
+    // 04.06.2026: пулы 1/6 и коллажа разведены. J-Sixth-6 берёт 6 фото 1/6,
+    // J-Collage-4 — 4 коллажных. Раньше J-Collage-4 был «хвостом» 1/6 — это
+    // была ошибка (см. tz-sixth-collage-split.md).
     const bundle = makeBundle({
       preset: makePreset({
         id: 'p',
         section_structure: [{ type: 'common', mode: 'auto', max_spreads: 2 }],
       }),
     });
-    const result = buildFromSectionStructure(bundle, makeInput({ sixth: 10 }));
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ sixth: 6, collage: 4 }),
+    );
     expect(result.spreads).toHaveLength(1);
-    expect(result.spreads[0].left?.master_id).toBe('id-J-Collage-6');
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Sixth-6');
     expect(result.spreads[0].right?.master_id).toBe('id-J-Collage-4');
+  });
+
+  it('collage фото больше не теряются: 4 collage + 1 full + лимит 1 → размещены', () => {
+    // Регрессия на баг утечки common_collage (раньше collage-фото молча
+    // выбрасывались в build-album-input).
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        section_structure: [{ type: 'common', mode: 'auto', max_spreads: 1 }],
+      }),
+    });
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ full_class: 1, collage: 4 }),
+    );
+    expect(result.spreads).toHaveLength(1);
+    const ids = [
+      result.spreads[0].left?.master_id,
+      result.spreads[0].right?.master_id,
+    ];
+    expect(ids).toContain('id-J-Collage-4');
+    expect(ids).toContain('id-J-Full');
   });
 });
 
@@ -392,7 +424,7 @@ describe('common auto: bindings заполняются реальными фот
     );
   });
 
-  it('J-Collage-6: collagephoto_1..6 первое разворот, потом 7..12 второй', () => {
+  it('J-Sixth-6: sixthphoto_1..6 первый разворот, потом 7..12 второй', () => {
     const bundle = makeBundle({
       preset: makePreset({
         id: 'p',
@@ -400,17 +432,39 @@ describe('common auto: bindings заполняются реальными фот
       }),
     });
     const result = buildFromSectionStructure(bundle, makeInput({ sixth: 24 }));
-    expect(result.spreads[0].left?.bindings.collagephoto_1).toBe(
+    expect(result.spreads[0].left?.bindings.sixthphoto_1).toBe(
       'https://cdn/sixth_0.jpg',
     );
-    expect(result.spreads[0].left?.bindings.collagephoto_6).toBe(
+    expect(result.spreads[0].left?.bindings.sixthphoto_6).toBe(
       'https://cdn/sixth_5.jpg',
     );
-    expect(result.spreads[0].right?.bindings.collagephoto_1).toBe(
+    expect(result.spreads[0].right?.bindings.sixthphoto_1).toBe(
       'https://cdn/sixth_6.jpg',
     );
-    expect(result.spreads[1].left?.bindings.collagephoto_1).toBe(
+    expect(result.spreads[1].left?.bindings.sixthphoto_1).toBe(
       'https://cdn/sixth_12.jpg',
+    );
+  });
+
+  it('J-Collage-4: collagephoto_1..4 заполняются из пула collage', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        section_structure: [{ type: 'common', mode: 'auto', max_spreads: 1 }],
+      }),
+    });
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ collage: 8 }),
+    );
+    expect(result.spreads[0].left?.bindings.collagephoto_1).toBe(
+      'https://cdn/collage_0.jpg',
+    );
+    expect(result.spreads[0].left?.bindings.collagephoto_4).toBe(
+      'https://cdn/collage_3.jpg',
+    );
+    expect(result.spreads[0].right?.bindings.collagephoto_1).toBe(
+      'https://cdn/collage_4.jpg',
     );
   });
 

@@ -404,7 +404,7 @@ const MAPPING: Record<string, FamilyMapping> = {
     slot_capacity: { photos_collage: 4 },
     applies_to_configs: [],
   },
-  'J-Collage-6': {
+  'J-Sixth-6': {
     family_id: 'common-section',
     page_type: 'page-any',
     params: {},

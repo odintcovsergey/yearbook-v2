@@ -30,7 +30,8 @@
  *  - classphotoframe → следующее full_class фото
  *  - halfphoto_N     → следующее half_class фото (N-е по очереди)
  *  - quarterphoto_N  → следующее quarter фото
- *  - collagephoto_N  → следующее sixth фото
+ *  - sixthphoto_N    → следующее sixth фото («1/6 класса»)
+ *  - collagephoto_N  → следующее collage фото («Коллаж»)
  *  - spreadphoto / spreadphoto_N → следующее spread фото (для J-Spread)
  *
  * Cursor-логика расхода фото: для каждой категории фото хранится индекс
@@ -110,8 +111,8 @@ export function fillCommonSection(
  *   1. J-Full (1 full_class)
  *   2. J-Half (2 half_class)
  *   3. J-Quarter-Left/-Right (2 quarter)
- *   4. J-Collage-6 (6 sixth)
- *   5. J-Collage-4 (4 sixth) — на случай хвоста
+ *   4. J-Sixth-6 (6 sixth) — «1/6 класса»
+ *   5. J-Collage-4 (4 collage) — «Коллаж»
  *
  * Логика: для каждой позиции (left/right) пробуем шаги по очереди,
  * берём первый где хватает фото. Если ни один не подошёл — страница
@@ -134,8 +135,8 @@ const AUTOPACK_STEPS: AutopackStep[] = [
     masterName: 'J-Quarter-Left',
     rightVariant: 'J-Quarter-Right',
   },
-  { category: 'sixth', count: 6, masterName: 'J-Collage-6' },
-  { category: 'sixth', count: 4, masterName: 'J-Collage-4' },
+  { category: 'sixth', count: 6, masterName: 'J-Sixth-6' },
+  { category: 'collage', count: 4, masterName: 'J-Collage-4' },
 ];
 
 interface AutopackPagePick {
@@ -219,7 +220,8 @@ export function fillCommonAutoSection(
       ctx.available.full_class +
       ctx.available.half_class +
       ctx.available.quarter +
-      ctx.available.sixth;
+      ctx.available.sixth +
+      ctx.available.collage;
     if (totalAvailable > 0) {
       ctx.warnings.push(
         `common_autopack_disabled: max_spreads=0, ${totalAvailable} общих фото не размещены`,
@@ -325,7 +327,8 @@ export function fillCommonAutoSection(
  *  - classphotoframe        → input.common_photos.full_class[cursor]
  *  - halfphoto_N            → input.common_photos.half_class[cursor + N - 1]
  *  - quarterphoto_N         → input.common_photos.quarter[cursor + N - 1]
- *  - collagephoto_N         → input.common_photos.sixth[cursor + N - 1]
+ *  - sixthphoto_N           → input.common_photos.sixth[cursor + N - 1]
+ *  - collagephoto_N         → input.common_photos.collage[cursor + N - 1]
  *  - spreadphoto / spreadphoto_N → input.common_photos.spread[cursor + N - 1]
  *
  * Cursor для каждой категории = arr.length - available[k]. Это индекс
@@ -345,6 +348,7 @@ export function bindCommonPhotos(
   const halfClassUsed = input.common_photos.half_class.length - available.half_class;
   const quarterUsed = input.common_photos.quarter.length - available.quarter;
   const sixthUsed = input.common_photos.sixth.length - available.sixth;
+  const collageUsed = input.common_photos.collage.length - available.collage;
   // spread не имеет соответствующего поля в CommonPhotoCounts (мастер
   // J-Spread пока не используется), считаем напрямую через 0 — все
   // spread фото потенциально доступны. Если будущий J-Spread появится,
@@ -378,10 +382,18 @@ export function bindCommonPhotos(
       continue;
     }
 
+    const sixthMatch = label.match(/^sixthphoto_(\d+)$/);
+    if (sixthMatch) {
+      const n = parseInt(sixthMatch[1], 10);
+      const photo = input.common_photos.sixth[sixthUsed + n - 1];
+      if (photo) bindings[ph.label] = photo;
+      continue;
+    }
+
     const collageMatch = label.match(/^collagephoto_(\d+)$/);
     if (collageMatch) {
       const n = parseInt(collageMatch[1], 10);
-      const photo = input.common_photos.sixth[sixthUsed + n - 1];
+      const photo = input.common_photos.collage[collageUsed + n - 1];
       if (photo) bindings[ph.label] = photo;
       continue;
     }
@@ -412,4 +424,5 @@ export function decrementAvailable(
   if (consumes.half_class) available.half_class -= consumes.half_class;
   if (consumes.quarter) available.quarter -= consumes.quarter;
   if (consumes.sixth) available.sixth -= consumes.sixth;
+  if (consumes.collage) available.collage -= consumes.collage;
 }

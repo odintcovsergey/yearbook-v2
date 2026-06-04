@@ -48,7 +48,7 @@
  * левой страницы) и J-Combined-Tail-4-Right (для правой). Поиск:
  *   • L (positionOfIndex==left)  → ищем base, fallback на -Right если base нет
  *   • R (positionOfIndex==right) → ищем -Right, fallback на base
- * Аналогично для J-Half / J-Full / J-Collage-6 — там зеркальные варианты
+ * Аналогично для J-Half / J-Full / J-Sixth-6 — там зеркальные варианты
  * могут отсутствовать (симметричные мастера), движок справится с base.
  */
 
@@ -94,8 +94,8 @@ const J_PHOTO_COUNT: Record<JCategory, number> = {
 // transition closing на J-Half пул half_class опустошался, и последняя
 // страница общего раздела (тоже часто J-Half) пропускалась с warning.
 //
-// sixth-first снижает этот конфликт: closing transition'а берёт J-Collage-6
-// (4 sixth-фото у J-Collage-6, или 6 у Collage-6 в зависимости от мастера),
+// sixth-first снижает этот конфликт: closing transition'а берёт J-Sixth-6
+// (6 sixth-фото у J-Sixth-6),
 // half_class остаётся для общего раздела, full_class остаётся как последний
 // fallback. См. Тест2 case (25.05.2026, JSON layout_id 1d2387c6).
 const J_PRIORITY_OKEYBOOK_DEFAULT: JCategory[] = [
@@ -106,13 +106,14 @@ const J_PRIORITY_OKEYBOOK_DEFAULT: JCategory[] = [
 
 // ─── Хелперы для классификации мастеров (для legacy и анализа) ──────────
 
-type LegacyCategory = 'full_class' | 'half_class' | 'quarter' | 'sixth';
+type LegacyCategory = 'full_class' | 'half_class' | 'quarter' | 'sixth' | 'collage';
 
 const LEGACY_PHOTO_COUNT: Record<LegacyCategory, number> = {
   full_class: 1,
   half_class: 2,
   quarter: 4,
   sixth: 6,
+  collage: 4, // единственный коллажный мастер сейчас — J-Collage-4
 };
 
 /**
@@ -126,6 +127,7 @@ const LEGACY_PHOTO_COUNT: Record<LegacyCategory, number> = {
 function classifyMasterCategory(master: SpreadTemplate): LegacyCategory | null {
   let halfCount = 0;
   let quarterCount = 0;
+  let sixthCount = 0;
   let collageCount = 0;
   let hasFull = false;
   for (const ph of master.placeholders ?? []) {
@@ -140,10 +142,11 @@ function classifyMasterCategory(master: SpreadTemplate): LegacyCategory | null {
     if (label === 'classphotoframe') hasFull = true;
     else if (label.match(/^halfphoto_\d+$/)) halfCount++;
     else if (label.match(/^quarterphoto_\d+$/)) quarterCount++;
+    else if (label.match(/^sixthphoto_\d+$/)) sixthCount++;
     else if (label.match(/^collagephoto_\d+$/)) collageCount++;
   }
-  if (collageCount === 6) return 'sixth';
-  if (collageCount === 4) return 'quarter';
+  if (sixthCount > 0) return 'sixth';
+  if (collageCount > 0) return 'collage';
   if (quarterCount >= 4) return 'quarter';
   if (halfCount >= 2) return 'half_class';
   if (hasFull) return 'full_class';
@@ -871,7 +874,7 @@ function tryJChainClosing(ctx: SectionFillContext): void {
     const need = J_PHOTO_COUNT[category];
     if (ctx.available[category] < need) continue;
 
-    // J-Half / J-Collage-6 / J-Full ищем через классификатор мастеров.
+    // J-Half / J-Sixth-6 / J-Full ищем через классификатор мастеров.
     const legacyCat: LegacyCategory = category;
     const master = findCommonMasterForCategory(
       ctx.bundle.mastersByName,
@@ -1228,6 +1231,7 @@ function fillPresetCustomScenario(
         // Common-мастер.
         let halfCount = 0;
         let quarterCount = 0;
+        let sixthCount = 0;
         let collageCount = 0;
         let hasFull = false;
         let hasSpread = false;
@@ -1236,6 +1240,7 @@ function fillPresetCustomScenario(
           if (label === 'classphotoframe') hasFull = true;
           else if (/^halfphoto_\d+$/.test(label)) halfCount++;
           else if (/^quarterphoto_\d+$/.test(label)) quarterCount++;
+          else if (/^sixthphoto_\d+$/.test(label)) sixthCount++;
           else if (/^collagephoto_\d+$/.test(label)) collageCount++;
           else if (label === 'spreadphoto') hasSpread = true;
         }
@@ -1251,7 +1256,8 @@ function fillPresetCustomScenario(
         } else {
           const bindings = bindCommonPhotos(leftMaster, ctx.input, ctx.available);
           const consumes: SlotConsumes = {};
-          if (collageCount > 0) consumes.sixth = collageCount;
+          if (sixthCount > 0) consumes.sixth = sixthCount;
+          else if (collageCount > 0) consumes.collage = collageCount;
           else if (quarterCount >= 4) consumes.quarter = 4;
           else if (halfCount >= 2) consumes.half_class = 2;
           else if (hasFull) consumes.full_class = 1;
@@ -1304,6 +1310,7 @@ function fillPresetCustomScenario(
     } else {
       let halfCount = 0;
       let quarterCount = 0;
+      let sixthCount = 0;
       let collageCount = 0;
       let hasFull = false;
       for (const ph of rightMaster.placeholders ?? []) {
@@ -1311,11 +1318,13 @@ function fillPresetCustomScenario(
         if (label === 'classphotoframe') hasFull = true;
         else if (/^halfphoto_\d+$/.test(label)) halfCount++;
         else if (/^quarterphoto_\d+$/.test(label)) quarterCount++;
+        else if (/^sixthphoto_\d+$/.test(label)) sixthCount++;
         else if (/^collagephoto_\d+$/.test(label)) collageCount++;
       }
       const bindings = bindCommonPhotos(rightMaster, ctx.input, ctx.available);
       const consumes: SlotConsumes = {};
-      if (collageCount > 0) consumes.sixth = collageCount;
+      if (sixthCount > 0) consumes.sixth = sixthCount;
+      else if (collageCount > 0) consumes.collage = collageCount;
       else if (quarterCount >= 4) consumes.quarter = 4;
       else if (halfCount >= 2) consumes.half_class = 2;
       else if (hasFull) consumes.full_class = 1;

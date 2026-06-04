@@ -280,6 +280,7 @@ function SortablePageRow({ id, position, side, page, template, onDelete, disable
     if (!template) return 'мастер не найден в текущем дизайне'
     let halfCount = 0
     let quarterCount = 0
+    let sixthCount = 0
     let collageCount = 0
     let hasFull = false
     let hasSpread = false
@@ -288,10 +289,12 @@ function SortablePageRow({ id, position, side, page, template, onDelete, disable
       if (l === 'classphotoframe') hasFull = true
       else if (l.match(/^halfphoto_\d+$/)) halfCount++
       else if (l.match(/^quarterphoto_\d+$/)) quarterCount++
+      else if (l.match(/^sixthphoto_\d+$/)) sixthCount++
       else if (l.match(/^collagephoto_\d+$/)) collageCount++
       else if (l === 'spreadphoto') hasSpread = true
     }
     if (hasSpread) return 'на разворот'
+    if (sixthCount > 0) return `${sixthCount} × 1/6`
     if (collageCount > 0) return `${collageCount} коллаж`
     if (quarterCount > 0) return `${quarterCount} × 1/4`
     if (halfCount > 0) return `${halfCount} × 1/2`

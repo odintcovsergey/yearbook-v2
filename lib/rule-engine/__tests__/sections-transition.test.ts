@@ -3,7 +3,7 @@
  *
  * Покрывают:
  *  - pageInstances чётный (нет висящей правой) → секция не строится
- *  - Стандарт нечёт → строит правую страницу с J-Collage-6 (или fallback)
+ *  - Стандарт нечёт → строит правую страницу с J-Sixth-6 (или fallback)
  *  - Универсал чёт + transition_right=null → секция не строится без warning
  *  - Лайт 19-21 (комбо «3 ученика + 1 общая» нет мастера) → null → skip
  *  - Максимум → transition_right=null → skip без warning
@@ -104,9 +104,10 @@ const J_QUARTER_RIGHT = makeMaster('J-Quarter-Right', [
   photoSlot('quarterphoto_1'),
   photoSlot('quarterphoto_2'),
 ]);
-const J_COLLAGE_6 = makeMaster(
-  'J-Collage-6',
-  Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
+// 04.06.2026: J-Sixth-6 = «1/6 класса» (метки sixthphoto_N → пул sixth).
+const J_SIXTH_6 = makeMaster(
+  'J-Sixth-6',
+  Array.from({ length: 6 }, (_, i) => photoSlot(`sixthphoto_${i + 1}`)),
 );
 
 const ALL_MASTERS = [
@@ -118,7 +119,7 @@ const ALL_MASTERS = [
   J_HALF,
   J_QUARTER_LEFT,
   J_QUARTER_RIGHT,
-  J_COLLAGE_6,
+  J_SIXTH_6,
 ];
 
 function makePreset(opts: Partial<Preset> & Pick<Preset, 'id'>): Preset {
@@ -168,6 +169,7 @@ function makeInput(opts: {
   full_class?: number;
   half_class?: number;
   sixth?: number;
+  collage?: number;
 }): RulesAlbumInput {
   const urls = (n: number, label: string) =>
     Array.from({ length: n }, (_, i) => `https://cdn/${label}_${i}.jpg`);
@@ -186,6 +188,7 @@ function makeInput(opts: {
       spread: [],
       quarter: [],
       sixth: urls(opts.sixth ?? 0, 'sixth'),
+      collage: urls(opts.collage ?? 0, 'collage'),
     },
   };
 }
@@ -212,12 +215,12 @@ describe('transition: pageInstances чётное', () => {
     const masters = result.spreads.flatMap((s) =>
       [s.left, s.right].map((p) => p?.master_id),
     );
-    expect(masters).not.toContain('id-J-Collage-6');
+    expect(masters).not.toContain('id-J-Sixth-6');
   });
 });
 
 describe('transition: pageInstances нечётное', () => {
-  it('Стандарт нечётное (5 учеников) → правая страница J-Collage-6', () => {
+  it('Стандарт нечётное (5 учеников) → правая страница J-Sixth-6', () => {
     const bundle = makeBundle(
       makePreset({
         id: 'standard',
@@ -233,8 +236,8 @@ describe('transition: pageInstances нечётное', () => {
     // 5 учеников = 5 страниц (3 разворота, последний только left).
     // transition добавит правую → 3 разворота полные.
     expect(result.spreads).toHaveLength(3);
-    expect(result.spreads[2].right?.master_id).toBe('id-J-Collage-6');
-    expect(result.spreads[2].right?.bindings.collagephoto_1).toBe('https://cdn/sixth_0.jpg');
+    expect(result.spreads[2].right?.master_id).toBe('id-J-Sixth-6');
+    expect(result.spreads[2].right?.bindings.sixthphoto_1).toBe('https://cdn/sixth_0.jpg');
   });
 
   it('Стандарт нечётное, нет sixth → fallback на J-Half', () => {
@@ -354,7 +357,7 @@ describe('transition: integration с common_required', () => {
       }),
     );
     // Стандарт нечёт (5 уч) → 5 страниц студентов
-    // → transition добавит 1 страницу справа (J-Collage-6) = 6 страниц
+    // → transition добавит 1 страницу справа (J-Sixth-6) = 6 страниц
     // → common_required для нечёт: [TWO_QUARTERS, TWO_QUARTERS, TWO_HALVES, COLLAGE_OR_HALVES_OR_FULL]
     //   = 4 страницы = 2 разворота
     // Итого: 5 + 1 + 4 = 10 страниц = 5 разворотов.

@@ -127,6 +127,7 @@ function makeInput(fullClassCount: number): RulesAlbumInput {
       spread: [],
       quarter: [],
       sixth: [],
+      collage: [],
     },
   };
 }

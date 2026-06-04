@@ -4,7 +4,7 @@
  * Шаги в порядке попыток (см. inventory §5):
  *   1. J-Quarter-Left/-Right (2 quarter) — приоритет четвертям; чередование
  *      L/R по position
- *   2. J-Collage-6 (6 sixth)
+ *   2. J-Sixth-6 (6 sixth)
  *   3. J-Half (2 half_class)
  *   4. J-Full (1 full_class)             — мастер симметричный, без -Right
  *
@@ -28,7 +28,7 @@ export function tryFillFlexB(
       2,
       'J-Quarter-Right',
     ) ??
-    tryStep(available, position, 'J-Collage-6', 'sixth', 6) ??
+    tryStep(available, position, 'J-Sixth-6', 'sixth', 6) ??
     tryStep(available, position, 'J-Half', 'half_class', 2) ??
     tryStep(available, position, 'J-Full', 'full_class', 1);
   return withChainPrefix(result, 'flex_B');

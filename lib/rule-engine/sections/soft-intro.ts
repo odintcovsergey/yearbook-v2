@@ -107,6 +107,7 @@ export function fillSoftIntroSection(
   let consumedHalfClass = 0;
   let consumedQuarter = 0;
   let consumedSixth = 0;
+  let consumedCollage = 0;
 
   if (overridden) {
     const result = bindOverrideMasterPlaceholders(master, ctx.input, ctx.available);
@@ -115,6 +116,7 @@ export function fillSoftIntroSection(
     consumedHalfClass = result.consumes.half_class;
     consumedQuarter = result.consumes.quarter;
     consumedSixth = result.consumes.sixth;
+    consumedCollage = result.consumes.collage;
   } else {
     bindings = {};
     const fullClassUsed =
@@ -147,6 +149,7 @@ export function fillSoftIntroSection(
   ctx.available.half_class -= consumedHalfClass;
   ctx.available.quarter -= consumedQuarter;
   ctx.available.sixth -= consumedSixth;
+  ctx.available.collage -= consumedCollage;
 
   const pageIndex = ctx.pageInstances.length;
   ctx.pageInstances.push({ master_id: master.id, bindings });
@@ -162,6 +165,7 @@ export function fillSoftIntroSection(
         half_class: consumedHalfClass,
         quarter: consumedQuarter,
         sixth: consumedSixth,
+        collage: consumedCollage,
       },
       sheet_type: 'soft',
       semantic,

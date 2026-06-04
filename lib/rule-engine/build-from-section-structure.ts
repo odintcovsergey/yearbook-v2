@@ -95,6 +95,7 @@ export function buildFromSectionStructure(
     half_class: input.common_photos.half_class.length,
     quarter: input.common_photos.quarter.length,
     sixth: input.common_photos.sixth.length,
+    collage: input.common_photos.collage.length,
   };
 
   // 3. Накопители (мутируются функциями-секциями).

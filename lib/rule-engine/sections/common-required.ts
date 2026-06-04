@@ -34,7 +34,13 @@ import { bindCommonPhotos, decrementAvailable } from './common';
 import { humanPhotoCategory, type SectionFillContext } from './shared';
 
 /** Категории общих фото — соответствуют полям CommonPhotoCounts. */
-type CommonCategory = 'full_class' | 'half_class' | 'quarter' | 'sixth' | 'spread';
+type CommonCategory =
+  | 'full_class'
+  | 'half_class'
+  | 'quarter'
+  | 'sixth'
+  | 'collage'
+  | 'spread';
 
 /**
  * РЭ.38.1 (25.05.2026): резервные варианты на случай когда выбранный
@@ -47,10 +53,11 @@ type CommonCategory = 'full_class' | 'half_class' | 'quarter' | 'sixth' | 'sprea
  * info-warning «вместо X поставлен Y», вместо тревожного скип-warning'а.
  *
  * Логика выбора резервов:
- *   • Для half_class — попробовать J-Collage-6 (sixth) → J-Full (full)
+ *   • Для half_class — попробовать J-Sixth-6 (sixth) → J-Full (full)
  *   • Для sixth — J-Half → J-Full
- *   • Для full_class — J-Half → J-Collage-6
- *   • Для quarter — J-Half → J-Collage-6 → J-Full
+ *   • Для collage — J-Half → J-Full
+ *   • Для full_class — J-Half → J-Sixth-6
+ *   • Для quarter — J-Half → J-Sixth-6 → J-Full
  *
  * Сначала идут «дешёвые» по дефицитности (sixth обычно больше всех),
  * затем full_class (тоже умеренно дефицитен — обычно 1-3 кадра).
@@ -67,20 +74,24 @@ type FallbackOption = {
 
 const FALLBACK_CHAIN: Record<Exclude<CommonCategory, 'spread'>, FallbackOption[]> = {
   half_class: [
-    { masterName: 'J-Collage-6', description: '6 фото для коллажа' },
+    { masterName: 'J-Sixth-6', description: '6 фото 1/6 класса' },
     { masterName: 'J-Full', description: '1 общее фото класса' },
   ],
   sixth: [
     { masterName: 'J-Half', description: '2 половинных фото' },
     { masterName: 'J-Full', description: '1 общее фото класса' },
   ],
+  collage: [
+    { masterName: 'J-Half', description: '2 половинных фото' },
+    { masterName: 'J-Full', description: '1 общее фото класса' },
+  ],
   full_class: [
     { masterName: 'J-Half', description: '2 половинных фото' },
-    { masterName: 'J-Collage-6', description: '6 фото для коллажа' },
+    { masterName: 'J-Sixth-6', description: '6 фото 1/6 класса' },
   ],
   quarter: [
     { masterName: 'J-Half', description: '2 половинных фото' },
-    { masterName: 'J-Collage-6', description: '6 фото для коллажа' },
+    { masterName: 'J-Sixth-6', description: '6 фото 1/6 класса' },
     { masterName: 'J-Full', description: '1 общее фото класса' },
   ],
 };
@@ -99,17 +110,14 @@ type MasterCapability = {
  *   classphotoframe      → full_class (count=1)
  *   halfphoto_N (2 шт.)  → half_class (count=2)
  *   quarterphoto_N (4)   → quarter (count=4)
- *   collagephoto_N (N>0) → sixth (count=N) — любой J-Collage-N мастер
+ *   sixthphoto_N (N>0)   → sixth (count=N) — мастера J-Sixth-* («1/6 класса»)
+ *   collagephoto_N (N>0) → collage (count=N) — мастера J-Collage-* («Коллаж»)
  *   spreadphoto          → spread (count=1)
  *
- * РЭ.36 (фикс дублирования): collage-placeholders ВСЕГДА читаются
- * bindCommonPhotos из пула common_photos.sixth (по конвенции labels).
- * Поэтому category должна быть 'sixth' для любого collageCount > 0.
- * Раньше для collageCount === 4 возвращалась 'quarter' — рассинхрон с
- * bindCommonPhotos: фото брались из sixth, а decrementAvailable снимал
- * с quarter, cursor sixthUsed не сдвигался → две соседние J-Collage-4
- * брали одни и те же фото. Сейчас единое правило: «есть collagephoto_N
- * → бери N фото из sixth».
+ * 04.06.2026 (tz-sixth-collage-split.md): sixth и collage разведены.
+ * Метка sixthphoto_N читается из пула common_photos.sixth, collagephoto_N —
+ * из common_photos.collage. category и pool теперь синхронны по метке
+ * (см. bindCommonPhotos / bindOverrideMasterPlaceholders).
  *
  * Возвращает null если мастер не имеет ни одной J-категории. Это
  * означает что в `pages` пресета указан некорректный мастер (например
@@ -119,6 +127,7 @@ type MasterCapability = {
 function analyzeMasterCapability(master: SpreadTemplate): MasterCapability {
   let halfCount = 0;
   let quarterCount = 0;
+  let sixthCount = 0;
   let collageCount = 0;
   let hasFull = false;
   let hasSpread = false;
@@ -128,12 +137,14 @@ function analyzeMasterCapability(master: SpreadTemplate): MasterCapability {
     if (label === 'classphotoframe') hasFull = true;
     else if (label.match(/^halfphoto_\d+$/)) halfCount++;
     else if (label.match(/^quarterphoto_\d+$/)) quarterCount++;
+    else if (label.match(/^sixthphoto_\d+$/)) sixthCount++;
     else if (label.match(/^collagephoto_\d+$/)) collageCount++;
     else if (label === 'spreadphoto') hasSpread = true;
   }
 
   if (hasSpread) return { category: 'spread', count: 1 };
-  if (collageCount > 0) return { category: 'sixth', count: collageCount };
+  if (sixthCount > 0) return { category: 'sixth', count: sixthCount };
+  if (collageCount > 0) return { category: 'collage', count: collageCount };
   if (quarterCount >= 4) return { category: 'quarter', count: 4 };
   if (halfCount >= 2) return { category: 'half_class', count: 2 };
   if (hasFull) return { category: 'full_class', count: 1 };
@@ -241,7 +252,7 @@ export function fillCommonRequiredSection(
     const ability = analyzeMasterCapability(baseMaster);
     if (ability.category === null) {
       ctx.warnings.push(
-        `common_required_no_category: '${masterName}' не имеет J-категории placeholder'ов (classphotoframe / halfphoto / quarterphoto / collagephoto / spreadphoto)`,
+        `common_required_no_category: '${masterName}' не имеет J-категории placeholder'ов (classphotoframe / halfphoto / quarterphoto / sixthphoto / collagephoto / spreadphoto)`,
       );
       ctx.decisionTrace.push({
         spread_index: Math.floor(ctx.pageInstances.length / 2),

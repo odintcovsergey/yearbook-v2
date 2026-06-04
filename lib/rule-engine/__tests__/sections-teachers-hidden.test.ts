@@ -185,6 +185,7 @@ function makeInput(opts: {
       spread: [],
       quarter: [],
       sixth: [],
+      collage: [],
     },
   };
 }

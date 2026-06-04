@@ -73,14 +73,16 @@ export type Subject = {
  * - `half`       — `common_half`. `halfLeftPhoto`/`halfRightPhoto`/
  *                  `halfPhoto_*` в J-Half и J-HalfSixth.
  * - `quarter`    — `common_quarter`. `quarterPhoto_*` в J-Quarter.
- * - `sixth`      — `common_sixth` (одна шестая, по-старому «коллаж»).
- *                  `collagePhoto_*` в J-Collage, J-HalfSixth,
- *                  J-SixthSixth, J-SixthFull.
- * - `collage`    — DEPRECATED, оставлен для обратной совместимости со
- *                  smoke-tests. В новом коде использовать `sixth`.
- *                  Сергей подтвердил 10.05.2026: collage и sixth — одно
- *                  и то же (см. designer-questions-2026-05-10.md
- *                  уточнение про collage).
+ * - `sixth`      — `common_sixth` («1/6 класса» — групповое малое фото, где
+ *                  ~1/6 детей). Метка `sixthphoto_N` в J-Sixth-* мастерах.
+ * - `collage`    — `common_collage` («Коллаж» — солянка разнородных фото,
+ *                  не попавших в другие разделы). Метка `collagephoto_N`
+ *                  в J-Collage-* мастерах.
+ *
+ * 04.06.2026: sixth и collage РАЗВЕДЕНЫ окончательно (см.
+ * tz-sixth-collage-split.md). Раньше collage был DEPRECATED-алиасом для
+ * sixth — теперь это две независимые категории с разными метками и
+ * разными пулами фото.
  *
  * Заполняется в `lib/smart-fill/build-album-input.ts` чтением
  * `photos WHERE type IN ('common_spread',...)` (А.2.1).
@@ -90,8 +92,8 @@ export type CommonPhotos = {
   full_class: Photo[];
   half: Photo[];
   quarter: Photo[];
-  sixth: Photo[];
-  collage: Photo[];     // DEPRECATED — alias для sixth, оставлен для совместимости
+  sixth: Photo[];       // common_sixth — «1/6 класса» (метка sixthphoto_N)
+  collage: Photo[];     // common_collage — «Коллаж» (метка collagephoto_N)
 };
 
 /**

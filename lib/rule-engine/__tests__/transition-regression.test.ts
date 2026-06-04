@@ -155,6 +155,7 @@ function makeInput(opts: {
   half_class?: number;
   sixth?: number;
   quarter?: number;
+  collage?: number;
 }): RulesAlbumInput {
   const urls = (n: number, label: string) =>
     Array.from({ length: n }, (_, i) => `https://cdn/${label}_${i}.jpg`);
@@ -170,6 +171,7 @@ function makeInput(opts: {
       spread: [],
       quarter: urls(opts.quarter ?? 0, 'quarter'),
       sixth: urls(opts.sixth ?? 0, 'sixth'),
+      collage: urls(opts.collage ?? 0, 'collage'),
     },
   };
 }
@@ -217,12 +219,13 @@ const J_HALF = makeMaster('J-Half',
 const J_FULL = makeMaster('J-Full',
   [photoSlot('classphotoframe')],
   { page_role: 'common', slot_capacity: { photos_full: 1 } });
-const J_COLLAGE_6 = makeMaster('J-Collage-6',
-  Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
+// 04.06.2026: J-Sixth-6 = «1/6 класса» (метки sixthphoto_N → пул sixth).
+const J_SIXTH_6 = makeMaster('J-Sixth-6',
+  Array.from({ length: 6 }, (_, i) => photoSlot(`sixthphoto_${i + 1}`)),
   { page_role: 'common', slot_capacity: { photos_sixth: 6 } });
 const J_COLLAGE_4 = makeMaster('J-Collage-4',
   Array.from({ length: 4 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
-  { page_role: 'common', slot_capacity: { photos_quarter: 4 } });
+  { page_role: 'common', slot_capacity: { photos_collage: 4 } });
 
 // ─── Раздельные bundles по комплектациям ────────────────────────────────
 //
@@ -234,22 +237,22 @@ const J_COLLAGE_4 = makeMaster('J-Collage-4',
 
 const LIGHT_MASTERS = [
   L_GRID, L_COMBO_3, L_COMBO_3_R,
-  J_HALF, J_FULL, J_COLLAGE_6, J_COLLAGE_4,
+  J_HALF, J_FULL, J_SIXTH_6, J_COLLAGE_4,
 ];
 
 const MINI_MASTERS = [
   N_GRID, N_COMBO_4, N_COMBO_4_R,
-  J_HALF, J_FULL, J_COLLAGE_6, J_COLLAGE_4,
+  J_HALF, J_FULL, J_SIXTH_6, J_COLLAGE_4,
 ];
 
 const MEDIUM_MASTERS = [
   M_GRID, M_COMBO_2, M_COMBO_2_R,
-  J_HALF, J_FULL, J_COLLAGE_6, J_COLLAGE_4,
+  J_HALF, J_FULL, J_SIXTH_6, J_COLLAGE_4,
 ];
 
 const PAGE_MODE_MASTERS = [
   E_STD_L, E_STD_R, E_UNI_L, E_UNI_R,
-  J_HALF, J_FULL, J_COLLAGE_6, J_COLLAGE_4,
+  J_HALF, J_FULL, J_SIXTH_6, J_COLLAGE_4,
 ];
 
 // ─── Хелперы для быстрой проверки ───────────────────────────────────────

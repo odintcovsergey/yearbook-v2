@@ -1160,7 +1160,7 @@ function AddSectionPicker({
 //
 // Фильтрация мастеров — та же что в JMasterPicker:
 //   - имеет J-категорию (classphotoframe / halfphoto_* / quarterphoto_* /
-//     collagephoto_* / spreadphoto) ИЛИ page_role='common'
+//     sixthphoto_* / collagephoto_* / spreadphoto) ИЛИ page_role='common'
 //   - НЕ -Right вариант (engine сам подставит при position='right')
 
 function TransitionMasterSelector({
@@ -1205,6 +1205,7 @@ function TransitionMasterSelector({
         l === 'spreadphoto' ||
         l.match(/^halfphoto_\d+$/) ||
         l.match(/^quarterphoto_\d+$/) ||
+        l.match(/^sixthphoto_\d+$/) ||
         l.match(/^collagephoto_\d+$/)
       ) {
         hasJCategory = true

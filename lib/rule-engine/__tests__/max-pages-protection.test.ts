@@ -137,6 +137,7 @@ function makeInput(): RulesAlbumInput {
       spread: [],
       quarter: [],
       sixth: Array.from({ length: 6 }, (_, i) => `https://cdn/six${i}.jpg`),
+      collage: [],
     },
   };
 }
@@ -177,8 +178,8 @@ function makeAllMasters(): SpreadTemplate[] {
     ),
     makeMaster('J-Half', [photoSlot('halfphoto_1'), photoSlot('halfphoto_2')], 'common', null),
     makeMaster(
-      'J-Collage-6',
-      Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
+      'J-Sixth-6',
+      Array.from({ length: 6 }, (_, i) => photoSlot(`sixthphoto_${i + 1}`)),
       'common',
       null,
     ),
@@ -246,7 +247,7 @@ describe('РЭ.43: max_pages защита soft_intro/soft_final', () => {
 
   it('max_pages превышен → soft_final сохранён, обрезается из общего раздела', () => {
     // 30 учеников → 3 страницы по 10 = 3 student pages. + intro + final + 2 общих = 7
-    // max_pages=6 → нужно обрезать 1. РЭ.43: обрезаем последний J-Collage-6
+    // max_pages=6 → нужно обрезать 1. РЭ.43: обрезаем последний J-Sixth-6
     // (НЕ soft_final).
     const bundle = makeBundle({
       preset: makePreset({
@@ -262,7 +263,7 @@ describe('РЭ.43: max_pages защита soft_intro/soft_final', () => {
             type: 'common_required',
             pages: [
               { master_name: 'J-Half' },
-              { master_name: 'J-Collage-6' },
+              { master_name: 'J-Sixth-6' },
             ],
           },
           { type: 'soft_final' },
@@ -290,12 +291,12 @@ describe('РЭ.43: max_pages защита soft_intro/soft_final', () => {
     expect(w).toBeDefined();
     expect(w).toContain('soft_intro/soft_final защищены');
 
-    // J-Collage-6 (последний из common_required) обрезан, J-Half остался.
+    // J-Sixth-6 (последний из common_required) обрезан, J-Half остался.
     const masterIds = allPages.map(
       (p) => (p as unknown as { master_id: string }).master_id,
     );
     expect(masterIds).toContain('id-J-Half');
-    expect(masterIds).not.toContain('id-J-Collage-6');
+    expect(masterIds).not.toContain('id-J-Sixth-6');
   });
 
   it('max_pages превышен сильнее — обрезается несколько не-защищённых страниц', () => {
@@ -315,7 +316,7 @@ describe('РЭ.43: max_pages защита soft_intro/soft_final', () => {
             type: 'common_required',
             pages: [
               { master_name: 'J-Half' },
-              { master_name: 'J-Collage-6' },
+              { master_name: 'J-Sixth-6' },
             ],
           },
           { type: 'soft_final' },
@@ -393,7 +394,7 @@ describe('РЭ.43: max_pages защита soft_intro/soft_final', () => {
             type: 'common_required',
             pages: [
               { master_name: 'J-Half' },
-              { master_name: 'J-Collage-6' },
+              { master_name: 'J-Sixth-6' },
             ],
           },
         ],

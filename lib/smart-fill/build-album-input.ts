@@ -275,10 +275,12 @@ export async function buildAlbumInput(
   //   photos.type='common_full'    → CommonPhotos.full_class
   //   photos.type='common_half'    → CommonPhotos.half
   //   photos.type='common_quarter' → CommonPhotos.quarter
-  //   photos.type='common_sixth'   → CommonPhotos.sixth
+  //   photos.type='common_sixth'   → CommonPhotos.sixth   («1/6 класса»)
+  //   photos.type='common_collage' → CommonPhotos.collage («Коллаж»)
   //
-  // Поле `collage` оставлено пустым массивом для backward-compat со
-  // smoke-tests. В новом коде использовать `sixth`.
+  // 04.06.2026: sixth и collage РАЗВЕДЕНЫ (tz-sixth-collage-split.md).
+  // Раньше common_collage читался запросом, но НЕ распределялся в switch —
+  // коллажные фото молча терялись. Теперь идут в отдельный пул collage.
   const common_photos: CommonPhotos = {
     spread: [],
     full_class: [],
@@ -296,6 +298,7 @@ export async function buildAlbumInput(
       case 'common_half':    common_photos.half.push(url); break;
       case 'common_quarter': common_photos.quarter.push(url); break;
       case 'common_sixth':   common_photos.sixth.push(url); break;
+      case 'common_collage': common_photos.collage.push(url); break;
       // .in() в запросе уже отфильтровал; default не нужен.
     }
   }

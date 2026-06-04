@@ -56,7 +56,7 @@ function makeMaster(name: string): SpreadTemplate {
 const J_MASTERS = [
   makeMaster('J-Half'),
   makeMaster('J-Quarter-Left'),
-  makeMaster('J-Collage-6'),
+  makeMaster('J-Sixth-6'),
   makeMaster('J-Full'),
   makeMaster('J-Full'),
 ];
@@ -110,6 +110,7 @@ function makeInput(common: Partial<{
   half_class: number;
   quarter: number;
   sixth: number;
+  collage: number;
 }>): RulesAlbumInput {
   function urls(n: number, label: string): string[] {
     const out: string[] = [];
@@ -126,6 +127,7 @@ function makeInput(common: Partial<{
       spread: [],
       quarter: urls(common.quarter ?? 0, 'q'),
       sixth: urls(common.sixth ?? 0, 'sixth'),
+      collage: urls(common.collage ?? 0, 'collage'),
     },
   };
 }
@@ -180,12 +182,12 @@ describe('buildFromSectionStructure: common секция с цепочками',
     expect(result.spreads).toHaveLength(1);
     expect(result.spreads[0].spread_index).toBe(0);
     expect(result.spreads[0].left?.master_id).toBe('id-J-Half'); // page 0, left
-    expect(result.spreads[0].right?.master_id).toBe('id-J-Collage-6'); // page 1, right, flex_A → collage
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Sixth-6'); // page 1, right, flex_A → sixth
     expect(result.decision_trace).toHaveLength(2);
     expect(result.decision_trace[0].rule_id).toBe('manual:H');
     expect(result.decision_trace[1].rule_id).toBe('manual:flex_A');
     expect(result.decision_trace[1].inputs.chain_trace).toBe(
-      'flex_A → J-Collage-6 (6 sixth)',
+      'flex_A → J-Sixth-6 (6 sixth)',
     );
   });
 

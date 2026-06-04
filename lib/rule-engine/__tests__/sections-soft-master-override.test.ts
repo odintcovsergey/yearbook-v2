@@ -130,6 +130,7 @@ function makeInput(fullClassCount: number): RulesAlbumInput {
       spread: [],
       quarter: [],
       sixth: [],
+      collage: [],
     },
   };
 }
@@ -155,6 +156,7 @@ function makeInputWithTeachers(): RulesAlbumInput {
       spread: [],
       quarter: [],
       sixth: [],
+      collage: [],
     },
   };
 }
@@ -197,7 +199,7 @@ describe('РЭ.42: soft_intro master_name override', () => {
     expect(trace?.inputs.overridden).toBe(true);
     expect(trace?.inputs.semantic).toBe(false);
     // Classphoto НЕ был потреблён — у J-Teachers-Single нет такого placeholder.
-    expect(trace?.inputs.consumes).toEqual({ full_class: 0, half_class: 0, quarter: 0, sixth: 0 });
+    expect(trace?.inputs.consumes).toEqual({ full_class: 0, half_class: 0, quarter: 0, sixth: 0, collage: 0 });
 
     // Warnings не должно быть.
     expect(
@@ -335,7 +337,7 @@ describe('РЭ.42: soft_final master_name override', () => {
     expect(trace?.rule_id).toBe('soft_final:J-Farewell-Custom');
     expect(trace?.inputs.overridden).toBe(true);
     expect(trace?.inputs.semantic).toBe(false);
-    expect(trace?.inputs.consumes).toEqual({ full_class: 0, half_class: 0, quarter: 0, sixth: 0 });
+    expect(trace?.inputs.consumes).toEqual({ full_class: 0, half_class: 0, quarter: 0, sixth: 0, collage: 0 });
   });
 
   it('Override с несуществующим именем → warning, страница НЕ кладётся', () => {
@@ -583,7 +585,7 @@ describe('РЭ.42.b.2: автоматический биндинг teacher-place
 // ─── РЭ.42.b.3: автобиндинг collage / quarter / spread placeholder'ов ──
 
 describe('РЭ.42.b.3: collage/quarter/spread placeholder в override-режиме', () => {
-  it('soft_final override с J-Collage-6 → 6 collagephoto биндятся из sixth', () => {
+  it('soft_final override с J-Collage-6 → 6 collagephoto биндятся из collage', () => {
     const collageMaster = makeMaster(
       'J-Collage-6',
       Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
@@ -599,7 +601,8 @@ describe('РЭ.42.b.3: collage/quarter/spread placeholder в override-режим
         half_class: [],
         spread: [],
         quarter: [],
-        sixth: Array.from({ length: 6 }, (_, i) => `https://cdn/six${i}.jpg`),
+        sixth: [],
+        collage: Array.from({ length: 6 }, (_, i) => `https://cdn/collage${i}.jpg`),
       },
     };
     const bundle = makeBundle({
@@ -617,21 +620,21 @@ describe('РЭ.42.b.3: collage/quarter/spread placeholder в override-режим
     // soft_final → section_start → LEFT.
     const bindings = result.spreads[0].left!.bindings as Record<string, unknown>;
     for (let n = 1; n <= 6; n++) {
-      expect(bindings[`collagephoto_${n}`]).toBe(`https://cdn/six${n - 1}.jpg`);
+      expect(bindings[`collagephoto_${n}`]).toBe(`https://cdn/collage${n - 1}.jpg`);
     }
     // Hidden НЕ должно быть.
     for (let n = 1; n <= 6; n++) {
       expect(bindings[`__hidden__collagephoto_${n}`]).toBeUndefined();
     }
-    // consumes.sixth = 6.
+    // consumes.collage = 6.
     const trace = result.decision_trace.find((t) =>
       t.rule_id?.startsWith('soft_final:'),
     );
-    const consumes = trace?.inputs.consumes as { sixth: number };
-    expect(consumes.sixth).toBe(6);
+    const consumes = trace?.inputs.consumes as { collage: number };
+    expect(consumes.collage).toBe(6);
   });
 
-  it('soft_intro override с J-Collage-6 + недостаточно sixth → __hidden__ для лишних', () => {
+  it('soft_intro override с J-Collage-6 + недостаточно collage → __hidden__ для лишних', () => {
     const collageMaster = makeMaster(
       'J-Collage-6',
       Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
@@ -647,8 +650,9 @@ describe('РЭ.42.b.3: collage/quarter/spread placeholder в override-режим
         half_class: [],
         spread: [],
         quarter: [],
-        // Только 3 sixth — мастер просит 6.
-        sixth: ['https://cdn/s0.jpg', 'https://cdn/s1.jpg', 'https://cdn/s2.jpg'],
+        sixth: [],
+        // Только 3 collage — мастер просит 6.
+        collage: ['https://cdn/s0.jpg', 'https://cdn/s1.jpg', 'https://cdn/s2.jpg'],
       },
     };
     const bundle = makeBundle({
@@ -689,6 +693,7 @@ describe('РЭ.42.b.3: collage/quarter/spread placeholder в override-режим
         spread: [],
         quarter: Array.from({ length: 4 }, (_, i) => `https://cdn/q${i}.jpg`),
         sixth: [],
+        collage: [],
       },
     };
     const bundle = makeBundle({
@@ -731,6 +736,7 @@ describe('РЭ.42.b.3: collage/quarter/spread placeholder в override-режим
         spread: ['https://cdn/spread0.jpg'],
         quarter: [],
         sixth: [],
+        collage: [],
       },
     };
     const bundle = makeBundle({
@@ -776,7 +782,8 @@ describe('РЭ.42.b.3: collage/quarter/spread placeholder в override-режим
         half_class: [],
         spread: [],
         quarter: [],
-        sixth: ['https://cdn/six0.jpg', 'https://cdn/six1.jpg'],
+        sixth: [],
+        collage: ['https://cdn/six0.jpg', 'https://cdn/six1.jpg'],
       },
     };
     const bundle = makeBundle({
@@ -802,9 +809,9 @@ describe('РЭ.42.b.3: collage/quarter/spread placeholder в override-режим
     );
     const consumes = trace?.inputs.consumes as {
       full_class: number;
-      sixth: number;
+      collage: number;
     };
     expect(consumes.full_class).toBe(1);
-    expect(consumes.sixth).toBe(2);
+    expect(consumes.collage).toBe(2);
   });
 });

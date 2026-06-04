@@ -30,6 +30,7 @@ export interface CommonPhotoCounts {
   half_class: number;
   quarter: number;
   sixth: number;
+  collage: number;
 }
 
 /**
@@ -53,6 +54,7 @@ export interface SlotConsumes {
   half_class?: number;
   quarter?: number;
   sixth?: number;
+  collage?: number;
 }
 
 /**

@@ -61,7 +61,9 @@ export function humanPhotoCategory(category: string): string {
     case 'half_class':
       return 'общие половинные фото (две на разворот)';
     case 'sixth':
-      return 'общие фото для коллажа (шесть на страницу)';
+      return 'общие фото «1/6 класса» (групповые малые)';
+    case 'collage':
+      return 'общие фото для коллажа';
     case 'quarter':
       return 'общие четвертные фото (четыре на страницу)';
     case 'spread':
@@ -155,7 +157,8 @@ export function humanPhotoCategory(category: string): string {
  *  - `classphotoframe`                                  → full_class[cursor]
  *  - `halfphoto_N`                                      → half_class[cursor + N - 1]
  *  - `quarterphoto_N`                                   → quarter[cursor + N - 1]      (РЭ.42.b.3)
- *  - `collagephoto_N`                                   → sixth[cursor + N - 1]        (РЭ.42.b.3)
+ *  - `sixthphoto_N`                                     → sixth[cursor + N - 1]        (04.06.2026)
+ *  - `collagephoto_N`                                   → collage[cursor + N - 1]      (04.06.2026)
  *  - `spreadphoto` / `spreadphoto_N`                    → spread[cursor + N - 1]       (РЭ.42.b.3)
  *  - `headteacherphoto`                                 → head_teacher.photo
  *  - `headteachername`                                  → head_teacher.name
@@ -184,7 +187,7 @@ export function humanPhotoCategory(category: string): string {
  * режиме старая classphoto-only логика сохранена (минимизация риска
  * регрессий в стабильных code paths). В override-режиме вызывается эта
  * функция, что позволяет партнёру использовать учительские мастера И
- * мастера общего раздела (J-Collage-6, J-Quarter, J-Half, J-Spread)
+ * мастера общего раздела (J-Sixth-6, J-Collage-4, J-Quarter, J-Half, J-Spread)
  * как finale/intro page.
  *
  * Семантика consumes:
@@ -219,6 +222,7 @@ export function bindOverrideMasterPlaceholders(
     half_class: number;
     quarter: number;
     sixth: number;
+    collage: number;
   };
 } {
   const bindings: Record<string, unknown> = {};
@@ -228,10 +232,12 @@ export function bindOverrideMasterPlaceholders(
   const halfClassUsed = input.common_photos.half_class.length - available.half_class;
   const quarterUsed = input.common_photos.quarter.length - available.quarter;
   const sixthUsed = input.common_photos.sixth.length - available.sixth;
+  const collageUsed = input.common_photos.collage.length - available.collage;
   let consumedFullClass = 0;
   let consumedHalfClass = 0;
   let consumedQuarter = 0;
   let consumedSixth = 0;
+  let consumedCollage = 0;
 
   const headTeacher = input.head_teacher;
   const subjects = input.subjects;
@@ -284,14 +290,28 @@ export function bindOverrideMasterPlaceholders(
       continue;
     }
 
-    // ─ Collage / sixth (collagephoto_N) ─ РЭ.42.b.3 ──────────────────
-    const collageMatch = label.match(/^collagephoto_(\d+)$/);
-    if (collageMatch) {
-      const n = parseInt(collageMatch[1], 10);
+    // ─ 1/6 класса (sixthphoto_N) ─ 04.06.2026 ────────────────────────
+    const sixthMatch = label.match(/^sixthphoto_(\d+)$/);
+    if (sixthMatch) {
+      const n = parseInt(sixthMatch[1], 10);
       const photo = input.common_photos.sixth[sixthUsed + n - 1];
       if (photo) {
         bindings[ph.label] = photo;
         consumedSixth = Math.max(consumedSixth, n);
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
+      continue;
+    }
+
+    // ─ Коллаж (collagephoto_N) ─ 04.06.2026 (разведён с sixth) ────────
+    const collageMatch = label.match(/^collagephoto_(\d+)$/);
+    if (collageMatch) {
+      const n = parseInt(collageMatch[1], 10);
+      const photo = input.common_photos.collage[collageUsed + n - 1];
+      if (photo) {
+        bindings[ph.label] = photo;
+        consumedCollage = Math.max(consumedCollage, n);
       } else {
         bindings[`__hidden__${ph.label}`] = '1';
       }
@@ -411,6 +431,7 @@ export function bindOverrideMasterPlaceholders(
       half_class: consumedHalfClass,
       quarter: consumedQuarter,
       sixth: consumedSixth,
+      collage: consumedCollage,
     },
   };
 }

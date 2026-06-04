@@ -228,13 +228,17 @@ const J_HALF = makeMaster('J-Half', [
 
 const J_FULL = makeMaster('J-Full', [photoSlot('classphotoframe', 30, 60)]);
 
-const J_COLLAGE_6 = makeMaster('J-Collage-6', [...gridSlots('collagephoto', 6, 3)]);
+// 04.06.2026 (tz-sixth-collage-split.md): «1/6 класса» и «Коллаж» разведены.
+//   J-Sixth-6  — 6 фото 1/6 класса, метки sixthphoto_N (бывш. J-Collage-6).
+//   J-Collage-4 — реальный коллаж, метки collagephoto_N.
+const J_SIXTH_6 = makeMaster('J-Sixth-6', [...gridSlots('sixthphoto', 6, 3)]);
+const J_COLLAGE_4 = makeMaster('J-Collage-4', [...gridSlots('collagephoto', 4, 2)]);
 
 // РЭ.18 + РЭ.18.4 — мастера для полноценного общего раздела
 // Имена согласованы с боевой БД (см. SQL запрос 16.05.2026):
 //   J-Full (используется на обеих сторонах разворота, нет зеркала)
 //   J-Quarter-Left / J-Quarter-Right (есть зеркало)
-//   J-Collage-6 (используется на обеих сторонах для разворота из 12 фото)
+//   J-Sixth-6 (используется на обеих сторонах для разворота из 12 фото 1/6)
 //   J-Half (уже был)
 const J_QUARTER_LEFT = makeMaster('J-Quarter-Left', [
   photoSlot('quarterphoto_1', 30, 30),
@@ -284,7 +288,8 @@ export const TEST_MASTERS: SpreadTemplate[] = [
   N_COMBINED_PAGE,
   J_HALF,
   J_FULL,
-  J_COLLAGE_6,
+  J_SIXTH_6,
+  J_COLLAGE_4,
   J_QUARTER_LEFT,
   J_QUARTER_RIGHT,
   S_INTRO,

@@ -722,6 +722,7 @@ async function handleBuildAlbumTestSectionStructure(
       spread: makeUrls(Number(commonPhotosInput.spread ?? 0), 'spread'),
       quarter: makeUrls(Number(commonPhotosInput.quarter ?? 0), 'quarter'),
       sixth: makeUrls(Number(commonPhotosInput.sixth ?? 0), 'sixth'),
+      collage: makeUrls(Number(commonPhotosInput.collage ?? 0), 'collage'),
     },
   }
 

@@ -209,6 +209,7 @@ function makeInput(opts: {
       spread: [],
       quarter: [],
       sixth: [],
+      collage: [],
     },
   };
 }
@@ -430,7 +431,7 @@ describe("mode='spread' семантический поиск (РЭ.22.5)", () =
       ],
       subjects: [],
       head_teacher: { photo: null, name: '', role: '', text: '' },
-      common_photos: { full_class: [], half_class: [], spread: [], quarter: [], sixth: [] },
+      common_photos: { full_class: [], half_class: [], spread: [], quarter: [], sixth: [], collage: [] },
     };
     const result = buildFromSectionStructure(bundle, input);
 
