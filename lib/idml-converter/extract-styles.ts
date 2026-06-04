@@ -63,6 +63,10 @@ type TextStyleProps = Pick<
   | 'vertical_align'
   | 'auto_fit'
   | 'min_size_pt'
+  // Часть 3 ТЗ (Путь А): обводка текста читается из штатного Stroke InDesign
+  // (StrokeColor + StrokeWeight на CharacterStyleRange / ParagraphStyle).
+  | 'text_stroke_color'
+  | 'text_stroke_width_pt'
 >;
 
 export type StyleResolver = {
@@ -72,6 +76,14 @@ export type StyleResolver = {
     masterName: string,
     warnings: ParserWarning[],
   ): TextStyleProps;
+  /**
+   * Часть 3 ТЗ (Путь А): резолвит ссылку на цвет IDML (`Color/...`) в hex.
+   * Используется парсером геометрии для цвета свечения текста (OuterGlow
+   * EffectColor), который живёт на фрейме, а не в story. Возвращает null
+   * для отсутствующих / «никаких» цветов (`Swatch/None`, `n`, пусто) и
+   * неизвестных ссылок — вызывающий подставляет дефолт.
+   */
+  resolveColorRef(ref: string | undefined): string | null;
   /**
    * РЭ.56: возвращает текстовое содержимое story из IDML, если оно есть.
    * Используется парсером геометрии чтобы записать default_text в
@@ -111,6 +123,9 @@ type ResolvedStyle = {
   justification?: string;
   fillColor?: string;
   appliedFont?: string;
+  // Часть 3 ТЗ (Путь А): обводка текста на уровне стиля абзаца.
+  strokeColor?: string;
+  strokeWeight?: number;
 };
 
 type RawParagraphStyle = ResolvedStyle & {
@@ -123,6 +138,10 @@ type StoryEntry = {
   inlinePointSize?: number;
   inlineFontStyle?: string;
   inlineFillColor?: string;
+  // Часть 3 ТЗ (Путь А): обводка текста — inline-оверрайд на первом
+  // CharacterStyleRange (StrokeColor — ссылка на цвет, StrokeWeight — pt).
+  inlineStrokeColor?: string;
+  inlineStrokeWeight?: number;
   paragraphStyleCount: number;
   /**
    * РЭ.56: содержимое текстового фрейма из IDML.
@@ -173,6 +192,8 @@ export async function loadStyleResolver(zip: JSZip): Promise<StyleResolver> {
       justification: raw.justification ?? parent.justification,
       fillColor: raw.fillColor ?? parent.fillColor,
       appliedFont: raw.appliedFont ?? parent.appliedFont,
+      strokeColor: raw.strokeColor ?? parent.strokeColor,
+      strokeWeight: raw.strokeWeight ?? parent.strokeWeight,
     };
     resolveCache.set(id, merged);
     return merged;
@@ -221,7 +242,32 @@ export async function loadStyleResolver(zip: JSZip): Promise<StyleResolver> {
         auto_fit: false, // override через applyAutoFitRule по правилу label
       };
 
+      // Часть 3 ТЗ (Путь А): обводка букв из штатного Stroke InDesign.
+      // Обводка «включена» только если задан реальный цвет обводки
+      // (StrokeColor ≠ Swatch/None) И положительная толщина. У КАЖДОГО
+      // CharacterStyleRange всегда есть дефолтный StrokeWeight (~0.4pt),
+      // поэтому ориентируемся именно на наличие цвета, а не толщины.
+      const strokeColorRef = story.inlineStrokeColor ?? resolved.strokeColor;
+      const strokeWeight = story.inlineStrokeWeight ?? resolved.strokeWeight;
+      if (
+        isRealColorRef(strokeColorRef) &&
+        strokeWeight !== undefined &&
+        strokeWeight > 0
+      ) {
+        props.text_stroke_color = resolveColorToHex(
+          strokeColorRef,
+          colors,
+          masterName,
+          label,
+          warnings,
+        );
+        props.text_stroke_width_pt = strokeWeight;
+      }
+
       return applyAutoFitRule(label, props);
+    },
+    resolveColorRef(ref): string | null {
+      return resolveColorRefOrNull(ref, colors);
     },
     resolveTextContent(storyId): string | undefined {
       if (!storyId) return undefined;
@@ -258,6 +304,8 @@ async function loadParagraphStyles(
       justification: getAttr(style, 'Justification'),
       fillColor: getAttr(style, 'FillColor'),
       appliedFont: extractTextChild(props, 'AppliedFont'),
+      strokeColor: getAttr(style, 'StrokeColor'),
+      strokeWeight: parseNumberAttr(style, 'StrokeWeight'),
     });
   }
   return out;
@@ -360,6 +408,12 @@ async function loadStories(zip: JSZip): Promise<Map<string, StoryEntry>> {
         : undefined,
       inlineFillColor: firstCharRange
         ? getAttr(firstCharRange, 'FillColor')
+        : undefined,
+      inlineStrokeColor: firstCharRange
+        ? getAttr(firstCharRange, 'StrokeColor')
+        : undefined,
+      inlineStrokeWeight: firstCharRange
+        ? parseNumberAttr(firstCharRange, 'StrokeWeight')
         : undefined,
       paragraphStyleCount: countDistinctParagraphStyles(paragraphRanges),
       content: contentText || undefined,
@@ -509,6 +563,47 @@ async function loadColors(zip: JSZip): Promise<Map<string, ColorEntry>> {
     out.set(id, { space, values });
   }
   return out;
+}
+
+/**
+ * Часть 3 ТЗ (Путь А): «реальна» ли ссылка на цвет — т.е. задан настоящий
+ * цвет, а не «никакой». IDML пишет «нет цвета» как `Swatch/None`, `n` или
+ * вовсе опускает атрибут. Нужна для обводки: дефолтная StrokeWeight есть
+ * у каждого ранжа, поэтому факт обводки определяем по цвету.
+ */
+function isRealColorRef(ref: string | undefined): boolean {
+  return (
+    !!ref && ref !== 'Swatch/None' && ref !== 'Color/None' && ref !== 'n'
+  );
+}
+
+/**
+ * Часть 3 ТЗ (Путь А): резолвит ссылку на цвет в hex, либо null если цвета
+ * нет / он неизвестен. В отличие от resolveColorToHex не пишет warning и не
+ * подставляет fallback — для декоративного свечения отсутствие цвета это
+ * норма (вызывающий ставит дефолт).
+ */
+function resolveColorRefOrNull(
+  ref: string | undefined,
+  colors: Map<string, ColorEntry>,
+): string | null {
+  if (!isRealColorRef(ref)) return null;
+  if (ref === 'Color/Black' || ref === 'Color/Registration') return '#000000';
+  if (ref === 'Color/Paper') return '#ffffff';
+  const entry = colors.get(ref!);
+  if (!entry) return null;
+  if (entry.space === 'CMYK' && entry.values.length === 4) {
+    return cmykToHex(
+      entry.values[0],
+      entry.values[1],
+      entry.values[2],
+      entry.values[3],
+    );
+  }
+  if (entry.space === 'RGB' && entry.values.length === 3) {
+    return rgbToHex(entry.values[0], entry.values[1], entry.values[2]);
+  }
+  return null;
 }
 
 function resolveColorToHex(

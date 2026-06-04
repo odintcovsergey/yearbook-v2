@@ -351,13 +351,50 @@ function frameToPlaceholder(
   // Пустые story (без <Content>) возвращают undefined — поле default_text
   // остаётся undefined и в БД сохраняется как null.
   const defaultText = resolver.resolveTextContent(parentStoryId);
+  // Часть 3 ТЗ (Путь А): свечение текста — штатный Outer Glow InDesign,
+  // живёт на фрейме (как у фото), а не в story. Обводка приходит из textStyle.
+  const textGlow = extractTextGlow(frame.node, resolver);
   return {
     ...common,
     type: 'text',
     ...textStyle,
+    ...textGlow,
     ...(defaultText !== undefined ? { default_text: defaultText } : {}),
     _pageIndex: pageIndex,
   };
+}
+
+// ─── Текстовые эффекты: свечение (Часть 3 ТЗ, Путь А) ──────────────────────
+
+/**
+ * Читает у текстового фрейма штатный эффект InDesign Outer Glow:
+ *   <TransparencySetting><OuterGlowSetting Size="..." EffectColor="Color/..."/>.
+ * Size → text_glow_blur_pt (pt), EffectColor → text_glow_color (hex).
+ *
+ * InDesign выгружает OuterGlowSetting на объект ТОЛЬКО когда эффект реально
+ * применён (у фреймов без свечения элемента нет вовсе) — поэтому наличие
+ * Size > 0 и есть признак включённого свечения. Цвет в IDML может
+ * отсутствовать (дефолт InDesign — чёрный), тогда ставим #000000.
+ *
+ * Возвращает пустой объект если свечения нет — чтобы у обычных текстов не
+ * появлялись лишние ключи.
+ */
+export function extractTextGlow(
+  frameNode: Record<string, unknown>,
+  resolver: StyleResolver,
+): { text_glow_color?: string; text_glow_blur_pt?: number } {
+  const glow = findFirst(frameNode, 'OuterGlowSetting');
+  if (!glow) return {};
+  // Документные дефолты пишутся с Applied="false" — это не применённый эффект.
+  if (getAttr(glow, 'Applied') === 'false') return {};
+
+  const sizeRaw = getAttr(glow, 'Size');
+  if (!sizeRaw) return {};
+  const size = Number(sizeRaw);
+  if (!Number.isFinite(size) || size <= 0) return {};
+
+  const color = resolver.resolveColorRef(getAttr(glow, 'EffectColor')) ?? '#000000';
+  return { text_glow_color: color, text_glow_blur_pt: size };
 }
 
 // ─── Дедупликация label'ов ────────────────────────────────────────────────
