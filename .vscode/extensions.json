@@ -1,0 +1,18 @@
+{
+  "recommendations": [
+    "anthropic.claude-code",
+    "github.vscode-pull-request-github",
+    "eamodio.gitlens",
+    "editorconfig.editorconfig",
+    "usernamehw.errorlens",
+    "bradlc.vscode-tailwindcss",
+    "humao.rest-client",
+    "yzhang.markdown-all-in-one",
+    "bierner.markdown-mermaid",
+    "streetsidesoftware.code-spell-checker"
+  ],
+  "unwantedRecommendations": [
+    "octref.vetur",
+    "hookyqr.beautify"
+  ]
+}

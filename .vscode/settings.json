@@ -1,0 +1,67 @@
+{
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": true,
+  "editor.rulers": [80, 100],
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": "active",
+  "editor.linkedEditing": true,
+  "editor.stickyScroll.enabled": true,
+  "editor.minimap.enabled": false,
+
+  "files.trimTrailingWhitespace": true,
+  "files.trimFinalNewlines": true,
+  "files.insertFinalNewline": true,
+  "files.eol": "\n",
+  "files.exclude": {
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/dist": true,
+    "**/build": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.next/**": true,
+    "**/dist/**": true,
+    "**/build/**": true
+  },
+
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.next": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/coverage": true,
+    "**/package-lock.json": true,
+    "**/tsconfig.tsbuildinfo": true
+  },
+
+  "git.autofetch": true,
+  "git.confirmSync": false,
+  "git.enableSmartCommit": false,
+  "git.openRepositoryInParentFolders": "never",
+  "git.pruneOnFetch": true,
+
+  "terminal.integrated.scrollback": 10000,
+  "terminal.integrated.copyOnSelection": true,
+
+  "explorer.confirmDelete": true,
+  "explorer.confirmDragAndDrop": true,
+  "explorer.compactFolders": false,
+
+  "workbench.editor.enablePreview": false,
+  "workbench.editor.limit.enabled": true,
+  "workbench.editor.limit.value": 10,
+  "workbench.tree.indent": 14,
+
+  "typescript.updateImportsOnFileMove.enabled": "always",
+  "javascript.updateImportsOnFileMove.enabled": "always",
+
+  "markdown.preview.fontSize": 14,
+  "markdown.preview.lineHeight": 1.6,
+
+  "diffEditor.ignoreTrimWhitespace": false,
+  "diffEditor.renderSideBySide": true
+}
