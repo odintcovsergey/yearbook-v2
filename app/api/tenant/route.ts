@@ -1217,7 +1217,7 @@ export async function GET(req: NextRequest) {
     // которые нужны Сергею для отладки, но не для партнёров.
     let tsQuery = supabaseAdmin
       .from('template_sets')
-      .select('id, name, slug, tenant_id, print_type, page_width_mm, page_height_mm')
+      .select('id, name, slug, tenant_id, print_type, product_type, page_width_mm, page_height_mm')
     if (auth.role !== 'superadmin') {
       // Партнёр видит только опубликованные дизайны (черновики — только superadmin).
       tsQuery = tsQuery
@@ -1327,6 +1327,9 @@ export async function GET(req: NextRequest) {
         tenant_id: ts.tenant_id,
         is_global: ts.tenant_id === null,
         print_type: ts.print_type,
+        // Тип продукта: 'album' (по умолчанию) или 'photofolder' (фотопапка).
+        // Старые БД без миграции 2026-06-07 → null, трактуем как 'album'.
+        product_type: ts.product_type ?? 'album',
         page_width_mm: ts.page_width_mm,
         page_height_mm: ts.page_height_mm,
         recommended_count: globalCountByTs.get(ts.id) ?? 0,

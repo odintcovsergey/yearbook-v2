@@ -4387,6 +4387,8 @@ function AlbumFormModal({
 type PickerDesign = {
   id: string
   name: string
+  /** Тип продукта: альбом (по умолчанию) или фотопапка-тримо. */
+  product_type: 'album' | 'photofolder'
 }
 
 type PickerTemplate = {
@@ -4468,7 +4470,11 @@ function TemplatePickerModal({
         const gData = await gResp.json()
         const mData = await mResp.json()
         setDesigns(
-          (dData.designs ?? []).map((d: any) => ({ id: d.id, name: d.name })),
+          (dData.designs ?? []).map((d: any) => ({
+            id: d.id,
+            name: d.name,
+            product_type: d.product_type === 'photofolder' ? 'photofolder' : 'album',
+          })),
         )
         setGlobals(
           (gData.templates ?? []).map((t: any) => ({
@@ -4629,6 +4635,12 @@ function TemplatePickerModal({
                     >
                       {d.name}
                     </div>
+                    {/* Фотопапка: бейдж типа продукта (альбом — норма, без бейджа). */}
+                    {d.product_type === 'photofolder' && (
+                      <span className="self-start px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] rounded">
+                        фотопапка
+                      </span>
+                    )}
                     <div className="text-xs text-gray-500">
                       {count > 0 ? `${count} шаблон${count === 1 ? '' : count < 5 ? 'а' : 'ов'}` : 'нет шаблонов'}
                     </div>

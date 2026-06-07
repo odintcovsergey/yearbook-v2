@@ -30,12 +30,17 @@ interface Design {
   tenant_id: string | null
   is_global: boolean
   print_type: 'layflat' | 'soft' | null
+  /** Тип продукта: альбом (по умолчанию) или фотопапка-тримо. */
+  product_type: 'album' | 'photofolder'
   page_width_mm: number | null
   page_height_mm: number | null
   recommended_count: number
   my_count: number
   previews: string[] // до 3 SVG
 }
+
+/** Тип продукта для фильтра каталога ('all' — без фильтра). */
+type ProductFilter = 'all' | 'album' | 'photofolder'
 
 interface AuthData {
   authenticated: boolean
@@ -57,6 +62,9 @@ export default function DesignsListPage() {
   // РЭ.28.5: source-дизайн для открытой модалки клонирования.
   // null = модалка закрыта.
   const [cloneSource, setCloneSource] = useState<Design | null>(null)
+  // Фотопапка: фильтр по типу продукта. Показывается только когда в каталоге
+  // есть дизайны более чем одного типа (иначе фильтр — лишний шум).
+  const [productFilter, setProductFilter] = useState<ProductFilter>('all')
 
   // Авторизация
   useEffect(() => {
@@ -154,12 +162,20 @@ export default function DesignsListPage() {
 
   if (!authChecked) return null
 
+  // Фотопапка: показываем фильтр только когда есть дизайны разных типов.
+  const hasMultipleProductTypes =
+    new Set(designs.map((d) => d.product_type)).size > 1
+  const visibleDesigns =
+    productFilter === 'all'
+      ? designs
+      : designs.filter((d) => d.product_type === productFilter)
+
   // РЭ.28.4: разделение на глобальные и мои.
   // tenant_id IS NULL → глобальный, иначе — мой.
   // Используем поле is_global (из API designs_list) — оно дублирует
   // tenant_id IS NULL и проще читается.
-  const globalDesigns = designs.filter((d) => d.is_global)
-  const myDesigns = designs.filter((d) => !d.is_global)
+  const globalDesigns = visibleDesigns.filter((d) => d.is_global)
+  const myDesigns = visibleDesigns.filter((d) => !d.is_global)
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -203,6 +219,32 @@ export default function DesignsListPage() {
         {!loading && designs.length === 0 && (
           <div className="bg-white border border-gray-200 rounded p-6 text-center text-gray-500">
             Нет доступных дизайнов. Обратитесь в OkeyBook для подключения.
+          </div>
+        )}
+
+        {/* Фотопапка: фильтр по типу продукта (альбомы / фотопапки). */}
+        {!loading && hasMultipleProductTypes && (
+          <div className="inline-flex rounded-lg border border-gray-300 bg-white p-0.5 mb-5">
+            {(
+              [
+                { key: 'all', label: 'Все' },
+                { key: 'album', label: 'Альбомы' },
+                { key: 'photofolder', label: 'Фотопапки' },
+              ] as { key: ProductFilter; label: string }[]
+            ).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setProductFilter(t.key)}
+                className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  productFilter === t.key
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
         )}
 
@@ -346,6 +388,12 @@ function DesignCard({
 
       {/* Бейджи */}
       <div className="flex flex-wrap gap-1 mt-2">
+        {/* Фотопапка: явный бейдж типа продукта (альбом — норма, без бейджа). */}
+        {design.product_type === 'photofolder' && (
+          <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded">
+            фотопапка
+          </span>
+        )}
         {design.is_global ? (
           <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
             от OkeyBook
