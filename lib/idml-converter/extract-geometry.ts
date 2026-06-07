@@ -13,6 +13,8 @@ import type {
   DecorationPlaceholder,
   EmbeddedImage,
   ItemTransform,
+  PanelZone,
+  PanelZoneResult,
   ParserWarning,
   Placeholder,
   Point,
@@ -155,6 +157,41 @@ export function computeCoverZones(
     },
     zoneByPageIndex,
   };
+}
+
+/**
+ * Разбирает полотно ФОТОПАПКИ на панели (panel_0 … panel_{n-1}, слева
+ * направо). Аналог computeCoverZones, но БЕЗ семантики корешка: у фотопапки
+ * панели — независимые страницы, стоящие в ряд, корешок не «раздувается».
+ *
+ * Переиспользует ту же геометрию, что и обложка: сопоставление идёт по
+ * координате x (слева направо), а НЕ по порядку страниц в XML.
+ *
+ * Фотопапка-тримо = 3 панели; двойная папка (позже) = 2. Функция обобщена на
+ * любое n >= 2. Если задан expectedPanels — возвращает null при несовпадении
+ * (страж от кривого макета), иначе принимает любой n >= 2.
+ */
+export function computePanelZones(
+  pagesXRanges: ReadonlyArray<{ x_min: number; x_max: number }>,
+  expectedPanels?: number,
+): PanelZoneResult | null {
+  const n = pagesXRanges.length;
+  if (n < 2) return null;
+  if (expectedPanels != null && n !== expectedPanels) return null;
+
+  // Индексы страниц, отсортированные слева направо по левому краю.
+  const byX = pagesXRanges
+    .map((r, i) => ({ i, ...r }))
+    .sort((a, b) => a.x_min - b.x_min);
+
+  const zoneByPageIndex: PanelZone[] = new Array(n);
+  const panel_widths_mm: number[] = new Array(n);
+  byX.forEach((page, rank) => {
+    zoneByPageIndex[page.i] = `panel_${rank}`;
+    panel_widths_mm[rank] = ptToMm(page.x_max - page.x_min);
+  });
+
+  return { panel_widths_mm, zoneByPageIndex };
 }
 
 // ─── extractPlaceholders ──────────────────────────────────────────────────

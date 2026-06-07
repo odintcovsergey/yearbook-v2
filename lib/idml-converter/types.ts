@@ -53,6 +53,25 @@ export type CoverZones = {
   front_width_mm: number;
 };
 
+/**
+ * Зона панели фотопапки: 'panel_0' (самая левая) … 'panel_{n-1}' (самая
+ * правая). Нейтральное имя без семантики корешка — в отличие от CoverZone
+ * (back/spine/front). Фотопапка-тримо = 3 панели, двойная папка = 2.
+ */
+export type PanelZone = `panel_${number}`;
+
+/**
+ * Результат разбора полотна фотопапки на панели (см. computePanelZones).
+ * В отличие от обложки, у фотопапки НЕТ корешка: панели — независимые
+ * страницы, стоящие в ряд. Поэтому отдаём просто массив ширин слева направо.
+ */
+export type PanelZoneResult = {
+  /** Ширины панелей слева направо, мм. panel_widths_mm[k] = ширина panel_k. */
+  panel_widths_mm: number[];
+  /** Для каждого ИСХОДНОГО индекса страницы — её зона panel_k. */
+  zoneByPageIndex: PanelZone[];
+};
+
 export type PhotoPlaceholder = Common & {
   type: 'photo';
   fit: 'fill_proportional' | 'contain' | 'fill';
