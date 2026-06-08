@@ -2,6 +2,17 @@
 
 import { useState, useEffect, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import {
+  Building2,
+  Camera,
+  Rocket,
+  Ruler,
+  LayoutGrid,
+  LayoutTemplate,
+  Gift,
+  BookImage,
+  type LucideIcon,
+} from 'lucide-react'
 
 type AuthData = {
   authenticated: boolean
@@ -197,34 +208,34 @@ export default function SuperPage() {
         {/* Таб-бар */}
         <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
           {([
-            { key: 'tenants' as const, label: '🏢 Арендаторы' },
-            { key: 'partners' as const, label: '📸 Партнёры' },
-            { key: 'queue' as const, label: `🚀 Очередь работ${queue.filter(a => a.workflow_status === 'submitted').length > 0 ? ` · ${queue.filter(a => a.workflow_status === 'submitted').length} новых` : ''}` },
-          ]).map(t => (
+            { key: 'tenants' as const, label: 'Арендаторы', icon: Building2 },
+            { key: 'partners' as const, label: 'Партнёры', icon: Camera },
+            { key: 'queue' as const, label: `Очередь работ${queue.filter(a => a.workflow_status === 'submitted').length > 0 ? ` · ${queue.filter(a => a.workflow_status === 'submitted').length} новых` : ''}`, icon: Rocket },
+          ] as { key: 'tenants' | 'partners' | 'queue'; label: string; icon: LucideIcon }[]).map(t => (
             <button key={t.key} onClick={() => setSuperTab(t.key)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${superTab === t.key ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
-              {t.label}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${superTab === t.key ? 'bg-white shadow text-brand-700' : 'text-gray-500 hover:text-gray-700'}`}>
+              <t.icon size={16} /> {t.label}
             </button>
           ))}
           <button onClick={() => router.push('/super/templates')}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            📐 Шаблоны →
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            <Ruler size={16} /> Шаблоны →
           </button>
           <button onClick={() => router.push('/super/master-catalog')}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            📚 Каталог мастеров →
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            <LayoutGrid size={16} /> Каталог мастеров →
           </button>
           <button onClick={() => router.push('/super/presets')}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            🎛️ Пресеты →
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            <LayoutTemplate size={16} /> Пресеты →
           </button>
           <button onClick={() => router.push('/super/referral-programs')}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            🎁 Реферальные программы →
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            <Gift size={16} /> Реферальные программы →
           </button>
           <button onClick={() => router.push('/super/covers')}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            📕 Обложки →
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            <BookImage size={16} /> Обложки →
           </button>
         </div>
 
@@ -458,7 +469,7 @@ function YcStorageWidget() {
           type="button"
           onClick={loadStats}
           disabled={loading}
-          className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+          className="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
         >
           {loading ? 'Считаем…' : stats ? 'Обновить' : 'Обновить статистику'}
         </button>

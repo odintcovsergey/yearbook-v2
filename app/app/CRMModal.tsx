@@ -12,6 +12,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
+import { KanbanSquare, Building2, ListTodo, Settings2, type LucideIcon } from 'lucide-react'
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -179,19 +180,19 @@ export default function CRMModal({ onClose, currentUserId }: {
             {/* Вкладки */}
             <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
               {([
-                { key: 'kanban', label: '📋 Воронка' },
-                { key: 'clients', label: '🏫 Клиенты' },
-                { key: 'tasks', label: `✅ Задачи${overdueTasks.length ? ` · ${overdueTasks.length}` : ''}` },
-                { key: 'stages', label: '⚙️ Этапы' },
-              ] as const).map(t => (
+                { key: 'kanban', label: 'Воронка', icon: KanbanSquare },
+                { key: 'clients', label: 'Клиенты', icon: Building2 },
+                { key: 'tasks', label: `Задачи${overdueTasks.length ? ` · ${overdueTasks.length}` : ''}`, icon: ListTodo },
+                { key: 'stages', label: 'Этапы', icon: Settings2 },
+              ] as { key: 'kanban' | 'clients' | 'tasks' | 'stages'; label: string; icon: LucideIcon }[]).map(t => (
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
-                  className={`px-3 py-1.5 text-sm rounded-md font-medium transition-all ${
-                    tab === t.key ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md font-medium transition-all ${
+                    tab === t.key ? 'bg-white shadow text-brand-700' : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  {t.label}
+                  <t.icon size={16} /> {t.label}
                 </button>
               ))}
             </div>

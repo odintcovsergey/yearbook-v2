@@ -2025,7 +2025,7 @@ function AlbumDetailModal({
             { id: 'responsible', label: 'Ответственный' },
             { id: 'surcharges', label: 'Доплаты' },
             ...((album as any).personal_spread_enabled ? [{ id: 'spread' as const, label: 'Разворот' }] : []),
-            { id: 'production' as const, label: '🚀 Производство' },
+            { id: 'production' as const, label: 'Производство' },
           ] as const).map(t => (
             <button
               key={t.id}
@@ -2033,7 +2033,7 @@ function AlbumDetailModal({
               onClick={() => setTab(t.id)}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 tab === t.id
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -6484,7 +6484,7 @@ function PhotosTab({
               onClick={() => setActiveKind(t)}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 activeKind === t
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -6925,7 +6925,7 @@ function LeadsModal({
                 onClick={() => setFilter(t.id)}
                 className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   filter === t.id
-                    ? 'border-gray-900 text-gray-900'
+                    ? 'border-brand-600 text-brand-700'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -7918,7 +7918,7 @@ function TeamModal({
               onClick={() => setTab('users')}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'users'
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -7930,7 +7930,7 @@ function TeamModal({
               onClick={() => setTab('invitations')}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'invitations'
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -8452,7 +8452,7 @@ function SettingsModal({
               onClick={() => setTab('account')}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'account'
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -8463,7 +8463,7 @@ function SettingsModal({
               onClick={() => setTab('branding')}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'branding'
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -8474,7 +8474,7 @@ function SettingsModal({
               onClick={() => setTab('password')}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'password'
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
