@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { BookImage, AlertTriangle } from 'lucide-react'
 import CoverUploadModal from './_components/CoverUploadModal'
 
 type AuthData = {
@@ -122,7 +123,7 @@ export default function CoversPage() {
       <div className="max-w-7xl mx-auto">
         <div className="flex items-start justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold mb-1">📚 Библиотека обложек</h1>
+            <h1 className="text-2xl font-semibold mb-1 flex items-center gap-2"><BookImage size={22} /> Библиотека обложек</h1>
             <p className="text-sm text-gray-500">
               Обложки альбома (полотно задняя + корешок + передняя). Корешок плавающий — пунктир показывает его границы.
             </p>
@@ -172,7 +173,7 @@ export default function CoversPage() {
                 <div className="text-xs text-gray-400 mb-3">
                   {c.nominal_spine_width_mm != null
                     ? `корешок (макет) ${c.nominal_spine_width_mm} мм`
-                    : '⚠ зоны не распознаны'}
+                    : <><AlertTriangle size={12} className="inline" /> зоны не распознаны</>}
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => togglePublished(c)} disabled={busyId === c.id} className="btn-secondary text-xs flex-1">

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
+import { X } from 'lucide-react'
 import type { SpreadTemplate } from '@/lib/album-builder/types'
 
 const AlbumSpreadCanvas = dynamic(
@@ -236,7 +237,7 @@ export default function JMasterPicker({ templates, onSelect, onClose }: Props) {
             className="text-gray-400 hover:text-gray-700 text-xl leading-none"
             title="Закрыть (Esc)"
           >
-            ✕
+            <X size={16} />
           </button>
         </div>
 

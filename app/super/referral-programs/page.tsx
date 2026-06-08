@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { Gift } from 'lucide-react'
 import ReferralProgramsManager from '@/app/_components/ReferralProgramsManager'
 
 type AuthData = {
@@ -33,7 +34,7 @@ export default function ReferralProgramsPage() {
     <div className="min-h-screen p-6">
       <div className="max-w-6xl mx-auto">
         <button onClick={() => router.push('/super')} className="text-sm text-gray-400 hover:text-gray-600 mb-2">← Назад</button>
-        <h1 className="text-2xl font-semibold mb-1">🎁 Реферальные программы</h1>
+        <h1 className="text-2xl font-semibold mb-1 flex items-center gap-2"><Gift size={22} /> Реферальные программы</h1>
         <p className="text-sm text-gray-500 mb-6">
           Настраиваемые награды для реферера (кто рекомендует) и реферала (кто пришёл по ссылке).
           Награды применяются вручную — система показывает и ведёт учёт. Глобальные программы видят все партнёры.

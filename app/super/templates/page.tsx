@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { Ruler } from 'lucide-react'
 import TemplateSetCard, { type CardAction } from './_components/TemplateSetCard'
 import UploadModal from './_components/UploadModal'
 import type { TemplateSet } from './_components/types'
@@ -156,7 +157,7 @@ export default function TemplatesPage() {
       <div className="max-w-7xl mx-auto">
         <div className="flex items-start justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold mb-1">📐 Шаблоны вёрстки</h1>
+            <h1 className="text-2xl font-semibold mb-1 flex items-center gap-2"><Ruler size={22} /> Шаблоны вёрстки</h1>
             <p className="text-sm text-gray-500">
               Наборы master-разворотов для построения альбомов
             </p>
