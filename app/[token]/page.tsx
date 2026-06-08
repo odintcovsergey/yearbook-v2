@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, memo, useRef } from 'react'
 import { useParams } from 'next/navigation'
+import { Hand, Check, Lock, Maximize2, Camera, Gift, Sparkles, Frown, AlertTriangle, Clock } from 'lucide-react'
 import type { Photo } from '@/types'
 
 type StepId = 1 | 2 | 3 | 4 | 5 | 6 | 7
@@ -429,7 +430,7 @@ export default function ParentPage() {
     <div className="min-h-screen bg-gradient-to-b from-cream to-cream-light flex items-center justify-center p-4">
       <div className="max-w-sm w-full space-y-4">
         <div className="card p-8 text-center">
-          <div className="w-16 h-16 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+          <div className="w-16 h-16 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl"><Check size={40} /></div>
           <p className="text-xs text-gray-400 mb-1">{albumTitle}</p>
           <h2 className="text-xl font-medium text-gray-800 mb-2">Выбор уже сделан</h2>
           <p className="text-gray-500 text-sm mb-4">Фотографии для <strong>{childName}</strong> уже выбраны и сохранены.</p>
@@ -524,10 +525,10 @@ export default function ParentPage() {
         if (days >= 0 && days <= 3) return (
           <div className={`px-4 py-3 text-sm font-medium text-center ${days === 0 ? 'bg-red-500 text-white' : 'bg-amber-400 text-amber-900'}`}>
             {days === 0
-              ? '⚠️ Сегодня последний день для выбора фотографий!'
+              ? <><AlertTriangle size={14} className="inline" /> Сегодня последний день для выбора фотографий!</>
               : days === 1
-              ? '⏰ Завтра истекает срок выбора фотографий'
-              : `⏰ До конца выбора фотографий осталось ${days} дня`}
+              ? <><Clock size={14} className="inline" /> Завтра истекает срок выбора фотографий</>
+              : <><Clock size={14} className="inline" /> До конца выбора фотографий осталось {days} дня</>}
           </div>
         )
         return null
@@ -576,7 +577,7 @@ export default function ParentPage() {
 
             </div>
             <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitPage ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
-              {portraitPage ? '✅ Портрет выбран — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать портрет. Для просмотра крупнее используйте кнопку в правом нижнем углу фото'}
+              {portraitPage ? <><Check size={14} className="inline" /> Портрет выбран — нажмите Далее</> : <><Hand size={14} className="inline" /> Нажмите на фото чтобы выбрать портрет. Для просмотра крупнее используйте кнопку в правом нижнем углу фото</>}
             </div>
             <PhotoGrid
               photos={portraits}
@@ -628,7 +629,7 @@ export default function ParentPage() {
             {(coverMode === 'required' || coverOption === 'other') && (
               <div className="mb-6">
                 <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitCover ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
-                  {portraitCover ? '✅ Портрет для обложки выбран — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать портрет для обложки'}
+                  {portraitCover ? <><Check size={14} className="inline" /> Портрет для обложки выбран — нажмите Далее</> : <><Hand size={14} className="inline" /> Нажмите на фото чтобы выбрать портрет для обложки</>}
                 </div>
                 <PhotoGrid
                   photos={portraits.map(p => p.id === portraitPage ? {...p, locked: true} : p)}
@@ -730,7 +731,7 @@ export default function ParentPage() {
                   {coverOption === 'other' && (
                     <div className="mb-2">
                       <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitCover ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
-                        {portraitCover ? '✅ Фото для обложки выбрано — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать его для обложки'}
+                        {portraitCover ? <><Check size={14} className="inline" /> Фото для обложки выбрано — нажмите Далее</> : <><Hand size={14} className="inline" /> Нажмите на фото чтобы выбрать его для обложки</>}
                       </div>
                       <PhotoGrid
                         photos={portraits.map(p => p.id === portraitPage ? {...p, locked: true} : p)}
@@ -857,7 +858,7 @@ export default function ParentPage() {
                             onClick={() => runAi('fix')}
                             className="text-sm px-4 py-2 rounded-xl border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            ✨ Исправить ошибки
+                            <Sparkles size={16} className="inline" /> Исправить ошибки
                           </button>
                           <button
                             type="button"
@@ -865,7 +866,7 @@ export default function ParentPage() {
                             onClick={() => runAi('improve')}
                             className="text-sm px-4 py-2 rounded-xl border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            ✨ Улучшить текст
+                            <Sparkles size={16} className="inline" /> Улучшить текст
                           </button>
                         </div>
                         <p className="text-xs text-gray-400 mt-2">Осталось {AI_CALLS_LIMIT - aiCallsUsed} из {AI_CALLS_LIMIT} попыток AI</p>
@@ -906,7 +907,7 @@ export default function ParentPage() {
                         disabled={!Object.values(formFields).some(v => v.trim())}
                         className="text-sm px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        ✨ Составить текст
+                        <Sparkles size={16} className="inline" /> Составить текст
                       </button>
                       <p className="text-xs text-gray-400 mt-2">Осталось {AI_CALLS_LIMIT - aiCallsUsed} из {AI_CALLS_LIMIT} попыток AI</p>
                     </div>
@@ -927,7 +928,7 @@ export default function ParentPage() {
             )}
             {aiResult && !aiLoading && aiNoChanges && (
               <div className="mb-6 px-4 py-3 bg-brand-50 border border-brand-200 rounded-xl">
-                <p className="text-sm text-brand-700 mb-3">✓ Ошибок не найдено — текст уже грамотный.</p>
+                <p className="text-sm text-brand-700 mb-3"><Check size={14} className="inline" /> Ошибок не найдено — текст уже грамотный.</p>
                 <button
                   type="button"
                   className="text-sm px-4 py-2 rounded-xl bg-brand-600 text-white hover:bg-brand-700"
@@ -945,7 +946,7 @@ export default function ParentPage() {
                   <p className={`text-xs font-medium mb-2 ${isFix ? 'text-brand-700' : 'text-purple-800'}`}>{title}</p>
                   <p className="text-sm text-gray-800 whitespace-pre-wrap mb-3">{aiResult}</p>
                   {aiTruncated && (
-                    <p className="text-xs text-amber-700 mb-3">⚠️ Текст пришлось укоротить, чтобы вписать в лимит {textMaxChars} символов.</p>
+                    <p className="text-xs text-amber-700 mb-3"><AlertTriangle size={14} className="inline" /> Текст пришлось укоротить, чтобы вписать в лимит {textMaxChars} символов.</p>
                   )}
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -1015,8 +1016,8 @@ export default function ParentPage() {
                             taken ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed' :
                             'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'}`}
                       >
-                        {taken && !mine && <span className="text-xs text-gray-300 mr-2">🔒</span>}
-                        {mine && <span className="text-xs text-brand-600 mr-2">✓</span>}
+                        {taken && !mine && <span className="text-xs text-gray-300 mr-2"><Lock size={14} className="inline" /></span>}
+                        {mine && <span className="text-xs text-brand-600 mr-2"><Check size={14} className="inline" /></span>}
                         {q.text}
                       </button>
                     )
@@ -1044,10 +1045,10 @@ export default function ParentPage() {
                   : 'bg-gray-50 border-gray-200 text-gray-600'
             }`}>
               {groupPhotos.length >= groupMin && groupPhotos.length <= groupMax
-                ? '✅ Всё выбрано — нажмите Далее'
+                ? <><Check size={14} className="inline" /> Всё выбрано — нажмите Далее</>
                 : groupPhotos.length > 0
-                  ? `👆 Выбрано ${groupPhotos.length} из ${groupMin} — добавьте ещё ${groupMin - groupPhotos.length} фото`
-                  : `👆 Нажмите на фото чтобы выбрать — нужно ${groupMin === groupMax ? `${groupMin} фото` : `от ${groupMin} до ${groupMax} фото`}`
+                  ? <><Hand size={14} className="inline" /> {`Выбрано ${groupPhotos.length} из ${groupMin} — добавьте ещё ${groupMin - groupPhotos.length} фото`}</>
+                  : <><Hand size={14} className="inline" /> {`Нажмите на фото чтобы выбрать — нужно ${groupMin === groupMax ? `${groupMin} фото` : `от ${groupMin} до ${groupMax} фото`}`}</>
               }
             </div>
             <PhotoGrid
@@ -1084,7 +1085,7 @@ export default function ParentPage() {
 
         {step === 7 && personalSpreadEnabled && (
           <StepCard
-            title="📸 Личный разворот"
+            title={<><Camera size={16} className="inline" /> Личный разворот</>}
             subtitle="Сделайте альбом по-настоящему своим"
           >
             <div className="bg-brand-50 rounded-xl p-4 mb-4 text-sm text-brand-700 leading-relaxed">
@@ -1103,7 +1104,7 @@ export default function ParentPage() {
             {spreadWarnings.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
                 {spreadWarnings.map((w, i) => (
-                  <p key={i} className="text-xs text-amber-700">⚠️ {w}</p>
+                  <p key={i} className="text-xs text-amber-700"><AlertTriangle size={14} className="inline" /> {w}</p>
                 ))}
               </div>
             )}
@@ -1213,7 +1214,7 @@ export default function ParentPage() {
                   </div>
                 ) : (
                   <>
-                    <span className="text-2xl">📷</span>
+                    <span className="text-2xl"><Camera size={16} /></span>
                     <span className="text-sm text-gray-500">
                       Добавить фото ({spreadPhotos.length}/{personalSpreadMax})
                     </span>
@@ -1337,7 +1338,7 @@ export default function ParentPage() {
             {submitError && <div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-sm mb-4">{submitError}</div>}
             <div className="flex items-center justify-between">
               <button className="btn-ghost" onClick={goPrev}>← Изменить</button>
-              <button className="btn-primary min-w-36" onClick={handleSubmit} disabled={saving}>{saving ? <span className="flex items-center gap-2 justify-center"><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block"/>Сохраняю...</span> : 'Подтвердить ✓'}</button>
+              <button className="btn-primary min-w-36" onClick={handleSubmit} disabled={saving}>{saving ? <span className="flex items-center gap-2 justify-center"><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block"/>Сохраняю...</span> : <>Подтвердить <Check size={16} className="inline" /></>}</button>
             </div>
           </StepCard>
         )}
@@ -1346,7 +1347,7 @@ export default function ParentPage() {
           const refLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/ref/${token}`
           return (
           <div className="card p-8 text-center">
-            <div className="w-16 h-16 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+            <div className="w-16 h-16 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl"><Check size={40} /></div>
             <h2 className="text-xl font-medium text-gray-800 mb-2">Спасибо!</h2>
             <p className="text-gray-500 text-sm mb-6">Выбор для <strong>{childName}</strong> сохранён.<br />Сообщим когда альбом будет готов.</p>
 
@@ -1356,7 +1357,7 @@ export default function ParentPage() {
         })()}
         {done && alreadySubmitted && (
           <div className="card p-8 text-center max-w-sm mx-auto">
-            <div className="w-16 h-16 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+            <div className="w-16 h-16 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl"><Check size={40} /></div>
             <h2 className="text-xl font-medium text-gray-800 mb-2">Выбор уже сделан</h2>
             <p className="text-gray-500 text-sm mb-4">Фотографии для <strong>{childName}</strong> уже выбраны и сохранены.</p>
             <p className="text-gray-400 text-sm">Если нужно внести изменения — обратитесь к вашему менеджеру.</p>
@@ -1437,7 +1438,7 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
           <span className="text-white/60 text-sm">{index + 1} / {photos.length}</span>
           {onSelect && selectedCount > 0 && (
             <span className="bg-brand-600/80 text-white text-xs px-2 py-0.5 rounded-full">
-              ✓ {selectedCount}
+              <Check size={14} className="inline" /> {selectedCount}
             </span>
           )}
         </div>
@@ -1477,7 +1478,7 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
       {/* Кнопка выбора */}
       <div className="px-4 py-3 flex items-center justify-center flex-shrink-0">
         {isLocked ? (
-          <div className="text-white/40 text-sm px-6 py-3">🔒 Уже выбрано другим</div>
+          <div className="text-white/40 text-sm px-6 py-3"><Lock size={14} className="inline" /> Уже выбрано другим</div>
         ) : onSelect ? (
           <button
             onClick={handleSelect}
@@ -1487,7 +1488,7 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
                 : 'bg-white text-gray-900 hover:bg-gray-100 shadow-lg'
             }`}
           >
-            {isSelected ? '✓ Выбрано' : '✓ Выбрать это фото'}
+            {isSelected ? <><Check size={16} className="inline" /> Выбрано</> : <><Check size={16} className="inline" /> Выбрать это фото</>}
           </button>
         ) : null}
       </div>
@@ -1509,7 +1510,7 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
             <img src={p.url} alt="" className="w-full h-full object-cover" draggable={false} />
             {selected.includes(p.id) && (
               <div className="absolute inset-0 flex items-center justify-center bg-brand-600/50 rounded-lg">
-                <span className="text-white text-lg font-bold">✓</span>
+                <span className="text-white text-lg font-bold"><Check size={14} className="inline" /></span>
               </div>
             )}
           </button>
@@ -1537,7 +1538,7 @@ const PhotoThumb = memo(function PhotoThumb({ photo, isSelected, isLocked, canSe
         )}
         {isLocked && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900/30 rounded-xl">
-            <span className="text-2xl">🔒</span>
+            <span className="text-2xl"><Lock size={24} /></span>
           </div>
         )}
       </div>
@@ -1549,7 +1550,7 @@ const PhotoThumb = memo(function PhotoThumb({ photo, isSelected, isLocked, canSe
       <button onClick={e => { e.stopPropagation(); onLightbox() }}
         className="absolute bottom-2 right-2 bg-black/60 text-white text-sm w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/80 transition-all z-[1]"
       >
-        ⤢
+        <Maximize2 size={16} />
       </button>
     </div>
   )
@@ -1622,7 +1623,7 @@ function PhotoGrid({ photos, selected, limit, onLightbox, onToggle, small = fals
   )
 }
 
-function StepCard({ title, subtitle, children, wide = false }: { title: string; subtitle: string; children: React.ReactNode; wide?: boolean }) {
+function StepCard({ title, subtitle, children, wide = false }: { title: React.ReactNode; subtitle: string; children: React.ReactNode; wide?: boolean }) {
   return (
     <div className={`card p-5 ${wide ? '' : 'max-w-2xl mx-auto w-full'}`}>
       <h2 className="text-lg font-medium text-gray-800 mb-1">{title}</h2>
@@ -1678,7 +1679,7 @@ function ReferralRewardCard({
         />
       )}
       <p className="text-sm font-medium text-brand-700 mb-1">
-        🎁 {program?.referrer_reward_text || 'Получите скидку 50%'}
+        <Gift size={16} className="inline" /> {program?.referrer_reward_text || 'Получите скидку 50%'}
       </p>
       <p className="text-sm text-brand-700 mb-4">
         {hasProgram
@@ -1713,7 +1714,7 @@ function ErrorScreen({ message }: { message: string }) {
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="card p-8 text-center max-w-sm">
-        <div className="text-4xl mb-4">😕</div>
+        <div className="text-4xl mb-4 flex justify-center text-gray-400"><Frown size={40} /></div>
         <p className="text-sm text-gray-700 font-medium mb-2">Что-то пошло не так</p>
         <p className="text-sm text-gray-500 mb-6">{message}</p>
         <button onClick={() => window.history.back()} className="btn-secondary w-full mb-3">
