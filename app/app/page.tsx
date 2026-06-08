@@ -1289,7 +1289,7 @@ function StudentDistributionControl({
               disabled={saving}
               className={`text-sm px-3 py-1 border rounded transition disabled:opacity-50 disabled:cursor-not-allowed ${
                 value === mode
-                  ? 'bg-blue-50 border-blue-400 text-blue-700 font-medium'
+                  ? 'bg-brand-50 border-brand-400 text-brand-700 font-medium'
                   : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
               }`}
             >
@@ -2515,7 +2515,7 @@ function AlbumDetailModal({
                                       e.stopPropagation()
                                       copyChildLink(c)
                                     }}
-                                    className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
+                                    className="text-xs text-brand-600 hover:text-brand-700 px-2 py-1"
                                     title="Скопировать ссылку"
                                   >
                                     Ссылка
@@ -3730,7 +3730,7 @@ function AlbumFormModal({
                   type="button"
                   onClick={() => setTemplatePickerOpen(true)}
                   disabled={loading}
-                  className="text-blue-600 hover:text-blue-800 text-xs underline ml-1"
+                  className="text-brand-600 hover:text-brand-700 text-xs underline ml-1"
                 >
                   сменить
                 </button>
@@ -4212,7 +4212,7 @@ function AlbumFormModal({
                   <button
                     type="button"
                     onClick={() => setShowCloneConfirm(true)}
-                    className="text-sm text-blue-600 hover:text-blue-800 transition-colors mb-4 block"
+                    className="text-sm text-brand-600 hover:text-brand-700 transition-colors mb-4 block"
                     disabled={loading}
                   >
                     <Copy size={16} /> Клонировать альбом
@@ -4233,7 +4233,7 @@ function AlbumFormModal({
                       <button
                         type="button"
                         onClick={handleClone}
-                        className="px-3 py-1.5 rounded-xl text-sm bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                        className="px-3 py-1.5 rounded-xl text-sm bg-brand-600 hover:bg-brand-700 text-white transition-colors"
                         disabled={loading}
                       >
                         {loading ? 'Клонируем...' : 'Да, создать копию'}
@@ -4390,7 +4390,7 @@ function AlbumFormModal({
               <button
                 type="button"
                 onClick={confirmTemplateChange}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm"
               >
                 {pendingTemplateChange.newId ? 'Сменить шаблон' : 'Снять шаблон'}
               </button>
@@ -4636,7 +4636,7 @@ function TemplatePickerModal({
                       setDesignFilter(d.id)
                       setStep('templates')
                     }}
-                    className="text-left p-3 rounded-lg border bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all flex flex-col gap-2 cursor-pointer"
+                    className="text-left p-3 rounded-lg border bg-white border-gray-200 hover:border-brand-300 hover:shadow-sm transition-all flex flex-col gap-2 cursor-pointer"
                   >
                     <div
                       className="w-full bg-gray-50 border border-gray-200 rounded overflow-hidden flex items-center justify-center"
@@ -4760,8 +4760,8 @@ function PickerCard({
         disabled
           ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
           : isCurrent
-          ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-200'
-          : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm cursor-pointer'
+          ? 'bg-brand-50 border-brand-400 ring-2 ring-brand-200'
+          : 'bg-white border-gray-200 hover:border-brand-300 hover:shadow-sm cursor-pointer'
       }`}
     >
       {/* Превью */}
@@ -4789,7 +4789,7 @@ function PickerCard({
         </div>
       )}
       {isCurrent && !disabled && (
-        <div className="text-xs text-blue-700 font-medium">Выбран сейчас</div>
+        <div className="text-xs text-brand-700 font-medium">Выбран сейчас</div>
       )}
     </button>
   )
@@ -6302,7 +6302,7 @@ function PhotosTab({
                   ? originalsProgress.failed > 0
                     ? 'border-amber-400 bg-amber-50'
                     : 'border-green-400 bg-green-50'
-                  : 'border-blue-400 bg-blue-50'
+                  : 'border-brand-400 bg-brand-50'
               }`}
             >
               <div className="flex items-start justify-between gap-3 mb-3">
@@ -9027,7 +9027,7 @@ function SpreadTab({ spreadData, album }: {
                         rel="noopener noreferrer"
                         download={p.filename}
                         title={p.filename}
-                        className="relative aspect-square block rounded-lg overflow-hidden border border-gray-100 hover:border-blue-300 transition-colors group"
+                        className="relative aspect-square block rounded-lg overflow-hidden border border-gray-100 hover:border-brand-300 transition-colors group"
                       >
                         <img
                           src={photoUrl(p.storage_path)}
@@ -9808,7 +9808,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                               disabled={isProcessing}
                             />
                             <button
-                              className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="text-xs px-2 py-0.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
                               onClick={() => handleRebindRetouched(u.storage_path)}
                               disabled={!resolvedId || isProcessing}
                               title={resolvedId ? `Привязать к photo ${resolvedId.slice(0, 8)}` : 'Выберите фото из списка'}
@@ -11426,7 +11426,7 @@ function PresetCard({
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="text-sm text-blue-600 hover:text-blue-800 hover:underline shrink-0"
+            className="text-sm text-brand-600 hover:text-brand-700 hover:underline shrink-0"
           >
             Редактировать
           </button>
