@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { RotateCcw } from 'lucide-react'
 import {
   parseFontSizeMult,
   serializeFontSizeMult,
@@ -285,14 +286,14 @@ export default function TextStylePanel({
               className="text-[10px] text-gray-500 hover:text-gray-900"
               title="Сбросить к шрифту из шаблона"
             >
-              ↺
+              <RotateCcw size={12} />
             </button>
           )}
         </div>
         <select
           value={fontFamily ?? ''}
           onChange={(e) => handleFontSelect(e.target.value)}
-          className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white"
+          className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-200 bg-white"
           style={{
             // Применяем выбранный шрифт прямо в select-боксе для preview.
             fontFamily: fontFamily ? `'${fontFamily}', serif` : 'inherit',
@@ -347,7 +348,7 @@ export default function TextStylePanel({
                 aria-label={name}
                 className={`w-9 h-9 rounded border transition-all ${
                   isActive
-                    ? 'border-blue-600 ring-2 ring-blue-200'
+                    ? 'border-brand-600 ring-2 ring-brand-200'
                     : 'border-gray-300 hover:border-gray-400'
                 }`}
                 style={{ backgroundColor: hex }}
@@ -381,7 +382,7 @@ export default function TextStylePanel({
                 onClick={() => handleHAlign(v)}
                 className={`px-2 py-1 text-sm leading-none border-r border-gray-300 last:border-r-0 ${
                   hAlign === v
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-brand-600 text-white'
                     : 'bg-white text-gray-700 hover:bg-gray-100'
                 }`}
                 title={
@@ -406,7 +407,7 @@ export default function TextStylePanel({
                 onClick={() => handleVAlign(v)}
                 className={`px-2 py-1 text-sm leading-none border-r border-gray-300 last:border-r-0 ${
                   vAlign === v
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-brand-600 text-white'
                     : 'bg-white text-gray-700 hover:bg-gray-100'
                 }`}
                 title={
@@ -433,7 +434,7 @@ export default function TextStylePanel({
               className="text-[10px] text-gray-500 hover:text-gray-900 ml-auto"
               title="Сбросить выравнивание к шаблону"
             >
-              ↺
+              <RotateCcw size={12} />
             </button>
           )}
         </div>
@@ -445,15 +446,15 @@ export default function TextStylePanel({
           type="button"
           onClick={handleReset}
           disabled={isDefault}
-          className="text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
           title="Вернуть размер и цвет к настройкам шаблона"
         >
-          ↺ По умолчанию
+          <RotateCcw size={12} /> По умолчанию
         </button>
         <button
           type="button"
           onClick={onClose}
-          className="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+          className="text-xs px-3 py-1 bg-brand-600 text-white rounded hover:bg-brand-700"
         >
           Готово
         </button>

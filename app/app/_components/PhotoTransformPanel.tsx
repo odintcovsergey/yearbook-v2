@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { RotateCcw } from 'lucide-react'
 import {
   parseScale,
   parseOffset,
@@ -369,7 +370,7 @@ export default function PhotoTransformPanel({
             />
             {/* Dot — текущая позиция */}
             <div
-              className="absolute bg-blue-600 rounded-full border-2 border-white shadow"
+              className="absolute bg-brand-600 rounded-full border-2 border-white shadow"
               style={{
                 left: `${dotX}px`,
                 top: `${dotY}px`,
@@ -440,15 +441,15 @@ export default function PhotoTransformPanel({
           type="button"
           onClick={handleReset}
           disabled={isDefault}
-          className="text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
           title="Сбросить к умолчанию (центрирование, 100%, без поворота)"
         >
-          ↺ Сбросить
+          <RotateCcw size={12} /> Сбросить
         </button>
         <button
           type="button"
           onClick={onClose}
-          className="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+          className="text-xs px-3 py-1 bg-brand-600 text-white rounded hover:bg-brand-700"
         >
           Готово
         </button>

@@ -46,6 +46,17 @@ import { remapData } from '@/lib/template-replace'
 import WarningsPill, {
   type EnrichedWarning,
 } from './_components/WarningsPill'
+import {
+  Eye,
+  BookOpen,
+  RefreshCw,
+  Type,
+  Image as ImageIcon,
+  Sparkles,
+  Camera,
+  Pencil,
+  Save,
+} from 'lucide-react'
 
 // Konva-компонент: SSR-incompatible (использует window.Image).
 const AlbumSpreadCanvas = dynamic(
@@ -222,7 +233,7 @@ function EmptyPagePlaceholder({
       className={
         'rounded border border-dashed flex items-center justify-center select-none transition-colors ' +
         (isClickable
-          ? 'border-blue-300 bg-blue-50/30 hover:bg-blue-50 hover:border-blue-400 cursor-pointer'
+          ? 'border-brand-300 bg-brand-50 hover:bg-brand-50 hover:border-brand-400 cursor-pointer'
           : 'border-gray-300 bg-gray-50/60')
       }
       style={{ width: `${width}px`, height: `${height}px` }}
@@ -243,7 +254,7 @@ function EmptyPagePlaceholder({
     >
       <span
         className={
-          'text-center px-4 ' + (isClickable ? 'text-blue-500' : 'text-gray-400')
+          'text-center px-4 ' + (isClickable ? 'text-brand-500' : 'text-gray-400')
         }
         style={{ fontSize: `${Math.max(11, height * 0.025)}px` }}
       >
@@ -1712,7 +1723,7 @@ function LayoutEditorPageInner({
                       : 'Только просмотр'
               }
             >
-              👁 {
+              <Eye size={14} className="inline" /> {
                 readOnlyReason === 'submitted'
                   ? 'Передан в работу'
                   : readOnlyReason === 'view_as'
@@ -1791,7 +1802,7 @@ function LayoutEditorPageInner({
                   className="group inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-900 hover:bg-amber-100 cursor-help relative"
                   tabIndex={0}
                 >
-                  <span>📖</span>
+                  <span><BookOpen size={14} /></span>
                   <span className="font-medium">Мягкий переплёт</span>
                   <span className="text-amber-700 text-[10px]">подробнее</span>
                   <span
@@ -1838,7 +1849,7 @@ function LayoutEditorPageInner({
                       <div
                         className={`bg-white rounded shadow-sm border ${
                           currentIdx === currentPair.leftIdx
-                            ? 'border-blue-400 ring-2 ring-blue-200'
+                            ? 'border-brand-400 ring-2 ring-brand-200'
                             : 'border-gray-200'
                         }`}
                         onClick={() => {
@@ -1875,7 +1886,7 @@ function LayoutEditorPageInner({
                           <div
                             className={`bg-white rounded shadow-sm border cursor-pointer ${
                               currentIdx === currentPair.leftIdx
-                                ? 'border-blue-400 ring-2 ring-blue-200'
+                                ? 'border-brand-400 ring-2 ring-brand-200'
                                 : 'border-gray-200'
                             }`}
                             onClick={() => {
@@ -1948,7 +1959,7 @@ function LayoutEditorPageInner({
                           <div
                             className={`bg-white rounded shadow-sm border cursor-pointer ${
                               currentIdx === currentPair.rightIdx
-                                ? 'border-blue-400 ring-2 ring-blue-200'
+                                ? 'border-brand-400 ring-2 ring-brand-200'
                                 : 'border-gray-200'
                             }`}
                             onClick={() => {
@@ -2062,10 +2073,10 @@ function LayoutEditorPageInner({
                   <button
                     type="button"
                     onClick={() => setReplaceTemplateForIdx(currentIdx)}
-                    className="ml-auto px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+                    className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
                     title={`Текущий шаблон: ${currentTemplate.name}. Заменить на другой.`}
                   >
-                    🔄 Заменить шаблон{' '}
+                    <RefreshCw size={16} /> Заменить шаблон{' '}
                     {currentPair && !currentPair.isSpread
                       ? currentIdx === currentPair.leftIdx
                         ? '(левой страницы)'
@@ -2078,10 +2089,10 @@ function LayoutEditorPageInner({
                   <button
                     type="button"
                     onClick={() => setTextStylesModalOpen(true)}
-                    className="px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
                     title="Размер и цвет имён, цитат, ФИО, должностей — для всего альбома сразу"
                   >
-                    🎨 Стили текстов
+                    <Type size={16} /> Стили текстов
                   </button>
                 )}
                 {/* Этап 6 — ручной фон этого разворота. Показываем только если
@@ -2090,14 +2101,14 @@ function LayoutEditorPageInner({
                   <button
                     type="button"
                     onClick={() => setBgPickerOpen(true)}
-                    className={`px-3 py-1.5 text-sm rounded border bg-white hover:bg-gray-50 ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border bg-white hover:bg-gray-50 ${
                       currentBgOverride
-                        ? 'border-blue-400 text-blue-700'
+                        ? 'border-brand-400 text-brand-700'
                         : 'border-gray-300 text-gray-700'
                     }`}
                     title="Выбрать конкретный фон для этого разворота (перебить авторотацию)"
                   >
-                    🖼 Фон разворота{currentBgOverride ? ' •' : ''}
+                    <ImageIcon size={16} /> Фон разворота{currentBgOverride ? ' •' : ''}
                   </button>
                 )}
               </div>
@@ -2114,7 +2125,7 @@ function LayoutEditorPageInner({
           <PhotoPalette spreads={spreads} photos={photos} />
         ) : (
           <aside className="hidden md:flex w-80 bg-gray-50 border-l border-gray-200 flex-col items-center justify-center p-6 text-center">
-            <div className="text-4xl mb-2">👁</div>
+            <div className="mb-2 flex justify-center text-gray-300"><Eye size={40} /></div>
             <p className="text-sm font-medium text-gray-700 mb-1">Только просмотр</p>
             <p className="text-xs text-gray-500">
               {readOnlyReason === 'submitted'
@@ -2195,7 +2206,7 @@ function LayoutEditorPageInner({
           {dragState?.mode === 'palette' ? (
             // Палитра → placeholder: фикс 120px overlay (миниатюра палитры
             // и так маленькая, фикс размер уместен).
-            <div className="aspect-[3/4] w-[120px] bg-gray-100 rounded overflow-hidden border-2 border-blue-500 shadow-xl">
+            <div className="aspect-[3/4] w-[120px] bg-gray-100 rounded overflow-hidden border-2 border-brand-500 shadow-xl">
               <img
                 src={dragState.photo.thumb_url}
                 alt={dragState.photo.filename}
@@ -2347,11 +2358,11 @@ function LayoutEditorPageInner({
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
-              👋 Добро пожаловать в редактор макета
+              <Sparkles size={20} className="inline" /> Добро пожаловать в редактор макета
             </h2>
             <ul className="space-y-3 text-sm text-gray-700">
               <li className="flex gap-3">
-                <span className="text-blue-500 flex-shrink-0">📷</span>
+                <span className="text-brand-500 flex-shrink-0"><Camera size={18} /></span>
                 <span>
                   <b>Фото:</b> перетащите из правой палитры в макет. Чтобы поменять
                   местами — перетащите одно фото на другое. Правый клик —
@@ -2359,27 +2370,27 @@ function LayoutEditorPageInner({
                 </span>
               </li>
               <li className="flex gap-3">
-                <span className="text-blue-500 flex-shrink-0">✏️</span>
+                <span className="text-brand-500 flex-shrink-0"><Pencil size={18} /></span>
                 <span>
                   <b>Текст:</b> кликните на ФИО, цитату или любой текст
                   в макете чтобы исправить. Enter — подтвердить, Esc — отменить.
                 </span>
               </li>
               <li className="flex gap-3">
-                <span className="text-blue-500 flex-shrink-0">↶</span>
+                <span className="text-brand-500 flex-shrink-0">↶</span>
                 <span>
                   <b>Отмена действий:</b> Ctrl+Z (⌘Z на Mac) или кнопка
                   «↶ Отменить» в шапке. До 50 шагов назад.
                 </span>
               </li>
               <li className="flex gap-3">
-                <span className="text-blue-500 flex-shrink-0">◀▶</span>
+                <span className="text-brand-500 flex-shrink-0">◀▶</span>
                 <span>
                   <b>Навигация:</b> стрелки ← / → на клавиатуре или кнопки внизу.
                 </span>
               </li>
               <li className="flex gap-3">
-                <span className="text-green-500 flex-shrink-0">💾</span>
+                <span className="text-green-500 flex-shrink-0"><Save size={18} /></span>
                 <span>
                   <b>Автосохранение:</b> все изменения сохраняются автоматически.
                   Индикатор статуса в шапке справа.
@@ -2389,7 +2400,7 @@ function LayoutEditorPageInner({
             <button
               type="button"
               onClick={dismissOnboarding}
-              className="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 rounded-lg transition-colors"
+              className="mt-6 w-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium py-2.5 rounded-lg transition-colors"
               autoFocus
             >
               Понятно, начинаем

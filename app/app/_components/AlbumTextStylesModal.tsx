@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { RotateCcw } from 'lucide-react'
 import {
   TEXT_STYLE_GROUPS,
   TEXT_STYLE_PALETTE,
@@ -187,7 +188,7 @@ export default function AlbumTextStylesModal({
                 <div
                   key={group}
                   className={`border rounded-lg p-2.5 ${
-                    isModified ? 'border-blue-300 bg-blue-50/30' : 'border-gray-200'
+                    isModified ? 'border-brand-300 bg-brand-50' : 'border-gray-200'
                   }`}
                 >
                   <div className="flex items-baseline justify-between mb-1.5">
@@ -198,9 +199,9 @@ export default function AlbumTextStylesModal({
                       <button
                         type="button"
                         onClick={() => resetGroup(group)}
-                        className="text-[10px] text-gray-500 hover:text-gray-900 whitespace-nowrap ml-2"
+                        className="inline-flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-900 whitespace-nowrap ml-2"
                       >
-                        ↺ сброс
+                        <RotateCcw size={11} /> сброс
                       </button>
                     )}
                   </div>
@@ -224,7 +225,7 @@ export default function AlbumTextStylesModal({
                           font_family: v === '' ? null : v,
                         })
                       }}
-                      className="w-full px-2 py-1 text-[11px] border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-blue-200"
+                      className="w-full px-2 py-1 text-[11px] border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-brand-200"
                       style={{
                         fontFamily: ov?.font_family
                           ? `'${ov.font_family}', serif`
@@ -296,7 +297,7 @@ export default function AlbumTextStylesModal({
                             aria-label={name}
                             className={`w-6 h-6 rounded border transition-all ${
                               isActive
-                                ? 'border-blue-600 ring-2 ring-blue-200'
+                                ? 'border-brand-600 ring-2 ring-brand-200'
                                 : 'border-gray-300 hover:border-gray-400'
                             }`}
                             style={{ backgroundColor: hex }}
@@ -337,7 +338,7 @@ export default function AlbumTextStylesModal({
                             }
                             className={`px-1.5 py-0.5 text-[11px] leading-none border-r border-gray-300 last:border-r-0 ${
                               ov?.halign === v
-                                ? 'bg-blue-600 text-white'
+                                ? 'bg-brand-600 text-white'
                                 : 'bg-white text-gray-700 hover:bg-gray-100'
                             }`}
                             title={
@@ -366,7 +367,7 @@ export default function AlbumTextStylesModal({
                             }
                             className={`px-1.5 py-0.5 text-[11px] leading-none border-r border-gray-300 last:border-r-0 ${
                               ov?.valign === v
-                                ? 'bg-blue-600 text-white'
+                                ? 'bg-brand-600 text-white'
                                 : 'bg-white text-gray-700 hover:bg-gray-100'
                             }`}
                             title={
@@ -402,9 +403,9 @@ export default function AlbumTextStylesModal({
             type="button"
             onClick={resetAll}
             disabled={!hasAnyOverride || saving}
-            className="text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
           >
-            ↺ Сбросить всё
+            <RotateCcw size={12} /> Сбросить всё
           </button>
           <div className="flex items-center gap-2">
             <button
@@ -419,7 +420,7 @@ export default function AlbumTextStylesModal({
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm disabled:opacity-50"
+              className="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded text-sm disabled:opacity-50"
             >
               {saving ? 'Сохранение...' : 'Сохранить'}
             </button>
