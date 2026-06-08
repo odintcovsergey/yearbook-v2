@@ -96,7 +96,7 @@ export default function TeacherPage() {
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-brand-50 to-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-cream to-cream-light">
 
       {lightbox && (
         <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">

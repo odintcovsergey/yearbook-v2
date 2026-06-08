@@ -426,7 +426,7 @@ export default function ParentPage() {
   if (loading) return <LoadingScreen />
   if (error && !done) return <ErrorScreen message={error} />
   if (alreadySubmitted) return (
-    <div className="min-h-screen bg-gradient-to-b from-brand-50 to-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-b from-cream to-cream-light flex items-center justify-center p-4">
       <div className="max-w-sm w-full space-y-4">
         <div className="card p-8 text-center">
           <div className="w-16 h-16 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
@@ -444,7 +444,7 @@ export default function ParentPage() {
               checked={isPurchased}
               disabled={purchaseSaving}
               onChange={(e) => handlePurchaseChange(e.target.checked)}
-              className="mt-0.5 w-5 h-5"
+              className="mt-0.5 w-5 h-5 accent-brand-600"
             />
             <div className="flex-1">
               <span className="text-sm font-medium text-gray-800">
@@ -471,7 +471,7 @@ export default function ParentPage() {
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-brand-50 to-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-cream to-cream-light">
 
       {lightbox && (
         <Lightbox
@@ -544,7 +544,7 @@ export default function ParentPage() {
               checked={isPurchased}
               disabled={purchaseSaving}
               onChange={(e) => handlePurchaseChange(e.target.checked)}
-              className="mt-0.5 w-5 h-5"
+              className="mt-0.5 w-5 h-5 accent-brand-600"
             />
             <div className="flex-1">
               <span className="text-sm font-medium text-gray-800">
