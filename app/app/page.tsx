@@ -3,6 +3,16 @@
 import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
+import {
+  Camera,
+  Contact,
+  LayoutTemplate,
+  Quote,
+  Users,
+  Settings,
+  Gift,
+  Ruler,
+} from 'lucide-react'
 import CRMModal from './CRMModal'
 // РЭ.21.7.3: drag-and-drop секций в редакторе пресета.
 import {
@@ -403,14 +413,14 @@ export default function AppPage() {
               className="btn-secondary"
               title="Готовые шаблоны и моя библиотека"
             >
-              📐 Шаблоны
+              <Ruler size={16} /> Шаблоны
             </button>
             <button
               onClick={() => router.push('/app/referral-programs')}
               className="btn-secondary"
               title="Реферальные программы: готовые и свои"
             >
-              🎁 Рефералки
+              <Gift size={16} /> Рефералки
             </button>
             <button onClick={handleLogout} className="btn-secondary">Выйти</button>
           </div>
@@ -465,7 +475,7 @@ export default function AppPage() {
               <button
                 onClick={() => setFilter('active')}
                 className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                  filter === 'active' ? 'bg-white shadow-sm' : 'text-gray-500'
+                  filter === 'active' ? 'bg-white shadow-sm text-brand-700' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
                 Актуальные
@@ -474,7 +484,7 @@ export default function AppPage() {
               <button
                 onClick={() => setFilter('archive')}
                 className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                  filter === 'archive' ? 'bg-white shadow-sm' : 'text-gray-500'
+                  filter === 'archive' ? 'bg-white shadow-sm text-brand-700' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
                 Архив
@@ -488,7 +498,7 @@ export default function AppPage() {
                 className="btn-ghost text-sm"
                 type="button"
               >
-                📸 Партнёры
+                <Camera size={16} /> Партнёры
               </button>
             )}
 
@@ -498,7 +508,7 @@ export default function AppPage() {
               type="button"
               title="CRM — клиенты и сделки"
             >
-              CRM
+              <Contact size={16} /> CRM
             </button>
 
             <button
@@ -507,7 +517,7 @@ export default function AppPage() {
               type="button"
               title="Пресеты — структура альбома"
             >
-              Пресеты
+              <LayoutTemplate size={16} /> Пресеты
             </button>
 
             <button
@@ -516,7 +526,7 @@ export default function AppPage() {
               type="button"
               title="Управление цитатами"
             >
-              Цитаты
+              <Quote size={16} /> Цитаты
             </button>
 
             {canManageTeam && (
@@ -526,7 +536,7 @@ export default function AppPage() {
                 type="button"
                 title="Сотрудники и приглашения"
               >
-                Команда
+                <Users size={16} /> Команда
               </button>
             )}
 
@@ -536,7 +546,7 @@ export default function AppPage() {
               type="button"
               title="Настройки аккаунта"
             >
-              Настройки
+              <Settings size={16} /> Настройки
             </button>
 
             {canEdit && (
@@ -739,7 +749,7 @@ function AlbumCard({
   return (
     <div
       onClick={onClick}
-      className="card p-5 cursor-pointer hover:border-gray-300 transition-colors relative"
+      className="card p-5 cursor-pointer hover:shadow-card-hover hover:-translate-y-0.5 hover:border-gray-300 transition-all duration-150 relative"
     >
       {canEdit && (
         <button
@@ -816,7 +826,7 @@ function AlbumCard({
       <div className="flex items-center gap-3 mb-3">
         <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
           <div
-            className={`h-full transition-all duration-500 ${progress >= 100 ? 'bg-green-500' : 'bg-gray-900'}`}
+            className={`h-full transition-all duration-500 ${progress >= 100 ? 'bg-brand-600' : 'bg-brand-400'}`}
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -888,14 +898,14 @@ function StatCard({
   highlight?: boolean
   onClick?: () => void
 }) {
-  const baseClass = `card p-5 ${highlight ? 'border-blue-200 bg-blue-50' : ''}`
+  const baseClass = `card p-5 ${highlight ? 'border-brand-200 bg-brand-50' : ''}`
   const content = (
     <>
       <div className="text-xs text-gray-500 mb-1">{label}</div>
       <div className="flex items-baseline gap-2">
         <div className="text-2xl font-semibold text-gray-900">{value}</div>
         {subValue && (
-          <div className={`text-sm ${highlight ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
+          <div className={`text-sm ${highlight ? 'text-brand-600 font-medium' : 'text-gray-400'}`}>
             {subValue}
           </div>
         )}
@@ -908,7 +918,7 @@ function StatCard({
       <button
         type="button"
         onClick={onClick}
-        className={`${baseClass} text-left hover:border-gray-300 transition-colors cursor-pointer w-full`}
+        className={`${baseClass} text-left hover:shadow-card-hover hover:-translate-y-0.5 hover:border-brand-300 transition-all duration-150 cursor-pointer w-full`}
       >
         {content}
       </button>
