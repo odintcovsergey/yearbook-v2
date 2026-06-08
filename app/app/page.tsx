@@ -26,6 +26,11 @@ import {
   Download,
   Maximize2,
   Eye,
+  LayoutGrid,
+  List as ListIcon,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUpDown,
 } from 'lucide-react'
 import CRMModal from './CRMModal'
 // РЭ.21.7.3: drag-and-drop секций в редакторе пресета.
@@ -102,6 +107,24 @@ type Album = {
   stats: { total: number; submitted: number; in_progress: number; purchased?: number }
   teacher_token: string | null
   teachers: { total: number; done: number } | null
+}
+
+// Дашборд: по каким столбцам можно сортировать список заказов.
+type AlbumSortKey = 'title' | 'class' | 'year' | 'progress' | 'teachers' | 'deadline' | 'status'
+
+// Статус срочности заказа — выводится из дедлайна и прогресса выбора.
+// Используется и в плитках, и в строках, и для фильтра/сортировки.
+type UrgencyStatus = { key: string; label: string; cls: string; order: number }
+function computeUrgency(album: Album): UrgencyStatus {
+  const total = album.stats.total
+  const ratio = total > 0 ? album.stats.submitted / total : 0
+  const deadline = album.deadline ? new Date(album.deadline) : null
+  const daysLeft = deadline ? Math.ceil((deadline.getTime() - Date.now()) / 86400000) : null
+  if (total > 0 && ratio >= 1) return { key: 'done', label: 'Готово', cls: 'bg-brand-50 text-brand-700', order: 0 }
+  if (daysLeft !== null && daysLeft < 0) return { key: 'overdue', label: 'Просрочено', cls: 'bg-red-100 text-red-700', order: 4 }
+  if (daysLeft !== null && daysLeft <= 7) return { key: 'soon', label: 'Горит', cls: 'bg-amber-100 text-amber-700', order: 3 }
+  if (album.stats.in_progress > 0 || album.stats.submitted > 0) return { key: 'active', label: 'В работе', cls: 'bg-blue-50 text-blue-700', order: 2 }
+  return { key: 'collecting', label: 'Сбор', cls: 'bg-gray-100 text-gray-500', order: 1 }
 }
 
 type Summary = {
@@ -214,6 +237,21 @@ export default function AppPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [filter, setFilter] = useState<'active' | 'archive'>('active')
   const [search, setSearch] = useState('')
+  // Дашборд: вид (плитки/строки), сортировка по столбцам, фильтр по статусу срочности.
+  const [viewMode, setViewMode] = useState<'tiles' | 'list'>('tiles')
+  const [sortKey, setSortKey] = useState<AlbumSortKey | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  // Запоминаем выбранный вид между сессиями.
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem('dash_view')
+      if (v === 'list' || v === 'tiles') setViewMode(v)
+    } catch { /* localStorage недоступен — игнорируем */ }
+  }, [])
+  useEffect(() => {
+    try { window.localStorage.setItem('dash_view', viewMode) } catch { /* игнор */ }
+  }, [viewMode])
   const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null)
   const [showLeads, setShowLeads] = useState(false)
   const [showQuotes, setShowQuotes] = useState(false)
@@ -320,6 +358,51 @@ export default function AppPage() {
       (a.city?.toLowerCase().includes(search.toLowerCase()) ?? false)
     return matchesFilter && matchesSearch
   })
+
+  // Счётчики по статусу срочности (для чипсов-фильтра) — по уже отфильтрованным.
+  const statusCounts: Record<string, number> = {}
+  for (const a of filteredAlbums) {
+    const k = computeUrgency(a).key
+    statusCounts[k] = (statusCounts[k] ?? 0) + 1
+  }
+
+  // Применяем фильтр по статусу + сортировку по выбранному столбцу.
+  const sortFactor = sortDir === 'asc' ? 1 : -1
+  const displayedAlbums = filteredAlbums
+    .filter(a => statusFilter === 'all' || computeUrgency(a).key === statusFilter)
+    .slice()
+    .sort((a, b) => {
+      if (!sortKey) return 0
+      let cmp = 0
+      switch (sortKey) {
+        case 'title': cmp = a.title.localeCompare(b.title, 'ru'); break
+        case 'class': cmp = (a.classes[0] ?? '').localeCompare(b.classes[0] ?? '', 'ru', { numeric: true }); break
+        case 'year': cmp = (a.year ?? 0) - (b.year ?? 0); break
+        case 'progress': {
+          const pa = a.stats.total > 0 ? a.stats.submitted / a.stats.total : 0
+          const pb = b.stats.total > 0 ? b.stats.submitted / b.stats.total : 0
+          cmp = pa - pb; break
+        }
+        case 'teachers': {
+          const ta = a.teachers && a.teachers.total > 0 ? a.teachers.done / a.teachers.total : -1
+          const tb = b.teachers && b.teachers.total > 0 ? b.teachers.done / b.teachers.total : -1
+          cmp = ta - tb; break
+        }
+        case 'deadline': {
+          const da = a.deadline ? new Date(a.deadline).getTime() : Infinity
+          const db = b.deadline ? new Date(b.deadline).getTime() : Infinity
+          cmp = da - db; break
+        }
+        case 'status': cmp = computeUrgency(a).order - computeUrgency(b).order; break
+      }
+      return cmp * sortFactor
+    })
+
+  // Клик по заголовку столбца: тот же столбец → меняем направление, новый → asc.
+  const toggleSort = (key: AlbumSortKey) => {
+    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortKey(key); setSortDir('asc') }
+  }
 
   if (loading || !auth) {
     return (
@@ -570,34 +653,88 @@ export default function AppPage() {
             )}
           </div>
 
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск альбома..."
-            className="input max-w-xs"
-          />
+          <div className="flex items-center gap-2">
+            {/* Переключатель вида: плитки / строки */}
+            <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode('tiles')}
+                className={`p-1.5 rounded-md transition-colors ${viewMode === 'tiles' ? 'bg-white shadow-sm text-brand-700' : 'text-gray-400 hover:text-gray-600'}`}
+                title="Плитками"
+              >
+                <LayoutGrid size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-brand-700' : 'text-gray-400 hover:text-gray-600'}`}
+                title="Списком"
+              >
+                <ListIcon size={18} />
+              </button>
+            </div>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск альбома..."
+              className="input max-w-xs"
+            />
+          </div>
         </div>
 
+        {/* Чипсы-фильтр по статусу срочности */}
+        {filteredAlbums.length > 0 && (
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            <StatusChip label="Все" count={filteredAlbums.length} active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />
+            {([
+              { key: 'overdue', label: 'Просрочено', dot: 'bg-red-500' },
+              { key: 'soon', label: 'Горит', dot: 'bg-amber-400' },
+              { key: 'active', label: 'В работе', dot: 'bg-blue-400' },
+              { key: 'collecting', label: 'Сбор', dot: 'bg-gray-300' },
+              { key: 'done', label: 'Готово', dot: 'bg-brand-500' },
+            ] as const).filter(s => (statusCounts[s.key] ?? 0) > 0).map(s => (
+              <StatusChip
+                key={s.key}
+                label={s.label}
+                count={statusCounts[s.key] ?? 0}
+                dot={s.dot}
+                active={statusFilter === s.key}
+                onClick={() => setStatusFilter(statusFilter === s.key ? 'all' : s.key)}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Список альбомов */}
-        {filteredAlbums.length === 0 ? (
+        {displayedAlbums.length === 0 ? (
           <div className="card p-12 text-center">
             <div className="text-gray-400 text-sm mb-3">
-              {search
+              {search || statusFilter !== 'all'
                 ? 'Ничего не найдено'
                 : filter === 'active'
                 ? 'Пока нет активных альбомов'
                 : 'В архиве ничего нет'}
             </div>
-            {filter === 'active' && !search && canEdit && (
+            {filter === 'active' && !search && statusFilter === 'all' && canEdit && (
               <button onClick={() => setShowCreate(true)} className="btn-primary">
                 Создать первый альбом
               </button>
             )}
           </div>
+        ) : viewMode === 'list' ? (
+          <AlbumListView
+            albums={displayedAlbums}
+            canEdit={canEdit}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={toggleSort}
+            onOpen={(a) => setSelectedAlbum(a)}
+            onEdit={(a) => setEditAlbum(a)}
+          />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredAlbums.map(a => (
+            {displayedAlbums.map(a => (
               <AlbumCard
                 key={a.id}
                 album={a}
@@ -738,6 +875,153 @@ export default function AppPage() {
 // КАРТОЧКА АЛЬБОМА
 // ============================================================
 
+// Чипс-фильтр по статусу срочности (с цветной точкой и счётчиком).
+function StatusChip({
+  label,
+  count,
+  active,
+  onClick,
+  dot,
+}: {
+  label: string
+  count: number
+  active: boolean
+  onClick: () => void
+  dot?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+        active ? 'bg-brand-50 border-brand-300 text-brand-700' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+      }`}
+    >
+      {dot && <span className={`w-2 h-2 rounded-full ${dot}`} />}
+      {label}
+      <span className={active ? 'text-brand-500' : 'text-gray-400'}>{count}</span>
+    </button>
+  )
+}
+
+// Списочный (строчный) вид заказов с сортируемыми столбцами.
+function AlbumListView({
+  albums,
+  canEdit,
+  sortKey,
+  sortDir,
+  onSort,
+  onOpen,
+  onEdit,
+}: {
+  albums: Album[]
+  canEdit: boolean
+  sortKey: AlbumSortKey | null
+  sortDir: 'asc' | 'desc'
+  onSort: (key: AlbumSortKey) => void
+  onOpen: (a: Album) => void
+  onEdit: (a: Album) => void
+}) {
+  const sortIcon = (k: AlbumSortKey) =>
+    sortKey === k ? (
+      sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+    ) : (
+      <ChevronsUpDown size={12} className="text-gray-300" />
+    )
+  const th = (k: AlbumSortKey, label: string, extra = '') => (
+    <th className={`px-4 py-2.5 text-left text-xs font-medium text-gray-500 whitespace-nowrap ${extra}`}>
+      <button type="button" onClick={() => onSort(k)} className="inline-flex items-center gap-1 hover:text-gray-800">
+        {label}
+        {sortIcon(k)}
+      </button>
+    </th>
+  )
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-100">
+            <tr>
+              {th('status', 'Статус')}
+              {th('title', 'Название')}
+              {th('class', 'Класс')}
+              {th('progress', 'Прогресс')}
+              {th('teachers', 'Учителя')}
+              {th('deadline', 'Дедлайн')}
+              {canEdit && <th className="px-4 py-2.5" />}
+            </tr>
+          </thead>
+          <tbody>
+            {albums.map((a) => {
+              const u = computeUrgency(a)
+              const pct = a.stats.total > 0 ? Math.round((a.stats.submitted / a.stats.total) * 100) : 0
+              const dl = a.deadline ? new Date(a.deadline) : null
+              const daysLeft = dl ? Math.ceil((dl.getTime() - Date.now()) / 86400000) : null
+              return (
+                <tr
+                  key={a.id}
+                  onClick={() => onOpen(a)}
+                  className="border-b border-gray-50 last:border-0 hover:bg-gray-50 cursor-pointer"
+                >
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full ${u.cls}`}>
+                      {u.label}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-gray-900 truncate max-w-[260px]">{a.title}</div>
+                    {(a.city || a.year) && (
+                      <div className="text-xs text-gray-400">{[a.city, a.year].filter(Boolean).join(' · ')}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{a.classes.join(', ') || '—'}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className={`h-full ${pct >= 100 ? 'bg-brand-600' : 'bg-brand-400'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">
+                        {a.stats.submitted}/{a.stats.total}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                    {a.teachers && a.teachers.total > 0 ? `${a.teachers.done}/${a.teachers.total}` : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-xs whitespace-nowrap">
+                    {dl ? (
+                      <span className={daysLeft !== null && daysLeft < 0 ? 'text-red-600' : daysLeft !== null && daysLeft <= 7 ? 'text-amber-600' : 'text-gray-500'}>
+                        {dl.toLocaleDateString('ru-RU')}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
+                  {canEdit && (
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onEdit(a)
+                        }}
+                        className="text-gray-400 hover:text-gray-700 p-1"
+                        title="Настройки альбома"
+                      >
+                        <Settings size={16} />
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function AlbumCard({
   album,
   canEdit,
@@ -753,6 +1037,8 @@ function AlbumCard({
     album.stats.total > 0
       ? Math.round((album.stats.submitted / album.stats.total) * 100)
       : 0
+
+  const urgency = computeUrgency(album)
 
   const deadline = album.deadline ? new Date(album.deadline) : null
   const deadlinePassed = deadline && deadline < new Date()
@@ -783,7 +1069,12 @@ function AlbumCard({
 
       <div className="flex items-start justify-between gap-3 mb-3 pr-8">
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold text-gray-900 truncate">{album.title}</h3>
+          <div className="flex items-center gap-2 min-w-0">
+            <h3 className="font-semibold text-gray-900 truncate">{album.title}</h3>
+            <span className={`shrink-0 inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full ${urgency.cls}`}>
+              {urgency.label}
+            </span>
+          </div>
           <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 flex-wrap">
             {album.city && <span>{album.city}</span>}
             {album.year && (
