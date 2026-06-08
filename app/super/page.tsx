@@ -11,6 +11,11 @@ import {
   LayoutTemplate,
   Gift,
   BookImage,
+  AlertTriangle,
+  Check,
+  Upload,
+  Download,
+  Folder,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -508,7 +513,7 @@ function YcStorageWidget() {
 
       {stats?.truncated && (
         <div className="text-xs text-amber-600 mt-3">
-          ⚠️ Просканировано {stats.pages_scanned * 1000}+ объектов (max). Реальный размер может быть больше.
+          <AlertTriangle size={14} className="inline" /> Просканировано {stats.pages_scanned * 1000}+ объектов (max). Реальный размер может быть больше.
         </div>
       )}
 
@@ -1389,7 +1394,7 @@ function TenantDetailModal({
           {mode === 'delete' && (
             <div className="space-y-4">
               <div className="bg-red-50 border border-red-100 rounded-xl p-4">
-                <div className="font-medium text-red-700 mb-2">⚠ Опасное действие</div>
+                <div className="font-medium text-red-700 mb-2"><AlertTriangle size={14} className="inline" /> Опасное действие</div>
                 <p className="text-sm text-red-600">
                   Вместе с арендатором <strong>«{tenant.name}»</strong> будут удалены:
                 </p>
@@ -1685,7 +1690,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
                   onClick={handleTake}
                   disabled={taking}
                 >
-                  {taking ? 'Берём...' : '✓ Взять в работу'}
+                  {taking ? 'Берём...' : <><Check size={16} /> Взять в работу</>}
                 </button>
               </div>
             )}
@@ -1703,7 +1708,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
                   <input type="file" className="hidden"
                     accept=".pdf,.zip,.rar,.7z,.jpg,.jpeg,.png,.tif,.tiff"
                     onChange={e => e.target.files?.[0] && handleUploadDelivery(e.target.files[0])} />
-                  {uploadingDelivery ? `Загружаем... ${uploadProgress}%` : '⬆ Загрузить готовый файл'}
+                  {uploadingDelivery ? `Загружаем... ${uploadProgress}%` : <><Upload size={16} /> Загрузить готовый файл</>}
                 </label>
                 {uploadingDelivery && uploadProgress > 0 && (
                   <div className="h-2 bg-orange-100 rounded-full overflow-hidden">
@@ -1716,7 +1721,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
 
             {selected.workflow_status === 'delivered' && (
               <div className="bg-green-50 rounded-xl p-4">
-                <p className="text-sm font-medium text-green-800">✓ Готово — файлы переданы партнёру</p>
+                <p className="text-sm font-medium text-green-800"><Check size={14} className="inline" /> Готово — файлы переданы партнёру</p>
               </div>
             )}
 
@@ -1728,7 +1733,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
                   <div key={f.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
                     <div>
                       <p className="text-sm">{f.label || f.filename}</p>
-                      <p className="text-xs text-gray-400">{f.downloaded_at ? '✓ скачан партнёром' : 'ещё не скачан'}</p>
+                      <p className="text-xs text-gray-400">{f.downloaded_at ? <><Check size={12} className="inline" /> скачан партнёром</> : 'ещё не скачан'}</p>
                     </div>
                   </div>
                 ))}
@@ -1742,7 +1747,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
                 className="btn-secondary text-sm inline-flex items-center gap-2"
                 target="_blank"
               >
-                ⬇ CSV
+                <Download size={14} /> CSV
               </a>
             </div>
           </div>
@@ -1820,8 +1825,8 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
   )
 
   const wfLabel = (s?: string) => ({
-    active: '🔵 Отбор', ready: '🟡 Готов', submitted: '🟣 Передан',
-    in_production: '🟠 В работе', delivered: '🟢 Готов к получению',
+    active: 'Отбор', ready: 'Готов', submitted: 'Передан',
+    in_production: 'В работе', delivered: 'Готов к получению',
   }[s ?? 'active'] ?? s)
 
   return (
@@ -1932,7 +1937,7 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
                   className="btn-secondary text-xs"
                   target="_blank"
                 >
-                  ⬇ CSV
+                  <Download size={14} /> CSV
                 </a>
               </div>
             </div>
@@ -1972,7 +1977,7 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
                     <p className="text-xs text-amber-700 mt-2 bg-amber-50 rounded p-2">{albumDetail.workflow.workflow_notes}</p>
                   )}
                   {albumDetail.originals?.length > 0 && (
-                    <p className="text-xs text-gray-400 mt-2">📁 Оригиналов загружено: {albumDetail.originals.length}</p>
+                    <p className="text-xs text-gray-400 mt-2"><Folder size={12} className="inline" /> Оригиналов загружено: {albumDetail.originals.length}</p>
                   )}
                 </div>
 
