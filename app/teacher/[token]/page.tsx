@@ -82,7 +82,7 @@ export default function TeacherPage() {
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+      <div className="w-10 h-10 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
     </div>
   )
 
@@ -96,7 +96,7 @@ export default function TeacherPage() {
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-brand-50 to-gray-50">
 
       {lightbox && (
         <div className="fixed inset-0 bg-black/95 z-50 flex flex-col">
@@ -127,7 +127,7 @@ export default function TeacherPage() {
                 ) : (
                   <button
                     onClick={() => { updateLocal(lightbox.teacherId!, 'photo_id', isSelected ? null : photo.id); setLightbox(null) }}
-                    className={`px-10 py-3 rounded-xl text-sm font-medium ${isSelected ? 'bg-green-500 text-white' : 'bg-blue-500 text-white'}`}
+                    className={`px-10 py-3 rounded-xl text-sm font-medium ${isSelected ? 'bg-brand-600 text-white' : 'bg-brand-600 text-white'}`}
                   >
                     {isSelected ? '✓ Выбрано' : '✓ Выбрать это фото'}
                   </button>
@@ -139,7 +139,7 @@ export default function TeacherPage() {
             {lightbox.photos.map((p, i) => (
               <button key={p.id} onClick={() => setLightbox(prev => prev ? {...prev, index: i} : null)}
                 className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all
-                  ${i === lightbox.index ? 'border-blue-400' : 'border-transparent opacity-50 hover:opacity-100'}`}
+                  ${i === lightbox.index ? 'border-brand-400' : 'border-transparent opacity-50 hover:opacity-100'}`}
               >
                 <img src={p.url} alt="" className="w-full h-full object-cover" />
               </button>
@@ -159,7 +159,7 @@ export default function TeacherPage() {
 
         {done ? (
           <div className="card p-8 text-center">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+            <div className="w-16 h-16 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
             <h2 className="text-xl font-medium text-gray-800 mb-2">Спасибо!</h2>
             <p className="text-gray-500 text-sm">Данные учителей сохранены.</p>
           </div>
@@ -186,7 +186,7 @@ export default function TeacherPage() {
                     <h3 className="font-medium text-gray-700">Учитель {idx + 1}</h3>
                     <div className="flex gap-2">
                       {!isEditing && (
-                        <button onClick={() => setEditingId(teacher.id)} className="text-blue-500 text-xs hover:underline">Изменить</button>
+                        <button onClick={() => setEditingId(teacher.id)} className="text-brand-600 text-xs hover:underline">Изменить</button>
                       )}
                       <button onClick={() => deleteTeacher(teacher.id)} className="text-red-400 text-xs hover:underline">Удалить</button>
                     </div>
@@ -204,13 +204,13 @@ export default function TeacherPage() {
                             return (
                               <div key={photo.id} className="relative group">
                                 <div className={`relative aspect-square rounded-xl overflow-hidden border-2 cursor-pointer
-                                  ${isSelected ? 'border-blue-500 shadow-md' : 'border-transparent'}
+                                  ${isSelected ? 'border-brand-600 shadow-md' : 'border-transparent'}
                                   ${usedByOther ? 'opacity-30' : ''}`}
                                   onClick={() => !usedByOther && updateLocal(teacher.id, 'photo_id', isSelected ? null : photo.id)}
                                 >
                                   <img src={photo.url} alt="" className="w-full h-full object-cover" loading="lazy" />
                                   {isSelected && (
-                                    <div className="absolute top-1 right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs">✓</div>
+                                    <div className="absolute top-1 right-1 w-5 h-5 bg-brand-600 rounded-full flex items-center justify-center text-white text-xs">✓</div>
                                   )}
                                   {usedByOther && (
                                     <div className="absolute inset-0 flex items-center justify-center">

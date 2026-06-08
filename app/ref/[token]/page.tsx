@@ -48,7 +48,7 @@ export default function ReferralPage() {
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+      <div className="w-10 h-10 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
     </div>
   )
 
@@ -62,19 +62,19 @@ export default function ReferralPage() {
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-brand-50 to-gray-50">
       <div className="max-w-lg mx-auto px-4 py-8">
 
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-3xl">📸</div>
+          <div className="w-16 h-16 bg-brand-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-3xl">📸</div>
           <h1 className="text-2xl font-semibold text-gray-800 mb-2">Выпускные альбомы</h1>
           <p className="text-gray-500 text-sm">Красивые фотоальбомы для детских садов и школ</p>
         </div>
 
         {sent ? (
           <div className="card p-8 text-center">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+            <div className="w-16 h-16 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
             <h2 className="text-xl font-medium text-gray-800 mb-2">Заявка отправлена!</h2>
             <p className="text-gray-500 text-sm">Мы свяжемся с вами в ближайшее время, чтобы обсудить детали.</p>
           </div>
@@ -82,8 +82,8 @@ export default function ReferralPage() {
           <>
             {/* Referrer badge — имя того, кто рекомендует, показываем всегда. */}
             {referrerName && (
-              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-6 text-center">
-                <p className="text-sm text-blue-700">
+              <div className="bg-brand-50 border border-brand-100 rounded-2xl p-4 mb-6 text-center">
+                <p className="text-sm text-brand-700">
                   Вас рекомендует <strong>{referrerName}</strong>
                 </p>
               </div>
@@ -156,7 +156,7 @@ export default function ReferralPage() {
 
               <p className="text-xs text-gray-400 mt-3 text-center">
                 Нажимая «Отправить заявку», вы даёте согласие на обработку персональных данных в соответствии с{' '}
-                <a href="/privacy" target="_blank" className="text-blue-500 hover:underline">Политикой конфиденциальности</a>
+                <a href="/privacy" target="_blank" className="text-brand-600 hover:underline">Политикой конфиденциальности</a>
               </p>
             </div>
           </>
