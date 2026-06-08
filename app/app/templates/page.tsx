@@ -20,6 +20,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { Package, Folder } from 'lucide-react'
 import { CloneTemplateSetModal } from './_components/CloneTemplateSetModal'
 import { api } from '@/lib/api-client'
 
@@ -215,7 +216,7 @@ export default function DesignsListPage() {
                 ({myDesigns.length})
               </span>
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {myDesigns.map((d) => (
                 <DesignCard
                   key={d.id}
@@ -239,7 +240,7 @@ export default function DesignsListPage() {
                 ({globalDesigns.length})
               </span>
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {globalDesigns.map((d) => (
                 <DesignCard
                   key={d.id}
@@ -291,7 +292,7 @@ function DesignCard({
   const hasPreviews = design.previews.length > 0
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md hover:border-blue-300 transition-all flex flex-col">
+    <div className="bg-white border border-gray-200/70 rounded-2xl p-5 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 hover:border-brand-300 transition-all duration-150 flex flex-col">
       {/* Превью — клик открывает дизайн */}
       <button
         type="button"
@@ -299,12 +300,12 @@ function DesignCard({
         className="text-left mb-3 cursor-pointer"
       >
         {hasPreviews ? (
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-3 gap-2">
             {design.previews.map((svg, i) => (
               <div
                 key={i}
-                className="bg-gray-50 border border-gray-200 rounded overflow-hidden flex items-center justify-center"
-                style={{ aspectRatio: '1 / 1.4', minHeight: '70px' }}
+                className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden flex items-center justify-center"
+                style={{ aspectRatio: '1 / 1.4', minHeight: '90px' }}
                 dangerouslySetInnerHTML={{ __html: svg }}
               />
             ))}
@@ -312,15 +313,15 @@ function DesignCard({
             {Array.from({ length: 3 - design.previews.length }).map((_, i) => (
               <div
                 key={`empty-${i}`}
-                className="bg-gray-50 border border-dashed border-gray-200 rounded"
-                style={{ aspectRatio: '1 / 1.4', minHeight: '70px' }}
+                className="bg-gray-50 border border-dashed border-gray-200 rounded-lg"
+                style={{ aspectRatio: '1 / 1.4', minHeight: '90px' }}
               />
             ))}
           </div>
         ) : (
           <div
-            className="bg-gray-50 border border-dashed border-gray-200 rounded flex items-center justify-center text-gray-400 text-xs"
-            style={{ aspectRatio: '3 / 1.4', minHeight: '70px' }}
+            className="bg-gray-50 border border-dashed border-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-xs"
+            style={{ aspectRatio: '3 / 1.4', minHeight: '90px' }}
           >
             Нет превью мастеров
           </div>
@@ -331,7 +332,7 @@ function DesignCard({
       <button
         type="button"
         onClick={onOpen}
-        className="font-semibold text-gray-900 truncate text-left hover:text-blue-700"
+        className="font-semibold text-gray-900 truncate text-left hover:text-brand-700"
         title={design.name}
       >
         {design.name}
@@ -345,36 +346,36 @@ function DesignCard({
       )}
 
       {/* Бейджи */}
-      <div className="flex flex-wrap gap-1 mt-2">
+      <div className="flex flex-wrap gap-1.5 mt-2">
         {design.is_global ? (
-          <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
+          <span className="px-2.5 py-0.5 bg-brand-50 text-brand-700 text-xs font-medium rounded-full">
             от OkeyBook
           </span>
         ) : (
-          <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">
+          <span className="px-2.5 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full">
             мой дизайн
           </span>
         )}
         {design.print_type === 'layflat' && (
-          <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded">
+          <span className="px-2.5 py-0.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
             твёрдая обложка
           </span>
         )}
         {design.print_type === 'soft' && (
-          <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded">
+          <span className="px-2.5 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
             мягкая обложка
           </span>
         )}
       </div>
 
       {/* Счётчики */}
-      <div className="text-xs text-gray-500 mt-3">
+      <div className="text-xs text-gray-500 mt-3 flex items-center gap-1.5 flex-wrap">
         {design.recommended_count > 0 && (
-          <span>📦 {design.recommended_count} готовых от OkeyBook</span>
+          <span className="inline-flex items-center gap-1"><Package size={13} /> {design.recommended_count} готовых от OkeyBook</span>
         )}
-        {design.recommended_count > 0 && design.my_count > 0 && ' · '}
+        {design.recommended_count > 0 && design.my_count > 0 && <span className="text-gray-300">·</span>}
         {design.my_count > 0 && (
-          <span>📂 {design.my_count} моих шаблонов</span>
+          <span className="inline-flex items-center gap-1"><Folder size={13} /> {design.my_count} моих шаблонов</span>
         )}
         {design.recommended_count === 0 && design.my_count === 0 && (
           <span className="text-gray-400">пока шаблонов нет — можно создать свой</span>
@@ -386,7 +387,7 @@ function DesignCard({
         <button
           type="button"
           onClick={onOpen}
-          className="text-blue-600 text-sm font-medium hover:text-blue-800"
+          className="text-brand-600 text-sm font-medium hover:text-brand-700"
         >
           Открыть →
         </button>
@@ -396,7 +397,7 @@ function DesignCard({
           <button
             type="button"
             onClick={onClone}
-            className="ml-auto px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs rounded border border-gray-300"
+            className="ml-auto px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs rounded-lg border border-gray-200"
             title="Скопировать этот дизайн с изменёнными размерами"
           >
             Создать на основе…
@@ -409,7 +410,7 @@ function DesignCard({
             type="button"
             onClick={onDelete}
             disabled={deleting}
-            className="ml-auto px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 text-xs rounded border border-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="ml-auto px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 text-xs rounded-lg border border-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {deleting ? 'Удаление...' : 'Удалить'}
           </button>

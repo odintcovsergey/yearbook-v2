@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { Pencil, Copy, Lock, Globe, Download, Upload, Trash2 } from 'lucide-react'
 import type { TemplateSet } from './types'
 
 function formatDate(iso: string): string {
@@ -72,32 +73,32 @@ export default function TemplateSetCard({
               onClick={() => pick('rename')}
               className="w-full text-left px-3 py-2 hover:bg-gray-50"
             >
-              ✏️ Переименовать
+              <Pencil size={14} /> Переименовать
             </button>
             <button
               onClick={() => pick('duplicate')}
               className="w-full text-left px-3 py-2 hover:bg-gray-50"
             >
-              📑 Дублировать
+              <Copy size={14} /> Дублировать
             </button>
             <button
               onClick={() => pick('toggle_global')}
               className="w-full text-left px-3 py-2 hover:bg-gray-50"
             >
-              {template.is_global ? '🔒 Убрать из глобальных' : '🌍 Сделать глобальным'}
+              {template.is_global ? <><Lock size={14} /> Убрать из глобальных</> : <><Globe size={14} /> Сделать глобальным</>}
             </button>
             <button
               onClick={() => pick('toggle_published')}
               className="w-full text-left px-3 py-2 hover:bg-gray-50"
             >
-              {template.is_published ? '📥 В черновик' : '📤 Опубликовать'}
+              {template.is_published ? <><Download size={14} /> В черновик</> : <><Upload size={14} /> Опубликовать</>}
             </button>
             <div className="border-t my-1" />
             <button
               onClick={() => pick('delete')}
               className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-600"
             >
-              🗑 Удалить
+              <Trash2 size={14} /> Удалить
             </button>
           </div>
         )}
@@ -111,7 +112,7 @@ export default function TemplateSetCard({
       >
         <div className="flex flex-wrap gap-2 mb-3">
           {template.is_global ? (
-            <span className="badge-blue">🌍 Global</span>
+            <span className="badge-blue inline-flex items-center gap-1"><Globe size={12} /> Global</span>
           ) : (
             <span className="badge-gray">Локальный</span>
           )}

@@ -12,6 +12,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
+import { KanbanSquare, Building2, ListTodo, Settings2, AlertTriangle, Check, BookOpen, MapPin, Globe, Pencil, School, type LucideIcon } from 'lucide-react'
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -179,19 +180,19 @@ export default function CRMModal({ onClose, currentUserId }: {
             {/* Вкладки */}
             <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
               {([
-                { key: 'kanban', label: '📋 Воронка' },
-                { key: 'clients', label: '🏫 Клиенты' },
-                { key: 'tasks', label: `✅ Задачи${overdueTasks.length ? ` · ${overdueTasks.length}` : ''}` },
-                { key: 'stages', label: '⚙️ Этапы' },
-              ] as const).map(t => (
+                { key: 'kanban', label: 'Воронка', icon: KanbanSquare },
+                { key: 'clients', label: 'Клиенты', icon: Building2 },
+                { key: 'tasks', label: `Задачи${overdueTasks.length ? ` · ${overdueTasks.length}` : ''}`, icon: ListTodo },
+                { key: 'stages', label: 'Этапы', icon: Settings2 },
+              ] as { key: 'kanban' | 'clients' | 'tasks' | 'stages'; label: string; icon: LucideIcon }[]).map(t => (
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
-                  className={`px-3 py-1.5 text-sm rounded-md font-medium transition-all ${
-                    tab === t.key ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md font-medium transition-all ${
+                    tab === t.key ? 'bg-white shadow text-brand-700' : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  {t.label}
+                  <t.icon size={16} /> {t.label}
                 </button>
               ))}
             </div>
@@ -511,7 +512,7 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
         <p className="text-xs text-gray-400 mt-1">{deal.clients.name}</p>
       )}
       {deal.albums && (
-        <p className="text-xs text-blue-400 mt-0.5">📚 {deal.albums.title}</p>
+        <p className="text-xs text-blue-400 mt-0.5"><BookOpen size={12} className="inline" /> {deal.albums.title}</p>
       )}
       <div className="flex items-center justify-between mt-2 gap-2">
         {deal.amount ? (
@@ -519,7 +520,7 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
         ) : <span />}
         {deal.deadline && (
           <span className={`text-xs ${isOverdueFlag ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-            {isOverdueFlag ? '⚠️ ' : ''}{formatDate(deal.deadline)}
+            {isOverdueFlag ? <><AlertTriangle size={14} className="inline" /> </> : ''}{formatDate(deal.deadline)}
           </span>
         )}
       </div>
@@ -542,7 +543,7 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
             </button>
           )}
           {deal.albums && (
-            <span className="text-xs text-green-500 ml-auto">✓ Альбом</span>
+            <span className="text-xs text-green-500 ml-auto"><Check size={14} className="inline" /> Альбом</span>
           )}
         </div>
       </div>
@@ -825,10 +826,10 @@ function ClientDetail({ client, deals, contacts, contactsLoading, onEdit, onDele
         </div>
       </div>
 
-      {client.address && <p className="text-sm text-gray-600 mb-2">📍 {client.address}</p>}
+      {client.address && <p className="text-sm text-gray-600 mb-2"><MapPin size={14} className="inline" /> {client.address}</p>}
       {client.website && (
         <p className="text-sm mb-2">
-          🌐 <a href={client.website} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{client.website}</a>
+          <Globe size={14} className="inline" /> <a href={client.website} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{client.website}</a>
         </p>
       )}
       {client.notes && <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 mb-4">{client.notes}</p>}
@@ -872,7 +873,7 @@ function ClientDetail({ client, deals, contacts, contactsLoading, onEdit, onDele
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button className="text-xs text-gray-400 hover:text-gray-700 px-1"
-                  onClick={() => { setEditContact(c); setShowContactForm(true) }}>✏️</button>
+                  onClick={() => { setEditContact(c); setShowContactForm(true) }}><Pencil size={16} /></button>
                 <button className="text-xs text-gray-300 hover:text-red-400 px-1"
                   onClick={() => { if (confirm('Удалить контакт?')) onDeleteContact(c.id) }}>×</button>
               </div>
@@ -1069,8 +1070,8 @@ function TasksView({ tasks, members, clients, deals, currentUserId, onCreateTask
       <div className="flex-1 min-w-0">
         <p className="text-sm text-gray-900">{task.title}</p>
         <p className="text-xs text-gray-400 mt-0.5">
-          {task.deals?.title && `📋 ${task.deals.title} · `}
-          {task.clients?.name && `🏫 ${task.clients.name} · `}
+          {task.deals?.title && `${task.deals.title} · `}
+          {task.clients?.name && <><School size={12} className="inline" /> {task.clients.name} · </>}
           {task.due_date && (
             <span className={isOverdue(task.due_date) ? 'text-red-500 font-medium' : ''}>
               {formatDate(task.due_date)}
@@ -1102,7 +1103,7 @@ function TasksView({ tasks, members, clients, deals, currentUserId, onCreateTask
       <div className="flex-1 overflow-y-auto p-4">
         {filtered.length === 0 && (
           <div className="text-center py-12 text-gray-400 text-sm">
-            Нет активных задач 🎉
+            Нет активных задач
           </div>
         )}
 
@@ -1345,7 +1346,7 @@ function StagesView({ stages, onSave }: {
           onClick={save}
           disabled={busy}
         >
-          {saved ? '✓ Сохранено' : busy ? 'Сохраняем...' : 'Сохранить'}
+          {saved ? <><Check size={14} className="inline" /> Сохранено</> : busy ? 'Сохраняем...' : 'Сохранить'}
         </button>
       </div>
 

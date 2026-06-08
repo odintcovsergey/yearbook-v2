@@ -95,7 +95,7 @@ function PhotoTile({
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={`relative aspect-[3/4] bg-gray-100 rounded overflow-hidden border border-gray-200 hover:ring-2 hover:ring-blue-300 transition cursor-grab active:cursor-grabbing ${
+      className={`relative aspect-[3/4] bg-gray-100 rounded overflow-hidden border border-gray-200 hover:ring-2 hover:ring-brand-300 transition cursor-grab active:cursor-grabbing ${
         isDragging ? 'opacity-40' : ''
       }`}
       title={photo.filename}
@@ -307,7 +307,7 @@ export default function PhotoPalette({ spreads, photos }: Props) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Поиск по имени файла…"
-          className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-200"
+          className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-200"
         />
         {/* РЭ.54.c: табы по категориям. */}
         <div className="flex flex-wrap gap-1 mt-2">
@@ -321,7 +321,7 @@ export default function PhotoPalette({ spreads, photos }: Props) {
                 onClick={() => setActiveTab(tab)}
                 className={`px-2 py-1 text-[11px] rounded border transition-colors ${
                   isActive
-                    ? 'bg-blue-600 text-white border-blue-600'
+                    ? 'bg-brand-600 text-white border-brand-600'
                     : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                 }`}
               >

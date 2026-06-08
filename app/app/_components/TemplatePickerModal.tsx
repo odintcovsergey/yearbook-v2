@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
+import { X } from 'lucide-react'
 import type { SpreadTemplate } from '@/lib/album-builder/types'
 
 const AlbumSpreadCanvas = dynamic(() => import('./AlbumSpreadCanvas'), {
@@ -157,10 +158,10 @@ export default function TemplatePickerModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            className="text-gray-400 hover:text-gray-700 leading-none"
             title="Закрыть (Esc)"
           >
-            ✕
+            <X size={20} />
           </button>
         </div>
 
@@ -171,7 +172,7 @@ export default function TemplatePickerModal({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Поиск по названию шаблона…"
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-400"
+            className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-brand-400"
             autoFocus
           />
         </div>
@@ -207,7 +208,7 @@ export default function TemplatePickerModal({
                       }}
                       className={
                         allowed
-                          ? 'text-left border border-gray-200 rounded-lg overflow-hidden hover:border-blue-400 hover:shadow-md transition-all bg-white'
+                          ? 'text-left border border-gray-200 rounded-lg overflow-hidden hover:border-brand-400 hover:shadow-md transition-all bg-white'
                           : 'text-left border border-gray-200 rounded-lg overflow-hidden bg-white opacity-40 cursor-not-allowed'
                       }
                       title={

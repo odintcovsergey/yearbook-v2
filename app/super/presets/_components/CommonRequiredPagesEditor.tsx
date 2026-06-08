@@ -16,6 +16,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { AlertTriangle } from 'lucide-react'
 import type { SpreadTemplate } from '@/lib/album-builder/types'
 import JMasterPicker from './JMasterPicker'
 
@@ -203,7 +204,7 @@ export default function CommonRequiredPagesEditor({
                         </div>
                         {isIncomplete && (
                           <div className="text-xs text-amber-700 mt-0.5">
-                            ⚠ Правая страница не заполнена — добавьте ещё одну
+                            <AlertTriangle size={14} className="inline" /> Правая страница не заполнена — добавьте ещё одну
                             страницу или удалите эту, чтобы разворот был целым.
                           </div>
                         )}

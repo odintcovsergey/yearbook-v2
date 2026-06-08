@@ -2,6 +2,22 @@
 
 import { useState, useEffect, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import {
+  Building2,
+  Camera,
+  Rocket,
+  Ruler,
+  LayoutGrid,
+  LayoutTemplate,
+  Gift,
+  BookImage,
+  AlertTriangle,
+  Check,
+  Upload,
+  Download,
+  Folder,
+  type LucideIcon,
+} from 'lucide-react'
 
 type AuthData = {
   authenticated: boolean
@@ -197,34 +213,34 @@ export default function SuperPage() {
         {/* Таб-бар */}
         <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
           {([
-            { key: 'tenants' as const, label: '🏢 Арендаторы' },
-            { key: 'partners' as const, label: '📸 Партнёры' },
-            { key: 'queue' as const, label: `🚀 Очередь работ${queue.filter(a => a.workflow_status === 'submitted').length > 0 ? ` · ${queue.filter(a => a.workflow_status === 'submitted').length} новых` : ''}` },
-          ]).map(t => (
+            { key: 'tenants' as const, label: 'Арендаторы', icon: Building2 },
+            { key: 'partners' as const, label: 'Партнёры', icon: Camera },
+            { key: 'queue' as const, label: `Очередь работ${queue.filter(a => a.workflow_status === 'submitted').length > 0 ? ` · ${queue.filter(a => a.workflow_status === 'submitted').length} новых` : ''}`, icon: Rocket },
+          ] as { key: 'tenants' | 'partners' | 'queue'; label: string; icon: LucideIcon }[]).map(t => (
             <button key={t.key} onClick={() => setSuperTab(t.key)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${superTab === t.key ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
-              {t.label}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${superTab === t.key ? 'bg-white shadow text-brand-700' : 'text-gray-500 hover:text-gray-700'}`}>
+              <t.icon size={16} /> {t.label}
             </button>
           ))}
           <button onClick={() => router.push('/super/templates')}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            📐 Шаблоны →
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            <Ruler size={16} /> Шаблоны
           </button>
           <button onClick={() => router.push('/super/master-catalog')}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            📚 Каталог мастеров →
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            <LayoutGrid size={16} /> Каталог мастеров
           </button>
           <button onClick={() => router.push('/super/presets')}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            🎛️ Пресеты →
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            <LayoutTemplate size={16} /> Пресеты
           </button>
           <button onClick={() => router.push('/super/referral-programs')}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            🎁 Реферальные программы →
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            <Gift size={16} /> Реферальные программы
           </button>
           <button onClick={() => router.push('/super/covers')}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            📕 Обложки →
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            <BookImage size={16} /> Обложки
           </button>
         </div>
 
@@ -458,7 +474,7 @@ function YcStorageWidget() {
           type="button"
           onClick={loadStats}
           disabled={loading}
-          className="text-xs px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+          className="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
         >
           {loading ? 'Считаем…' : stats ? 'Обновить' : 'Обновить статистику'}
         </button>
@@ -497,7 +513,7 @@ function YcStorageWidget() {
 
       {stats?.truncated && (
         <div className="text-xs text-amber-600 mt-3">
-          ⚠️ Просканировано {stats.pages_scanned * 1000}+ объектов (max). Реальный размер может быть больше.
+          <AlertTriangle size={14} className="inline" /> Просканировано {stats.pages_scanned * 1000}+ объектов (max). Реальный размер может быть больше.
         </div>
       )}
 
@@ -1378,7 +1394,7 @@ function TenantDetailModal({
           {mode === 'delete' && (
             <div className="space-y-4">
               <div className="bg-red-50 border border-red-100 rounded-xl p-4">
-                <div className="font-medium text-red-700 mb-2">⚠ Опасное действие</div>
+                <div className="font-medium text-red-700 mb-2"><AlertTriangle size={14} className="inline" /> Опасное действие</div>
                 <p className="text-sm text-red-600">
                   Вместе с арендатором <strong>«{tenant.name}»</strong> будут удалены:
                 </p>
@@ -1674,7 +1690,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
                   onClick={handleTake}
                   disabled={taking}
                 >
-                  {taking ? 'Берём...' : '✓ Взять в работу'}
+                  {taking ? 'Берём...' : <><Check size={16} /> Взять в работу</>}
                 </button>
               </div>
             )}
@@ -1692,7 +1708,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
                   <input type="file" className="hidden"
                     accept=".pdf,.zip,.rar,.7z,.jpg,.jpeg,.png,.tif,.tiff"
                     onChange={e => e.target.files?.[0] && handleUploadDelivery(e.target.files[0])} />
-                  {uploadingDelivery ? `Загружаем... ${uploadProgress}%` : '⬆ Загрузить готовый файл'}
+                  {uploadingDelivery ? `Загружаем... ${uploadProgress}%` : <><Upload size={16} /> Загрузить готовый файл</>}
                 </label>
                 {uploadingDelivery && uploadProgress > 0 && (
                   <div className="h-2 bg-orange-100 rounded-full overflow-hidden">
@@ -1705,7 +1721,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
 
             {selected.workflow_status === 'delivered' && (
               <div className="bg-green-50 rounded-xl p-4">
-                <p className="text-sm font-medium text-green-800">✓ Готово — файлы переданы партнёру</p>
+                <p className="text-sm font-medium text-green-800"><Check size={14} className="inline" /> Готово — файлы переданы партнёру</p>
               </div>
             )}
 
@@ -1717,7 +1733,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
                   <div key={f.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
                     <div>
                       <p className="text-sm">{f.label || f.filename}</p>
-                      <p className="text-xs text-gray-400">{f.downloaded_at ? '✓ скачан партнёром' : 'ещё не скачан'}</p>
+                      <p className="text-xs text-gray-400">{f.downloaded_at ? <><Check size={12} className="inline" /> скачан партнёром</> : 'ещё не скачан'}</p>
                     </div>
                   </div>
                 ))}
@@ -1731,7 +1747,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
                 className="btn-secondary text-sm inline-flex items-center gap-2"
                 target="_blank"
               >
-                ⬇ CSV
+                <Download size={14} /> CSV
               </a>
             </div>
           </div>
@@ -1809,8 +1825,8 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
   )
 
   const wfLabel = (s?: string) => ({
-    active: '🔵 Отбор', ready: '🟡 Готов', submitted: '🟣 Передан',
-    in_production: '🟠 В работе', delivered: '🟢 Готов к получению',
+    active: 'Отбор', ready: 'Готов', submitted: 'Передан',
+    in_production: 'В работе', delivered: 'Готов к получению',
   }[s ?? 'active'] ?? s)
 
   return (
@@ -1921,7 +1937,7 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
                   className="btn-secondary text-xs"
                   target="_blank"
                 >
-                  ⬇ CSV
+                  <Download size={14} /> CSV
                 </a>
               </div>
             </div>
@@ -1961,7 +1977,7 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
                     <p className="text-xs text-amber-700 mt-2 bg-amber-50 rounded p-2">{albumDetail.workflow.workflow_notes}</p>
                   )}
                   {albumDetail.originals?.length > 0 && (
-                    <p className="text-xs text-gray-400 mt-2">📁 Оригиналов загружено: {albumDetail.originals.length}</p>
+                    <p className="text-xs text-gray-400 mt-2"><Folder size={12} className="inline" /> Оригиналов загружено: {albumDetail.originals.length}</p>
                   )}
                 </div>
 

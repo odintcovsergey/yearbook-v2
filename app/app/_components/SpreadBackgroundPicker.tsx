@@ -11,6 +11,7 @@
 // сами изменения отдаёт через onSelect/onReset (родитель пишет в layout + save).
 
 import { useMemo, useState } from 'react'
+import { RotateCcw } from 'lucide-react'
 import {
   BACKGROUND_CATEGORY_LABELS,
   type BackgroundCategory,
@@ -90,13 +91,13 @@ export default function SpreadBackgroundPicker({
             type="button"
             onClick={onReset}
             disabled={!currentOverride}
-            className="px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
             title="Убрать ручной фон, вернуть автоматическую ротацию раздела"
           >
-            ↺ Вернуть авто
+            <RotateCcw size={14} /> Вернуть авто
           </button>
           {currentOverride ? (
-            <span className="text-xs text-blue-600">Сейчас: фон задан вручную</span>
+            <span className="text-xs text-brand-600">Сейчас: фон задан вручную</span>
           ) : (
             <span className="text-xs text-gray-400">Сейчас: авто (ротация раздела)</span>
           )}
@@ -131,8 +132,8 @@ export default function SpreadBackgroundPicker({
                     onClick={() => onSelect(bg.url)}
                     className={`relative rounded overflow-hidden border-2 transition-colors ${
                       selected
-                        ? 'border-blue-500 ring-2 ring-blue-200'
-                        : 'border-gray-200 hover:border-blue-300'
+                        ? 'border-brand-500 ring-2 ring-brand-200'
+                        : 'border-gray-200 hover:border-brand-300'
                     }`}
                     title={
                       showAll
@@ -152,7 +153,7 @@ export default function SpreadBackgroundPicker({
                       </span>
                     )}
                     {selected && (
-                      <span className="absolute top-0.5 right-0.5 bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">
+                      <span className="absolute top-0.5 right-0.5 bg-brand-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">
                         ✓
                       </span>
                     )}

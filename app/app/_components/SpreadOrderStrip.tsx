@@ -17,6 +17,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { Plus, X } from 'lucide-react'
 import type { SpreadInstance, SpreadTemplate } from '@/lib/album-builder/types'
 import {
   segmentToSpreads,
@@ -235,10 +236,10 @@ export default function SpreadOrderStrip({
                     spreads.length - 1
                   onAddRequest(insertAfter)
                 }}
-                className="flex-shrink-0 flex flex-col items-center justify-center w-24 border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50/30 rounded text-gray-400 hover:text-blue-600 transition-colors"
+                className="flex-shrink-0 flex flex-col items-center justify-center w-24 border-2 border-dashed border-gray-300 hover:border-brand-400 hover:bg-brand-50 rounded text-gray-400 hover:text-brand-600 transition-colors"
                 title="Добавить разворот после текущего"
               >
-                <span className="text-2xl leading-none">➕</span>
+                <span className="leading-none"><Plus size={14} /></span>
                 <span className="text-[10px] mt-1">Добавить</span>
               </button>
             )}
@@ -295,7 +296,7 @@ function SpreadCard({
     <div
       className={`group flex-shrink-0 relative rounded border-2 transition-colors ${
         isActive
-          ? 'border-blue-500 ring-2 ring-blue-200'
+          ? 'border-brand-500 ring-2 ring-brand-200'
           : 'border-gray-200 hover:border-gray-400'
       }`}
       title={`Разворот ${position}`}
@@ -360,7 +361,7 @@ function SpreadCard({
       {/* Номер разворота — в углу */}
       <span
         className={`absolute top-0 left-0 px-1.5 py-0.5 text-[10px] font-medium rounded-br pointer-events-none ${
-          isActive ? 'bg-blue-500 text-white' : 'bg-white/90 text-gray-700'
+          isActive ? 'bg-brand-500 text-white' : 'bg-white/90 text-gray-700'
         }`}
       >
         {position}
@@ -377,7 +378,7 @@ function SpreadCard({
           className="absolute top-0 right-0 w-5 h-5 flex items-center justify-center bg-red-500 text-white rounded-bl opacity-0 group-hover:opacity-100 transition-opacity text-xs hover:bg-red-600"
           title="Удалить разворот целиком"
         >
-          ✕
+          <X size={12} />
         </button>
       )}
     </div>
@@ -423,7 +424,7 @@ function DraggablePage({
       ref={setNodeRef}
       style={style}
       className={`relative group/page overflow-hidden bg-white ${
-        isCurrent ? 'ring-1 ring-blue-300' : ''
+        isCurrent ? 'ring-1 ring-brand-300' : ''
       }`}
     >
       {/* Drag-handle на всей странице. Click переключает currentIdx. */}

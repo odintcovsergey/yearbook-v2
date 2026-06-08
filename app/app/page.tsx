@@ -3,6 +3,30 @@
 import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
+import {
+  Camera,
+  Contact,
+  LayoutTemplate,
+  Quote,
+  Users,
+  Settings,
+  Gift,
+  Ruler,
+  Upload,
+  Loader2,
+  AlertTriangle,
+  X,
+  Check,
+  Bell,
+  Link2,
+  Copy,
+  Send,
+  Info,
+  Trash2,
+  Download,
+  Maximize2,
+  Eye,
+} from 'lucide-react'
 import CRMModal from './CRMModal'
 // РЭ.21.7.3: drag-and-drop секций в редакторе пресета.
 import {
@@ -357,19 +381,19 @@ export default function AppPage() {
               >
                 {!originalsProgress.completed ? (
                   <>
-                    <span className="animate-pulse">📤</span>
+                    <span className="animate-pulse"><Upload size={14} /></span>
                     <span>
                       Оригиналы: {originalsProgress.done}/{originalsProgress.total}
                       {originalsProgress.inProgress > 0 && originalsProgress.done < originalsProgress.total && (
                         <span className="text-blue-500 ml-1">
-                          (⏳{originalsProgress.inProgress})
+                          (<Loader2 size={14} className="inline animate-spin" />{originalsProgress.inProgress})
                         </span>
                       )}
                     </span>
                   </>
                 ) : originalsProgress.failed > 0 ? (
                   <>
-                    <span>⚠</span>
+                    <span><AlertTriangle size={14} className="inline" /></span>
                     <span>
                       Оригиналы: {originalsProgress.done - originalsProgress.failed}/{originalsProgress.total}
                     </span>
@@ -379,12 +403,12 @@ export default function AppPage() {
                       className="ml-1 text-amber-600 hover:text-amber-800"
                       title="Скрыть"
                     >
-                      ✕
+                      <X size={14} />
                     </button>
                   </>
                 ) : (
                   <>
-                    <span>✓</span>
+                    <span><Check size={14} className="inline" /></span>
                     <span>Оригиналы загружены</span>
                     <button
                       type="button"
@@ -392,7 +416,7 @@ export default function AppPage() {
                       className="ml-1 text-green-600 hover:text-green-800"
                       title="Скрыть"
                     >
-                      ✕
+                      <X size={14} />
                     </button>
                   </>
                 )}
@@ -403,14 +427,14 @@ export default function AppPage() {
               className="btn-secondary"
               title="Готовые шаблоны и моя библиотека"
             >
-              📐 Шаблоны
+              <Ruler size={16} /> Шаблоны
             </button>
             <button
               onClick={() => router.push('/app/referral-programs')}
               className="btn-secondary"
               title="Реферальные программы: готовые и свои"
             >
-              🎁 Рефералки
+              <Gift size={16} /> Рефералки
             </button>
             <button onClick={handleLogout} className="btn-secondary">Выйти</button>
           </div>
@@ -465,7 +489,7 @@ export default function AppPage() {
               <button
                 onClick={() => setFilter('active')}
                 className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                  filter === 'active' ? 'bg-white shadow-sm' : 'text-gray-500'
+                  filter === 'active' ? 'bg-white shadow-sm text-brand-700' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
                 Актуальные
@@ -474,7 +498,7 @@ export default function AppPage() {
               <button
                 onClick={() => setFilter('archive')}
                 className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                  filter === 'archive' ? 'bg-white shadow-sm' : 'text-gray-500'
+                  filter === 'archive' ? 'bg-white shadow-sm text-brand-700' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
                 Архив
@@ -488,7 +512,7 @@ export default function AppPage() {
                 className="btn-ghost text-sm"
                 type="button"
               >
-                📸 Партнёры
+                <Camera size={16} /> Партнёры
               </button>
             )}
 
@@ -498,7 +522,7 @@ export default function AppPage() {
               type="button"
               title="CRM — клиенты и сделки"
             >
-              CRM
+              <Contact size={16} /> CRM
             </button>
 
             <button
@@ -507,7 +531,7 @@ export default function AppPage() {
               type="button"
               title="Пресеты — структура альбома"
             >
-              Пресеты
+              <LayoutTemplate size={16} /> Пресеты
             </button>
 
             <button
@@ -516,7 +540,7 @@ export default function AppPage() {
               type="button"
               title="Управление цитатами"
             >
-              Цитаты
+              <Quote size={16} /> Цитаты
             </button>
 
             {canManageTeam && (
@@ -526,7 +550,7 @@ export default function AppPage() {
                 type="button"
                 title="Сотрудники и приглашения"
               >
-                Команда
+                <Users size={16} /> Команда
               </button>
             )}
 
@@ -536,7 +560,7 @@ export default function AppPage() {
               type="button"
               title="Настройки аккаунта"
             >
-              Настройки
+              <Settings size={16} /> Настройки
             </button>
 
             {canEdit && (
@@ -739,7 +763,7 @@ function AlbumCard({
   return (
     <div
       onClick={onClick}
-      className="card p-5 cursor-pointer hover:border-gray-300 transition-colors relative"
+      className="card p-5 cursor-pointer hover:shadow-card-hover hover:-translate-y-0.5 hover:border-gray-300 transition-all duration-150 relative"
     >
       {canEdit && (
         <button
@@ -805,7 +829,7 @@ function AlbumCard({
                 className="text-xs text-amber-600"
                 title="Пресет не выбран — отредактируйте альбом"
               >
-                ⚠ пресет не выбран
+                <AlertTriangle size={14} className="inline" /> пресет не выбран
               </span>
             )}
           </div>
@@ -816,7 +840,7 @@ function AlbumCard({
       <div className="flex items-center gap-3 mb-3">
         <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
           <div
-            className={`h-full transition-all duration-500 ${progress >= 100 ? 'bg-green-500' : 'bg-gray-900'}`}
+            className={`h-full transition-all duration-500 ${progress >= 100 ? 'bg-brand-600' : 'bg-brand-400'}`}
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -888,14 +912,14 @@ function StatCard({
   highlight?: boolean
   onClick?: () => void
 }) {
-  const baseClass = `card p-5 ${highlight ? 'border-blue-200 bg-blue-50' : ''}`
+  const baseClass = `card p-5 ${highlight ? 'border-brand-200 bg-brand-50' : ''}`
   const content = (
     <>
       <div className="text-xs text-gray-500 mb-1">{label}</div>
       <div className="flex items-baseline gap-2">
         <div className="text-2xl font-semibold text-gray-900">{value}</div>
         {subValue && (
-          <div className={`text-sm ${highlight ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>
+          <div className={`text-sm ${highlight ? 'text-brand-600 font-medium' : 'text-gray-400'}`}>
             {subValue}
           </div>
         )}
@@ -908,7 +932,7 @@ function StatCard({
       <button
         type="button"
         onClick={onClick}
-        className={`${baseClass} text-left hover:border-gray-300 transition-colors cursor-pointer w-full`}
+        className={`${baseClass} text-left hover:shadow-card-hover hover:-translate-y-0.5 hover:border-brand-300 transition-all duration-150 cursor-pointer w-full`}
       >
         {content}
       </button>
@@ -1265,7 +1289,7 @@ function StudentDistributionControl({
               disabled={saving}
               className={`text-sm px-3 py-1 border rounded transition disabled:opacity-50 disabled:cursor-not-allowed ${
                 value === mode
-                  ? 'bg-blue-50 border-blue-400 text-blue-700 font-medium'
+                  ? 'bg-brand-50 border-brand-400 text-brand-700 font-medium'
                   : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
               }`}
             >
@@ -1971,7 +1995,7 @@ function AlbumDetailModal({
                   className="btn-secondary text-xs px-3 py-1.5"
                   title="Сгенерировать текст напоминания"
                 >
-                  🔔 Напомнить · {unfinished}
+                  <Bell size={16} /> Напомнить · {unfinished}
                 </button>
               )
             })()}
@@ -1984,7 +2008,7 @@ function AlbumDetailModal({
               className="btn-secondary text-xs px-3 py-1.5"
               title="Общая ссылка — родитель выбирает ребёнка из списка"
             >
-              🔗 Класс
+              <Link2 size={16} /> Класс
             </button>
             <button
               onClick={handleExport}
@@ -1993,7 +2017,7 @@ function AlbumDetailModal({
               className="btn-secondary text-xs px-3 py-1.5"
               title="Скачать CSV для вёрстки"
             >
-              {exporting ? 'Готовим…' : '⬇ CSV'}
+              {exporting ? 'Готовим…' : <><Download size={14} /> CSV</>}
             </button>
             <button
               onClick={onClose}
@@ -2015,7 +2039,7 @@ function AlbumDetailModal({
             { id: 'responsible', label: 'Ответственный' },
             { id: 'surcharges', label: 'Доплаты' },
             ...((album as any).personal_spread_enabled ? [{ id: 'spread' as const, label: 'Разворот' }] : []),
-            { id: 'production' as const, label: '🚀 Производство' },
+            { id: 'production' as const, label: 'Производство' },
           ] as const).map(t => (
             <button
               key={t.id}
@@ -2023,7 +2047,7 @@ function AlbumDetailModal({
               onClick={() => setTab(t.id)}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 tab === t.id
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -2168,7 +2192,7 @@ function AlbumDetailModal({
                       <div className="mt-3 pt-3 border-t border-gray-200">
                         <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
                           <div className="text-sm">
-                            <span className="text-green-600 font-medium">✓ Layout собран</span>
+                            <span className="text-green-600 font-medium"><Check size={14} className="inline" /> Layout собран</span>
                             <span className="text-gray-500"> · {layout.summary.total_spreads} элементов</span>
                             {layout.summary.total_warnings > 0 && (
                               <span className="text-gray-500"> · {layout.summary.total_warnings} предупреждений</span>
@@ -2459,7 +2483,7 @@ function AlbumDetailModal({
                                     />
                                   ) : (
                                     <span className={c.is_purchased === false ? 'text-gray-400' : 'text-green-600'}>
-                                      {c.is_purchased === false ? '—' : '✓'}
+                                      {c.is_purchased === false ? '—' : <Check size={14} className="inline" />}
                                     </span>
                                   )}
                                 </td>
@@ -2491,7 +2515,7 @@ function AlbumDetailModal({
                                       e.stopPropagation()
                                       copyChildLink(c)
                                     }}
-                                    className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1"
+                                    className="text-xs text-brand-600 hover:text-brand-700 px-2 py-1"
                                     title="Скопировать ссылку"
                                   >
                                     Ссылка
@@ -2598,7 +2622,7 @@ function AlbumDetailModal({
                                             <img src={src} alt={label}
                                               className="w-28 h-28 object-cover rounded-lg border border-gray-200 group-hover:opacity-90 transition-opacity" />
                                             <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                              <span className="bg-black/50 text-white text-xs px-2 py-1 rounded-full">⛶ открыть</span>
+                                              <span className="bg-black/50 text-white text-xs px-2 py-1 rounded-full"><Maximize2 size={12} className="inline" /> открыть</span>
                                             </div>
                                           </div>
                                           <span className={`text-xs ${subClass ?? 'text-gray-500'}`}>{label}</span>
@@ -3491,7 +3515,7 @@ function AlbumFormModal({
           <div className="bg-white rounded-2xl max-w-5xl w-full shadow-xl my-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Превью обложки</h3>
-              <button type="button" onClick={() => setCoverPreviewOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+              <button type="button" onClick={() => setCoverPreviewOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl"><X size={18} /></button>
             </div>
             {coverPreviewLoading && <div className="text-center py-8 text-gray-400">Собираю обложку…</div>}
             {!coverPreviewLoading && coverPreviewData && (
@@ -3706,7 +3730,7 @@ function AlbumFormModal({
                   type="button"
                   onClick={() => setTemplatePickerOpen(true)}
                   disabled={loading}
-                  className="text-blue-600 hover:text-blue-800 text-xs underline ml-1"
+                  className="text-brand-600 hover:text-brand-700 text-xs underline ml-1"
                 >
                   сменить
                 </button>
@@ -3820,7 +3844,7 @@ function AlbumFormModal({
                 </label>
                 {coverLibrary.length === 0 ? (
                   <div className="text-xs text-gray-400 mb-3">
-                    Обложки ещё не загружены — раздел заработает после загрузки (📕 Обложки в супер-админке).
+                    Обложки ещё не загружены — раздел заработает после загрузки (Обложки в супер-админке).
                   </div>
                 ) : (
                   <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2">
@@ -3899,7 +3923,7 @@ function AlbumFormModal({
                       className="btn-secondary text-sm"
                       disabled={loading}
                     >
-                      👁 Превью обложки
+                      <Eye size={16} /> Превью обложки
                     </button>
                     <div className="text-xs text-gray-400 mt-1">
                       Соберёт обложку с реальными ФИО/городом/годом и посчитанным корешком.
@@ -4149,7 +4173,7 @@ function AlbumFormModal({
               не зависит от кнопки «Сохранить изменения». */}
           {mode === 'edit' && album && (
             <div className="border-t-2 border-gray-200 pt-5 mt-1">
-              <span className="font-semibold text-blue-700">🎁 Реферальная программа</span>
+              <span className="font-semibold text-blue-700"><Gift size={14} /> Реферальная программа</span>
               <ReferralProgramControl
                 album={album}
                 apiVA={api}
@@ -4188,10 +4212,10 @@ function AlbumFormModal({
                   <button
                     type="button"
                     onClick={() => setShowCloneConfirm(true)}
-                    className="text-sm text-blue-600 hover:text-blue-800 transition-colors mb-4 block"
+                    className="text-sm text-brand-600 hover:text-brand-700 transition-colors mb-4 block"
                     disabled={loading}
                   >
-                    📋 Клонировать альбом
+                    <Copy size={16} /> Клонировать альбом
                   </button>
                 ) : (
                   <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
@@ -4209,7 +4233,7 @@ function AlbumFormModal({
                       <button
                         type="button"
                         onClick={handleClone}
-                        className="px-3 py-1.5 rounded-xl text-sm bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                        className="px-3 py-1.5 rounded-xl text-sm bg-brand-600 hover:bg-brand-700 text-white transition-colors"
                         disabled={loading}
                       >
                         {loading ? 'Клонируем...' : 'Да, создать копию'}
@@ -4366,7 +4390,7 @@ function AlbumFormModal({
               <button
                 type="button"
                 onClick={confirmTemplateChange}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm"
               >
                 {pendingTemplateChange.newId ? 'Сменить шаблон' : 'Снять шаблон'}
               </button>
@@ -4612,7 +4636,7 @@ function TemplatePickerModal({
                       setDesignFilter(d.id)
                       setStep('templates')
                     }}
-                    className="text-left p-3 rounded-lg border bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm transition-all flex flex-col gap-2 cursor-pointer"
+                    className="text-left p-3 rounded-lg border bg-white border-gray-200 hover:border-brand-300 hover:shadow-sm transition-all flex flex-col gap-2 cursor-pointer"
                   >
                     <div
                       className="w-full bg-gray-50 border border-gray-200 rounded overflow-hidden flex items-center justify-center"
@@ -4736,8 +4760,8 @@ function PickerCard({
         disabled
           ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
           : isCurrent
-          ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-200'
-          : 'bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm cursor-pointer'
+          ? 'bg-brand-50 border-brand-400 ring-2 ring-brand-200'
+          : 'bg-white border-gray-200 hover:border-brand-300 hover:shadow-sm cursor-pointer'
       }`}
     >
       {/* Превью */}
@@ -4765,7 +4789,7 @@ function PickerCard({
         </div>
       )}
       {isCurrent && !disabled && (
-        <div className="text-xs text-blue-700 font-medium">Выбран сейчас</div>
+        <div className="text-xs text-brand-700 font-medium">Выбран сейчас</div>
       )}
     </button>
   )
@@ -6278,7 +6302,7 @@ function PhotosTab({
                   ? originalsProgress.failed > 0
                     ? 'border-amber-400 bg-amber-50'
                     : 'border-green-400 bg-green-50'
-                  : 'border-blue-400 bg-blue-50'
+                  : 'border-brand-400 bg-brand-50'
               }`}
             >
               <div className="flex items-start justify-between gap-3 mb-3">
@@ -6286,12 +6310,12 @@ function PhotosTab({
                   {!originalsProgress.completed ? (
                     <>
                       <p className="text-base font-semibold text-blue-900 flex items-center gap-2">
-                        <span className="animate-pulse">📤</span>
+                        <span className="animate-pulse"><Upload size={14} /></span>
                         Загружаем оригиналы для печати
                       </p>
                       <p className="text-xs text-blue-700 mt-1">
                         {originalsProgress.inProgress > 0 ? (
-                          <>⏳ В работе сейчас: {originalsProgress.inProgress}. Не закрывайте вкладку.</>
+                          <><Loader2 size={14} className="inline animate-spin" /> В работе сейчас: {originalsProgress.inProgress}. Не закрывайте вкладку.</>
                         ) : originalsProgress.done === 0 ? (
                           <>Подготовка к загрузке оригиналов… Не закрывайте вкладку.</>
                         ) : (
@@ -6302,7 +6326,7 @@ function PhotosTab({
                   ) : originalsProgress.failed > 0 ? (
                     <>
                       <p className="text-base font-semibold text-amber-900 flex items-center gap-2">
-                        <span>⚠</span>
+                        <span><AlertTriangle size={14} className="inline" /></span>
                         Загружено {originalsProgress.done - originalsProgress.failed} из {originalsProgress.total}, ошибок: {originalsProgress.failed}
                       </p>
                       <p className="text-xs text-amber-800 mt-1">
@@ -6312,7 +6336,7 @@ function PhotosTab({
                   ) : (
                     <>
                       <p className="text-base font-semibold text-green-900 flex items-center gap-2">
-                        <span>✓</span>
+                        <span><Check size={14} className="inline" /></span>
                         Все оригиналы загружены ({originalsProgress.total} шт)
                       </p>
                       <p className="text-xs text-green-800 mt-1">
@@ -6474,7 +6498,7 @@ function PhotosTab({
               onClick={() => setActiveKind(t)}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 activeKind === t
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -6515,7 +6539,7 @@ function PhotosTab({
                     className="text-xs px-2 py-1 rounded bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Выберите все оригиналы папкой — система найдёт совпадения по имени файла и догрузит только отсутствующие"
                   >
-                    📤 Догрузить оригиналы
+                    <Upload size={16} /> Догрузить оригиналы
                   </button>
                 )}
                 {canEdit && (
@@ -6526,7 +6550,7 @@ function PhotosTab({
                     className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-50 disabled:cursor-wait"
                     title={`Удалить все фото в категории «${photoKindLabel(activeKind)}»`}
                   >
-                    {deletingAll ? 'Удаляем…' : `✕ Удалить все (${photos.length})`}
+                    {deletingAll ? 'Удаляем…' : <><Trash2 size={16} /> Удалить все ({photos.length})</>}
                   </button>
                 )}
               </div>
@@ -6549,7 +6573,7 @@ function PhotosTab({
                         className="absolute top-1 left-1 bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium shadow-sm pointer-events-none"
                         title="У фото нет оригинала для печати — PDF будет в WebP качестве. Наведите для кнопки «Догрузить»."
                       >
-                        ⚠ нет оригинала
+                        <AlertTriangle size={14} className="inline" /> нет оригинала
                       </div>
                     )}
                     {canEdit && (
@@ -6559,7 +6583,7 @@ function PhotosTab({
                         className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 text-xs items-center justify-center hidden group-hover:flex"
                         title="Удалить"
                       >
-                        ✕
+                        <X size={14} />
                       </button>
                     )}
                     {/* П.3 — кнопка «Догрузить оригинал» при hover, если оригинала нет */}
@@ -6570,7 +6594,7 @@ function PhotosTab({
                         disabled={uploadingThis}
                         className="absolute inset-x-1 bottom-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 disabled:cursor-wait"
                       >
-                        {uploadingThis ? '⏳ Загружаем…' : '📤 Догрузить оригинал'}
+                        {uploadingThis ? <><Loader2 size={14} className="inline animate-spin" /> Загружаем…</> : <><Upload size={14} /> Догрузить оригинал</>}
                       </button>
                     )}
                     <div className={`absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] px-1.5 py-1 ${missingOriginal && canEdit ? 'opacity-0 group-hover:opacity-0' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
@@ -6915,7 +6939,7 @@ function LeadsModal({
                 onClick={() => setFilter(t.id)}
                 className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   filter === t.id
-                    ? 'border-gray-900 text-gray-900'
+                    ? 'border-brand-600 text-brand-700'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -6963,7 +6987,7 @@ function LeadsModal({
                     {lead.program_name && (
                       <p className="text-xs mb-1">
                         <span className="inline-block px-2 py-0.5 rounded bg-purple-50 text-purple-700">
-                          🎁 {lead.program_name}
+                          <Gift size={14} /> {lead.program_name}
                         </span>
                       </p>
                     )}
@@ -7392,7 +7416,7 @@ function QuotesModal({
                                     className="text-[10px] text-gray-500 bg-green-50 px-1.5 py-0.5 rounded"
                                     title={`Выбрана ${q.use_count} учениками`}
                                   >
-                                    ✓ {q.use_count}
+                                    <Check size={14} className="inline" /> {q.use_count}
                                   </span>
                                 )}
                               </div>
@@ -7908,7 +7932,7 @@ function TeamModal({
               onClick={() => setTab('users')}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'users'
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -7920,7 +7944,7 @@ function TeamModal({
               onClick={() => setTab('invitations')}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'invitations'
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -8442,7 +8466,7 @@ function SettingsModal({
               onClick={() => setTab('account')}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'account'
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -8453,7 +8477,7 @@ function SettingsModal({
               onClick={() => setTab('branding')}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'branding'
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -8464,7 +8488,7 @@ function SettingsModal({
               onClick={() => setTab('password')}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'password'
-                  ? 'border-gray-900 text-gray-900'
+                  ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -8959,7 +8983,7 @@ function SpreadTab({ spreadData, album }: {
               disabled={downloading}
               className="btn-secondary text-xs px-3 py-1.5"
             >
-              {downloading ? 'Создаём архив...' : '⬇ Скачать всё'}
+              {downloading ? 'Создаём архив...' : <><Download size={16} /> Скачать всё</>}
             </button>
           )}
         </div>
@@ -9003,7 +9027,7 @@ function SpreadTab({ spreadData, album }: {
                         rel="noopener noreferrer"
                         download={p.filename}
                         title={p.filename}
-                        className="relative aspect-square block rounded-lg overflow-hidden border border-gray-100 hover:border-blue-300 transition-colors group"
+                        className="relative aspect-square block rounded-lg overflow-hidden border border-gray-100 hover:border-brand-300 transition-colors group"
                       >
                         <img
                           src={photoUrl(p.storage_path)}
@@ -9011,7 +9035,7 @@ function SpreadTab({ spreadData, album }: {
                           className="w-full h-full object-cover"
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                          <span className="text-white text-lg opacity-0 group-hover:opacity-100">⬇</span>
+                          <span className="text-white text-lg opacity-0 group-hover:opacity-100"><Download size={18} className="inline" /></span>
                         </div>
                         <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-xs text-center py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           {i + 1}
@@ -9508,12 +9532,12 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
         <div className="flex gap-2">
           {status === 'active' && canEdit && (
             <button className="btn-secondary text-sm" onClick={handleMarkReady}>
-              ✓ Завершить отбор досрочно
+              <Check size={14} className="inline" /> Завершить отбор досрочно
             </button>
           )}
           {(status === 'active' || status === 'ready') && canEdit && (
             <button className="btn-primary text-sm" onClick={handleSubmit} disabled={submitting}>
-              {submitting ? 'Передаём...' : '🚀 Передать в OkeyBook'}
+              {submitting ? 'Передаём...' : <><Send size={16} /> Передать в OkeyBook</>}
             </button>
           )}
           {/* unsubmit: submitted → ready (партнёр + superadmin) */}
@@ -9541,7 +9565,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
       {/* Подсказка для партнёра когда альбом уже в работе */}
       {status === 'in_production' && canEdit && !isSuperAdmin && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-          ℹ️ Альбом уже взят в работу. Если нужно отменить — свяжитесь с OkeyBook.
+          <Info size={14} className="inline" /> Альбом уже взят в работу. Если нужно отменить — свяжитесь с OkeyBook.
         </div>
       )}
 
@@ -9574,7 +9598,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                   : 'Скачать оригиналы выбранных родителями фото + учителей + общего раздела'
               }
             >
-              {downloadingOriginalsZip ? 'Собираем ZIP…' : '📥 Скачать оригиналы'}
+              {downloadingOriginalsZip ? 'Собираем ZIP…' : <><Download size={16} /> Скачать оригиналы</>}
             </button>
           </div>
 
@@ -9690,7 +9714,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                 />
                 {uploadingRetouched
                   ? `Загружаем ${retouchedProgress.done}/${retouchedProgress.total}…`
-                  : '📤 Загрузить обработанные'}
+                  : <><Upload size={14} /> Загрузить обработанные</>}
               </label>
             </div>
 
@@ -9712,7 +9736,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                 {retouchedSummary.matched > 0 && (
                   <div className="p-2 bg-green-50 border border-green-200 rounded text-sm text-green-800 flex items-start justify-between gap-2">
                     <span>
-                      ✅ Обновлено {retouchedSummary.matched} оригиналов — новые версии
+                      <Check size={14} className="inline" /> Обновлено {retouchedSummary.matched} оригиналов — новые версии
                       будут использованы при следующем экспорте PDF
                     </span>
                     <button
@@ -9728,7 +9752,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <span>
-                        ⚠️ Не найдено {retouchedSummary.unmatched_count} файлов — имена не
+                        <AlertTriangle size={14} className="inline" /> Не найдено {retouchedSummary.unmatched_count} файлов — имена не
                         совпадают с оригиналами. Привяжите их вручную или удалите:
                       </span>
                       <button
@@ -9784,7 +9808,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                               disabled={isProcessing}
                             />
                             <button
-                              className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="text-xs px-2 py-0.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
                               onClick={() => handleRebindRetouched(u.storage_path)}
                               disabled={!resolvedId || isProcessing}
                               title={resolvedId ? `Привязать к photo ${resolvedId.slice(0, 8)}` : 'Выберите фото из списка'}
@@ -9797,7 +9821,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                               disabled={isProcessing}
                               title="Удалить файл"
                             >
-                              🗑
+                              <Trash2 size={16} />
                             </button>
                           </li>
                         )
@@ -9889,7 +9913,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                   className="btn-primary text-sm"
                   onClick={() => handleDownload(f)}
                 >
-                  ⬇ Скачать
+                  <Download size={16} /> Скачать
                 </button>
               </div>
             ))}
@@ -9968,7 +9992,7 @@ function PartnersDashboardModal({ onClose, onNotify, onError, originalsProgress,
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
             <h2 className="text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-              📸 Партнёры
+              <Camera size={16} /> Партнёры
             </h2>
             <button
               onClick={() => setShowCreatePartner(true)}
@@ -10178,10 +10202,10 @@ function PartnerDashboardContent({ tenant, dashboard, onOpenAlbum, onNotify, onE
                       (album as any).workflow_status === 'in_production' ? 'bg-amber-100 text-amber-700' :
                       'bg-purple-100 text-purple-700'
                     }`}>
-                      {(album as any).workflow_status === 'ready' ? '🟡 Готов к передаче' :
-                       (album as any).workflow_status === 'submitted' ? '🟣 Передан в OkeyBook' :
-                       (album as any).workflow_status === 'in_production' ? '🟠 В работе' :
-                       '🟢 Готов'}
+                      {(album as any).workflow_status === 'ready' ? <><span className="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1.5 align-middle" />Готов к передаче</> :
+                       (album as any).workflow_status === 'submitted' ? <><span className="inline-block w-2 h-2 rounded-full bg-violet-500 mr-1.5 align-middle" />Передан в OkeyBook</> :
+                       (album as any).workflow_status === 'in_production' ? <><span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-1.5 align-middle" />В работе</> :
+                       <><span className="inline-block w-2 h-2 rounded-full bg-brand-500 mr-1.5 align-middle" />Готов</>}
                     </span>
                   </div>
                 )}
@@ -11402,7 +11426,7 @@ function PresetCard({
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="text-sm text-blue-600 hover:text-blue-800 hover:underline shrink-0"
+            className="text-sm text-brand-600 hover:text-brand-700 hover:underline shrink-0"
           >
             Редактировать
           </button>

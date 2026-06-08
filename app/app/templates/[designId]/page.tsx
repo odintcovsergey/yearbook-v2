@@ -398,7 +398,7 @@ export default function TemplatesPage() {
             {!isViewer && (
               <button
                 onClick={handleCreateBlank}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+                className="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm"
               >
                 + Создать свой шаблон
               </button>
@@ -465,15 +465,15 @@ function TemplateCard(props: TemplateCardProps) {
 
   return (
     <div
-      className={`bg-white border rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow ${
-        isInvalid ? 'border-red-300' : 'border-gray-200'
+      className={`bg-white border rounded-xl p-3 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-150 ${
+        isInvalid ? 'border-red-300' : 'border-gray-200/70'
       }`}
     >
       {/* Крупное превью — students. РЭ.47: aspect ratio 1:1.4 (страница
           вертикальная), минимальная высота уменьшена с 160 до 110px для
           компактного грида. */}
       <div
-        className="w-full bg-gray-50 border border-gray-200 rounded mb-2 overflow-hidden flex items-center justify-center"
+        className="w-full bg-gray-50 border border-gray-200 rounded-lg mb-2 overflow-hidden flex items-center justify-center"
         style={{ aspectRatio: '1 / 1.4' }}
         dangerouslySetInnerHTML={{
           __html:
@@ -495,22 +495,22 @@ function TemplateCard(props: TemplateCardProps) {
       {/* Бейджи */}
       <div className="flex flex-wrap gap-1 mb-2">
         {template.sheet_type === 'hard' && (
-          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded">
+          <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-full">
             твёрдая
           </span>
         )}
         {template.sheet_type === 'soft' && (
-          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[10px] rounded">
+          <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-medium rounded-full">
             мягкая
           </span>
         )}
         {template.student_layout_mode && (
-          <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 text-[10px] rounded">
+          <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-full">
             {layoutModeLabel(template.student_layout_mode, template.student_grid_size)}
           </span>
         )}
         {isInvalid && (
-          <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] rounded">
+          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-medium rounded-full">
             Доработай
           </span>
         )}
@@ -535,7 +535,7 @@ function TemplateCard(props: TemplateCardProps) {
             <button
               onClick={(props as Extract<TemplateCardProps, { kind: 'global' }>).onClone}
               disabled={busy}
-              className="flex-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded text-xs"
+              className="flex-1 px-2 py-1 bg-brand-600 hover:bg-brand-700 disabled:bg-brand-300 text-white rounded-lg text-xs"
             >
               {busy ? '...' : 'Сохранить в мои'}
             </button>
@@ -545,14 +545,14 @@ function TemplateCard(props: TemplateCardProps) {
               <button
                 onClick={(props as Extract<TemplateCardProps, { kind: 'my' }>).onEdit}
                 disabled={busy}
-                className="flex-1 px-2 py-1 bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 text-gray-800 rounded text-xs"
+                className="flex-1 px-2 py-1 bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 text-gray-800 rounded-lg text-xs"
               >
                 Редактировать
               </button>
               <button
                 onClick={(props as Extract<TemplateCardProps, { kind: 'my' }>).onDelete}
                 disabled={busy}
-                className="px-2 py-1 bg-red-100 hover:bg-red-200 disabled:bg-gray-100 text-red-700 rounded text-xs"
+                className="px-2 py-1 bg-red-100 hover:bg-red-200 disabled:bg-gray-100 text-red-700 rounded-lg text-xs"
                 title="Удалить шаблон"
               >
                 {busy ? '...' : '×'}

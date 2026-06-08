@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, memo, useRef } from 'react'
 import { useParams } from 'next/navigation'
+import { Hand, Check, Lock, Maximize2, Camera, Gift, Sparkles, Frown, AlertTriangle, Clock } from 'lucide-react'
 import type { Photo } from '@/types'
 
 type StepId = 1 | 2 | 3 | 4 | 5 | 6 | 7
@@ -426,10 +427,10 @@ export default function ParentPage() {
   if (loading) return <LoadingScreen />
   if (error && !done) return <ErrorScreen message={error} />
   if (alreadySubmitted) return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-b from-cream to-cream-light flex items-center justify-center p-4">
       <div className="max-w-sm w-full space-y-4">
         <div className="card p-8 text-center">
-          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+          <div className="w-16 h-16 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl"><Check size={40} /></div>
           <p className="text-xs text-gray-400 mb-1">{albumTitle}</p>
           <h2 className="text-xl font-medium text-gray-800 mb-2">Выбор уже сделан</h2>
           <p className="text-gray-500 text-sm mb-4">Фотографии для <strong>{childName}</strong> уже выбраны и сохранены.</p>
@@ -444,7 +445,7 @@ export default function ParentPage() {
               checked={isPurchased}
               disabled={purchaseSaving}
               onChange={(e) => handlePurchaseChange(e.target.checked)}
-              className="mt-0.5 w-5 h-5"
+              className="mt-0.5 w-5 h-5 accent-brand-600"
             />
             <div className="flex-1">
               <span className="text-sm font-medium text-gray-800">
@@ -471,7 +472,7 @@ export default function ParentPage() {
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-cream to-cream-light">
 
       {lightbox && (
         <Lightbox
@@ -510,7 +511,7 @@ export default function ParentPage() {
               className="h-full rounded-full transition-all duration-500"
               style={{
                 width: `${done ? 100 : progress}%`,
-                backgroundColor: tenantBrandColor ?? '#3b82f6',
+                backgroundColor: tenantBrandColor ?? '#0D9488',
               }}
             />
           </div>
@@ -524,10 +525,10 @@ export default function ParentPage() {
         if (days >= 0 && days <= 3) return (
           <div className={`px-4 py-3 text-sm font-medium text-center ${days === 0 ? 'bg-red-500 text-white' : 'bg-amber-400 text-amber-900'}`}>
             {days === 0
-              ? '⚠️ Сегодня последний день для выбора фотографий!'
+              ? <><AlertTriangle size={14} className="inline" /> Сегодня последний день для выбора фотографий!</>
               : days === 1
-              ? '⏰ Завтра истекает срок выбора фотографий'
-              : `⏰ До конца выбора фотографий осталось ${days} дня`}
+              ? <><Clock size={14} className="inline" /> Завтра истекает срок выбора фотографий</>
+              : <><Clock size={14} className="inline" /> До конца выбора фотографий осталось {days} дня</>}
           </div>
         )
         return null
@@ -544,7 +545,7 @@ export default function ParentPage() {
               checked={isPurchased}
               disabled={purchaseSaving}
               onChange={(e) => handlePurchaseChange(e.target.checked)}
-              className="mt-0.5 w-5 h-5"
+              className="mt-0.5 w-5 h-5 accent-brand-600"
             />
             <div className="flex-1">
               <span className="text-sm font-medium text-gray-800">
@@ -563,7 +564,7 @@ export default function ParentPage() {
         </div>
 
         {step === 1 && tenantWelcomeText && (
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-gray-700 mb-5 whitespace-pre-wrap">
+          <div className="bg-brand-50 border border-brand-100 rounded-xl p-4 text-sm text-gray-700 mb-5 whitespace-pre-wrap">
             {tenantWelcomeText}
           </div>
         )}
@@ -571,12 +572,12 @@ export default function ParentPage() {
         {step === 1 && (
           <StepCard wide title="Портрет для личной страницы" subtitle="Это фото появится на вашей личной странице в альбоме.">
             <div className="flex items-center gap-3 mb-4">
-              <span className={`badge-${portraitPage ? 'green' : 'blue'}`}>Выбрано: {portraitPage ? 1 : 0} / 1</span>
+              <span className={`badge-${portraitPage ? 'green' : 'gray'}`}>Выбрано: {portraitPage ? 1 : 0} / 1</span>
               <span className="text-xs text-gray-400">{portraits.filter(p => !p.locked).length} из {portraits.length} доступно</span>
 
             </div>
-            <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitPage ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
-              {portraitPage ? '✅ Портрет выбран — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать портрет. Для просмотра крупнее используйте кнопку в правом нижнем углу фото'}
+            <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitPage ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
+              {portraitPage ? <><Check size={14} className="inline" /> Портрет выбран — нажмите Далее</> : <><Hand size={14} className="inline" /> Нажмите на фото чтобы выбрать портрет. Для просмотра крупнее используйте кнопку в правом нижнем углу фото</>}
             </div>
             <PhotoGrid
               photos={portraits}
@@ -598,7 +599,7 @@ export default function ParentPage() {
           <div className="sticky bottom-0 z-20 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
             {portraitPage && (() => { const p = portraits.find(ph => ph.id === portraitPage); return p ? (
               <div className="flex items-center gap-3 mb-3">
-                <img src={p.thumb || p.url} alt="" className="w-12 h-12 rounded-lg object-cover border-2 border-blue-400" />
+                <img src={p.thumb || p.url} alt="" className="w-12 h-12 rounded-lg object-cover border-2 border-brand-400" />
                 <span className="text-sm text-gray-600">Выбранный портрет</span>
               </div>
             ) : null })()}
@@ -627,8 +628,8 @@ export default function ParentPage() {
 
             {(coverMode === 'required' || coverOption === 'other') && (
               <div className="mb-6">
-                <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitCover ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
-                  {portraitCover ? '✅ Портрет для обложки выбран — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать портрет для обложки'}
+                <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitCover ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
+                  {portraitCover ? <><Check size={14} className="inline" /> Портрет для обложки выбран — нажмите Далее</> : <><Hand size={14} className="inline" /> Нажмите на фото чтобы выбрать портрет для обложки</>}
                 </div>
                 <PhotoGrid
                   photos={portraits.map(p => p.id === portraitPage ? {...p, locked: true} : p)}
@@ -657,7 +658,7 @@ export default function ParentPage() {
           <div className="sticky bottom-0 z-20 bg-white border-t border-gray-100 shadow-lg px-4 py-3">
             {coverOption === 'other' && portraitCover && (() => { const p = portraits.find(ph => ph.id === portraitCover); return p ? (
               <div className="flex items-center gap-3 mb-3">
-                <img src={p.thumb || p.url} alt="" className="w-12 h-12 rounded-lg object-cover border-2 border-blue-400" />
+                <img src={p.thumb || p.url} alt="" className="w-12 h-12 rounded-lg object-cover border-2 border-brand-400" />
                 <span className="text-sm text-gray-600">Портрет для обложки</span>
               </div>
             ) : null })()}
@@ -697,7 +698,7 @@ export default function ParentPage() {
                       type="button"
                       onClick={() => !fixed && pickCover(item)}
                       className={`text-left rounded-xl border-2 p-2 transition-colors ${
-                        active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                        active ? 'border-brand-600 bg-brand-50' : 'border-gray-200 hover:border-gray-300'
                       } ${fixed ? 'cursor-default' : ''}`}
                     >
                       <div
@@ -729,8 +730,8 @@ export default function ParentPage() {
                   </div>
                   {coverOption === 'other' && (
                     <div className="mb-2">
-                      <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitCover ? 'bg-green-50 border-green-100 text-green-700' : 'bg-blue-50 border-blue-100 text-blue-700'}`}>
-                        {portraitCover ? '✅ Фото для обложки выбрано — нажмите Далее' : '👆 Нажмите на фото чтобы выбрать его для обложки'}
+                      <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${portraitCover ? 'bg-brand-50 border-brand-200 text-brand-700' : 'bg-gray-50 border-gray-200 text-gray-600'}`}>
+                        {portraitCover ? <><Check size={14} className="inline" /> Фото для обложки выбрано — нажмите Далее</> : <><Hand size={14} className="inline" /> Нажмите на фото чтобы выбрать его для обложки</>}
                       </div>
                       <PhotoGrid
                         photos={portraits.map(p => p.id === portraitPage ? {...p, locked: true} : p)}
@@ -803,35 +804,35 @@ export default function ParentPage() {
               </div>
             )}
             {formMode === 'free' && textType === 'garden' && (
-              <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
+              <div className="mb-4 bg-brand-50 border border-brand-100 rounded-xl p-4 text-sm text-brand-700">
                 <p className="font-medium mb-2">Вопросы для вдохновения:</p>
-                <ul className="space-y-1 text-blue-700 list-disc list-inside">
+                <ul className="space-y-1 text-brand-700 list-disc list-inside">
                   <li>Во что любит играть?</li>
                   <li>Любимое блюдо в саду?</li>
                   <li>Какая мечта?</li>
                 </ul>
-                <p className="mt-3 text-blue-600 italic text-sm">Пример: «Я люблю играть в трассу с шариками и в машинки с друзьями. А ещё – гулять! Самый вкусный для меня суп – борщ. Когда вырасту – хочу стать футболистом.»</p>
+                <p className="mt-3 text-brand-600 italic text-sm">Пример: «Я люблю играть в трассу с шариками и в машинки с друзьями. А ещё – гулять! Самый вкусный для меня суп – борщ. Когда вырасту – хочу стать футболистом.»</p>
               </div>
             )}
             {formMode === 'free' && textType === 'grade4' && (
-              <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
+              <div className="mb-4 bg-brand-50 border border-brand-100 rounded-xl p-4 text-sm text-brand-700">
                 <p className="font-medium mb-2">Вопросы для вдохновения:</p>
-                <ul className="space-y-1 text-blue-700 list-disc list-inside">
+                <ul className="space-y-1 text-brand-700 list-disc list-inside">
                   <li>Какой суперспособностью ты бы хотел(а) обладать? Где и как ты бы её применял(а)?</li>
                   <li>Что бы ты хотел(а) пожелать себе и своим одноклассникам?</li>
                 </ul>
-                <p className="mt-3 text-blue-600 italic text-sm">Пример: «Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!»</p>
+                <p className="mt-3 text-brand-600 italic text-sm">Пример: «Хочу уметь останавливать время — чтобы успевать всё и немного поспать на уроках. Желаю всем весёлой школы, настоящей дружбы и пятёрок!»</p>
               </div>
             )}
             {formMode === 'free' && textType === 'grade11' && (
-              <div className="mb-4 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-800">
+              <div className="mb-4 bg-brand-50 border border-brand-100 rounded-xl p-4 text-sm text-brand-700">
                 <p className="font-medium mb-2">Вопросы для вдохновения:</p>
-                <ul className="space-y-1 text-blue-700 list-disc list-inside">
+                <ul className="space-y-1 text-brand-700 list-disc list-inside">
                   <li>Что запомнится из школьных лет больше всего?</li>
                   <li>Чем увлекаешься, кем видишь себя в будущем?</li>
                   <li>Что пожелаешь одноклассникам?</li>
                 </ul>
-                <p className="mt-3 text-blue-600 italic text-sm">Пример: «Школа дала мне больше, чем знания, — настоящих друзей и веру в себя. Впереди медицинский, мечтаю стать врачом. Ребята, не теряйтесь и оставайтесь собой — у нас всё впереди!»</p>
+                <p className="mt-3 text-brand-600 italic text-sm">Пример: «Школа дала мне больше, чем знания, — настоящих друзей и веру в себя. Впереди медицинский, мечтаю стать врачом. Ребята, не теряйтесь и оставайтесь собой — у нас всё впереди!»</p>
               </div>
             )}
             {formMode === 'free' && (
@@ -855,9 +856,9 @@ export default function ParentPage() {
                             type="button"
                             disabled={!studentText.trim()}
                             onClick={() => runAi('fix')}
-                            className="text-sm px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="text-sm px-4 py-2 rounded-xl border border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            ✨ Исправить ошибки
+                            <Sparkles size={16} className="inline" /> Исправить ошибки
                           </button>
                           <button
                             type="button"
@@ -865,7 +866,7 @@ export default function ParentPage() {
                             onClick={() => runAi('improve')}
                             className="text-sm px-4 py-2 rounded-xl border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            ✨ Улучшить текст
+                            <Sparkles size={16} className="inline" /> Улучшить текст
                           </button>
                         </div>
                         <p className="text-xs text-gray-400 mt-2">Осталось {AI_CALLS_LIMIT - aiCallsUsed} из {AI_CALLS_LIMIT} попыток AI</p>
@@ -906,7 +907,7 @@ export default function ParentPage() {
                         disabled={!Object.values(formFields).some(v => v.trim())}
                         className="text-sm px-4 py-2 rounded-xl bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        ✨ Составить текст
+                        <Sparkles size={16} className="inline" /> Составить текст
                       </button>
                       <p className="text-xs text-gray-400 mt-2">Осталось {AI_CALLS_LIMIT - aiCallsUsed} из {AI_CALLS_LIMIT} попыток AI</p>
                     </div>
@@ -926,11 +927,11 @@ export default function ParentPage() {
               </div>
             )}
             {aiResult && !aiLoading && aiNoChanges && (
-              <div className="mb-6 px-4 py-3 bg-green-50 border border-green-200 rounded-xl">
-                <p className="text-sm text-green-800 mb-3">✓ Ошибок не найдено — текст уже грамотный.</p>
+              <div className="mb-6 px-4 py-3 bg-brand-50 border border-brand-200 rounded-xl">
+                <p className="text-sm text-brand-700 mb-3"><Check size={14} className="inline" /> Ошибок не найдено — текст уже грамотный.</p>
                 <button
                   type="button"
-                  className="text-sm px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700"
+                  className="text-sm px-4 py-2 rounded-xl bg-brand-600 text-white hover:bg-brand-700"
                   onClick={closeAi}
                 >
                   Закрыть
@@ -941,16 +942,16 @@ export default function ParentPage() {
               const isFix = aiAction === 'fix'
               const title = aiAction === 'fix' ? 'Исправленный вариант:' : aiAction === 'improve' ? 'Улучшенный вариант:' : 'Вариант от AI:'
               return (
-                <div className={`mb-6 px-4 py-3 rounded-xl border ${isFix ? 'bg-blue-50 border-blue-200' : 'bg-purple-50 border-purple-200'}`}>
-                  <p className={`text-xs font-medium mb-2 ${isFix ? 'text-blue-800' : 'text-purple-800'}`}>{title}</p>
+                <div className={`mb-6 px-4 py-3 rounded-xl border ${isFix ? 'bg-brand-50 border-brand-200' : 'bg-purple-50 border-purple-200'}`}>
+                  <p className={`text-xs font-medium mb-2 ${isFix ? 'text-brand-700' : 'text-purple-800'}`}>{title}</p>
                   <p className="text-sm text-gray-800 whitespace-pre-wrap mb-3">{aiResult}</p>
                   {aiTruncated && (
-                    <p className="text-xs text-amber-700 mb-3">⚠️ Текст пришлось укоротить, чтобы вписать в лимит {textMaxChars} символов.</p>
+                    <p className="text-xs text-amber-700 mb-3"><AlertTriangle size={14} className="inline" /> Текст пришлось укоротить, чтобы вписать в лимит {textMaxChars} символов.</p>
                   )}
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      className={`text-sm px-4 py-2 rounded-xl text-white ${isFix ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
+                      className={`text-sm px-4 py-2 rounded-xl text-white ${isFix ? 'bg-brand-600 hover:bg-brand-700' : 'bg-purple-600 hover:bg-purple-700'}`}
                       onClick={acceptAi}
                     >
                       Принять
@@ -1011,12 +1012,12 @@ export default function ParentPage() {
                           })
                         }}
                         className={`w-full text-left px-4 py-3 rounded-xl text-sm border transition-all
-                          ${mine ? 'border-blue-500 bg-blue-50 text-blue-800' :
+                          ${mine ? 'border-brand-600 bg-brand-50 text-brand-700' :
                             taken ? 'border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed' :
                             'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'}`}
                       >
-                        {taken && !mine && <span className="text-xs text-gray-300 mr-2">🔒</span>}
-                        {mine && <span className="text-xs text-blue-500 mr-2">✓</span>}
+                        {taken && !mine && <span className="text-xs text-gray-300 mr-2"><Lock size={14} className="inline" /></span>}
+                        {mine && <span className="text-xs text-brand-600 mr-2"><Check size={14} className="inline" /></span>}
                         {q.text}
                       </button>
                     )
@@ -1030,7 +1031,7 @@ export default function ParentPage() {
         {step === 4 && (
           <StepCard wide title="Фото с друзьями" subtitle={`Эти фото разместятся рядом с вашим портретом на личной странице. Нужно выбрать ${groupMin === groupMax ? `${groupMin}` : `от ${groupMin} до ${groupMax}`} фото. Затемнённые фото с замком уже выбраны другими участниками.`}>
             <div className="flex items-center gap-3 mb-4">
-              <span className={`badge-${groupPhotos.length >= groupMin && groupPhotos.length <= groupMax ? 'green' : 'blue'}`}>
+              <span className={`badge-${groupPhotos.length >= groupMin && groupPhotos.length <= groupMax ? 'green' : 'gray'}`}>
                 Выбрано: {groupPhotos.length} / {groupMax}
               </span>
               <span className="text-xs text-gray-400">{groups.filter(g => !g.locked).length} из {groups.length} доступно</span>
@@ -1038,16 +1039,16 @@ export default function ParentPage() {
             </div>
             <div className={`sticky top-16 z-20 rounded-xl px-4 py-3 mb-4 text-sm shadow-sm border ${
               groupPhotos.length >= groupMin && groupPhotos.length <= groupMax
-                ? 'bg-green-50 border-green-100 text-green-700'
+                ? 'bg-brand-50 border-brand-200 text-brand-700'
                 : groupPhotos.length > 0
                   ? 'bg-amber-50 border-amber-100 text-amber-700'
-                  : 'bg-blue-50 border-blue-100 text-blue-700'
+                  : 'bg-gray-50 border-gray-200 text-gray-600'
             }`}>
               {groupPhotos.length >= groupMin && groupPhotos.length <= groupMax
-                ? '✅ Всё выбрано — нажмите Далее'
+                ? <><Check size={14} className="inline" /> Всё выбрано — нажмите Далее</>
                 : groupPhotos.length > 0
-                  ? `👆 Выбрано ${groupPhotos.length} из ${groupMin} — добавьте ещё ${groupMin - groupPhotos.length} фото`
-                  : `👆 Нажмите на фото чтобы выбрать — нужно ${groupMin === groupMax ? `${groupMin} фото` : `от ${groupMin} до ${groupMax} фото`}`
+                  ? <><Hand size={14} className="inline" /> {`Выбрано ${groupPhotos.length} из ${groupMin} — добавьте ещё ${groupMin - groupPhotos.length} фото`}</>
+                  : <><Hand size={14} className="inline" /> {`Нажмите на фото чтобы выбрать — нужно ${groupMin === groupMax ? `${groupMin} фото` : `от ${groupMin} до ${groupMax} фото`}`}</>
               }
             </div>
             <PhotoGrid
@@ -1071,7 +1072,7 @@ export default function ParentPage() {
             {groupPhotos.length > 0 && (
               <div className="flex items-center gap-2 mb-3 overflow-x-auto">
                 {groupPhotos.map(id => { const p = groups.find(g => g.id === id); return p ? (
-                  <img key={id} src={p.thumb || p.url} alt="" className="w-12 h-12 rounded-lg object-cover border-2 border-blue-400 flex-shrink-0" />
+                  <img key={id} src={p.thumb || p.url} alt="" className="w-12 h-12 rounded-lg object-cover border-2 border-brand-400 flex-shrink-0" />
                 ) : null })}
                 <span className="text-xs text-gray-400 flex-shrink-0 ml-1">Выбрано {groupPhotos.length} из {groupMax}</span>
               </div>
@@ -1084,18 +1085,18 @@ export default function ParentPage() {
 
         {step === 7 && personalSpreadEnabled && (
           <StepCard
-            title="📸 Личный разворот"
+            title={<><Camera size={16} className="inline" /> Личный разворот</>}
             subtitle="Сделайте альбом по-настоящему своим"
           >
-            <div className="bg-blue-50 rounded-xl p-4 mb-4 text-sm text-blue-900 leading-relaxed">
+            <div className="bg-brand-50 rounded-xl p-4 mb-4 text-sm text-brand-700 leading-relaxed">
               <p className="font-medium mb-1">+2 страницы только ваших фотографий</p>
-              <p className="text-blue-700">
+              <p className="text-brand-700">
                 Загрузите {personalSpreadMin}–{personalSpreadMax} архивных снимков — из детства, с друзьями, семейных
                 поездок или любых других памятных моментов. Они займут отдельный разворот в вашем альбоме рядом
                 с классными фото. Через 10 лет вы откроете альбом — и это будут именно ваши воспоминания.
               </p>
               {personalSpreadPrice > 0 && (
-                <p className="mt-2 font-medium text-blue-800">Доплата всего +{personalSpreadPrice} ₽ к стоимости альбома</p>
+                <p className="mt-2 font-medium text-brand-700">Доплата всего +{personalSpreadPrice} ₽ к стоимости альбома</p>
               )}
             </div>
 
@@ -1103,7 +1104,7 @@ export default function ParentPage() {
             {spreadWarnings.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
                 {spreadWarnings.map((w, i) => (
-                  <p key={i} className="text-xs text-amber-700">⚠️ {w}</p>
+                  <p key={i} className="text-xs text-amber-700"><AlertTriangle size={14} className="inline" /> {w}</p>
                 ))}
               </div>
             )}
@@ -1139,7 +1140,7 @@ export default function ParentPage() {
 
             {/* Кнопка загрузки */}
             {spreadPhotos.length < personalSpreadMax && (
-              <label className={`flex items-center justify-center gap-2 w-full py-3 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors mb-4 ${spreadUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+              <label className={`flex items-center justify-center gap-2 w-full py-3 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-brand-400 hover:bg-brand-50 transition-colors mb-4 ${spreadUploading ? 'opacity-50 pointer-events-none' : ''}`}>
                 <input
                   type="file"
                   accept="image/jpeg,image/jpg,image/png,image/heic,image/heif"
@@ -1206,14 +1207,14 @@ export default function ParentPage() {
                     </p>
                     <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                        className="h-full bg-brand-600 rounded-full transition-all duration-300"
                         style={{ width: `${spreadProgress.total ? (spreadProgress.done / spreadProgress.total) * 100 : 0}%` }}
                       />
                     </div>
                   </div>
                 ) : (
                   <>
-                    <span className="text-2xl">📷</span>
+                    <span className="text-2xl"><Camera size={16} /></span>
                     <span className="text-sm text-gray-500">
                       Добавить фото ({spreadPhotos.length}/{personalSpreadMax})
                     </span>
@@ -1257,7 +1258,7 @@ export default function ParentPage() {
             </div>
             <p className="text-xs text-gray-400 mt-4 text-center">
               Нажимая «Далее», вы даёте согласие на обработку персональных данных в соответствии с{' '}
-              <a href="/privacy" target="_blank" className="text-blue-500 hover:underline">Политикой конфиденциальности</a>
+              <a href="/privacy" target="_blank" className="text-brand-600 hover:underline">Политикой конфиденциальности</a>
             </p>
           </StepCard>
         )}
@@ -1269,7 +1270,7 @@ export default function ParentPage() {
               <div className="py-2 border-b border-gray-100">
                 <span className="text-xs text-gray-400 block mb-2">Портрет</span>
                 {portraitPage ? (() => { const p = portraits.find(ph => ph.id === portraitPage); return p ? (
-                  <img src={p.thumb || p.url} alt="" className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-blue-200"
+                  <img src={p.thumb || p.url} alt="" className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-brand-200"
                     onClick={() => setLightbox({ photos: [p], index: 0, onSelect: undefined })} />
                 ) : <span className="text-sm text-gray-400">—</span> })() : <span className="text-sm text-gray-400">—</span>}
               </div>
@@ -1282,7 +1283,7 @@ export default function ParentPage() {
                   {coverOption === 'other' && (
                     <div className="flex items-center gap-3">
                       {portraitCover ? (() => { const p = portraits.find(ph => ph.id === portraitCover); return p ? (
-                        <img src={p.thumb || p.url} alt="" className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-blue-200"
+                        <img src={p.thumb || p.url} alt="" className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-brand-200"
                           onClick={() => setLightbox({ photos: [p], index: 0, onSelect: undefined })} />
                       ) : null })() : null}
                       <span className="text-sm text-green-600 font-medium">+{coverPrice} ₽</span>
@@ -1296,7 +1297,7 @@ export default function ParentPage() {
                   <span className="text-xs text-gray-400 block mb-2">Фото с друзьями</span>
                   <div className="flex gap-2 flex-wrap">
                     {groupPhotos.map(id => { const p = groups.find(g => g.id === id); return p ? (
-                      <img key={id} src={p.thumb || p.url} alt="" className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-blue-200"
+                      <img key={id} src={p.thumb || p.url} alt="" className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-brand-200"
                         onClick={() => setLightbox({ photos: [p], index: 0, onSelect: undefined })} />
                     ) : null })}
                     {groupPhotos.length === 0 && <span className="text-sm text-gray-400">—</span>}
@@ -1324,7 +1325,7 @@ export default function ParentPage() {
                           key={p.id}
                           src={p.thumb}
                           alt={`разворот ${i + 1}`}
-                          className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-blue-200"
+                          className="w-24 h-24 object-cover rounded-xl cursor-pointer border-2 border-brand-200"
                           onClick={() => setLightbox({ photos: spreadAsPhotos as any, index: i, onSelect: undefined })}
                         />
                       ))}
@@ -1337,7 +1338,7 @@ export default function ParentPage() {
             {submitError && <div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-sm mb-4">{submitError}</div>}
             <div className="flex items-center justify-between">
               <button className="btn-ghost" onClick={goPrev}>← Изменить</button>
-              <button className="btn-primary min-w-36" onClick={handleSubmit} disabled={saving}>{saving ? <span className="flex items-center gap-2 justify-center"><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block"/>Сохраняю...</span> : 'Подтвердить ✓'}</button>
+              <button className="btn-primary min-w-36" onClick={handleSubmit} disabled={saving}>{saving ? <span className="flex items-center gap-2 justify-center"><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block"/>Сохраняю...</span> : <>Подтвердить <Check size={16} className="inline" /></>}</button>
             </div>
           </StepCard>
         )}
@@ -1346,7 +1347,7 @@ export default function ParentPage() {
           const refLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/ref/${token}`
           return (
           <div className="card p-8 text-center">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+            <div className="w-16 h-16 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl"><Check size={40} /></div>
             <h2 className="text-xl font-medium text-gray-800 mb-2">Спасибо!</h2>
             <p className="text-gray-500 text-sm mb-6">Выбор для <strong>{childName}</strong> сохранён.<br />Сообщим когда альбом будет готов.</p>
 
@@ -1356,7 +1357,7 @@ export default function ParentPage() {
         })()}
         {done && alreadySubmitted && (
           <div className="card p-8 text-center max-w-sm mx-auto">
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">✓</div>
+            <div className="w-16 h-16 bg-brand-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl"><Check size={40} /></div>
             <h2 className="text-xl font-medium text-gray-800 mb-2">Выбор уже сделан</h2>
             <p className="text-gray-500 text-sm mb-4">Фотографии для <strong>{childName}</strong> уже выбраны и сохранены.</p>
             <p className="text-gray-400 text-sm">Если нужно внести изменения — обратитесь к вашему менеджеру.</p>
@@ -1436,8 +1437,8 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
         <div className="flex items-center gap-3">
           <span className="text-white/60 text-sm">{index + 1} / {photos.length}</span>
           {onSelect && selectedCount > 0 && (
-            <span className="bg-green-500/80 text-white text-xs px-2 py-0.5 rounded-full">
-              ✓ {selectedCount}
+            <span className="bg-brand-600/80 text-white text-xs px-2 py-0.5 rounded-full">
+              <Check size={14} className="inline" /> {selectedCount}
             </span>
           )}
         </div>
@@ -1477,17 +1478,17 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
       {/* Кнопка выбора */}
       <div className="px-4 py-3 flex items-center justify-center flex-shrink-0">
         {isLocked ? (
-          <div className="text-white/40 text-sm px-6 py-3">🔒 Уже выбрано другим</div>
+          <div className="text-white/40 text-sm px-6 py-3"><Lock size={14} className="inline" /> Уже выбрано другим</div>
         ) : onSelect ? (
           <button
             onClick={handleSelect}
             className={`px-10 py-3.5 rounded-xl text-sm font-semibold transition-all active:scale-95 ${
               isSelected
-                ? 'bg-green-500 text-white shadow-lg shadow-green-500/30'
+                ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/30'
                 : 'bg-white text-gray-900 hover:bg-gray-100 shadow-lg'
             }`}
           >
-            {isSelected ? '✓ Выбрано' : '✓ Выбрать это фото'}
+            {isSelected ? <><Check size={16} className="inline" /> Выбрано</> : <><Check size={16} className="inline" /> Выбрать это фото</>}
           </button>
         ) : null}
       </div>
@@ -1503,13 +1504,13 @@ function Lightbox({ photos, index, onClose, onNavigate, onSelect, selected }: {
             onClick={() => onNavigate(i)}
             style={{ scrollSnapAlign: 'start' }}
             className={`relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
-              i === index ? 'border-blue-400 opacity-100' : 'border-transparent opacity-40 hover:opacity-70'
+              i === index ? 'border-brand-400 opacity-100' : 'border-transparent opacity-40 hover:opacity-70'
             } ${p.locked && !selected.includes(p.id) ? 'opacity-20' : ''}`}
           >
             <img src={p.url} alt="" className="w-full h-full object-cover" draggable={false} />
             {selected.includes(p.id) && (
-              <div className="absolute inset-0 flex items-center justify-center bg-green-500/50 rounded-lg">
-                <span className="text-white text-lg font-bold">✓</span>
+              <div className="absolute inset-0 flex items-center justify-center bg-brand-600/50 rounded-lg">
+                <span className="text-white text-lg font-bold"><Check size={14} className="inline" /></span>
               </div>
             )}
           </button>
@@ -1526,18 +1527,18 @@ const PhotoThumb = memo(function PhotoThumb({ photo, isSelected, isLocked, canSe
   return (
     <div className="relative group photo-thumb">
       <div style={{willChange: 'transform'}} className={`w-full aspect-square rounded-xl overflow-hidden border-2 relative
-        ${isSelected ? 'border-blue-500 shadow-md' : 'border-transparent'}
+        ${isSelected ? 'border-brand-600 shadow-md' : 'border-transparent'}
         ${isLocked ? 'opacity-30' : ''}`}
       >
         <img src={photo.thumb || photo.url} alt="" className="w-full h-full object-cover" loading="lazy" onError={e => { (e.target as HTMLElement).closest('.photo-thumb')?.classList.add('hidden') }} />
         {isSelected && (
-          <div className="absolute top-2 right-2 w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-medium shadow">
+          <div className="absolute top-2 right-2 w-7 h-7 bg-brand-600 rounded-full flex items-center justify-center text-white text-xs font-medium shadow">
             {selIndex + 1}
           </div>
         )}
         {isLocked && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900/30 rounded-xl">
-            <span className="text-2xl">🔒</span>
+            <span className="text-2xl"><Lock size={24} /></span>
           </div>
         )}
       </div>
@@ -1549,7 +1550,7 @@ const PhotoThumb = memo(function PhotoThumb({ photo, isSelected, isLocked, canSe
       <button onClick={e => { e.stopPropagation(); onLightbox() }}
         className="absolute bottom-2 right-2 bg-black/60 text-white text-sm w-8 h-8 flex items-center justify-center rounded-xl hover:bg-black/80 transition-all z-[1]"
       >
-        ⤢
+        <Maximize2 size={16} />
       </button>
     </div>
   )
@@ -1610,7 +1611,7 @@ function PhotoGrid({ photos, selected, limit, onLightbox, onToggle, small = fals
               <button key={i} onClick={() => goToPage(i)}
                 className={`w-9 h-9 rounded-xl text-sm font-medium transition-all ${
                   i === page
-                    ? 'bg-blue-500 text-white shadow-sm'
+                    ? 'bg-brand-600 text-white shadow-sm'
                     : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
                 }`}
               >{i + 1}</button>
@@ -1622,7 +1623,7 @@ function PhotoGrid({ photos, selected, limit, onLightbox, onToggle, small = fals
   )
 }
 
-function StepCard({ title, subtitle, children, wide = false }: { title: string; subtitle: string; children: React.ReactNode; wide?: boolean }) {
+function StepCard({ title, subtitle, children, wide = false }: { title: React.ReactNode; subtitle: string; children: React.ReactNode; wide?: boolean }) {
   return (
     <div className={`card p-5 ${wide ? '' : 'max-w-2xl mx-auto w-full'}`}>
       <h2 className="text-lg font-medium text-gray-800 mb-1">{title}</h2>
@@ -1634,8 +1635,8 @@ function StepCard({ title, subtitle, children, wide = false }: { title: string; 
 
 function RadioCard({ active, onClick, label, sub, paid }: { active: boolean; onClick: () => void; label: string; sub: string; paid?: boolean }) {
   return (
-    <button onClick={onClick} className={`w-full text-left p-4 rounded-xl border-2 transition-all flex items-center gap-3 ${active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300 bg-white'}`}>
-      <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${active ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`}>
+    <button onClick={onClick} className={`w-full text-left p-4 rounded-xl border-2 transition-all flex items-center gap-3 ${active ? 'border-brand-600 bg-brand-50' : 'border-gray-200 hover:border-gray-300 bg-white'}`}>
+      <div className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${active ? 'border-brand-600 bg-brand-600' : 'border-gray-300'}`}>
         {active && <div className="w-2 h-2 rounded-full bg-white" />}
       </div>
       <div>
@@ -1669,7 +1670,7 @@ function ReferralRewardCard({
 }) {
   const hasProgram = !!program
   return (
-    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-left">
+    <div className="bg-brand-50 border border-brand-100 rounded-2xl p-5 text-left">
       {program?.referrer_image_url && (
         <img
           src={program.referrer_image_url}
@@ -1677,10 +1678,10 @@ function ReferralRewardCard({
           className="max-h-80 w-auto max-w-full mx-auto block rounded-xl mb-3"
         />
       )}
-      <p className="text-sm font-medium text-blue-800 mb-1">
-        🎁 {program?.referrer_reward_text || 'Получите скидку 50%'}
+      <p className="text-sm font-medium text-brand-700 mb-1">
+        <Gift size={16} className="inline" /> {program?.referrer_reward_text || 'Получите скидку 50%'}
       </p>
-      <p className="text-sm text-blue-700 mb-4">
+      <p className="text-sm text-brand-700 mb-4">
         {hasProgram
           ? 'Поделитесь ссылкой с друзьями из других классов или садов. Когда они оставят заявку — мы свяжемся и применим вашу награду.'
           : 'Поделитесь ссылкой с друзьями из других классов или садов. Если они закажут альбом — вы получите скидку 50% на свой!'}
@@ -1704,7 +1705,7 @@ function ReferralRewardCard({
 function LoadingScreen() {
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin mx-auto" />
+      <div className="w-12 h-12 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto" />
     </div>
   )
 }
@@ -1713,7 +1714,7 @@ function ErrorScreen({ message }: { message: string }) {
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="card p-8 text-center max-w-sm">
-        <div className="text-4xl mb-4">😕</div>
+        <div className="text-4xl mb-4 flex justify-center text-gray-400"><Frown size={40} /></div>
         <p className="text-sm text-gray-700 font-medium mb-2">Что-то пошло не так</p>
         <p className="text-sm text-gray-500 mb-6">{message}</p>
         <button onClick={() => window.history.back()} className="btn-secondary w-full mb-3">
