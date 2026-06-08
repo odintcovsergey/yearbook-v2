@@ -224,23 +224,23 @@ export default function SuperPage() {
           ))}
           <button onClick={() => router.push('/super/templates')}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            <Ruler size={16} /> Шаблоны →
+            <Ruler size={16} /> Шаблоны
           </button>
           <button onClick={() => router.push('/super/master-catalog')}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            <LayoutGrid size={16} /> Каталог мастеров →
+            <LayoutGrid size={16} /> Каталог мастеров
           </button>
           <button onClick={() => router.push('/super/presets')}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            <LayoutTemplate size={16} /> Пресеты →
+            <LayoutTemplate size={16} /> Пресеты
           </button>
           <button onClick={() => router.push('/super/referral-programs')}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            <Gift size={16} /> Реферальные программы →
+            <Gift size={16} /> Реферальные программы
           </button>
           <button onClick={() => router.push('/super/covers')}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
-            <BookImage size={16} /> Обложки →
+            <BookImage size={16} /> Обложки
           </button>
         </div>
 
