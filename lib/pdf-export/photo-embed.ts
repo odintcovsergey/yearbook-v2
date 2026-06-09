@@ -46,6 +46,7 @@ import {
   endPath,
 } from 'pdf-lib';
 import { mmToPixels, mmToPt, placeholderToPdfBox } from './units';
+import { ycGetObjectBuffer } from '@/lib/storage';
 import { computeCrop, computeAutoZoomForRotation } from '@/lib/photo-transform';
 import type {
   AlbumExportInput,
@@ -392,17 +393,21 @@ async function fetchPhotoSource(
   ph: PhotoPlaceholder,
   spread_index: number
 ): Promise<PhotoSource | null> {
-  const filename = ctx.urlToFilename[photoUrl] ?? extractFilenameFromUrl(photoUrl);
+  // urlToFilename теперь ключуется по storage_path (signed URL не годится
+  // как ключ — он non-deterministic). Извлекаем storage_path из signed URL.
+  const filename = ctx.urlToFilename[storageKeyFromUrl(photoUrl)] ?? extractFilenameFromUrl(photoUrl);
 
   // 1. Если профиль не preview — пытаемся найти оригинал
   if (ctx.profile.quality !== 'preview' && filename) {
     const original = ctx.originals.find((o) => o.filename === filename);
     if (original) {
-      const buffer = await fetchBuffer(buildYcUrl(original.storage_path));
+      // Бакет приватный — читаем байты напрямую через S3 (креды сервера),
+      // без публичного HTTP-фетча.
+      const buffer = await fetchObjectBuffer(original.storage_path);
       if (buffer) {
         return { buffer, source: 'original', filename };
       }
-      // fetch упал — продолжаем к fallback
+      // чтение упало — продолжаем к fallback
     }
     // Оригинал не найден ИЛИ fetch упал — warning + fallback
     if (ctx.profile.quality === 'high') {
@@ -478,13 +483,32 @@ function extractFilenameFromUrl(url: string): string {
 }
 
 /**
- * Собирает public YC URL из storage_path.
- * Дублирует getPhotoUrl из @/lib/supabase, но без зависимости на
- * client (избегаем тянуть супабейс в pdf-export модуль).
+ * Извлекает storage_path (без 'yc:' и без имени бакета) из signed/публичного
+ * YC URL — для lookup'а filename в urlToFilename мапе (она ключуется по
+ * storage_path). pathname signed URL = `/<bucket>/<storage_path>`, query с
+ * подписью отбрасывается. Возвращает '' если URL не парсится.
  */
-function buildYcUrl(storage_path: string): string {
-  const bucket = process.env.YC_BUCKET_NAME ?? 'yearbook-photos';
-  return `https://storage.yandexcloud.net/${bucket}/${storage_path}`;
+function storageKeyFromUrl(url: string): string {
+  try {
+    const segments = new URL(url).pathname.split('/').filter(Boolean);
+    // Первый сегмент — имя бакета, остальное — storage_path.
+    return segments.slice(1).join('/');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Читает байты объекта приватного бакета напрямую через S3 (креды сервера).
+ * Возвращает null при ошибке (отсутствие объекта и т.п.) — семантика как у
+ * fetchBuffer, чтобы вызывающий код мог уйти в fallback.
+ */
+async function fetchObjectBuffer(storage_path: string): Promise<Buffer | null> {
+  try {
+    return await ycGetObjectBuffer(storage_path);
+  } catch {
+    return null;
+  }
 }
 
 /**

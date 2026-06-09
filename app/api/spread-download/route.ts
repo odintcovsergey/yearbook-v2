@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError } from '@/lib/auth'
-import { stripYcPrefix } from '@/lib/storage'
+import { ycGetObjectBuffer } from '@/lib/storage'
 import JSZip from 'jszip'
 
 export const dynamic = 'force-dynamic'
@@ -37,21 +37,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Нет фото для скачивания' }, { status: 404 })
   }
 
-  const YC_BASE = `https://storage.yandexcloud.net/${process.env.YC_BUCKET_NAME ?? 'yearbook-photos'}/`
-
   // Создаём ZIP
   const zip = new JSZip()
 
-  // Скачиваем фото параллельно (батчами по 5)
+  // Читаем фото напрямую из приватного бакета (S3 GetObject, креды сервера),
+  // параллельно батчами по 5
   const batchSize = 5
   for (let i = 0; i < photos.length; i += batchSize) {
     const batch = photos.slice(i, i + batchSize)
     await Promise.all(batch.map(async (p: any) => {
       try {
-        const url = YC_BASE + stripYcPrefix(p.storage_path)
-        const res = await fetch(url)
-        if (!res.ok) return
-        const buffer = await res.arrayBuffer()
+        const buffer = await ycGetObjectBuffer(p.storage_path)
         const child = p.children
         const className = child?.class ? String(child.class).replace(/[^a-zA-Z0-9а-яА-ЯёЁ]/g, '_') : 'без_класса'
         const childName = child?.full_name ? String(child.full_name).replace(/[^a-zA-Z0-9а-яА-ЯёЁ ]/g, '_') : 'ученик'

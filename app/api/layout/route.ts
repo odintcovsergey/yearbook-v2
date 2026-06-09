@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin, getPhotoUrl } from '@/lib/supabase'
-import { ycUpload, ycPhotoUrl } from '@/lib/storage'
+import { supabaseAdmin } from '@/lib/supabase'
+import { ycUpload, getPhotoSignedUrl, stripYcPrefix } from '@/lib/storage'
 import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
 import { parseIdml } from '@/lib/idml-converter/parse'
 import { uploadTemplateSetToSupabase, type UploadResult } from '@/lib/idml-converter/upload'
@@ -1823,13 +1823,14 @@ async function handleListAlbumExports(
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Обогащаем download_url для каждой записи (presigned URL не делаем —
-  // bucket public-read, security through obscurity через UUID в имени).
+  // Обогащаем download_url для каждой записи. Бакет приватный — отдаём
+  // signed URL (TTL 24ч). Это ПДн-файл (внутри все фото и имена детей),
+  // вечная публичная ссылка недопустима.
   const rows = (data ?? []) as unknown as Array<Record<string, unknown>>
-  const enriched = rows.map((row) => ({
+  const enriched = await Promise.all(rows.map(async (row) => ({
     ...row,
-    download_url: ycPhotoUrl(String(row.storage_path)),
-  }))
+    download_url: await getPhotoSignedUrl(String(row.storage_path)),
+  })))
 
   return NextResponse.json({ exports: enriched })
 }
@@ -2071,19 +2072,21 @@ async function handleExportPdf(
       { status: 500 },
     )
   }
+  // Мапа storage_path (без 'yc:') → filename. Раньше ключом был публичный
+  // URL, но теперь URL signed (TTL, non-deterministic) — ключуем по
+  // стабильному storage_path. photo-embed резолвит filename по storage_path,
+  // извлечённому из signed URL placeholder'а.
   const urlToFilename: Record<string, string> = {}
   // Оригиналы из photos.original_path. Кладём в начало originals[] чтобы
   // выиграть в .find() lookup'е при коллизии filename'ов с legacy таблицей.
   // storage_path может прийти с префиксом 'yc:' (норма) или без (на всякий
-  // случай). photo-embed.ts:buildYcUrl ожидает БЕЗ префикса, поэтому
-  // нормализуем: убираем 'yc:' если есть.
+  // случай) — нормализуем через stripYcPrefix.
   const inlineOriginals: OriginalPhoto[] = []
   for (const p of photosData ?? []) {
     const row = p as Record<string, unknown>
     const storagePath = String(row.storage_path)
-    const url = getPhotoUrl(storagePath)
     const filename = String(row.filename)
-    if (url) urlToFilename[url] = filename
+    urlToFilename[stripYcPrefix(storagePath)] = filename
 
     const originalPath = row.original_path
     if (typeof originalPath === 'string' && originalPath.length > 0) {
@@ -2219,7 +2222,7 @@ async function handleExportPdf(
   // 11. Response
   return NextResponse.json({
     export_id: insertedRow.id,
-    download_url: ycPhotoUrl(storagePath),
+    download_url: await getPhotoSignedUrl(storagePath),
     filename,
     file_size: pdfResult.pdfBytes.length,
     page_count: pdfResult.pageCount,

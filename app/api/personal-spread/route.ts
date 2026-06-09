@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
-import { ycUpload, ycDelete, stripYcPrefix } from '@/lib/storage'
+import { ycUpload, ycDelete, stripYcPrefix, getPhotoSignedUrl } from '@/lib/storage'
 import sharp from 'sharp'
 
 export const dynamic = 'force-dynamic'
@@ -38,9 +38,15 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  // Бакет приватный — отдаём signed URL (TTL 24ч) для показа в браузере.
+  const photos = await Promise.all((data ?? []).map(async (p: any) => ({
+    ...p,
+    url: await getPhotoSignedUrl(p.storage_path),
+  })))
+
   const alb = (child as any).albums
   return NextResponse.json({
-    photos: data ?? [],
+    photos,
     settings: {
       enabled: alb?.personal_spread_enabled ?? false,
       min: alb?.personal_spread_min ?? 4,
@@ -180,5 +186,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: dbErr.message }, { status: 500 })
   }
 
-  return NextResponse.json({ photo, warning })
+  // Бакет приватный — добавляем signed URL для немедленного показа в браузере.
+  const photoWithUrl = { ...photo, url: await getPhotoSignedUrl(photo.storage_path) }
+  return NextResponse.json({ photo: photoWithUrl, warning })
 }

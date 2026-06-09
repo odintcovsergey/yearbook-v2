@@ -74,7 +74,7 @@ export default function ParentPage() {
   const [personalSpreadPrice, setPersonalSpreadPrice] = useState(300)
   const [personalSpreadMin, setPersonalSpreadMin] = useState(4)
   const [personalSpreadMax, setPersonalSpreadMax] = useState(12)
-  const [spreadPhotos, setSpreadPhotos] = useState<{id:string;filename:string;storage_path:string;width:number;height:number;file_size:number}[]>([])
+  const [spreadPhotos, setSpreadPhotos] = useState<{id:string;filename:string;storage_path:string;url:string;width:number;height:number;file_size:number}[]>([])
   const [spreadUploading, setSpreadUploading] = useState(false)
   const [spreadProgress, setSpreadProgress] = useState<{done: number; total: number}>({ done: 0, total: 0 })
   const [spreadWarnings, setSpreadWarnings] = useState<string[]>([])
@@ -1115,7 +1115,7 @@ export default function ParentPage() {
                 {spreadPhotos.map(p => (
                   <div key={p.id} className="relative group aspect-square">
                     <img
-                      src={`https://storage.yandexcloud.net/yearbook-photos/${p.storage_path.replace('yc:', '')}`}
+                      src={p.url}
                       alt={p.filename}
                       className="w-full h-full object-cover rounded-lg"
                     />
@@ -1310,8 +1310,8 @@ export default function ParentPage() {
               {personalSpreadEnabled && spreadPhotos.length > 0 && (() => {
                 const spreadAsPhotos = spreadPhotos.map(p => ({
                   id: p.id,
-                  url: `https://storage.yandexcloud.net/yearbook-photos/${p.storage_path.replace('yc:', '')}`,
-                  thumb: `https://storage.yandexcloud.net/yearbook-photos/${p.storage_path.replace('yc:', '')}`,
+                  url: p.url,
+                  thumb: p.url,
                   filename: p.filename,
                 }))
                 return (

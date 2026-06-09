@@ -95,7 +95,7 @@ export async function loadAlbumCovers(
       const photo = sel.photos as { storage_path?: string } | null;
       if (!photo?.storage_path) continue;
       const cid = sel.child_id as string;
-      const url = getPhotoUrl(photo.storage_path);
+      const url = await getPhotoUrl(photo.storage_path);
       if (sel.selection_type === 'portrait_cover') coverOverrideByChild[cid] = url;
       else albumPortraitByChild[cid] = url;
     }

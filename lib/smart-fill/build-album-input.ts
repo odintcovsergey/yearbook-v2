@@ -243,31 +243,31 @@ export async function buildAlbumInput(
         role: headTeacherRow.position ?? '',
         text: headTeacherRow.description ?? '',
         photo: photoByTeacher[headTeacherRow.id]
-          ? getPhotoUrl(photoByTeacher[headTeacherRow.id].storage_path)
+          ? await getPhotoUrl(photoByTeacher[headTeacherRow.id].storage_path)
           : null,
       }
     : null;
 
-  const subjects: Subject[] = teachers
+  const subjects: Subject[] = await Promise.all(teachers
     .filter((t: any) => !t.is_head_teacher)
-    .map((t: any) => ({
+    .map(async (t: any) => ({
       name: t.full_name ?? '',
       role: t.position ?? '',
       photo: photoByTeacher[t.id]
-        ? getPhotoUrl(photoByTeacher[t.id].storage_path)
+        ? await getPhotoUrl(photoByTeacher[t.id].storage_path)
         : null,
-    }));
+    })));
 
-  const students: Student[] = children.map((c: any) => ({
+  const students: Student[] = await Promise.all(children.map(async (c: any) => ({
     full_name: c.full_name ?? '',
     quote: textByChild[c.id] ?? '',
     portrait: portraitByChild[c.id]
-      ? getPhotoUrl(portraitByChild[c.id].storage_path)
+      ? await getPhotoUrl(portraitByChild[c.id].storage_path)
       : null,
-    friend_photos: (friendsByChild[c.id] ?? []).map((p) =>
+    friend_photos: await Promise.all((friendsByChild[c.id] ?? []).map((p) =>
       getPhotoUrl(p.storage_path),
-    ),
-  }));
+    )),
+  })));
 
   // А.2.1 — распределение common_* фото из БД по полям CommonPhotos.
   // Маппинг:
@@ -291,7 +291,7 @@ export async function buildAlbumInput(
   };
   for (const ph of (commonPhotosRes as any).data ?? []) {
     if (!ph?.storage_path) continue;
-    const url = getPhotoUrl(ph.storage_path);
+    const url = await getPhotoUrl(ph.storage_path);
     switch (ph.type) {
       case 'common_spread':  common_photos.spread.push(url); break;
       case 'common_full':    common_photos.full_class.push(url); break;

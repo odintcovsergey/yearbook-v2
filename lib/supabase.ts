@@ -16,16 +16,16 @@ export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-import { getPhotoUrlUniversal } from '@/lib/storage'
+import { getPhotoSignedUrl } from '@/lib/storage'
 
-// Фото отдаются через универсальную функцию:
-// - новые (yc:...) → напрямую из Yandex Object Storage
-// - все пути теперь yc: после миграции 02.05.2026
-export function getPhotoUrl(storagePath: string): string {
-  return getPhotoUrlUniversal(storagePath)
+// Фото отдаются через signed (presigned GET) URL из приватного YC-бакета.
+// Ссылка генерится на сервере при каждом запросе (TTL 24ч), в БД не хранится.
+// Функции async — отсюда волна await по потребителям.
+export function getPhotoUrl(storagePath: string): Promise<string> {
+  return getPhotoSignedUrl(storagePath)
 }
 
-export function getThumbUrl(storagePath: string, thumbPath: string | null): string {
-  if (thumbPath) return getPhotoUrlUniversal(thumbPath)
-  return getPhotoUrlUniversal(storagePath)
+export function getThumbUrl(storagePath: string, thumbPath: string | null): Promise<string> {
+  if (thumbPath) return getPhotoSignedUrl(thumbPath)
+  return getPhotoSignedUrl(storagePath)
 }

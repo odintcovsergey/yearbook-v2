@@ -24,10 +24,10 @@ export async function GET(req: NextRequest) {
     .eq('type', 'teacher')
     .order('filename')
 
-  const photos = (allPhotos ?? []).map((p: any) => ({
+  const photos = await Promise.all((allPhotos ?? []).map(async (p: any) => ({
     ...p,
-    url: getPhotoUrl(p.storage_path)
-  }))
+    url: await getPhotoUrl(p.storage_path)
+  })))
 
   // Уже созданные карточки учителей
   const { data: teachers } = await supabaseAdmin

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction } from '@/lib/auth'
-import { ycUpload, ycDelete, stripYcPrefix } from '@/lib/storage'
+import { ycUpload, ycDelete, stripYcPrefix, getPhotoSignedUrl } from '@/lib/storage'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -31,10 +31,21 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from('delivery_files').select('id, filename, storage_path, file_size, label, expires_at, downloaded_at, created_at').eq('album_id', albumId),
     ])
 
+    // Бакет приватный — отдаём signed URL (TTL 24ч) для скачивания
+    // оригиналов (ретушь/цветокор) и delivery-файлов в кабинете.
+    const originals = await Promise.all((originalsRes.data ?? []).map(async (o: any) => ({
+      ...o,
+      url: await getPhotoSignedUrl(o.storage_path),
+    })))
+    const delivery = await Promise.all((deliveryRes.data ?? []).map(async (d: any) => ({
+      ...d,
+      url: await getPhotoSignedUrl(d.storage_path),
+    })))
+
     return NextResponse.json({
       workflow: album,
-      originals: originalsRes.data ?? [],
-      delivery: deliveryRes.data ?? [],
+      originals,
+      delivery,
     })
   }
 

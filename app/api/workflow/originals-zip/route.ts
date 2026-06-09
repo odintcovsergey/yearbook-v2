@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction } from '@/lib/auth'
-import { stripYcPrefix } from '@/lib/storage'
+import { ycGetObjectBuffer } from '@/lib/storage'
 import JSZip from 'jszip'
 
 export const dynamic = 'force-dynamic'
@@ -255,14 +255,11 @@ export async function GET(req: NextRequest) {
     zipPathByPhoto.set(p.id, zipPath)
   }
 
-  const YC_BASE = `https://storage.yandexcloud.net/${
-    process.env.YC_BUCKET_NAME ?? 'yearbook-photos'
-  }/`
-
   const zip = new JSZip()
 
-  // Скачивание батчами по 5 — компромисс между скоростью и нагрузкой
-  // на сеть/память внутри Vercel function (буферим arrayBuffer'ы).
+  // Читаем оригиналы напрямую из приватного бакета (S3 GetObject, креды
+  // сервера). Батчами по 5 — компромисс между скоростью и нагрузкой на
+  // память внутри Vercel function (буферим объекты).
   const failures: { id: string; filename: string; reason: string }[] = []
   const successes: string[] = []
   const batchSize = 5
@@ -275,17 +272,7 @@ export async function GET(req: NextRequest) {
           return
         }
         try {
-          const url = YC_BASE + stripYcPrefix(p.original_path)
-          const res = await fetch(url)
-          if (!res.ok) {
-            failures.push({
-              id: p.id,
-              filename: p.filename,
-              reason: `HTTP ${res.status}`,
-            })
-            return
-          }
-          const buffer = await res.arrayBuffer()
+          const buffer = await ycGetObjectBuffer(p.original_path)
           const zipPath = zipPathByPhoto.get(p.id)!
           zip.file(zipPath, buffer)
           successes.push(p.id)

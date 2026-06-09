@@ -918,21 +918,21 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from('personal_spread_photos').select('id, filename, storage_path, width, height, file_size, sort_order').eq('child_id', childId).order('sort_order'),
     ])
 
-    const selections = (selectionsRes.data ?? []).map((s: any) => ({
+    const selections = await Promise.all((selectionsRes.data ?? []).map(async (s: any) => ({
       type: s.selection_type,
       filename: s.photos?.filename ?? '',
-      url: s.photos?.storage_path ? getPhotoUrl(s.photos.storage_path) : '',
-      thumb: getThumbUrl(s.photos?.storage_path ?? '', s.photos?.thumb_path ?? null),
-    }))
+      url: s.photos?.storage_path ? await getPhotoUrl(s.photos.storage_path) : '',
+      thumb: await getThumbUrl(s.photos?.storage_path ?? '', s.photos?.thumb_path ?? null),
+    })))
 
-    const spreadPhotos = (spreadRes.data ?? []).map((p: any) => ({
+    const spreadPhotos = await Promise.all((spreadRes.data ?? []).map(async (p: any) => ({
       id: p.id,
       filename: p.filename,
-      url: getPhotoUrl(p.storage_path),
+      url: await getPhotoUrl(p.storage_path),
       width: p.width,
       height: p.height,
       file_size: p.file_size,
-    }))
+    })))
 
     return NextResponse.json({
       selections,
@@ -1568,11 +1568,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const enriched = (teachers ?? []).map((t: any) => ({
+    const enriched = await Promise.all((teachers ?? []).map(async (t: any) => ({
       ...t,
       photo_storage_path: photoByTeacher[t.id]?.storage_path ?? null,
       photo_filename: photoByTeacher[t.id]?.filename ?? null,
-    }))
+      // Бакет приватный — signed URL для показа фото учителя в кабинете.
+      photo_url: photoByTeacher[t.id]?.storage_path
+        ? await getPhotoUrl(photoByTeacher[t.id]!.storage_path as string)
+        : null,
+    })))
 
     return NextResponse.json(enriched)
   }
@@ -1632,7 +1636,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const result = (photos ?? []).map((p: any) => ({
+    const result = await Promise.all((photos ?? []).map(async (p: any) => ({
       id: p.id,
       filename: p.filename,
       storage_path: p.storage_path,
@@ -1642,10 +1646,10 @@ export async function GET(req: NextRequest) {
       // вместо самого пути — defence in depth (партнёр не должен
       // видеть internal YC paths).
       has_original: Boolean(p.original_path),
-      url: getPhotoUrl(p.storage_path),
-      thumb_url: getThumbUrl(p.storage_path, p.thumb_path),
+      url: await getPhotoUrl(p.storage_path),
+      thumb_url: await getThumbUrl(p.storage_path, p.thumb_path),
       tags: tagsByPhoto[p.id] ?? [],
-    }))
+    })))
 
     return NextResponse.json({ photos: result })
   }
@@ -1748,7 +1752,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 4. Сборка результата: photos + originals в одном массиве.
-    const fromPhotos = photos.map((p: any) => ({
+    const fromPhotos = await Promise.all(photos.map(async (p: any) => ({
       id: p.id,
       filename: p.filename,
       storage_path: p.storage_path,
@@ -1761,12 +1765,12 @@ export async function GET(req: NextRequest) {
       // Л.2 — для UI «Заменить оригинал» нужно знать есть ли оригинал
       // у фото. Просто boolean, без раскрытия пути (defence in depth).
       has_original: Boolean(p.original_path),
-      url: getPhotoUrl(p.storage_path),
-      thumb_url: getThumbUrl(p.storage_path, p.thumb_path),
+      url: await getPhotoUrl(p.storage_path),
+      thumb_url: await getThumbUrl(p.storage_path, p.thumb_path),
       created_at: p.created_at,
-    }))
+    })))
 
-    const fromOriginals = originals.map((o: any) => ({
+    const fromOriginals = await Promise.all(originals.map(async (o: any) => ({
       id: o.id,
       filename: o.filename,
       storage_path: o.storage_path,
@@ -1777,10 +1781,10 @@ export async function GET(req: NextRequest) {
       teacher_ids: [] as string[],
       selection_types: [] as string[],
       has_original: false,  // originals — это и есть оригиналы, поле для photos.original_path
-      url: getPhotoUrl(o.storage_path),
-      thumb_url: getPhotoUrl(o.storage_path),  // у originals нет thumb_path
+      url: await getPhotoUrl(o.storage_path),
+      thumb_url: await getPhotoUrl(o.storage_path),  // у originals нет thumb_path
       created_at: o.created_at,
-    }))
+    })))
 
     return NextResponse.json({
       photos: [...fromPhotos, ...fromOriginals],
@@ -2015,7 +2019,7 @@ export async function GET(req: NextRequest) {
     // Группируем по ученику
     const byChild: Record<string, {
       child_id: string; full_name: string; class: string
-      photos: { id: string; filename: string; storage_path: string; sort_order: number }[]
+      photos: { id: string; filename: string; storage_path: string; url: string; sort_order: number }[]
     }> = {}
     for (const p of data ?? []) {
       const ch = (p as any).children
@@ -2031,6 +2035,8 @@ export async function GET(req: NextRequest) {
         id: p.id,
         filename: p.filename,
         storage_path: p.storage_path,
+        // Бакет приватный — signed URL для показа/скачивания в кабинете.
+        url: await getPhotoUrl(p.storage_path),
         sort_order: p.sort_order,
       })
     }

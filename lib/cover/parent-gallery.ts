@@ -175,7 +175,7 @@ async function buildPreviewData(
       .eq('selection_type', 'portrait_page')
       .maybeSingle();
     const sp = (sel as { photos?: { storage_path?: string } } | null)?.photos?.storage_path;
-    if (sp) data.cover_portrait = getPhotoUrl(sp);
+    if (sp) data.cover_portrait = await getPhotoUrl(sp);
   } else {
     data.cover_class = classes;
   }

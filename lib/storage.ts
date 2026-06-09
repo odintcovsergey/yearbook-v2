@@ -1,9 +1,13 @@
 /**
  * Yandex Object Storage client (S3-совместимый)
  * Все фото хранятся в YC. Пути в БД имеют префикс yc:
+ *
+ * Бакет приватный: чтение только через signed (presigned GET) URL —
+ * см. getPhotoSignedUrl. Прямой доступ к байтам на сервере (ZIP/PDF) —
+ * через ycGetObjectBuffer (S3 GetObjectCommand, без публичного HTTP).
  */
 
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 const YC_ENDPOINT = 'https://storage.yandexcloud.net'
@@ -20,13 +24,7 @@ export const ycStorage = new S3Client({
 
 const BUCKET = () => process.env.YC_BUCKET_NAME ?? 'yearbook-photos'
 
-// Публичный базовый URL для файлов в бакете
-export function ycPhotoUrl(storagePath: string): string {
-  if (!storagePath) return ''
-  return `${YC_ENDPOINT}/${BUCKET()}/${storagePath}`
-}
-
-// Загрузить файл в YC Storage
+// Загрузить файл в YC Storage (бакет приватный — без public-read ACL)
 export async function ycUpload(
   storagePath: string,
   body: Buffer,
@@ -37,8 +35,6 @@ export async function ycUpload(
     Key: storagePath,
     Body: body,
     ContentType: contentType,
-    // Публичный доступ на чтение
-    ACL: 'public-read',
   }))
 }
 
@@ -62,19 +58,42 @@ export function stripYcPrefix(storagePath: string): string {
   return storagePath.startsWith('yc:') ? storagePath.slice(3) : storagePath
 }
 
-// Все пути теперь yc: — прокси /api/img/ удалён (миграция завершена 02.05.2026)
-export function getPhotoUrlUniversal(storagePath: string): string {
+/**
+ * Signed (presigned GET) URL для чтения объекта приватного бакета.
+ * TTL по умолчанию 24 часа — для просмотра в кабинете/родительской странице
+ * и скачивания готовых PDF. Ссылка генерится на сервере при каждом запросе,
+ * в БД НЕ хранится. Годится для любых объектов бакета (фото, thumbnails, PDF).
+ */
+export async function getPhotoSignedUrl(storagePath: string, expiresIn = 86400): Promise<string> {
   if (!storagePath) return ''
-  return ycPhotoUrl(stripYcPrefix(storagePath))
+  const cmd = new GetObjectCommand({
+    Bucket: BUCKET(),
+    Key: stripYcPrefix(storagePath),
+  })
+  return getSignedUrl(ycStorage, cmd, { expiresIn })
 }
 
-// Presigned URL для прямой загрузки в YC с клиента (обход лимита Vercel 4.5 МБ)
+/**
+ * Прямое чтение байтов объекта на сервере (для ZIP/PDF-сборки).
+ * Использует креды сервера через S3 GetObjectCommand — публичный HTTP-фетч
+ * не нужен, работает на приватном бакете. Бросает ошибку при отсутствии объекта.
+ */
+export async function ycGetObjectBuffer(storagePath: string): Promise<Buffer> {
+  const res = await ycStorage.send(new GetObjectCommand({
+    Bucket: BUCKET(),
+    Key: stripYcPrefix(storagePath),
+  }))
+  const bytes = await res.Body!.transformToByteArray()
+  return Buffer.from(bytes)
+}
+
+// Presigned URL для прямой загрузки в YC с клиента (обход лимита Vercel 4.5 МБ).
+// Бакет приватный — без public-read ACL.
 export async function getYcUploadUrl(key: string, contentType: string, expiresIn = 3600): Promise<string> {
   const cmd = new PutObjectCommand({
-    Bucket: process.env.YC_BUCKET_NAME ?? 'yearbook-photos',
+    Bucket: BUCKET(),
     Key: key,
     ContentType: contentType,
-    ACL: 'public-read',
   })
   return getSignedUrl(ycStorage, cmd, { expiresIn })
 }

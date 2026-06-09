@@ -89,12 +89,12 @@ export async function GET(req: NextRequest) {
     ...(confirmedPortraits ?? []).filter((s: any) => s.child_id !== child.id).map((s: any) => s.photo_id),
   ])
 
-  const portraits = (allPortraits ?? []).map((p: any) => ({
+  const portraits = await Promise.all((allPortraits ?? []).map(async (p: any) => ({
     ...p,
-    url: getPhotoUrl(p.storage_path),
-    thumb: getThumbUrl(p.storage_path, (p as any).thumb_path ?? null),
+    url: await getPhotoUrl(p.storage_path),
+    thumb: await getThumbUrl(p.storage_path, (p as any).thumb_path ?? null),
     locked: portraitLockedByOther.has(p.id),
-  }))
+  })))
 
   const { data: groupPhotos } = await supabaseAdmin
     .from('photos')
@@ -120,12 +120,12 @@ export async function GET(req: NextRequest) {
     ...(confirmedGroups ?? []).filter((s: any) => s.child_id !== child.id).map((s: any) => s.photo_id),
   ])
 
-  const groups = (groupPhotos ?? []).map((p: any) => ({
+  const groups = await Promise.all((groupPhotos ?? []).map(async (p: any) => ({
     ...p,
-    url: getPhotoUrl(p.storage_path),
-    thumb: getThumbUrl(p.storage_path, (p as any).thumb_path ?? null),
+    url: await getPhotoUrl(p.storage_path),
+    thumb: await getThumbUrl(p.storage_path, (p as any).thumb_path ?? null),
     locked: album?.group_exclusive !== false && groupLockedByOther.has(p.id),
-  }))
+  })))
 
   const [existingSelections, existingContact, existingText, existingCover, existingCoverChoice] = await Promise.all([
     supabaseAdmin.from('selections').select('photo_id, selection_type').eq('child_id', child.id),

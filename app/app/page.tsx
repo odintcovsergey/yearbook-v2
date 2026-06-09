@@ -2002,7 +2002,7 @@ function AlbumDetailModal({
   }
   const router = useRouter()
   const [stats, setStats] = useState<AlbumStats | null>(null)
-  const [spreadData, setSpreadData] = useState<{child_id:string;full_name:string;class:string;photos:{id:string;filename:string;storage_path:string;sort_order:number}[]}[]>([])
+  const [spreadData, setSpreadData] = useState<{child_id:string;full_name:string;class:string;photos:{id:string;filename:string;storage_path:string;url:string;sort_order:number}[]}[]>([])
   const [workflow, setWorkflow] = useState<{workflow_status:string;workflow_submitted_at?:string;workflow_taken_at?:string;workflow_delivered_at?:string;workflow_notes?:string} | null>(null)
   const [originals, setOriginals] = useState<{id:string;filename:string;storage_path:string;file_size:number}[]>([])
   const [delivery, setDelivery] = useState<{id:string;filename:string;storage_path:string;file_size:number;label:string;expires_at:string;downloaded_at?:string}[]>([])
@@ -5235,6 +5235,7 @@ type Teacher = {
   is_head_teacher: boolean
   photo_storage_path: string | null
   photo_filename: string | null
+  photo_url: string | null
 }
 
 function TeachersTab({
@@ -5263,9 +5264,6 @@ function TeachersTab({
     description: '',
     is_head_teacher: false,
   })
-
-  const ycBase = 'https://storage.yandexcloud.net/yearbook-photos/'
-  const photoUrl = (path: string) => ycBase + path.replace('yc:', '')
 
   const load = async () => {
     const r = await api(`/api/tenant?action=teachers&album_id=${albumId}`)
@@ -5467,17 +5465,17 @@ function TeachersTab({
                 <div>
                   <div className="flex items-start justify-between gap-3 flex-wrap">
                     <div className="flex items-start gap-3 min-w-0 flex-1">
-                      {t.photo_storage_path ? (
+                      {t.photo_url ? (
                         <div className="flex flex-col items-center w-24 flex-shrink-0">
                           <a
-                            href={photoUrl(t.photo_storage_path)}
+                            href={t.photo_url}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="block w-24 h-24 rounded-xl overflow-hidden bg-gray-100"
                             title={t.photo_filename ?? 'Открыть оригинал'}
                           >
                             <img
-                              src={photoUrl(t.photo_storage_path)}
+                              src={t.photo_url}
                               alt=""
                               className="w-full h-full object-cover"
                               loading="lazy"
@@ -9226,7 +9224,7 @@ function SpreadTab({ spreadData, album }: {
     child_id: string
     full_name: string
     class: string
-    photos: { id: string; filename: string; storage_path: string; sort_order: number }[]
+    photos: { id: string; filename: string; storage_path: string; url: string; sort_order: number }[]
   }[]
   album: Album
 }) {
@@ -9238,9 +9236,6 @@ function SpreadTab({ spreadData, album }: {
 
   const withPhotos = spreadData.filter(c => c.photos.length > 0)
   const totalPhotos = withPhotos.reduce((s, c) => s + c.photos.length, 0)
-
-  const ycBase = 'https://storage.yandexcloud.net/yearbook-photos/'
-  const photoUrl = (storagePath: string) => ycBase + storagePath.replace('yc:', '')
 
   // Скачать ZIP через браузер — открываем ссылки по одной через <a download>
   const downloadAll = () => {
@@ -9313,7 +9308,7 @@ function SpreadTab({ spreadData, album }: {
                     {c.photos.map((p, i) => (
                       <a
                         key={p.id}
-                        href={photoUrl(p.storage_path)}
+                        href={p.url}
                         target="_blank"
                         rel="noopener noreferrer"
                         download={p.filename}
@@ -9321,7 +9316,7 @@ function SpreadTab({ spreadData, album }: {
                         className="relative aspect-square block rounded-lg overflow-hidden border border-gray-100 hover:border-brand-300 transition-colors group"
                       >
                         <img
-                          src={photoUrl(p.storage_path)}
+                          src={p.url}
                           alt={p.filename}
                           className="w-full h-full object-cover"
                         />
@@ -9502,9 +9497,9 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
   }
 
   const handleDownload = async (file: any) => {
-    const url = `https://storage.yandexcloud.net/yearbook-photos/${file.storage_path.replace('yc:', '')}`
+    // Бакет приватный — ссылка signed, приходит с сервера в file.url.
     await post({ action: 'mark_downloaded', album_id: (album as any).id, file_id: file.id })
-    window.open(url, '_blank')
+    window.open(file.url, '_blank')
   }
 
   // Фаза К.2 — скачивание ZIP оригиналов для ретуши
