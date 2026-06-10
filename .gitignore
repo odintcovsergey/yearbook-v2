@@ -1,6 +1,7 @@
 .vercel
 node_modules/
-.env.local
+.env*
+!.env.example
 *.rtf
 *.csv.rtf
 -e 

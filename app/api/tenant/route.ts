@@ -12,6 +12,10 @@ import { prepareTemplateSetClone } from '@/lib/template-set-clone'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+// view_as из URL попадает в строковые фильтры PostgREST (.or(`tenant_id.eq.${tid}`)),
+// поэтому значение обязано быть валидным UUID — иначе фильтр-инъекция (G1).
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // ============================================================
 // Хелпер: проверка, что альбом принадлежит tenant'у
 // ============================================================
@@ -573,6 +577,9 @@ export async function GET(req: NextRequest) {
   const albumId = req.nextUrl.searchParams.get('album_id')
   // view_as позволяет суперадмину и сотрудникам OkeyBook смотреть кабинет партнёра
   const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+  if (viewAsTenantId && !UUID_REGEX.test(viewAsTenantId)) {
+    return NextResponse.json({ error: 'Неверный view_as' }, { status: 400 })
+  }
   // Проверяем что текущий пользователь в main тенанте
   const { data: currentTenantData } = viewAsTenantId
     ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
