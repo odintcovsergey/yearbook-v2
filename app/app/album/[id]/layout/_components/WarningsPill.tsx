@@ -196,7 +196,7 @@ export default function WarningsPill({ warnings }: Props) {
         <div
           role="dialog"
           aria-label="Предупреждения автосборки"
-          className={`absolute left-1/2 top-full mt-1 -translate-x-1/2 z-20 w-[min(28rem,90vw)] rounded-lg border bg-white shadow-lg ${styles.panelBorder}`}
+          className={`absolute left-1/2 top-full mt-1 -translate-x-1/2 z-20 w-[min(28rem,90vw)] rounded-lg border bg-card shadow-lg ${styles.panelBorder}`}
         >
           <div className="max-h-[60vh] overflow-y-auto p-3 space-y-3">
             {(['blocking', 'degraded', 'info'] as const).map((lvl) => {
@@ -221,17 +221,17 @@ export default function WarningsPill({ warnings }: Props) {
                     {items.map((w, idx) => (
                       <li
                         key={`${w.code}-${idx}`}
-                        className="rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1.5"
+                        className="rounded-md border border-border bg-muted px-2.5 py-1.5"
                       >
-                        <div className="text-xs font-medium text-gray-900">
+                        <div className="text-xs font-medium text-foreground">
                           {titleForCode(w.code)}
                         </div>
                         {w.detail && (
-                          <div className="mt-0.5 text-[11px] text-gray-600 leading-snug">
+                          <div className="mt-0.5 text-[11px] text-muted-foreground leading-snug">
                             {w.detail}
                           </div>
                         )}
-                        <div className="mt-0.5 text-[10px] text-gray-400 font-mono">
+                        <div className="mt-0.5 text-[10px] text-muted-foreground font-mono">
                           {w.code}
                         </div>
                       </li>
@@ -241,7 +241,7 @@ export default function WarningsPill({ warnings }: Props) {
               )
             })}
           </div>
-          <div className="border-t border-gray-100 px-3 py-2 text-[11px] text-gray-500">
+          <div className="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
             Предупреждения не блокируют сборку — это подсказки автосборщика.
             Можно докрутить вручную в редакторе.
           </div>

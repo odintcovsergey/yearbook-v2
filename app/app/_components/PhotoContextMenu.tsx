@@ -86,14 +86,14 @@ export default function PhotoContextMenu({
   return (
     <div
       ref={ref}
-      className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1.5 z-50 select-none"
+      className="fixed bg-card rounded-lg shadow-xl border border-border py-1.5 z-50 select-none"
       style={{
         left: `${left}px`,
         top: `${top}px`,
         width: `${MENU_WIDTH}px`,
       }}
     >
-      <div className="px-3 py-1 text-xs text-gray-400 border-b border-gray-100 mb-1 truncate" title={label}>
+      <div className="px-3 py-1 text-xs text-muted-foreground border-b border-border mb-1 truncate" title={label}>
         Фото: {label}
       </div>
 
@@ -104,7 +104,7 @@ export default function PhotoContextMenu({
           onClose()
         }}
         disabled={!url}
-        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+        className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
         title={url ? 'Убрать фото из слота' : 'Слот уже пустой'}
       >
         <span>🗑</span>
@@ -120,14 +120,14 @@ export default function PhotoContextMenu({
           onReplaceFull()
           onClose()
         }}
-        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2"
+        className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center gap-2"
         title="Выбрать новое фото с компьютера. Превью в макете обновится, оригинал тоже загрузится для печати."
       >
         <span>📷</span>
         <span>Загрузить другое фото</span>
       </button>
 
-      <div className="px-3 py-1 mt-1 text-[10px] text-gray-400 uppercase tracking-wide border-t border-gray-100">
+      <div className="px-3 py-1 mt-1 text-[10px] text-muted-foreground uppercase tracking-wide border-t border-border">
         Продвинутое
       </div>
 
@@ -141,7 +141,7 @@ export default function PhotoContextMenu({
           onClose()
         }}
         disabled={!photoInfo}
-        className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+        className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
         title={
           !photoInfo
             ? 'Информация о фото недоступна'

@@ -125,7 +125,7 @@ function computeUrgency(album: Album): UrgencyStatus {
   if (daysLeft !== null && daysLeft < 0) return { key: 'overdue', label: 'Просрочено', cls: 'bg-red-100 text-red-700', order: 4 }
   if (daysLeft !== null && daysLeft <= 7) return { key: 'soon', label: 'Горит', cls: 'bg-amber-100 text-amber-700', order: 3 }
   if (album.stats.in_progress > 0 || album.stats.submitted > 0) return { key: 'active', label: 'В работе', cls: 'bg-blue-50 text-blue-700', order: 2 }
-  return { key: 'collecting', label: 'Сбор', cls: 'bg-gray-100 text-gray-500', order: 1 }
+  return { key: 'collecting', label: 'Сбор', cls: 'bg-muted text-muted-foreground', order: 1 }
 }
 
 type Summary = {
@@ -408,7 +408,7 @@ export default function AppPage() {
   if (loading || !auth) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-400 text-sm">Загрузка...</div>
+        <div className="text-muted-foreground text-sm">Загрузка...</div>
       </div>
     )
   }
@@ -428,7 +428,7 @@ export default function AppPage() {
         />
       </Suspense>
       {/* Шапка */}
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
+      <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div>
             <h1
@@ -437,7 +437,7 @@ export default function AppPage() {
             >
               {auth.tenant?.name ?? 'Кабинет'}
             </h1>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {auth.user?.full_name} · {roleLabels[auth.user?.role ?? ''] ?? auth.user?.role}
             </p>
           </div>
@@ -570,24 +570,24 @@ export default function AppPage() {
         {/* Вкладки + действия */}
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
+            <div className="flex gap-1 bg-muted rounded-xl p-1">
               <button
                 onClick={() => setFilter('active')}
                 className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                  filter === 'active' ? 'bg-white shadow-sm text-brand-700' : 'text-gray-500 hover:text-gray-700'
+                  filter === 'active' ? 'bg-card shadow-sm text-brand-700' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 Актуальные
-                {summary && <span className="text-gray-400 ml-1.5">{summary.albums_active}</span>}
+                {summary && <span className="text-muted-foreground ml-1.5">{summary.albums_active}</span>}
               </button>
               <button
                 onClick={() => setFilter('archive')}
                 className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                  filter === 'archive' ? 'bg-white shadow-sm text-brand-700' : 'text-gray-500 hover:text-gray-700'
+                  filter === 'archive' ? 'bg-card shadow-sm text-brand-700' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 Архив
-                {summary && <span className="text-gray-400 ml-1.5">{summary.albums_archived}</span>}
+                {summary && <span className="text-muted-foreground ml-1.5">{summary.albums_archived}</span>}
               </button>
             </div>
 
@@ -657,11 +657,11 @@ export default function AppPage() {
 
           <div className="flex items-center gap-2">
             {/* Переключатель вида: плитки / строки */}
-            <div className="flex gap-0.5 bg-gray-100 rounded-lg p-0.5">
+            <div className="flex gap-0.5 bg-muted rounded-lg p-0.5">
               <button
                 type="button"
                 onClick={() => setViewMode('tiles')}
-                className={`p-1.5 rounded-md transition-colors ${viewMode === 'tiles' ? 'bg-white shadow-sm text-brand-700' : 'text-gray-400 hover:text-gray-600'}`}
+                className={`p-1.5 rounded-md transition-colors ${viewMode === 'tiles' ? 'bg-card shadow-sm text-brand-700' : 'text-muted-foreground hover:text-muted-foreground'}`}
                 title="Плитками"
               >
                 <LayoutGrid size={18} />
@@ -669,7 +669,7 @@ export default function AppPage() {
               <button
                 type="button"
                 onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-brand-700' : 'text-gray-400 hover:text-gray-600'}`}
+                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-card shadow-sm text-brand-700' : 'text-muted-foreground hover:text-muted-foreground'}`}
                 title="Списком"
               >
                 <ListIcon size={18} />
@@ -693,7 +693,7 @@ export default function AppPage() {
               { key: 'overdue', label: 'Просрочено', dot: 'bg-red-500' },
               { key: 'soon', label: 'Горит', dot: 'bg-amber-400' },
               { key: 'active', label: 'В работе', dot: 'bg-blue-400' },
-              { key: 'collecting', label: 'Сбор', dot: 'bg-gray-300' },
+              { key: 'collecting', label: 'Сбор', dot: 'bg-muted' },
               { key: 'done', label: 'Готово', dot: 'bg-brand-500' },
             ] as const).filter(s => (statusCounts[s.key] ?? 0) > 0).map(s => (
               <StatusChip
@@ -711,7 +711,7 @@ export default function AppPage() {
         {/* Список альбомов */}
         {displayedAlbums.length === 0 ? (
           <div className="card p-12 text-center">
-            <div className="text-gray-400 text-sm mb-3">
+            <div className="text-muted-foreground text-sm mb-3">
               {search || statusFilter !== 'all'
                 ? 'Ничего не найдено'
                 : filter === 'active'
@@ -896,12 +896,12 @@ function StatusChip({
       type="button"
       onClick={onClick}
       className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-        active ? 'bg-brand-50 border-brand-300 text-brand-700' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+        active ? 'bg-brand-50 border-brand-300 text-brand-700' : 'bg-card border-border text-muted-foreground hover:border-border'
       }`}
     >
       {dot && <span className={`w-2 h-2 rounded-full ${dot}`} />}
       {label}
-      <span className={active ? 'text-brand-500' : 'text-gray-400'}>{count}</span>
+      <span className={active ? 'text-brand-500' : 'text-muted-foreground'}>{count}</span>
     </button>
   )
 }
@@ -928,11 +928,11 @@ function AlbumListView({
     sortKey === k ? (
       sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
     ) : (
-      <ChevronsUpDown size={12} className="text-gray-300" />
+      <ChevronsUpDown size={12} className="text-muted-foreground" />
     )
   const th = (k: AlbumSortKey, label: string, extra = '') => (
-    <th className={`px-4 py-2.5 text-left text-xs font-medium text-gray-500 whitespace-nowrap ${extra}`}>
-      <button type="button" onClick={() => onSort(k)} className="inline-flex items-center gap-1 hover:text-gray-800">
+    <th className={`px-4 py-2.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap ${extra}`}>
+      <button type="button" onClick={() => onSort(k)} className="inline-flex items-center gap-1 hover:text-foreground">
         {label}
         {sortIcon(k)}
       </button>
@@ -943,7 +943,7 @@ function AlbumListView({
     <div className="card overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-100">
+          <thead className="bg-muted border-b border-border">
             <tr>
               {th('status', 'Статус')}
               {th('title', 'Название')}
@@ -964,7 +964,7 @@ function AlbumListView({
                 <tr
                   key={a.id}
                   onClick={() => onOpen(a)}
-                  className="border-b border-gray-50 last:border-0 hover:bg-gray-50 cursor-pointer"
+                  className="border-b border-border last:border-0 hover:bg-muted cursor-pointer"
                 >
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full ${u.cls}`}>
@@ -972,32 +972,32 @@ function AlbumListView({
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="font-medium text-gray-900 truncate max-w-[260px]">{a.title}</div>
+                    <div className="font-medium text-foreground truncate max-w-[260px]">{a.title}</div>
                     {(a.city || a.year) && (
-                      <div className="text-xs text-gray-400">{[a.city, a.year].filter(Boolean).join(' · ')}</div>
+                      <div className="text-xs text-muted-foreground">{[a.city, a.year].filter(Boolean).join(' · ')}</div>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{a.classes.join(', ') || '—'}</td>
+                  <td className="px-4 py-3 text-foreground whitespace-nowrap">{a.classes.join(', ') || '—'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <div className="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="w-20 h-1.5 bg-muted rounded-full overflow-hidden">
                         <div className={`h-full ${pct >= 100 ? 'bg-brand-600' : 'bg-brand-400'}`} style={{ width: `${pct}%` }} />
                       </div>
-                      <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">
+                      <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
                         {a.stats.submitted}/{a.stats.total}
                       </span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-gray-600 text-xs whitespace-nowrap">
+                  <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap">
                     {a.teachers && a.teachers.total > 0 ? `${a.teachers.done}/${a.teachers.total}` : '—'}
                   </td>
                   <td className="px-4 py-3 text-xs whitespace-nowrap">
                     {dl ? (
-                      <span className={daysLeft !== null && daysLeft < 0 ? 'text-red-600' : daysLeft !== null && daysLeft <= 7 ? 'text-amber-600' : 'text-gray-500'}>
+                      <span className={daysLeft !== null && daysLeft < 0 ? 'text-red-600' : daysLeft !== null && daysLeft <= 7 ? 'text-amber-600' : 'text-muted-foreground'}>
                         {dl.toLocaleDateString('ru-RU')}
                       </span>
                     ) : (
-                      <span className="text-gray-300">—</span>
+                      <span className="text-muted-foreground">—</span>
                     )}
                   </td>
                   {canEdit && (
@@ -1007,7 +1007,7 @@ function AlbumListView({
                           e.stopPropagation()
                           onEdit(a)
                         }}
-                        className="text-gray-400 hover:text-gray-700 p-1"
+                        className="text-muted-foreground hover:text-foreground p-1"
                         title="Настройки альбома"
                       >
                         <Settings size={16} />
@@ -1051,7 +1051,7 @@ function AlbumCard({
   return (
     <div
       onClick={onClick}
-      className="card p-5 cursor-pointer hover:shadow-card-hover hover:-translate-y-0.5 hover:border-gray-300 transition-all duration-150 relative"
+      className="card p-5 cursor-pointer hover:shadow-card-hover hover:-translate-y-0.5 hover:border-border transition-all duration-150 relative"
     >
       {canEdit && (
         <button
@@ -1059,7 +1059,7 @@ function AlbumCard({
             e.stopPropagation()
             onEdit()
           }}
-          className="absolute top-4 right-4 w-8 h-8 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 flex items-center justify-center transition-colors"
+          className="absolute top-4 right-4 w-8 h-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground flex items-center justify-center transition-colors"
           title="Настройки альбома"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1072,12 +1072,12 @@ function AlbumCard({
       <div className="flex items-start justify-between gap-3 mb-3 pr-8">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 min-w-0">
-            <h3 className="font-semibold text-gray-900 truncate">{album.title}</h3>
+            <h3 className="font-semibold text-foreground truncate">{album.title}</h3>
             <span className={`shrink-0 inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full ${urgency.cls}`}>
               {urgency.label}
             </span>
           </div>
-          <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 flex-wrap">
+          <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
             {album.city && <span>{album.city}</span>}
             {album.year && (
               <>
@@ -1088,7 +1088,7 @@ function AlbumCard({
             {album.classes && album.classes.length > 0 && (
               <>
                 <span>·</span>
-                <span className="font-medium text-gray-700">{album.classes.join(', ')}</span>
+                <span className="font-medium text-foreground">{album.classes.join(', ')}</span>
               </>
             )}
             {deadline && (
@@ -1105,14 +1105,14 @@ function AlbumCard({
             )}
           </div>
           {album.template_title && (
-            <div className="mt-1 text-xs text-gray-400">
+            <div className="mt-1 text-xs text-muted-foreground">
               {album.template_title}
             </div>
           )}
           <div className="mt-1">
             {album.config_preset_name ? (
               <span
-                className="text-xs text-gray-500"
+                className="text-xs text-muted-foreground"
                 title={album.config_preset_slug ?? ''}
               >
                 {album.config_preset_name}
@@ -1131,22 +1131,22 @@ function AlbumCard({
 
       {/* Прогресс-бар с процентом */}
       <div className="flex items-center gap-3 mb-3">
-        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
           <div
             className={`h-full transition-all duration-500 ${progress >= 100 ? 'bg-brand-600' : 'bg-brand-400'}`}
             style={{ width: `${progress}%` }}
           />
         </div>
-        <div className="text-sm font-semibold text-gray-900 flex-shrink-0 w-10 text-right">
+        <div className="text-sm font-semibold text-foreground flex-shrink-0 w-10 text-right">
           {progress}%
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-xs text-gray-500">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
-          <span className="font-medium text-gray-900">{album.stats.submitted}</span>
+          <span className="font-medium text-foreground">{album.stats.submitted}</span>
           {' из '}
-          <span className="text-gray-700">{album.stats.total}</span>
+          <span className="text-foreground">{album.stats.total}</span>
           {' учеников'}
         </span>
         {album.stats.in_progress > 0 && (
@@ -1162,14 +1162,14 @@ function AlbumCard({
         album.stats.total > 0 &&
         typeof album.stats.purchased === 'number' &&
         album.stats.purchased < album.stats.total && (
-          <div className="mt-2 text-xs text-gray-500 pt-2 border-t border-gray-100">
+          <div className="mt-2 text-xs text-muted-foreground pt-2 border-t border-border">
             Заказали альбом:{' '}
-            <span className="text-gray-700 font-medium">
+            <span className="text-foreground font-medium">
               {album.stats.purchased}
             </span>
             {' из '}
-            <span className="text-gray-700">{album.stats.total}</span>
-            <span className="text-gray-400">
+            <span className="text-foreground">{album.stats.total}</span>
+            <span className="text-muted-foreground">
               {' '}
               ({album.stats.total - album.stats.purchased} без личной страницы)
             </span>
@@ -1177,9 +1177,9 @@ function AlbumCard({
         )}
 
       {album.teachers && album.teachers.total > 0 && (
-        <div className="mt-2 text-xs text-gray-500 pt-2 border-t border-gray-100">
+        <div className="mt-2 text-xs text-muted-foreground pt-2 border-t border-border">
           Учителя:{' '}
-          <span className="text-gray-700">
+          <span className="text-foreground">
             {album.teachers.done} / {album.teachers.total}
           </span>
         </div>
@@ -1208,11 +1208,11 @@ function StatCard({
   const baseClass = `card p-5 ${highlight ? 'border-brand-200 bg-brand-50' : ''}`
   const content = (
     <>
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
+      <div className="text-xs text-muted-foreground mb-1">{label}</div>
       <div className="flex items-baseline gap-2">
-        <div className="text-2xl font-semibold text-gray-900">{value}</div>
+        <div className="text-2xl font-semibold text-foreground">{value}</div>
         {subValue && (
-          <div className={`text-sm ${highlight ? 'text-brand-600 font-medium' : 'text-gray-400'}`}>
+          <div className={`text-sm ${highlight ? 'text-brand-600 font-medium' : 'text-muted-foreground'}`}>
             {subValue}
           </div>
         )}
@@ -1289,8 +1289,8 @@ function CollapseSection({
     },
     info: {
       label: 'К сведению',
-      classes: 'bg-gray-50 text-gray-700 border-gray-200',
-      summaryClasses: 'text-gray-700',
+      classes: 'bg-muted text-foreground border-border',
+      summaryClasses: 'text-foreground',
     },
   }[level]
 
@@ -1377,19 +1377,19 @@ function VignettesControl({
         : 'Виньеточный разворот не будет создан.'
 
   return (
-    <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-3 flex-wrap">
-      <div className="text-xs text-gray-500 uppercase">Виньетки класса</div>
+    <div className="mt-3 pt-3 border-t border-border flex items-center gap-3 flex-wrap">
+      <div className="text-xs text-muted-foreground uppercase">Виньетки класса</div>
       <select
         value={selectValue}
         onChange={handleChange}
         disabled={saving}
-        className="text-sm px-2 py-1 border border-gray-300 rounded bg-white disabled:opacity-50"
+        className="text-sm px-2 py-1 border border-border rounded bg-card disabled:opacity-50"
       >
         <option value="auto">Авто (по комплектации)</option>
         <option value="on">Включить</option>
         <option value="off">Выключить</option>
       </select>
-      <div className="text-xs text-gray-400 flex-1 min-w-[200px]">{description}</div>
+      <div className="text-xs text-muted-foreground flex-1 min-w-[200px]">{description}</div>
     </div>
   )
 }
@@ -1489,8 +1489,8 @@ function CommonSectionLimitControl({
         : `Не более ${parseInt(value, 10)} разворотов. Приоритет: крупные фото (full → half → quarter → sixth).`
 
   return (
-    <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-3 flex-wrap">
-      <div className="text-xs text-gray-500 uppercase">Разворотов в общем разделе</div>
+    <div className="mt-3 pt-3 border-t border-border flex items-center gap-3 flex-wrap">
+      <div className="text-xs text-muted-foreground uppercase">Разворотов в общем разделе</div>
       <input
         type="number"
         min={0}
@@ -1501,9 +1501,9 @@ function CommonSectionLimitControl({
         onBlur={handleBlur}
         disabled={saving}
         placeholder="без ограничения"
-        className="text-sm px-2 py-1 border border-gray-300 rounded bg-white disabled:opacity-50 w-32"
+        className="text-sm px-2 py-1 border border-border rounded bg-card disabled:opacity-50 w-32"
       />
-      <div className="text-xs text-gray-400 flex-1 min-w-[200px]">{description}</div>
+      <div className="text-xs text-muted-foreground flex-1 min-w-[200px]">{description}</div>
     </div>
   )
 }
@@ -1570,9 +1570,9 @@ function StudentDistributionControl({
         : 'Заполняет полные сетки, остаток — на последнюю (30 = 12+12+6). Старое поведение.'
 
   return (
-    <div className="mt-3 pt-3 border-t border-gray-200">
+    <div className="mt-3 pt-3 border-t border-border">
       <div className="flex items-center gap-3 flex-wrap mb-2">
-        <div className="text-xs text-gray-500 uppercase">Распределение учеников</div>
+        <div className="text-xs text-muted-foreground uppercase">Распределение учеников</div>
         <div className="flex gap-1 flex-wrap">
           {(['auto', 'equalize', 'greedy'] as const).map((mode) => (
             <button
@@ -1583,7 +1583,7 @@ function StudentDistributionControl({
               className={`text-sm px-3 py-1 border rounded transition disabled:opacity-50 disabled:cursor-not-allowed ${
                 value === mode
                   ? 'bg-brand-50 border-brand-400 text-brand-700 font-medium'
-                  : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                  : 'bg-card border-border text-foreground hover:bg-muted'
               }`}
             >
               {mode === 'auto' ? 'Авто' : mode === 'equalize' ? 'Равномерно' : 'Жадно'}
@@ -1591,8 +1591,8 @@ function StudentDistributionControl({
           ))}
         </div>
       </div>
-      <div className="text-xs text-gray-400">{description}</div>
-      <div className="text-xs text-gray-400 mt-1">
+      <div className="text-xs text-muted-foreground">{description}</div>
+      <div className="text-xs text-muted-foreground mt-1">
         Влияет только на шаблоны с сеткой (Mini 12, Light 6). Для других комплектаций
         игнорируется.
       </div>
@@ -1682,14 +1682,14 @@ function ReferralProgramControl({
   const selected = programs.find((p) => p.id === value)
 
   return (
-    <div className="mt-3 pt-3 border-t border-gray-200">
+    <div className="mt-3 pt-3 border-t border-border">
       <div className="flex items-center gap-3 flex-wrap mb-2">
-        <div className="text-xs text-gray-500 uppercase">Реферальная программа</div>
+        <div className="text-xs text-muted-foreground uppercase">Реферальная программа</div>
         <select
           value={value}
           onChange={handleChange}
           disabled={saving || !loaded}
-          className="text-sm px-3 py-1 border border-gray-300 rounded bg-white text-gray-700 disabled:opacity-50"
+          className="text-sm px-3 py-1 border border-border rounded bg-card text-foreground disabled:opacity-50"
         >
           <option value="">Без программы (дефолтный текст)</option>
           {programs.map((p) => (
@@ -1705,12 +1705,12 @@ function ReferralProgramControl({
           видят дефолтный текст. Выберите другую или «Без программы».
         </div>
       ) : selected ? (
-        <div className="text-xs text-gray-400">
+        <div className="text-xs text-muted-foreground">
           Реферер: {selected.referrer_reward_text || '—'}. Реферал: {selected.invitee_reward_text || '—'}.
           Награды применяются вручную.
         </div>
       ) : (
-        <div className="text-xs text-gray-400">
+        <div className="text-xs text-muted-foreground">
           Что увидят родители на странице «Спасибо» и по реф-ссылке. «Без программы» —
           дефолтный текст про скидку 50%.
         </div>
@@ -1791,19 +1791,19 @@ function PrintTypeOverrideControl({
         : 'Тип переплёта берётся из шаблона.'
 
   return (
-    <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-3 flex-wrap">
-      <div className="text-xs text-gray-500 uppercase">Тип листов</div>
+    <div className="mt-3 pt-3 border-t border-border flex items-center gap-3 flex-wrap">
+      <div className="text-xs text-muted-foreground uppercase">Тип листов</div>
       <select
         value={value}
         onChange={handleChange}
         disabled={saving}
-        className="text-sm px-2 py-1 border border-gray-300 rounded bg-white disabled:opacity-50"
+        className="text-sm px-2 py-1 border border-border rounded bg-card disabled:opacity-50"
       >
         <option value="">Из шаблона</option>
         <option value="layflat">Твёрдые (layflat)</option>
         <option value="soft">Мягкие (soft)</option>
       </select>
-      <div className="text-xs text-gray-400 flex-1 min-w-[200px]">{description}</div>
+      <div className="text-xs text-muted-foreground flex-1 min-w-[200px]">{description}</div>
     </div>
   )
 }
@@ -1860,7 +1860,7 @@ function IncludeNonPurchasersControl({
   }
 
   return (
-    <div className="mt-3 pt-3 border-t border-gray-200">
+    <div className="mt-3 pt-3 border-t border-border">
       <label className="flex items-start gap-2 cursor-pointer">
         <input
           type="checkbox"
@@ -1870,10 +1870,10 @@ function IncludeNonPurchasersControl({
           className="mt-0.5 disabled:opacity-50"
         />
         <div className="flex-1">
-          <span className="text-sm font-medium text-gray-700">
+          <span className="text-sm font-medium text-foreground">
             Включить в личный раздел всех учеников
           </span>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             По умолчанию выключено — личную страницу получают только те ученики, у
             которых проставлена галка «Заказывает альбом». Включите, если хотите дать
             страницу всему классу независимо от заказа.
@@ -1944,7 +1944,7 @@ function SymmetrizeTailControl({
   }
 
   return (
-    <div className="mt-3 pt-3 border-t border-gray-200">
+    <div className="mt-3 pt-3 border-t border-border">
       <label className="flex items-start gap-2 cursor-pointer">
         <input
           type="checkbox"
@@ -1954,10 +1954,10 @@ function SymmetrizeTailControl({
           className="mt-0.5 disabled:opacity-50"
         />
         <div className="flex-1">
-          <span className="text-sm font-medium text-gray-700">
+          <span className="text-sm font-medium text-foreground">
             Симметризировать хвост
           </span>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             Если в хвосте students-секции остался 1 ученик, движок возьмёт ещё
             одного с предыдущей страницы — чтобы хвост был парным, без
             одиночного портрета с краю. Действует только для сеточных
@@ -2267,11 +2267,11 @@ function AlbumDetailModal({
       onMouseDown={handleBackdropMouseDown}
       onMouseUp={handleBackdropMouseUp}
     >
-      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-xl flex flex-col" style={{ height: '90vh' }}>
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0 rounded-t-2xl">
+      <div className="bg-card rounded-2xl max-w-3xl w-full shadow-xl flex flex-col" style={{ height: '90vh' }}>
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between flex-shrink-0 rounded-t-2xl">
           <div>
             <h3 className="text-lg font-semibold">{album.title}</h3>
-            <div className="text-xs text-gray-500 mt-0.5">
+            <div className="text-xs text-muted-foreground mt-0.5">
               {album.city && `${album.city} · `}
               {album.year && `${album.year} · `}
               {album.deadline && `до ${new Date(album.deadline).toLocaleDateString('ru-RU')}`}
@@ -2315,7 +2315,7 @@ function AlbumDetailModal({
             <button
               onClick={onClose}
               type="button"
-              className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+              className="text-muted-foreground hover:text-foreground text-xl leading-none"
             >
               ×
             </button>
@@ -2323,7 +2323,7 @@ function AlbumDetailModal({
         </div>
 
         {/* Вкладки */}
-        <div className="px-6 pt-4 border-b border-gray-100 flex gap-1 overflow-x-auto flex-shrink-0">
+        <div className="px-6 pt-4 border-b border-border flex gap-1 overflow-x-auto flex-shrink-0">
           {([
             { id: 'overview', label: 'Обзор' },
             { id: 'children', label: 'Ученики' },
@@ -2341,7 +2341,7 @@ function AlbumDetailModal({
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 tab === t.id
                   ? 'border-brand-600 text-brand-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               {t.label}
@@ -2351,28 +2351,28 @@ function AlbumDetailModal({
 
         <div className="p-6 overflow-y-auto flex-1">
           {loading ? (
-            <div className="text-center text-gray-400 text-sm py-8">Загружаем данные...</div>
+            <div className="text-center text-muted-foreground text-sm py-8">Загружаем данные...</div>
           ) : (
             <>
               {/* Вкладка Обзор */}
               {tab === 'overview' && stats && (
                 <>
-                  <div className="bg-gray-50 rounded-lg p-3 text-sm mb-4">
+                  <div className="bg-muted rounded-lg p-3 text-sm mb-4">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div>
-                        <div className="text-xs text-gray-500 uppercase mb-1">Пресет вёрстки</div>
+                        <div className="text-xs text-muted-foreground uppercase mb-1">Пресет вёрстки</div>
                         {/* РЭ.30 hot-fix: после В.3 новые альбомы не пишут
                             config_preset_id, а пишут section_structure_preset_id.
                             Плашка и кнопка должны учитывать оба источника. */}
                         {album.config_preset_name ? (
                           <>
-                            <div className="font-medium text-gray-900">{album.config_preset_name}</div>
-                            <div className="text-xs text-gray-400 font-mono">{album.config_preset_slug}</div>
+                            <div className="font-medium text-foreground">{album.config_preset_name}</div>
+                            <div className="text-xs text-muted-foreground font-mono">{album.config_preset_slug}</div>
                           </>
                         ) : album.section_structure_preset_id ? (
-                          <div className="text-gray-700">
+                          <div className="text-foreground">
                             <span className="font-medium">Шаблон выбран</span>{' '}
-                            <span className="text-gray-400 text-xs font-mono">
+                            <span className="text-muted-foreground text-xs font-mono">
                               ({album.section_structure_preset_id.slice(0, 8)}…)
                             </span>
                           </div>
@@ -2482,19 +2482,19 @@ function AlbumDetailModal({
 
 
                     {layout && (
-                      <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="mt-3 pt-3 border-t border-border">
                         <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
                           <div className="text-sm">
                             <span className="text-green-600 font-medium"><Check size={14} className="inline" /> Layout собран</span>
-                            <span className="text-gray-500"> · {layout.summary.total_spreads} элементов</span>
+                            <span className="text-muted-foreground"> · {layout.summary.total_spreads} элементов</span>
                             {layout.summary.total_warnings > 0 && (
-                              <span className="text-gray-500"> · {layout.summary.total_warnings} предупреждений</span>
+                              <span className="text-muted-foreground"> · {layout.summary.total_warnings} предупреждений</span>
                             )}
                           </div>
                           <button
                             type="button"
                             onClick={copyLayoutJson}
-                            className="text-xs text-gray-500 hover:text-gray-700 underline"
+                            className="text-xs text-muted-foreground hover:text-foreground underline"
                           >
                             Скопировать JSON
                           </button>
@@ -2553,13 +2553,13 @@ function AlbumDetailModal({
                     stats.total > 0 &&
                     typeof stats.purchased === 'number' &&
                     stats.purchased < stats.total && (
-                      <div className="bg-gray-50 rounded-xl p-4 mb-6">
-                        <div className="text-xs text-gray-500">Заказали альбом</div>
+                      <div className="bg-muted rounded-xl p-4 mb-6">
+                        <div className="text-xs text-muted-foreground">Заказали альбом</div>
                         <div className="text-lg font-semibold mt-1">
                           {stats.purchased}
-                          <span className="text-gray-400"> / {stats.total}</span>
+                          <span className="text-muted-foreground"> / {stats.total}</span>
                         </div>
-                        <div className="text-xs text-gray-400 mt-1">
+                        <div className="text-xs text-muted-foreground mt-1">
                           {stats.total - stats.purchased} без личной страницы.
                           Снять/поставить галки — на вкладке «Ученики».
                         </div>
@@ -2569,20 +2569,20 @@ function AlbumDetailModal({
                   {(stats.teachers_total > 0 || stats.surcharge_count > 0) && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
                       {stats.teachers_total > 0 && (
-                        <div className="bg-gray-50 rounded-xl p-4">
-                          <div className="text-xs text-gray-500">Учителя</div>
+                        <div className="bg-muted rounded-xl p-4">
+                          <div className="text-xs text-muted-foreground">Учителя</div>
                           <div className="text-lg font-semibold mt-1">
                             {stats.teachers_done}
-                            <span className="text-gray-400"> / {stats.teachers_total}</span>
+                            <span className="text-muted-foreground"> / {stats.teachers_total}</span>
                           </div>
                         </div>
                       )}
                       {stats.surcharge_count > 0 && (
-                        <div className="bg-gray-50 rounded-xl p-4">
-                          <div className="text-xs text-gray-500">Доплаты за обложку</div>
+                        <div className="bg-muted rounded-xl p-4">
+                          <div className="text-xs text-muted-foreground">Доплаты за обложку</div>
                           <div className="text-lg font-semibold mt-1">
                             {stats.surcharge_total}₽
-                            <span className="text-gray-400 text-sm"> · {stats.surcharge_count} чел.</span>
+                            <span className="text-muted-foreground text-sm"> · {stats.surcharge_count} чел.</span>
                           </div>
                         </div>
                       )}
@@ -2592,7 +2592,7 @@ function AlbumDetailModal({
                   {/* График динамики */}
                   {daily.length > 0 && (
                     <div className="mt-2">
-                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
                         Динамика отбора
                       </div>
                       <AlbumDailyChart daily={daily} />
@@ -2607,7 +2607,7 @@ function AlbumDetailModal({
                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                   <h4 className="font-medium">
                     Ученики
-                    <span className="text-gray-400 font-normal ml-2">{children.length}</span>
+                    <span className="text-muted-foreground font-normal ml-2">{children.length}</span>
                   </h4>
                   {canEdit && (
                     <div className="flex gap-2">
@@ -2639,7 +2639,7 @@ function AlbumDetailModal({
                 {canEdit && showAddForm && (
                   <form
                     onSubmit={handleAdd}
-                    className="bg-gray-50 rounded-xl p-4 mb-3 flex gap-2 flex-wrap"
+                    className="bg-muted rounded-xl p-4 mb-3 flex gap-2 flex-wrap"
                   >
                     <input
                       type="text"
@@ -2676,15 +2676,15 @@ function AlbumDetailModal({
                 )}
 
                 {children.length === 0 ? (
-                  <div className="text-center text-gray-400 text-sm py-8 bg-gray-50 rounded-xl">
+                  <div className="text-center text-muted-foreground text-sm py-8 bg-muted rounded-xl">
                     В альбоме пока нет учеников
                   </div>
                 ) : (
-                  <div className="border border-gray-100 rounded-xl overflow-hidden">
+                  <div className="border border-border rounded-xl overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
-                        <thead className="bg-gray-50 border-b border-gray-100">
-                          <tr className="text-left text-xs font-medium text-gray-500 uppercase">
+                        <thead className="bg-muted border-b border-border">
+                          <tr className="text-left text-xs font-medium text-muted-foreground uppercase">
                             <th className="px-4 py-2.5">ФИО</th>
                             <th className="px-4 py-2.5">Класс</th>
                             <th className="px-4 py-2.5 text-center" title="Заказывает ли ученик альбом (РЭ.25)">Заказ</th>
@@ -2694,7 +2694,7 @@ function AlbumDetailModal({
                             <th className="px-4 py-2.5 text-right">Действия</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-border">
                           {children.map(c => {
                             // РЭ.25: визуальный маркер для не-заказчиков.
                             // is_purchased===false → приглушённая строка
@@ -2703,8 +2703,8 @@ function AlbumDetailModal({
                             return (
                             <React.Fragment key={c.id}>
                               <tr
-                                className={`hover:bg-gray-50 cursor-pointer ${
-                                  selectedChild?.id === c.id ? 'bg-gray-50' : ''
+                                className={`hover:bg-muted cursor-pointer ${
+                                  selectedChild?.id === c.id ? 'bg-muted' : ''
                                 } ${isNonPurchaser ? 'opacity-60' : ''}`}
                                 onClick={() => {
                                   const next = selectedChild?.id === c.id ? null : c
@@ -2712,11 +2712,11 @@ function AlbumDetailModal({
                                   if (next && next.submitted_at) loadChildDetails(next.id)
                                 }}
                               >
-                                <td className="px-4 py-2.5 font-medium text-gray-900">
+                                <td className="px-4 py-2.5 font-medium text-foreground">
                                   {c.full_name}
                                   {isNonPurchaser && (
                                     <span
-                                      className="ml-2 text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600 font-normal"
+                                      className="ml-2 text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground font-normal"
                                       title="Этот ученик не заказывает альбом — в личном разделе его не будет"
                                     >
                                       не заказывает
@@ -2731,7 +2731,7 @@ function AlbumDetailModal({
                                     </span>
                                   )}
                                 </td>
-                                <td className="px-4 py-2.5 text-gray-500">{c.class}</td>
+                                <td className="px-4 py-2.5 text-muted-foreground">{c.class}</td>
                                 <td className="px-4 py-2.5 text-center">
                                   {canEdit ? (
                                     <input
@@ -2775,7 +2775,7 @@ function AlbumDetailModal({
                                       }
                                     />
                                   ) : (
-                                    <span className={c.is_purchased === false ? 'text-gray-400' : 'text-green-600'}>
+                                    <span className={c.is_purchased === false ? 'text-muted-foreground' : 'text-green-600'}>
                                       {c.is_purchased === false ? '—' : <Check size={14} className="inline" />}
                                     </span>
                                   )}
@@ -2789,16 +2789,16 @@ function AlbumDetailModal({
                                     <span className="badge-gray">Не начал</span>
                                   )}
                                 </td>
-                                <td className="px-4 py-2.5 text-gray-500 text-xs">
+                                <td className="px-4 py-2.5 text-muted-foreground text-xs">
                                   {c.contact?.phone ?? '—'}
                                 </td>
                                 <td className="px-4 py-2.5 text-right text-xs">
                                   {c.cover?.cover_option === 'other' ? (
                                     <span className="text-amber-600 font-medium">+{c.cover.surcharge ?? 0} ₽</span>
                                   ) : c.cover?.cover_option === 'same' ? (
-                                    <span className="text-gray-400">тот же</span>
+                                    <span className="text-muted-foreground">тот же</span>
                                   ) : (
-                                    <span className="text-gray-300">—</span>
+                                    <span className="text-muted-foreground">—</span>
                                   )}
                                 </td>
                                 <td className="px-4 py-2.5 text-right">
@@ -2816,12 +2816,12 @@ function AlbumDetailModal({
                                 </td>
                               </tr>
                               {selectedChild?.id === c.id && (
-                                <tr className="bg-gray-50">
-                                  <td colSpan={7} className="px-4 py-3 border-t border-gray-100">
+                                <tr className="bg-muted">
+                                  <td colSpan={7} className="px-4 py-3 border-t border-border">
                                     {/* Кнопки действий — только для canEdit */}
                                     {canEdit && (
                                       <div className="flex flex-wrap gap-2 items-center mb-3">
-                                        <span className="text-xs text-gray-500 mr-2">
+                                        <span className="text-xs text-muted-foreground mr-2">
                                           Действия для {c.full_name}:
                                         </span>
                                         <button
@@ -2855,8 +2855,8 @@ function AlbumDetailModal({
                                         таблицы (выше) для быстрого переключения без раскрытия строки. */}
                                     {/* Override пресета вёрстки для ученика */}
                                     {canEdit && (
-                                      <div className="flex flex-wrap items-center gap-2 mb-3 pt-3 border-t border-gray-200">
-                                        <span className="text-xs text-gray-500 mr-1">
+                                      <div className="flex flex-wrap items-center gap-2 mb-3 pt-3 border-t border-border">
+                                        <span className="text-xs text-muted-foreground mr-1">
                                           Пресет вёрстки:
                                         </span>
                                         <ChildPresetSelect
@@ -2903,7 +2903,7 @@ function AlbumDetailModal({
                                     {c.submitted_at && (() => {
                                       const det = childDetails[c.id]
                                       if (loadingDetail === c.id) return (
-                                        <p className="text-xs text-gray-400 py-1">Загружаем выбор…</p>
+                                        <p className="text-xs text-muted-foreground py-1">Загружаем выбор…</p>
                                       )
                                       if (!det) return null
                                       const portrait = det.selections?.find((s: any) => s.type === 'portrait_page')
@@ -2913,13 +2913,13 @@ function AlbumDetailModal({
                                         <div className="flex flex-col gap-1 items-center w-28">
                                           <div className="relative group cursor-zoom-in" onClick={() => window.open(fullSrc, '_blank')}>
                                             <img src={src} alt={label}
-                                              className="w-28 h-28 object-cover rounded-lg border border-gray-200 group-hover:opacity-90 transition-opacity" />
+                                              className="w-28 h-28 object-cover rounded-lg border border-border group-hover:opacity-90 transition-opacity" />
                                             <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                               <span className="bg-black/50 text-white text-xs px-2 py-1 rounded-full"><Maximize2 size={12} className="inline" /> открыть</span>
                                             </div>
                                           </div>
-                                          <span className={`text-xs ${subClass ?? 'text-gray-500'}`}>{label}</span>
-                                          {sub && <span className="text-xs text-gray-400 truncate w-full text-center" title={sub}>{sub}</span>}
+                                          <span className={`text-xs ${subClass ?? 'text-muted-foreground'}`}>{label}</span>
+                                          {sub && <span className="text-xs text-muted-foreground truncate w-full text-center" title={sub}>{sub}</span>}
                                         </div>
                                       )
                                       return (
@@ -2937,7 +2937,7 @@ function AlbumDetailModal({
                                               src={cover.thumb || cover.url}
                                               fullSrc={cover.url}
                                               label={`Обложка${det.cover?.surcharge ? ` +${det.cover.surcharge} ₽` : ''}`}
-                                              subClass={det.cover?.surcharge ? 'text-amber-600 font-medium' : 'text-gray-500'}
+                                              subClass={det.cover?.surcharge ? 'text-amber-600 font-medium' : 'text-muted-foreground'}
                                               sub={cover.filename}
                                             />
                                           )}
@@ -2959,12 +2959,12 @@ function AlbumDetailModal({
                                               sub={p.width && p.height ? `${p.width}×${p.height}` : p.filename}
                                             />
                                           ))}
-                                          <div className="flex flex-col gap-1 text-xs text-gray-600 justify-center min-w-0">
+                                          <div className="flex flex-col gap-1 text-xs text-muted-foreground justify-center min-w-0">
                                             {det.text && (
-                                              <div className="italic text-gray-500 max-w-xs">«{det.text}»</div>
+                                              <div className="italic text-muted-foreground max-w-xs">«{det.text}»</div>
                                             )}
                                             {det.contact && (
-                                              <div className="text-gray-500">
+                                              <div className="text-muted-foreground">
                                                 {det.contact.parent_name && <div>{det.contact.parent_name}</div>}
                                                 {det.contact.phone && <div>{det.contact.phone}</div>}
                                               </div>
@@ -3021,16 +3021,16 @@ function AlbumDetailModal({
                 return (
                   <div className="space-y-6">
                     {grandTotal === 0 ? (
-                      <p className="text-sm text-gray-400 text-center py-8">Доплат нет</p>
+                      <p className="text-sm text-muted-foreground text-center py-8">Доплат нет</p>
                     ) : (
                       <>
                         {/* Доплаты за обложку */}
                         {surchargeChildren.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-semibold text-gray-600 mb-3">Другой портрет на обложку</h4>
+                            <h4 className="text-sm font-semibold text-muted-foreground mb-3">Другой портрет на обложку</h4>
                             <table className="w-full text-sm">
                               <thead>
-                                <tr className="text-left text-xs text-gray-400 uppercase tracking-wide border-b border-gray-100">
+                                <tr className="text-left text-xs text-muted-foreground uppercase tracking-wide border-b border-border">
                                   <th className="pb-2 pr-4">Ученик</th>
                                   <th className="pb-2 pr-4">Класс</th>
                                   <th className="pb-2 text-right">Сумма</th>
@@ -3038,9 +3038,9 @@ function AlbumDetailModal({
                               </thead>
                               <tbody>
                                 {surchargeChildren.map(c => (
-                                  <tr key={c.id} className="border-b border-gray-50 hover:bg-gray-50">
+                                  <tr key={c.id} className="border-b border-border hover:bg-muted">
                                     <td className="py-2.5 pr-4 font-medium">{c.full_name}</td>
-                                    <td className="py-2.5 pr-4 text-gray-500">{c.class ?? '—'}</td>
+                                    <td className="py-2.5 pr-4 text-muted-foreground">{c.class ?? '—'}</td>
                                     <td className="py-2.5 text-right text-amber-600 font-medium">+{c.cover?.surcharge ?? 0} ₽</td>
                                   </tr>
                                 ))}
@@ -3052,10 +3052,10 @@ function AlbumDetailModal({
                         {/* Доплаты за личный разворот */}
                         {spreadChildren.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-semibold text-gray-600 mb-3">Личный разворот</h4>
+                            <h4 className="text-sm font-semibold text-muted-foreground mb-3">Личный разворот</h4>
                             <table className="w-full text-sm">
                               <thead>
-                                <tr className="text-left text-xs text-gray-400 uppercase tracking-wide border-b border-gray-100">
+                                <tr className="text-left text-xs text-muted-foreground uppercase tracking-wide border-b border-border">
                                   <th className="pb-2 pr-4">Ученик</th>
                                   <th className="pb-2 pr-4">Класс</th>
                                   <th className="pb-2 pr-4">Фото</th>
@@ -3064,10 +3064,10 @@ function AlbumDetailModal({
                               </thead>
                               <tbody>
                                 {spreadChildren.map(c => (
-                                  <tr key={c.child_id} className="border-b border-gray-50 hover:bg-gray-50">
+                                  <tr key={c.child_id} className="border-b border-border hover:bg-muted">
                                     <td className="py-2.5 pr-4 font-medium">{c.full_name}</td>
-                                    <td className="py-2.5 pr-4 text-gray-500">{c.class ?? '—'}</td>
-                                    <td className="py-2.5 pr-4 text-gray-400">{c.photos.length} шт.</td>
+                                    <td className="py-2.5 pr-4 text-muted-foreground">{c.class ?? '—'}</td>
+                                    <td className="py-2.5 pr-4 text-muted-foreground">{c.photos.length} шт.</td>
                                     <td className="py-2.5 text-right text-amber-600 font-medium">+{spreadPrice} ₽</td>
                                   </tr>
                                 ))}
@@ -3077,7 +3077,7 @@ function AlbumDetailModal({
                         )}
 
                         {/* Итого */}
-                        <div className="flex justify-end pt-2 border-t-2 border-gray-200">
+                        <div className="flex justify-end pt-2 border-t-2 border-border">
                           <span className="font-bold text-lg text-amber-600">{grandTotal} ₽</span>
                         </div>
                       </>
@@ -3149,10 +3149,10 @@ function MiniStat({
   tone?: 'default' | 'green' | 'amber' | 'gray'
 }) {
   const tones: Record<string, string> = {
-    default: 'bg-gray-50 text-gray-900',
+    default: 'bg-muted text-foreground',
     green: 'bg-green-50 text-green-700',
     amber: 'bg-amber-50 text-amber-700',
-    gray: 'bg-gray-50 text-gray-500',
+    gray: 'bg-muted text-muted-foreground',
   }
   return (
     <div className={`rounded-xl p-4 ${tones[tone]}`}>
@@ -3336,7 +3336,7 @@ function ChildPresetSelect({
         value={draftSlug}
         onChange={(e) => setDraftSlug(e.target.value)}
         disabled={busy}
-        className="text-xs px-2 py-1 border border-gray-300 rounded"
+        className="text-xs px-2 py-1 border border-border rounded"
       >
         <option value="">
           Использовать пресет альбома
@@ -3805,15 +3805,15 @@ function AlbumFormModal({
           onMouseUp={(e) => e.stopPropagation()}
           onClick={(e) => { if (e.target === e.currentTarget) setCoverPreviewOpen(false) }}
         >
-          <div className="bg-white rounded-2xl max-w-5xl w-full shadow-xl my-auto p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card rounded-2xl max-w-5xl w-full shadow-xl my-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Превью обложки</h3>
-              <button type="button" onClick={() => setCoverPreviewOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl"><X size={18} /></button>
+              <button type="button" onClick={() => setCoverPreviewOpen(false)} className="text-muted-foreground hover:text-muted-foreground text-xl"><X size={18} /></button>
             </div>
-            {coverPreviewLoading && <div className="text-center py-8 text-gray-400">Собираю обложку…</div>}
+            {coverPreviewLoading && <div className="text-center py-8 text-muted-foreground">Собираю обложку…</div>}
             {!coverPreviewLoading && coverPreviewData && (
               <>
-                <div className="text-sm text-gray-500 mb-3">
+                <div className="text-sm text-muted-foreground mb-3">
                   Корешок: {coverPreviewData.spine_width_mm != null
                     ? `${coverPreviewData.spine_width_mm.toFixed(1)} мм`
                     : 'не посчитан (нет пресета печати или сохранённого макета альбома)'}
@@ -3826,7 +3826,7 @@ function AlbumFormModal({
                   </div>
                 )}
                 {coverPreviewData.previews.length === 0 ? (
-                  <div className="text-center py-8 text-gray-400">
+                  <div className="text-center py-8 text-muted-foreground">
                     Нет собранных обложек. Проверьте режим, тип и отмеченные доступные обложки.
                   </div>
                 ) : (
@@ -3834,12 +3834,12 @@ function AlbumFormModal({
                     {coverPreviewData.previews.map((p, i) => (
                       <div key={i} className="card p-3">
                         <div
-                          className="w-full bg-gray-50 border border-gray-200 rounded mb-2 overflow-hidden flex items-center justify-center"
+                          className="w-full bg-muted border border-border rounded mb-2 overflow-hidden flex items-center justify-center"
                           style={{ aspectRatio: '2 / 1', minHeight: '80px' }}
                           dangerouslySetInnerHTML={{ __html: p.has_cover ? p.svg : '' }}
                         />
                         <div className="text-sm font-medium truncate">{p.child_name ?? 'Общая обложка'}</div>
-                        <div className="text-xs text-gray-400 truncate">
+                        <div className="text-xs text-muted-foreground truncate">
                           {p.cover_name ?? '—'}{p.has_cover ? '' : ' · обложка не назначена'}
                         </div>
                       </div>
@@ -3851,15 +3851,15 @@ function AlbumFormModal({
           </div>
         </div>
       )}
-      <div className="bg-white rounded-2xl max-w-2xl w-full shadow-xl my-auto">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl">
+      <div className="bg-card rounded-2xl max-w-2xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between sticky top-0 bg-card rounded-t-2xl">
           <h3 className="text-lg font-semibold">
             {mode === 'create' ? 'Новый альбом' : 'Настройки альбома'}
           </h3>
           <button
             onClick={onClose}
             type="button"
-            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            className="text-muted-foreground hover:text-foreground text-xl leading-none"
           >
             ×
           </button>
@@ -3868,7 +3868,7 @@ function AlbumFormModal({
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Класс */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Класс
             </label>
             <input
@@ -3879,14 +3879,14 @@ function AlbumFormModal({
               placeholder="11А или 4Б, 4В"
               disabled={loading}
             />
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               Отображается на карточке проекта. Несколько классов — через запятую.
             </p>
           </div>
 
           {/* Комплектация */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-foreground mb-1.5">
               Комплектация
             </label>
             {mode === 'create' && templates.length > 0 && (
@@ -3899,7 +3899,7 @@ function AlbumFormModal({
                     className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${
                       form.template_title === t.title
                         ? 'border-gray-900 bg-gray-900 text-white'
-                        : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                        : 'border-border text-foreground hover:bg-muted'
                     }`}
                   >
                     {t.title}
@@ -3916,14 +3916,14 @@ function AlbumFormModal({
               disabled={loading}
             />
             {mode === 'create'
-              ? <p className="text-xs text-gray-500 mt-1">Выберите шаблон выше — он заполнит все настройки автоматически.</p>
-              : <p className="text-xs text-gray-400 mt-1">Смена комплектации не сбрасывает уже сделанные выборы.</p>
+              ? <p className="text-xs text-muted-foreground mt-1">Выберите шаблон выше — он заполнит все настройки автоматически.</p>
+              : <p className="text-xs text-muted-foreground mt-1">Смена комплектации не сбрасывает уже сделанные выборы.</p>
             }
           </div>
 
           {/* Название */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-foreground mb-1.5">
               Название <span className="text-red-500">*</span>
             </label>
             <input
@@ -3940,7 +3940,7 @@ function AlbumFormModal({
           {/* Город и год */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label className="block text-sm font-medium text-foreground mb-1.5">
                 Город
               </label>
               <input
@@ -3953,7 +3953,7 @@ function AlbumFormModal({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label className="block text-sm font-medium text-foreground mb-1.5">
                 Год выпуска
               </label>
               <input
@@ -3970,8 +3970,8 @@ function AlbumFormModal({
 
           {/* Учебное заведение (для подписи на обложке) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Учебное заведение <span className="font-normal text-gray-400 text-xs">(для подписи на обложке)</span>
+            <label className="block text-sm font-medium text-foreground mb-1.5">
+              Учебное заведение <span className="font-normal text-muted-foreground text-xs">(для подписи на обложке)</span>
             </label>
             <input
               type="text"
@@ -3985,7 +3985,7 @@ function AlbumFormModal({
 
           {/* Дедлайн */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-sm font-medium text-foreground mb-1.5">
               Дедлайн выбора фотографий
             </label>
             <input
@@ -3995,7 +3995,7 @@ function AlbumFormModal({
               className="input"
               disabled={loading}
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               После этой даты родители не смогут открыть ссылки
             </p>
           </div>
@@ -4005,9 +4005,9 @@ function AlbumFormModal({
               приоритетнее, чем legacy селекты ниже (комплектация + тип печати).
               Опциональное поле: партнёр может создать альбом без шаблона
               и добавить позже когда согласует дизайн с школой. */}
-          <div className="border-t-2 border-gray-200 pt-5 mt-1">
+          <div className="border-t-2 border-border pt-5 mt-1">
             <p className="text-sm font-semibold text-blue-700 mb-2">
-              Шаблон <span className="font-normal text-gray-400 text-xs">(опционально — можно выбрать позже)</span>
+              Шаблон <span className="font-normal text-muted-foreground text-xs">(опционально — можно выбрать позже)</span>
             </p>
             {form.section_structure_preset_id ? (
               <div className="inline-flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-sm">
@@ -4042,12 +4042,12 @@ function AlbumFormModal({
                 type="button"
                 onClick={() => setTemplatePickerOpen(true)}
                 disabled={loading}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-sm text-gray-700"
+                className="px-4 py-2 bg-muted hover:bg-muted border border-border rounded text-sm text-foreground"
               >
                 Выбрать шаблон (опционально)
               </button>
             )}
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               Шаблон из каталога задаёт структуру альбома (дизайн +
               секции + тип листов). Без шаблона автосборка не сработает —
               выберите шаблон, чтобы запустить «Собрать автоматически».
@@ -4079,15 +4079,15 @@ function AlbumFormModal({
           {/* Обложка альбома — ЕДИНАЯ система (объединение, Этап 2).
               Один раздел: (1) кто выбирает обложку + галерея,
               (2) портрет на обложке + доплата (бывший блок «второе фото»). */}
-          <div className="border-t-2 border-gray-200 pt-5 mt-1">
+          <div className="border-t-2 border-border pt-5 mt-1">
             <p className="text-sm font-semibold text-blue-700 mb-1">
-              Обложка альбома <span className="font-normal text-gray-400 text-xs">(твёрдый переплёт)</span>
+              Обложка альбома <span className="font-normal text-muted-foreground text-xs">(твёрдый переплёт)</span>
             </p>
-            <p className="text-xs text-gray-400 mb-4">
+            <p className="text-xs text-muted-foreground mb-4">
               Какая обложка у альбома, кто её выбирает и доплата за портрет на обложке. Деньги считаются вне системы.
             </p>
 
-            <label className="block text-xs text-gray-500 mb-1">Кто выбирает обложку</label>
+            <label className="block text-xs text-muted-foreground mb-1">Кто выбирает обложку</label>
             <div className="flex flex-wrap gap-2 mb-3">
               {[
                 { v: '', l: 'Не настраивать' },
@@ -4102,7 +4102,7 @@ function AlbumFormModal({
                   className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${
                     (form.cover_layout_mode ?? '') === v
                       ? 'border-gray-900 bg-gray-900 text-white'
-                      : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                      : 'border-border text-foreground hover:bg-muted'
                   }`}
                   disabled={loading}
                 >
@@ -4113,7 +4113,7 @@ function AlbumFormModal({
 
             {form.cover_layout_mode && (
               <>
-                <label className="block text-xs text-gray-500 mb-1">Тип обложки по умолчанию</label>
+                <label className="block text-xs text-muted-foreground mb-1">Тип обложки по умолчанию</label>
                 <div className="flex flex-wrap gap-2 mb-3">
                   {(['portrait_photo', 'common_photo', 'design_only'] as const).map((v) => (
                     <button
@@ -4123,7 +4123,7 @@ function AlbumFormModal({
                       className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${
                         form.cover_default_type === v
                           ? 'border-gray-900 bg-gray-900 text-white'
-                          : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                          : 'border-border text-foreground hover:bg-muted'
                       }`}
                       disabled={loading}
                     >
@@ -4132,15 +4132,15 @@ function AlbumFormModal({
                   ))}
                 </div>
 
-                <label className="block text-xs text-gray-500 mb-1">
+                <label className="block text-xs text-muted-foreground mb-1">
                   Какие обложки показывать родителю {form.cover_layout_mode === 'fixed' && '(при «жёстко» родитель не выбирает)'}
                 </label>
                 {coverLibrary.length === 0 ? (
-                  <div className="text-xs text-gray-400 mb-3">
+                  <div className="text-xs text-muted-foreground mb-3">
                     Обложки ещё не загружены — раздел заработает после загрузки (Обложки в супер-админке).
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-2">
+                  <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto border border-border rounded-lg p-2">
                     {coverLibrary.map((c) => {
                       const checked = form.cover_available_ids.includes(c.id)
                       return (
@@ -4157,7 +4157,7 @@ function AlbumFormModal({
                             }}
                           />
                           <span>{c.name}</span>
-                          <span className="text-xs text-gray-400">
+                          <span className="text-xs text-muted-foreground">
                             {COVER_TYPE_LABEL[c.cover_type] ?? c.cover_type}
                             {c.gender_hint ? ` · ${c.gender_hint}` : ''}
                             {c.is_global ? '' : ' · своя'}
@@ -4168,7 +4168,7 @@ function AlbumFormModal({
                   </div>
                 )}
 
-                <label className="block text-xs text-gray-500 mb-1">Пресет печати (для расчёта корешка)</label>
+                <label className="block text-xs text-muted-foreground mb-1">Пресет печати (для расчёта корешка)</label>
                 <select
                   value={form.print_preset_id ?? ''}
                   disabled={loading}
@@ -4184,7 +4184,7 @@ function AlbumFormModal({
                   ))}
                 </select>
                 {printPresets.length === 0 && (
-                  <div className="text-xs text-gray-400 mb-2">
+                  <div className="text-xs text-muted-foreground mb-2">
                     Пресетов печати пока нет (нужны параметры корешка в пресете).
                   </div>
                 )}
@@ -4218,7 +4218,7 @@ function AlbumFormModal({
                     >
                       <Eye size={16} /> Превью обложки
                     </button>
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div className="text-xs text-muted-foreground mt-1">
                       Соберёт обложку с реальными ФИО/городом/годом и посчитанным корешком.
                     </div>
                   </div>
@@ -4237,9 +4237,9 @@ function AlbumFormModal({
               const show = !newActive || form.cover_default_type === 'portrait_photo' || portraitInAvail
               if (!show) return null
               return (
-                <div className="border-t border-gray-100 pt-4 mt-4">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Портрет на обложке</label>
-                  <p className="text-xs text-gray-400 mb-2">
+                <div className="border-t border-border pt-4 mt-4">
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Портрет на обложке</label>
+                  <p className="text-xs text-muted-foreground mb-2">
                     Когда брать доплату, если на обложке портрет ученика.
                   </p>
                   <div className="flex flex-wrap gap-2 mb-3">
@@ -4255,7 +4255,7 @@ function AlbumFormModal({
                         className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${
                           form.cover_portrait_charge === v
                             ? 'border-gray-900 bg-gray-900 text-white'
-                            : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                            : 'border-border text-foreground hover:bg-muted'
                         }`}
                         disabled={loading}
                       >
@@ -4265,7 +4265,7 @@ function AlbumFormModal({
                   </div>
                   {form.cover_portrait_charge !== 'none' && (
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">
+                      <label className="block text-xs text-muted-foreground mb-1">
                         {form.cover_portrait_charge === 'any_portrait'
                           ? 'Доплата за портрет на обложке (₽)'
                           : 'Доплата за другое фото на обложку (₽)'}
@@ -4286,8 +4286,8 @@ function AlbumFormModal({
           </div>
 
           {/* Групповые фото */}
-          <div className="border-t-2 border-gray-200 pt-5 mt-1">
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
+          <div className="border-t-2 border-border pt-5 mt-1">
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground mb-3">
               <input
                 type="checkbox"
                 checked={form.group_enabled}
@@ -4295,13 +4295,13 @@ function AlbumFormModal({
                 className="rounded"
                 disabled={loading}
               />
-              <span className="font-semibold text-blue-700">Групповые фото</span> <span className="text-gray-400 font-normal text-xs">(с друзьями)</span>
+              <span className="font-semibold text-blue-700">Групповые фото</span> <span className="text-muted-foreground font-normal text-xs">(с друзьями)</span>
             </label>
             {form.group_enabled && (
               <div className="space-y-3 pl-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">
+                    <label className="block text-xs text-muted-foreground mb-1">
                       Минимум фото
                     </label>
                     <input
@@ -4314,7 +4314,7 @@ function AlbumFormModal({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">
+                    <label className="block text-xs text-muted-foreground mb-1">
                       Максимум фото
                     </label>
                     <input
@@ -4327,7 +4327,7 @@ function AlbumFormModal({
                     />
                   </div>
                 </div>
-                <label className="flex items-center gap-2 text-sm text-gray-600">
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
                   <input
                     type="checkbox"
                     checked={form.group_exclusive}
@@ -4342,8 +4342,8 @@ function AlbumFormModal({
           </div>
 
           {/* Личный разворот */}
-          <div className="border-t-2 border-gray-200 pt-5 mt-1">
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
+          <div className="border-t-2 border-border pt-5 mt-1">
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground mb-3">
               <input
                 type="checkbox"
                 checked={form.personal_spread_enabled}
@@ -4351,7 +4351,7 @@ function AlbumFormModal({
                 className="rounded"
                 disabled={loading}
               />
-              <span className="font-semibold text-blue-700">Личный разворот</span> <span className="text-gray-400 font-normal text-xs">(родитель загружает свои фото)</span>
+              <span className="font-semibold text-blue-700">Личный разворот</span> <span className="text-muted-foreground font-normal text-xs">(родитель загружает свои фото)</span>
             </label>
             {form.personal_spread_enabled && (
               <div className="space-y-3 pl-6">
@@ -4368,7 +4368,7 @@ function AlbumFormModal({
                       className={`px-4 py-1.5 rounded-full text-sm border transition-colors ${
                         (form.personal_spread_price_mode ?? 'paid') === v
                           ? 'bg-gray-900 text-white border-gray-900'
-                          : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                          : 'bg-card text-muted-foreground border-border hover:border-border'
                       }`}
                       disabled={loading}
                     >
@@ -4378,25 +4378,25 @@ function AlbumFormModal({
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Мин. фото</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Мин. фото</label>
                     <input type="number" value={form.personal_spread_min}
                       onChange={(e) => set('personal_spread_min', e.target.value)}
                       className="input" min={1} max={12} disabled={loading} />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Макс. фото</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Макс. фото</label>
                     <input type="number" value={form.personal_spread_max}
                       onChange={(e) => set('personal_spread_max', e.target.value)}
                       className="input" min={1} max={12} disabled={loading} />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Цена (₽)</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Цена (₽)</label>
                     <input type="number" value={form.personal_spread_price}
                       onChange={(e) => set('personal_spread_price', e.target.value)}
                       className="input" min={0} disabled={loading} />
                   </div>
                 </div>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-muted-foreground">
                   Родитель загружает до {form.personal_spread_max} своих фото (10×15 см, до 10 МБ каждое).
                   Доплата +{form.personal_spread_price} ₽ —
                   {(form.personal_spread_price_mode ?? 'paid') === 'paid'
@@ -4408,8 +4408,8 @@ function AlbumFormModal({
           </div>
 
           {/* Текст от ученика */}
-          <div className="border-t-2 border-gray-200 pt-5 mt-1">
-            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
+          <div className="border-t-2 border-border pt-5 mt-1">
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground mb-3">
               <input
                 type="checkbox"
                 checked={form.text_enabled}
@@ -4422,7 +4422,7 @@ function AlbumFormModal({
             {form.text_enabled && (
               <div className="space-y-3 pl-6">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
+                  <label className="block text-xs text-muted-foreground mb-1">
                     Тип текста
                   </label>
                   <div className="flex flex-wrap gap-2">
@@ -4434,7 +4434,7 @@ function AlbumFormModal({
                         className={`px-3 py-1.5 rounded-xl text-sm border transition-colors ${
                           form.text_type === v
                             ? 'border-gray-900 bg-gray-900 text-white'
-                            : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                            : 'border-border text-foreground hover:bg-muted'
                         }`}
                         disabled={loading}
                       >
@@ -4444,7 +4444,7 @@ function AlbumFormModal({
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
+                  <label className="block text-xs text-muted-foreground mb-1">
                     Максимум символов
                   </label>
                   <input
@@ -4465,7 +4465,7 @@ function AlbumFormModal({
               (нужен существующий album.id). Самосохраняется при выборе —
               не зависит от кнопки «Сохранить изменения». */}
           {mode === 'edit' && album && (
-            <div className="border-t-2 border-gray-200 pt-5 mt-1">
+            <div className="border-t-2 border-border pt-5 mt-1">
               <span className="font-semibold text-blue-700"><Gift size={14} /> Реферальная программа</span>
               <ReferralProgramControl
                 album={album}
@@ -4477,7 +4477,7 @@ function AlbumFormModal({
           )}
 
           {/* Действия */}
-          <div className="flex gap-3 pt-4 border-t border-gray-100">
+          <div className="flex gap-3 pt-4 border-t border-border">
             <button type="submit" className="btn-primary flex-1" disabled={loading}>
               {loading
                 ? 'Сохраняем...'
@@ -4497,7 +4497,7 @@ function AlbumFormModal({
 
           {/* Архив — только при редактировании */}
           {mode === 'edit' && album && (
-            <div className="pt-5 border-t border-gray-100">
+            <div className="pt-5 border-t border-border">
               {/* РЭ.39.b: Клонировать — полезное действие, не деструктивное.
                   Ставим первым. */}
               {!album.archived && (
@@ -4549,7 +4549,7 @@ function AlbumFormModal({
                   <button
                     type="button"
                     onClick={() => setShowArchiveConfirm(true)}
-                    className="text-sm text-gray-500 hover:text-red-600 transition-colors"
+                    className="text-sm text-muted-foreground hover:text-red-600 transition-colors"
                     disabled={loading}
                   >
                     Отправить альбом в архив
@@ -4603,7 +4603,7 @@ function AlbumFormModal({
                 <button
                   type="button"
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="text-sm text-gray-400 hover:text-red-600 transition-colors mt-3 block"
+                  className="text-sm text-muted-foreground hover:text-red-600 transition-colors mt-3 block"
                   disabled={loading}
                 >
                   Удалить альбом навсегда
@@ -4656,19 +4656,19 @@ function AlbumFormModal({
           onClick={cancelTemplateChange}
         >
           <div
-            className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
+            className="bg-card rounded-lg shadow-xl max-w-md w-full p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold mb-3">
               {pendingTemplateChange.newId ? 'Сменить шаблон?' : 'Снять шаблон?'}
             </h3>
-            <div className="text-sm text-gray-700 space-y-2 mb-4">
+            <div className="text-sm text-foreground space-y-2 mb-4">
               <p>Это пересоздаст структуру альбома:</p>
-              <ul className="list-disc pl-5 text-gray-600 text-sm space-y-1">
+              <ul className="list-disc pl-5 text-muted-foreground text-sm space-y-1">
                 <li>Все вёрстки которые ты делал вручную в редакторе — сохранятся как drafts, но могут некорректно отобразиться в новом шаблоне.</li>
                 <li>Если в новом дизайне другие пропорции — фото могут потребовать повторного кропа.</li>
               </ul>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-muted-foreground mt-2">
                 Если ты ещё не вёрстал альбом в редакторе — ничего не потеряешь.
               </p>
             </div>
@@ -4676,7 +4676,7 @@ function AlbumFormModal({
               <button
                 type="button"
                 onClick={cancelTemplateChange}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-sm"
+                className="px-4 py-2 bg-muted hover:bg-muted text-foreground rounded text-sm"
               >
                 Отмена
               </button>
@@ -4850,7 +4850,7 @@ function TemplatePickerModal({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-card rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Шапка */}
@@ -4865,7 +4865,7 @@ function TemplatePickerModal({
                   setStep('design')
                   setDesignFilter('')
                 }}
-                className="text-gray-600 hover:text-gray-900 text-sm whitespace-nowrap"
+                className="text-muted-foreground hover:text-foreground text-sm whitespace-nowrap"
                 title="Назад к выбору дизайна"
               >
                 ← К дизайнам
@@ -4879,7 +4879,7 @@ function TemplatePickerModal({
                     ? `Шаблоны: ${designNameById(designFilter) ?? ''}`
                     : 'Выбрать шаблон'}
               </h3>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5">
                 {step === 'design'
                   ? 'Сначала выберите дизайн альбома, затем шаблон внутри него.'
                   : 'Шаблон описывает структуру альбома: дизайн + секции + тип листов.'}
@@ -4888,7 +4888,7 @@ function TemplatePickerModal({
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+            className="text-muted-foreground hover:text-foreground text-2xl leading-none"
             aria-label="Закрыть"
           >
             ×
@@ -4898,7 +4898,7 @@ function TemplatePickerModal({
         {/* Содержимое */}
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {loading && (
-            <div className="text-center text-gray-500 py-8">Загрузка...</div>
+            <div className="text-center text-muted-foreground py-8">Загрузка...</div>
           )}
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
@@ -4929,10 +4929,10 @@ function TemplatePickerModal({
                       setDesignFilter(d.id)
                       setStep('templates')
                     }}
-                    className="text-left p-3 rounded-lg border bg-white border-gray-200 hover:border-brand-300 hover:shadow-sm transition-all flex flex-col gap-2 cursor-pointer"
+                    className="text-left p-3 rounded-lg border bg-card border-border hover:border-brand-300 hover:shadow-sm transition-all flex flex-col gap-2 cursor-pointer"
                   >
                     <div
-                      className="w-full bg-gray-50 border border-gray-200 rounded overflow-hidden flex items-center justify-center"
+                      className="w-full bg-muted border border-border rounded overflow-hidden flex items-center justify-center"
                       style={{ aspectRatio: '1 / 1.4', minHeight: '90px' }}
                       dangerouslySetInnerHTML={{
                         __html:
@@ -4941,12 +4941,12 @@ function TemplatePickerModal({
                       }}
                     />
                     <div
-                      className="text-sm font-medium text-gray-900 truncate"
+                      className="text-sm font-medium text-foreground truncate"
                       title={d.name}
                     >
                       {d.name}
                     </div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-muted-foreground">
                       {count > 0 ? `${count} шаблон${count === 1 ? '' : count < 5 ? 'а' : 'ов'}` : 'нет шаблонов'}
                     </div>
                   </button>
@@ -4960,11 +4960,11 @@ function TemplatePickerModal({
             <>
               {/* Мои шаблоны */}
               <section>
-                <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                <h4 className="text-sm font-semibold text-foreground mb-2">
                   Мои шаблоны ({filteredMine.length})
                 </h4>
                 {filteredMine.length === 0 ? (
-                  <div className="text-xs text-gray-400 italic">
+                  <div className="text-xs text-muted-foreground italic">
                     У вас пока нет своих шаблонов в этом дизайне.
                   </div>
                 ) : (
@@ -4985,11 +4985,11 @@ function TemplatePickerModal({
               {/* Готовые от OkeyBook — простой грид (уже отфильтровано
                   по выбранному дизайну в шаге 1, группировка не нужна). */}
               <section>
-                <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                <h4 className="text-sm font-semibold text-foreground mb-2">
                   Готовые от OkeyBook ({filteredGlobals.length})
                 </h4>
                 {filteredGlobals.length === 0 ? (
-                  <div className="text-xs text-gray-400 italic">
+                  <div className="text-xs text-muted-foreground italic">
                     Нет рекомендованных шаблонов от OkeyBook в этом дизайне.
                   </div>
                 ) : (
@@ -5011,18 +5011,18 @@ function TemplatePickerModal({
         </div>
 
         {/* Подвал */}
-        <div className="border-t p-4 flex items-center justify-between gap-2 bg-gray-50">
+        <div className="border-t p-4 flex items-center justify-between gap-2 bg-muted">
           <button
             type="button"
             onClick={() => onPick(null, null, null)}
-            className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 rounded text-sm"
+            className="px-4 py-2 bg-card border border-border hover:bg-muted text-foreground rounded text-sm"
           >
             Создать без шаблона
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 rounded text-sm"
+            className="px-4 py-2 bg-card border border-border hover:bg-muted text-foreground rounded text-sm"
           >
             Отмена
           </button>
@@ -5051,15 +5051,15 @@ function PickerCard({
       disabled={disabled}
       className={`text-left p-3 rounded-lg border transition-all flex flex-col gap-2 ${
         disabled
-          ? 'bg-gray-50 border-gray-200 opacity-60 cursor-not-allowed'
+          ? 'bg-muted border-border opacity-60 cursor-not-allowed'
           : isCurrent
           ? 'bg-brand-50 border-brand-400 ring-2 ring-brand-200'
-          : 'bg-white border-gray-200 hover:border-brand-300 hover:shadow-sm cursor-pointer'
+          : 'bg-card border-border hover:border-brand-300 hover:shadow-sm cursor-pointer'
       }`}
     >
       {/* Превью */}
       <div
-        className="w-full bg-gray-50 border border-gray-200 rounded overflow-hidden flex items-center justify-center"
+        className="w-full bg-muted border border-border rounded overflow-hidden flex items-center justify-center"
         style={{ aspectRatio: '1 / 1.4', minHeight: '90px' }}
         dangerouslySetInnerHTML={{
           __html:
@@ -5067,14 +5067,14 @@ function PickerCard({
             '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;font-size:10px;">нет превью</div>',
         }}
       />
-      <div className="text-sm font-medium text-gray-900 truncate" title={template.display_name}>
+      <div className="text-sm font-medium text-foreground truncate" title={template.display_name}>
         {template.display_name}
       </div>
       {designName && (
-        <div className="text-xs text-gray-500 truncate">{designName}</div>
+        <div className="text-xs text-muted-foreground truncate">{designName}</div>
       )}
       {template.description && (
-        <div className="text-xs text-gray-500 line-clamp-2">{template.description}</div>
+        <div className="text-xs text-muted-foreground line-clamp-2">{template.description}</div>
       )}
       {disabled && (
         <div className="text-xs text-red-600 font-medium">
@@ -5164,15 +5164,15 @@ function CSVImportBlock({
   }
 
   return (
-    <div className="bg-gray-50 rounded-xl p-4 mb-3 space-y-3">
+    <div className="bg-muted rounded-xl p-4 mb-3 space-y-3">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+        <label className="block text-sm font-medium text-foreground mb-1.5">
           Вставьте список учеников
         </label>
-        <p className="text-xs text-gray-500 mb-2">
-          Формат: <code className="bg-white px-1 py-0.5 rounded">ФИО</code>{' '}
-          <span className="text-gray-400">(таб/запятая)</span>{' '}
-          <code className="bg-white px-1 py-0.5 rounded">Класс</code>. Одна строка — один ученик.
+        <p className="text-xs text-muted-foreground mb-2">
+          Формат: <code className="bg-card px-1 py-0.5 rounded">ФИО</code>{' '}
+          <span className="text-muted-foreground">(таб/запятая)</span>{' '}
+          <code className="bg-card px-1 py-0.5 rounded">Класс</code>. Одна строка — один ученик.
           Скопируйте из Excel или Google Таблиц.
         </p>
         <textarea
@@ -5187,23 +5187,23 @@ function CSVImportBlock({
 
       {preview.length > 0 && (
         <div>
-          <div className="text-xs text-gray-500 mb-2">
-            Распознано: <span className="font-semibold text-gray-900">{preview.length}</span>{' '}
+          <div className="text-xs text-muted-foreground mb-2">
+            Распознано: <span className="font-semibold text-foreground">{preview.length}</span>{' '}
             {preview.length === 1 ? 'строка' : preview.length < 5 ? 'строки' : 'строк'}
           </div>
-          <div className="bg-white border border-gray-200 rounded-lg max-h-40 overflow-y-auto">
+          <div className="bg-card border border-border rounded-lg max-h-40 overflow-y-auto">
             <table className="w-full text-xs">
               <tbody>
                 {preview.slice(0, 20).map((r, i) => (
-                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                  <tr key={i} className="border-b border-border last:border-0">
                     <td className="px-3 py-1.5">{r.full_name}</td>
-                    <td className="px-3 py-1.5 text-gray-500 w-20">{r.class}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground w-20">{r.class}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             {preview.length > 20 && (
-              <div className="text-center text-xs text-gray-400 py-1.5 border-t border-gray-100">
+              <div className="text-center text-xs text-muted-foreground py-1.5 border-t border-border">
                 ... и ещё {preview.length - 20}
               </div>
             )}
@@ -5357,7 +5357,7 @@ function TeachersTab({
   void copyLink
 
   if (loading) {
-    return <div className="text-center text-gray-400 text-sm py-8">Загрузка...</div>
+    return <div className="text-center text-muted-foreground text-sm py-8">Загрузка...</div>
   }
 
   return (
@@ -5365,7 +5365,7 @@ function TeachersTab({
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h4 className="font-medium">
           Учителя
-          <span className="text-gray-400 font-normal ml-2">{teachers.length}</span>
+          <span className="text-muted-foreground font-normal ml-2">{teachers.length}</span>
         </h4>
         {canEdit && (
           <button type="button" onClick={handleAdd} className="btn-secondary text-xs px-3 py-1.5" disabled={busy}>
@@ -5374,12 +5374,12 @@ function TeachersTab({
         )}
       </div>
 
-      <div className="bg-gray-50 rounded-xl p-4 mb-4 text-sm text-gray-600">
+      <div className="bg-muted rounded-xl p-4 mb-4 text-sm text-muted-foreground">
         Данные учителей (ФИО, должность, текст от кл. руководителя) заполняет <strong>ответственный родитель</strong> через свою ссылку. Создайте нужное количество карточек здесь — и отправьте ссылку ответственного из соседней вкладки.
       </div>
 
       {teachers.length === 0 ? (
-        <div className="text-center text-gray-400 text-sm py-8 bg-gray-50 rounded-xl">
+        <div className="text-center text-muted-foreground text-sm py-8 bg-muted rounded-xl">
           В альбоме пока нет учителей.
           {canEdit && (
             <>
@@ -5391,11 +5391,11 @@ function TeachersTab({
       ) : (
         <div className="space-y-3">
           {teachers.map((t) => (
-            <div key={t.id} className="border border-gray-100 rounded-xl p-4">
+            <div key={t.id} className="border border-border rounded-xl p-4">
               {editingId === t.id ? (
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">ФИО</label>
+                    <label className="block text-xs text-muted-foreground mb-1">ФИО</label>
                     <input
                       type="text"
                       value={editForm.full_name}
@@ -5406,7 +5406,7 @@ function TeachersTab({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Должность / предмет</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Должность / предмет</label>
                     <input
                       type="text"
                       value={editForm.position}
@@ -5427,13 +5427,13 @@ function TeachersTab({
                       />
                       <span>Классный руководитель</span>
                     </label>
-                    <p className="text-xs text-gray-400 mt-1 ml-6">
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">
                       На альбом отмечается один. При установке этого флага у других учителей альбома он автоматически снимется.
                     </p>
                   </div>
                   {editForm.is_head_teacher && (
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">
+                      <label className="block text-xs text-muted-foreground mb-1">
                         Текст от классного руководителя
                       </label>
                       <textarea
@@ -5444,7 +5444,7 @@ function TeachersTab({
                         placeholder="Напутствие, пожелания выпускникам..."
                         disabled={busy}
                       />
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         Отображается только у классного руководителя
                       </p>
                     </div>
@@ -5473,7 +5473,7 @@ function TeachersTab({
                             href={t.photo_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="block w-24 h-24 rounded-xl overflow-hidden bg-gray-100"
+                            className="block w-24 h-24 rounded-xl overflow-hidden bg-muted"
                             title={t.photo_filename ?? 'Открыть оригинал'}
                           >
                             <img
@@ -5485,7 +5485,7 @@ function TeachersTab({
                           </a>
                           {t.photo_filename && (
                             <div
-                              className="text-xs text-gray-500 mt-1 truncate w-full text-center"
+                              className="text-xs text-muted-foreground mt-1 truncate w-full text-center"
                               title={t.photo_filename}
                             >
                               {t.photo_filename.replace(/\.[^.]+$/, '')}
@@ -5494,7 +5494,7 @@ function TeachersTab({
                         </div>
                       ) : (
                         <div
-                          className="w-24 h-24 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-300 text-3xl"
+                          className="w-24 h-24 rounded-xl bg-muted flex items-center justify-center flex-shrink-0 text-muted-foreground text-3xl"
                           title="Фото не выбрано"
                         >
                           ?
@@ -5503,7 +5503,7 @@ function TeachersTab({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <div className="font-medium">
-                            {t.full_name || <span className="text-gray-400">Имя не заполнено</span>}
+                            {t.full_name || <span className="text-muted-foreground">Имя не заполнено</span>}
                           </div>
                           {t.is_head_teacher && (
                             <span className="badge-blue">Классный руководитель</span>
@@ -5515,10 +5515,10 @@ function TeachersTab({
                           )}
                         </div>
                         {t.position && (
-                          <div className="text-sm text-gray-500 mt-0.5">{t.position}</div>
+                          <div className="text-sm text-muted-foreground mt-0.5">{t.position}</div>
                         )}
                         {t.is_head_teacher && t.description && (
-                          <div className="text-sm text-gray-700 mt-2 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap">
+                          <div className="text-sm text-foreground mt-2 bg-muted rounded-lg p-3 whitespace-pre-wrap">
                             {t.description}
                           </div>
                         )}
@@ -5682,7 +5682,7 @@ function ResponsibleTab({
   }
 
   if (loading) {
-    return <div className="text-center text-gray-400 text-sm py-8">Загрузка...</div>
+    return <div className="text-center text-muted-foreground text-sm py-8">Загрузка...</div>
   }
 
   return (
@@ -5691,13 +5691,13 @@ function ResponsibleTab({
         <h4 className="font-medium">Ответственный родитель</h4>
       </div>
 
-      <div className="bg-gray-50 rounded-xl p-4 mb-4 text-sm text-gray-600">
+      <div className="bg-muted rounded-xl p-4 mb-4 text-sm text-muted-foreground">
         Один из родителей помогает с организацией. По своей ссылке он заполняет данные учителей (ФИО, должность, текст от кл. руководителя).
       </div>
 
       {!responsible ? (
         <div className="text-center py-8">
-          <div className="text-gray-400 text-sm mb-4">
+          <div className="text-muted-foreground text-sm mb-4">
             Ответственный родитель не назначен
           </div>
           {canEdit && (
@@ -5707,11 +5707,11 @@ function ResponsibleTab({
           )}
         </div>
       ) : (
-        <div className="border border-gray-100 rounded-xl p-4">
+        <div className="border border-border rounded-xl p-4">
           {editing ? (
             <div className="space-y-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">ФИО</label>
+                <label className="block text-xs text-muted-foreground mb-1">ФИО</label>
                 <input
                   type="text"
                   value={editForm.full_name}
@@ -5722,7 +5722,7 @@ function ResponsibleTab({
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Телефон</label>
+                <label className="block text-xs text-muted-foreground mb-1">Телефон</label>
                 <input
                   type="tel"
                   value={editForm.phone}
@@ -5753,7 +5753,7 @@ function ResponsibleTab({
                   <div className="flex items-center gap-2 flex-wrap">
                     <div className="font-medium">
                       {responsible.full_name || (
-                        <span className="text-gray-400">Имя не указано</span>
+                        <span className="text-muted-foreground">Имя не указано</span>
                       )}
                     </div>
                     {responsible.submitted_at ? (
@@ -5763,7 +5763,7 @@ function ResponsibleTab({
                     )}
                   </div>
                   {responsible.phone && (
-                    <div className="text-sm text-gray-500 mt-0.5">{responsible.phone}</div>
+                    <div className="text-sm text-muted-foreground mt-0.5">{responsible.phone}</div>
                   )}
                 </div>
               </div>
@@ -6552,7 +6552,7 @@ function PhotosTab({
 
   if (archived) {
     return (
-      <div className="text-center text-gray-500 text-sm py-12">
+      <div className="text-center text-muted-foreground text-sm py-12">
         Альбом в архиве — фотографии удалены из хранилища при архивировании.
         <br />
         Верните альбом из архива, чтобы снова загрузить фото.
@@ -6567,8 +6567,8 @@ function PhotosTab({
         <div className="card p-5 space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>
-              <h4 className="font-medium text-gray-800">Загрузка фотографий</h4>
-              <p className="text-xs text-gray-400 mt-0.5">
+              <h4 className="font-medium text-foreground">Загрузка фотографий</h4>
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Выберите файлы для каждого типа. Сначала загрузятся превью (быстро), затем — оригиналы для печати (дольше).
               </p>
             </div>
@@ -6637,12 +6637,12 @@ function PhotosTab({
                   )}
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <p className="text-2xl font-bold tabular-nums text-gray-900">
+                  <p className="text-2xl font-bold tabular-nums text-foreground">
                     {originalsProgress.done}
-                    <span className="text-gray-400 mx-1">/</span>
+                    <span className="text-muted-foreground mx-1">/</span>
                     {originalsProgress.total}
                   </p>
-                  <p className="text-xs text-gray-500 mt-0.5 tabular-nums">
+                  <p className="text-xs text-muted-foreground mt-0.5 tabular-nums">
                     {(originalsProgress.doneBytes / (1024 * 1024)).toFixed(0)}
                     {' / '}
                     {(originalsProgress.totalBytes / (1024 * 1024)).toFixed(0)} МБ
@@ -6651,7 +6651,7 @@ function PhotosTab({
               </div>
 
               {/* Прогресс-бар — главный визуальный элемент */}
-              <div className="h-3 bg-white rounded-full overflow-hidden border border-gray-200">
+              <div className="h-3 bg-card rounded-full overflow-hidden border border-border">
                 <div
                   className={`h-full rounded-full transition-all duration-300 ${
                     originalsProgress.completed
@@ -6674,9 +6674,9 @@ function PhotosTab({
                   <summary className="cursor-pointer text-amber-800 hover:text-amber-900 font-medium">
                     Показать {originalsProgress.failed} файлов которые не загрузились
                   </summary>
-                  <ul className="mt-2 max-h-40 overflow-y-auto bg-white/60 rounded p-2 space-y-1">
+                  <ul className="mt-2 max-h-40 overflow-y-auto bg-card rounded p-2 space-y-1">
                     {originalsProgress.failedFilenames.map((name, i) => (
-                      <li key={i} className="text-gray-700 truncate" title={name}>
+                      <li key={i} className="text-foreground truncate" title={name}>
                         {name}
                       </li>
                     ))}
@@ -6690,7 +6690,7 @@ function PhotosTab({
                   <button
                     type="button"
                     onClick={() => setOriginalsProgress(null)}
-                    className="text-xs text-gray-500 hover:text-gray-700"
+                    className="text-xs text-muted-foreground hover:text-foreground"
                   >
                     Скрыть
                   </button>
@@ -6705,18 +6705,18 @@ function PhotosTab({
                 const s = upload[t]
                 const pct = s.files.length > 0 && s.uploading ? Math.round(s.done / s.files.length * 100) : 0
                 return (
-                  <div key={t} className="border border-gray-200 rounded-xl p-3">
+                  <div key={t} className="border border-border rounded-xl p-3">
                     <div className="flex items-center justify-between mb-2 gap-2">
-                      <span className="text-sm font-medium text-gray-700">{photoKindLabel(t)}</span>
+                      <span className="text-sm font-medium text-foreground">{photoKindLabel(t)}</span>
                       {s.files.length > 0 && !s.uploading && (
-                        <span className="text-xs text-gray-500">{s.files.length} файлов выбрано</span>
+                        <span className="text-xs text-muted-foreground">{s.files.length} файлов выбрано</span>
                       )}
                       {s.uploading && (
                         <span className="text-xs text-blue-600">{s.done} / {s.files.length}</span>
                       )}
                     </div>
                     {s.uploading ? (
-                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
                           className="h-full bg-blue-500 rounded-full transition-all"
                           style={{ width: `${pct}%` }}
@@ -6728,7 +6728,7 @@ function PhotosTab({
                         multiple
                         accept="image/*"
                         onChange={e => setUploadState(t, { files: Array.from(e.target.files ?? []) })}
-                        className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                        className="block w-full text-xs text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-muted file:text-foreground hover:file:bg-muted"
                       />
                     )}
                   </div>
@@ -6737,11 +6737,11 @@ function PhotosTab({
               return (
                 <>
                   {PHOTO_KINDS_PERSONAL.map(renderUploadCard)}
-                  <div className="pt-3 mt-1 border-t border-gray-200">
-                    <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <div className="pt-3 mt-1 border-t border-border">
+                    <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                       Общий раздел альбома
                     </h5>
-                    <p className="text-[11px] text-gray-400 mt-0.5">
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
                       Фото класса для конца альбома — родители их не выбирают, builder сам раскладывает по разворотам
                     </p>
                   </div>
@@ -6781,7 +6781,7 @@ function PhotosTab({
 
       {/* Галерея */}
       <div className="card p-5 min-h-[420px]">
-        <div className="flex flex-wrap gap-1 mb-4 border-b border-gray-100">
+        <div className="flex flex-wrap gap-1 mb-4 border-b border-border">
           {PHOTO_KINDS_ALL.map(t => (
             <button
               key={t}
@@ -6790,7 +6790,7 @@ function PhotosTab({
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 activeKind === t
                   ? 'border-brand-600 text-brand-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               {photoKindLabel(t)}
@@ -6799,15 +6799,15 @@ function PhotosTab({
         </div>
 
         {loading ? (
-          <div className="text-sm text-gray-400 py-8 text-center">Загрузка...</div>
+          <div className="text-sm text-muted-foreground py-8 text-center">Загрузка...</div>
         ) : photos.length === 0 ? (
-          <div className="text-sm text-gray-400 py-8 text-center">
+          <div className="text-sm text-muted-foreground py-8 text-center">
             Нет загруженных фото{canEdit ? ' — загрузите выше' : ''}
           </div>
         ) : (
           <>
             <div className="flex items-center justify-between mb-3 gap-3">
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-muted-foreground">
                 {photos.length} фото
                 {/* Подсказка сколько без оригинала */}
                 {(() => {
@@ -6838,7 +6838,7 @@ function PhotosTab({
                     type="button"
                     onClick={deleteAllOfKind}
                     disabled={deletingAll}
-                    className="text-xs text-gray-400 hover:text-red-500 disabled:opacity-50 disabled:cursor-wait"
+                    className="text-xs text-muted-foreground hover:text-red-500 disabled:opacity-50 disabled:cursor-wait"
                     title={`Удалить все фото в категории «${photoKindLabel(activeKind)}»`}
                   >
                     {deletingAll ? 'Удаляем…' : <><Trash2 size={16} /> Удалить все ({photos.length})</>}
@@ -6851,7 +6851,7 @@ function PhotosTab({
                 const missingOriginal = photo.has_original === false
                 const uploadingThis = uploadingOriginalFor === photo.id
                 return (
-                  <div key={photo.id} className="relative group aspect-square bg-gray-100 rounded-lg overflow-hidden">
+                  <div key={photo.id} className="relative group aspect-square bg-muted rounded-lg overflow-hidden">
                     <img
                       src={photo.thumb_url}
                       alt={photo.filename}
@@ -6996,20 +6996,20 @@ function ImportTagsModal({
       className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900">Импорт тегов из CSV</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none" type="button">×</button>
+            <h3 className="font-semibold text-foreground">Импорт тегов из CSV</h3>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xl leading-none" type="button">×</button>
           </div>
 
-          <div className="bg-gray-50 rounded-xl p-4 text-sm">
-            <p className="font-medium text-gray-700 mb-2">Формат:</p>
-            <pre className="bg-white border border-gray-200 rounded-lg p-3 text-xs overflow-auto text-gray-700 whitespace-pre">{`child_name,photo_filename
+          <div className="bg-muted rounded-xl p-4 text-sm">
+            <p className="font-medium text-foreground mb-2">Формат:</p>
+            <pre className="bg-card border border-border rounded-lg p-3 text-xs overflow-auto text-foreground whitespace-pre">{`child_name,photo_filename
 Иванов Иван,IMG_001.jpg
 Иванов Иван,IMG_045.jpg
 Петрова Маша,IMG_001.jpg`}</pre>
-            <p className="text-gray-500 text-xs mt-2">
+            <p className="text-muted-foreground text-xs mt-2">
               Имена и имена файлов матчатся без учёта регистра. В альбоме сейчас {childList.length} учеников.
               Одно фото можно привязать к нескольким детям.
             </p>
@@ -7030,12 +7030,12 @@ function ImportTagsModal({
                 Привязано: {result.linked}, пропущено: {result.skipped}
               </div>
               {result.skipped_rows.length > 0 && (
-                <div className="border border-gray-200 rounded-xl p-3 max-h-40 overflow-auto">
-                  <p className="text-xs text-gray-500 mb-2">Пропущенные строки (первые 50):</p>
-                  <ul className="text-xs space-y-1 text-gray-700">
+                <div className="border border-border rounded-xl p-3 max-h-40 overflow-auto">
+                  <p className="text-xs text-muted-foreground mb-2">Пропущенные строки (первые 50):</p>
+                  <ul className="text-xs space-y-1 text-foreground">
                     {result.skipped_rows.map((r, i) => (
                       <li key={i} className="font-mono">
-                        <span className="text-gray-400">[{r.reason}]</span>{' '}
+                        <span className="text-muted-foreground">[{r.reason}]</span>{' '}
                         {r.child_name} → {r.photo_filename}
                       </li>
                     ))}
@@ -7106,7 +7106,7 @@ const LEAD_STATUSES: { id: LeadStatus; label: string; badge: string; btn: string
   { id: 'new',         label: 'Новая',   badge: 'bg-blue-100 text-blue-700',   btn: 'text-blue-700' },
   { id: 'in_progress', label: 'В работе', badge: 'bg-amber-100 text-amber-700', btn: 'text-amber-700' },
   { id: 'done',        label: 'Заказ',   badge: 'bg-green-100 text-green-700', btn: 'text-green-700' },
-  { id: 'rejected',    label: 'Отказ',   badge: 'bg-gray-100 text-gray-500',   btn: 'text-gray-500' },
+  { id: 'rejected',    label: 'Отказ',   badge: 'bg-muted text-muted-foreground',   btn: 'text-muted-foreground' },
 ]
 
 function LeadsModal({
@@ -7199,25 +7199,25 @@ function LeadsModal({
       onMouseDown={handleBackdropMouseDown}
       onMouseUp={handleBackdropMouseUp}
     >
-      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-xl my-auto">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl">
+      <div className="bg-card rounded-2xl max-w-3xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between sticky top-0 bg-card rounded-t-2xl">
           <div>
             <h3 className="text-lg font-semibold">Заявки</h3>
-            <div className="text-xs text-gray-500 mt-0.5">
+            <div className="text-xs text-muted-foreground mt-0.5">
               Реферальные заявки от родителей других классов
             </div>
           </div>
           <button
             onClick={onClose}
             type="button"
-            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            className="text-muted-foreground hover:text-foreground text-xl leading-none"
           >
             ×
           </button>
         </div>
 
         {/* Фильтр по статусу */}
-        <div className="px-6 pt-4 border-b border-gray-100 flex gap-1 overflow-x-auto">
+        <div className="px-6 pt-4 border-b border-border flex gap-1 overflow-x-auto">
           {([
             { id: 'all' as const, label: 'Все' },
             ...LEAD_STATUSES.map(s => ({ id: s.id, label: s.label })),
@@ -7231,11 +7231,11 @@ function LeadsModal({
                 className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   filter === t.id
                     ? 'border-brand-600 text-brand-700'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {t.label}
-                <span className="text-gray-400 font-normal ml-1.5">{c}</span>
+                <span className="text-muted-foreground font-normal ml-1.5">{c}</span>
               </button>
             )
           })}
@@ -7243,9 +7243,9 @@ function LeadsModal({
 
         <div className="p-6">
           {loading ? (
-            <div className="text-center text-gray-400 text-sm py-8">Загружаем заявки...</div>
+            <div className="text-center text-muted-foreground text-sm py-8">Загружаем заявки...</div>
           ) : visible.length === 0 ? (
-            <div className="text-center text-gray-400 text-sm py-8">
+            <div className="text-center text-muted-foreground text-sm py-8">
               {filter === 'all' ? 'Заявок пока нет' : 'Нет заявок в этом статусе'}
             </div>
           ) : (
@@ -7253,13 +7253,13 @@ function LeadsModal({
               {visible.map(lead => {
                 const st = LEAD_STATUSES.find(s => s.id === lead.status) ?? LEAD_STATUSES[0]
                 return (
-                  <div key={lead.id} className="border border-gray-200 rounded-xl p-4">
+                  <div key={lead.id} className="border border-border rounded-xl p-4">
                     <div className="flex items-start justify-between gap-3 mb-2">
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium text-gray-900">{lead.name}</p>
+                        <p className="font-medium text-foreground">{lead.name}</p>
                         <a
                           href={`tel:${lead.phone.replace(/\s+/g, '')}`}
-                          className="text-sm text-gray-600 hover:text-gray-900"
+                          className="text-sm text-muted-foreground hover:text-foreground"
                         >
                           {lead.phone}
                         </a>
@@ -7270,7 +7270,7 @@ function LeadsModal({
                     </div>
 
                     {(lead.city || lead.school || lead.class_name) && (
-                      <p className="text-sm text-gray-600 mb-2">
+                      <p className="text-sm text-muted-foreground mb-2">
                         {[lead.city, lead.school, lead.class_name].filter(Boolean).join(' · ')}
                       </p>
                     )}
@@ -7283,8 +7283,8 @@ function LeadsModal({
                       </p>
                     )}
 
-                    <p className="text-xs text-gray-400 mb-3">
-                      От: <strong className="text-gray-500">{lead.referrer_name}</strong>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      От: <strong className="text-muted-foreground">{lead.referrer_name}</strong>
                       {lead.referrer_album && ` · ${lead.referrer_album}`}
                       {' · '}
                       {new Date(lead.created_at).toLocaleDateString('ru-RU', {
@@ -7295,7 +7295,7 @@ function LeadsModal({
                     </p>
 
                     {canEdit && (
-                      <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-gray-100">
+                      <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border">
                         {LEAD_STATUSES.map(s => (
                           <button
                             key={s.id}
@@ -7304,8 +7304,8 @@ function LeadsModal({
                             disabled={lead.status === s.id}
                             className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${
                               lead.status === s.id
-                                ? 'border-gray-400 bg-gray-50 text-gray-700 font-medium cursor-default'
-                                : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                                ? 'border-border bg-muted text-foreground font-medium cursor-default'
+                                : 'border-border text-muted-foreground hover:border-border hover:text-foreground'
                             }`}
                           >
                             {s.label}
@@ -7502,11 +7502,11 @@ function QuotesModal({
       onMouseDown={handleBackdropMouseDown}
       onMouseUp={handleBackdropMouseUp}
     >
-      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-xl my-auto">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl z-10">
+      <div className="bg-card rounded-2xl max-w-3xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between sticky top-0 bg-card rounded-t-2xl z-10">
           <div>
             <h3 className="text-lg font-semibold">Цитаты</h3>
-            <div className="text-xs text-gray-500 mt-0.5">
+            <div className="text-xs text-muted-foreground mt-0.5">
               Свои цитаты + глобальные (общие для всех арендаторов)
             </div>
           </div>
@@ -7523,7 +7523,7 @@ function QuotesModal({
             <button
               onClick={onClose}
               type="button"
-              className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+              className="text-muted-foreground hover:text-foreground text-xl leading-none"
             >
               ×
             </button>
@@ -7532,7 +7532,7 @@ function QuotesModal({
 
         {/* Фильтр + поиск */}
         {!showForm && (
-          <div className="px-6 pt-4 pb-3 border-b border-gray-100 flex items-center gap-3 flex-wrap">
+          <div className="px-6 pt-4 pb-3 border-b border-border flex items-center gap-3 flex-wrap">
             <div className="flex gap-1 overflow-x-auto">
               {([
                 { id: 'all' as const, label: 'Все' },
@@ -7546,11 +7546,11 @@ function QuotesModal({
                   className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                     filter === t.id
                       ? 'bg-gray-900 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-muted text-muted-foreground hover:bg-muted'
                   }`}
                 >
                   {t.label}
-                  <span className={`font-normal ml-1.5 ${filter === t.id ? 'text-gray-300' : 'text-gray-400'}`}>
+                  <span className={`font-normal ml-1.5 ${filter === t.id ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
                     {counts[t.id]}
                   </span>
                 </button>
@@ -7571,14 +7571,14 @@ function QuotesModal({
           {/* Форма создания/редактирования */}
           {showForm && (
             <div className="space-y-4">
-              <h4 className="font-medium text-gray-800">
+              <h4 className="font-medium text-foreground">
                 {editingQuote ? 'Редактирование цитаты' : 'Новая цитата'}
               </h4>
 
               <div>
-                <label className="text-xs text-gray-500 block mb-1">
+                <label className="text-xs text-muted-foreground block mb-1">
                   Текст цитаты
-                  <span className="text-gray-400 ml-2">
+                  <span className="text-muted-foreground ml-2">
                     {formText.length} / 500
                   </span>
                 </label>
@@ -7595,7 +7595,7 @@ function QuotesModal({
               </div>
 
               <div>
-                <label className="text-xs text-gray-500 block mb-1">
+                <label className="text-xs text-muted-foreground block mb-1">
                   Категория
                 </label>
                 <input
@@ -7618,7 +7618,7 @@ function QuotesModal({
                         className={`text-xs px-2 py-1 rounded-lg border transition-colors ${
                           formCategory === c
                             ? 'border-gray-900 bg-gray-900 text-white'
-                            : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                            : 'border-border text-muted-foreground hover:border-border'
                         }`}
                       >
                         {c}
@@ -7626,7 +7626,7 @@ function QuotesModal({
                     ))}
                   </div>
                 )}
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-xs text-muted-foreground mt-2">
                   Например: мотивация, юмор, дружба. Можно выбрать из существующих выше или ввести новую.
                 </p>
               </div>
@@ -7656,9 +7656,9 @@ function QuotesModal({
           {!showForm && (
             <>
               {loading ? (
-                <div className="text-center text-gray-400 text-sm py-8">Загружаем...</div>
+                <div className="text-center text-muted-foreground text-sm py-8">Загружаем...</div>
               ) : visible.length === 0 ? (
-                <div className="text-center text-gray-400 text-sm py-8">
+                <div className="text-center text-muted-foreground text-sm py-8">
                   {search
                     ? 'Ничего не найдено'
                     : filter === 'own'
@@ -7682,7 +7682,7 @@ function QuotesModal({
                 <div className="space-y-5">
                   {Object.keys(byCategory).sort().map(cat => (
                     <div key={cat}>
-                      <h5 className="text-xs uppercase tracking-wide text-gray-400 mb-2">
+                      <h5 className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
                         {cat}
                         <span className="ml-2 normal-case">{byCategory[cat].length}</span>
                       </h5>
@@ -7690,21 +7690,21 @@ function QuotesModal({
                         {byCategory[cat].map(q => (
                           <div
                             key={q.id}
-                            className="border border-gray-200 rounded-xl p-3 group hover:border-gray-300 transition-colors"
+                            className="border border-border rounded-xl p-3 group hover:border-border transition-colors"
                           >
                             <div className="flex items-start justify-between gap-3">
-                              <p className="text-sm text-gray-800 flex-1 whitespace-pre-wrap">
+                              <p className="text-sm text-foreground flex-1 whitespace-pre-wrap">
                                 {q.text}
                               </p>
                               <div className="flex items-center gap-2 flex-shrink-0">
                                 {q.is_global && (
-                                  <span className="text-[10px] uppercase tracking-wide text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                                     глобальная
                                   </span>
                                 )}
                                 {q.use_count > 0 && (
                                   <span
-                                    className="text-[10px] text-gray-500 bg-green-50 px-1.5 py-0.5 rounded"
+                                    className="text-[10px] text-green-700 bg-green-50 px-1.5 py-0.5 rounded"
                                     title={`Выбрана ${q.use_count} учениками`}
                                   >
                                     <Check size={14} className="inline" /> {q.use_count}
@@ -7713,11 +7713,11 @@ function QuotesModal({
                               </div>
                             </div>
                             {canEdit && !q.is_global && (
-                              <div className="flex items-center gap-3 mt-2 pt-2 border-t border-gray-100 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="flex items-center gap-3 mt-2 pt-2 border-t border-border opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
                                   type="button"
                                   onClick={() => startEdit(q)}
-                                  className="text-xs text-gray-500 hover:text-gray-800"
+                                  className="text-xs text-muted-foreground hover:text-foreground"
                                 >
                                   Изменить
                                 </button>
@@ -7872,18 +7872,18 @@ function ReminderModal({
       onMouseDown={handleBackdropMouseDown}
       onMouseUp={handleBackdropMouseUp}
     >
-      <div className="bg-white rounded-2xl max-w-2xl w-full shadow-xl my-auto">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <div className="bg-card rounded-2xl max-w-2xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold">Напоминание родителям</h3>
-            <div className="text-xs text-gray-500 mt-0.5">
+            <div className="text-xs text-muted-foreground mt-0.5">
               Скопируйте текст и отправьте в чат класса
             </div>
           </div>
           <button
             onClick={onClose}
             type="button"
-            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            className="text-muted-foreground hover:text-foreground text-xl leading-none"
           >
             ×
           </button>
@@ -7892,7 +7892,7 @@ function ReminderModal({
         <div className="p-6 space-y-4">
           {/* Фильтр кого включить */}
           <div>
-            <label className="text-xs text-gray-500 block mb-2">
+            <label className="text-xs text-muted-foreground block mb-2">
               Кого включить
             </label>
             <div className="flex gap-1 flex-wrap">
@@ -7909,11 +7909,11 @@ function ReminderModal({
                   className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${
                     filter === f.id
                       ? 'border-gray-900 bg-gray-900 text-white font-medium'
-                      : 'border-gray-200 text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed'
+                      : 'border-border text-muted-foreground hover:border-border disabled:opacity-40 disabled:cursor-not-allowed'
                   }`}
                 >
                   {f.label}
-                  <span className={`font-normal ml-1.5 ${filter === f.id ? 'text-gray-300' : 'text-gray-400'}`}>
+                  <span className={`font-normal ml-1.5 ${filter === f.id ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
                     {counts[f.id]}
                   </span>
                 </button>
@@ -7923,7 +7923,7 @@ function ReminderModal({
 
           {/* Группировка */}
           {hasMultipleClasses && (
-            <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600">
+            <label className="flex items-center gap-2 cursor-pointer text-sm text-muted-foreground">
               <input
                 type="checkbox"
                 checked={groupByClass}
@@ -7936,13 +7936,13 @@ function ReminderModal({
 
           {/* Превью */}
           {targets.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-sm">
+            <div className="text-center py-8 text-muted-foreground text-sm">
               Нет учеников для напоминания в выбранном фильтре
             </div>
           ) : (
             <>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">
+                <label className="text-xs text-muted-foreground block mb-1">
                   Текст · {targets.length} учеников
                 </label>
                 <textarea
@@ -8187,11 +8187,11 @@ function TeamModal({
       onMouseDown={handleBackdropMouseDown}
       onMouseUp={handleBackdropMouseUp}
     >
-      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-xl my-auto">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl z-10">
+      <div className="bg-card rounded-2xl max-w-3xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between sticky top-0 bg-card rounded-t-2xl z-10">
           <div>
             <h3 className="text-lg font-semibold">Команда</h3>
-            <div className="text-xs text-gray-500 mt-0.5">
+            <div className="text-xs text-muted-foreground mt-0.5">
               Сотрудники вашего аккаунта и активные приглашения
             </div>
           </div>
@@ -8208,7 +8208,7 @@ function TeamModal({
             <button
               onClick={onClose}
               type="button"
-              className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+              className="text-muted-foreground hover:text-foreground text-xl leading-none"
             >
               ×
             </button>
@@ -8217,18 +8217,18 @@ function TeamModal({
 
         {/* Табы */}
         {!showInviteForm && (
-          <div className="px-6 pt-4 border-b border-gray-100 flex gap-1">
+          <div className="px-6 pt-4 border-b border-border flex gap-1">
             <button
               type="button"
               onClick={() => setTab('users')}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'users'
                   ? 'border-brand-600 text-brand-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               Сотрудники
-              <span className="text-gray-400 font-normal ml-1.5">{users.length}</span>
+              <span className="text-muted-foreground font-normal ml-1.5">{users.length}</span>
             </button>
             <button
               type="button"
@@ -8236,11 +8236,11 @@ function TeamModal({
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'invitations'
                   ? 'border-brand-600 text-brand-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               Приглашения
-              <span className="text-gray-400 font-normal ml-1.5">{invitations.length}</span>
+              <span className="text-muted-foreground font-normal ml-1.5">{invitations.length}</span>
             </button>
           </div>
         )}
@@ -8249,10 +8249,10 @@ function TeamModal({
           {/* Форма приглашения */}
           {showInviteForm ? (
             <div className="space-y-4">
-              <h4 className="font-medium text-gray-800">Новое приглашение</h4>
+              <h4 className="font-medium text-foreground">Новое приглашение</h4>
 
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Email</label>
+                <label className="text-xs text-muted-foreground block mb-1">Email</label>
                 <input
                   type="email"
                   value={inviteEmail}
@@ -8265,15 +8265,15 @@ function TeamModal({
               </div>
 
               <div>
-                <label className="text-xs text-gray-500 block mb-2">Роль</label>
+                <label className="text-xs text-muted-foreground block mb-2">Роль</label>
                 <div className="space-y-2">
                   {(['owner', 'manager', 'viewer'] as const).map(r => (
                     <label
                       key={r}
                       className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
                         inviteRole === r
-                          ? 'border-gray-900 bg-gray-50'
-                          : 'border-gray-200 hover:border-gray-300'
+                          ? 'border-gray-900 bg-muted'
+                          : 'border-border hover:border-border'
                       }`}
                     >
                       <input
@@ -8284,8 +8284,8 @@ function TeamModal({
                         className="mt-0.5"
                       />
                       <div>
-                        <div className="text-sm font-medium text-gray-900">{ROLE_LABELS[r]}</div>
-                        <div className="text-xs text-gray-500">{ROLE_DESCRIPTIONS[r]}</div>
+                        <div className="text-sm font-medium text-foreground">{ROLE_LABELS[r]}</div>
+                        <div className="text-xs text-muted-foreground">{ROLE_DESCRIPTIONS[r]}</div>
                       </div>
                     </label>
                   ))}
@@ -8322,11 +8322,11 @@ function TeamModal({
               </div>
             </div>
           ) : loading ? (
-            <div className="text-center text-gray-400 text-sm py-8">Загружаем...</div>
+            <div className="text-center text-muted-foreground text-sm py-8">Загружаем...</div>
           ) : tab === 'users' ? (
             // ========== СОТРУДНИКИ ==========
             users.length === 0 ? (
-              <div className="text-center text-gray-400 text-sm py-8">
+              <div className="text-center text-muted-foreground text-sm py-8">
                 Кроме вас пока никого.
                 <div className="mt-3">
                   <button
@@ -8346,17 +8346,17 @@ function TeamModal({
                     <div
                       key={u.id}
                       className={`border rounded-xl p-4 ${
-                        isSelf ? 'border-gray-300 bg-gray-50' : 'border-gray-200'
+                        isSelf ? 'border-border bg-muted' : 'border-border'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3 mb-2">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-medium text-gray-900 truncate">
+                            <p className="font-medium text-foreground truncate">
                               {u.full_name || u.email}
                             </p>
                             {isSelf && (
-                              <span className="text-[10px] uppercase tracking-wide text-gray-500 bg-white border border-gray-200 px-1.5 py-0.5 rounded">
+                              <span className="text-[10px] uppercase tracking-wide text-muted-foreground bg-card border border-border px-1.5 py-0.5 rounded">
                                 это вы
                               </span>
                             )}
@@ -8367,15 +8367,15 @@ function TeamModal({
                             )}
                           </div>
                           {u.full_name && (
-                            <p className="text-sm text-gray-500 truncate">{u.email}</p>
+                            <p className="text-sm text-muted-foreground truncate">{u.email}</p>
                           )}
                         </div>
-                        <div className="text-xs text-gray-400 whitespace-nowrap">
+                        <div className="text-xs text-muted-foreground whitespace-nowrap">
                           {formatLastLogin(u.last_login)}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-gray-100">
+                      <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border">
                         {(['owner', 'manager', 'viewer'] as const).map(r => (
                           <button
                             key={r}
@@ -8385,10 +8385,10 @@ function TeamModal({
                             title={isSelf ? 'Нельзя сменить свою роль' : ''}
                             className={`text-xs px-2.5 py-1 rounded-lg border transition-all ${
                               u.role === r
-                                ? 'border-gray-400 bg-white text-gray-800 font-medium cursor-default'
+                                ? 'border-border bg-card text-foreground font-medium cursor-default'
                                 : isSelf
-                                ? 'border-gray-200 text-gray-300 cursor-not-allowed'
-                                : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                                ? 'border-border text-muted-foreground cursor-not-allowed'
+                                : 'border-border text-muted-foreground hover:border-border hover:text-foreground'
                             }`}
                           >
                             {ROLE_LABELS[r]}
@@ -8412,7 +8412,7 @@ function TeamModal({
           ) : (
             // ========== ПРИГЛАШЕНИЯ ==========
             invitations.length === 0 ? (
-              <div className="text-center text-gray-400 text-sm py-8">
+              <div className="text-center text-muted-foreground text-sm py-8">
                 Нет активных приглашений
                 <div className="mt-3">
                   <button
@@ -8431,11 +8431,11 @@ function TeamModal({
                     (new Date(inv.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
                   )
                   return (
-                    <div key={inv.id} className="border border-gray-200 rounded-xl p-4">
+                    <div key={inv.id} className="border border-border rounded-xl p-4">
                       <div className="flex items-start justify-between gap-3 mb-2">
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium text-gray-900 truncate">{inv.email}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">
+                          <p className="font-medium text-foreground truncate">{inv.email}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
                             Роль: <strong>{ROLE_LABELS[inv.role]}</strong>
                             {inv.invited_by_name && (
                               <> · пригласил(а) {inv.invited_by_name}</>
@@ -8450,7 +8450,7 @@ function TeamModal({
                               ? 'bg-red-50 text-red-600'
                               : expiresIn <= 3
                               ? 'bg-amber-50 text-amber-700'
-                              : 'bg-gray-100 text-gray-600'
+                              : 'bg-muted text-muted-foreground'
                           }`}
                         >
                           {expiresIn <= 0
@@ -8461,11 +8461,11 @@ function TeamModal({
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                      <div className="flex items-center gap-2 pt-2 border-t border-border">
                         <button
                           type="button"
                           onClick={() => copyInviteLink(inv)}
-                          className="text-xs text-gray-600 hover:text-gray-900 font-medium"
+                          className="text-xs text-muted-foreground hover:text-foreground font-medium"
                         >
                           Скопировать ссылку
                         </button>
@@ -8732,18 +8732,18 @@ function SettingsModal({
       onMouseDown={handleBackdropMouseDown}
       onMouseUp={handleBackdropMouseUp}
     >
-      <div className="bg-white rounded-2xl max-w-xl w-full shadow-xl my-auto">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl z-10">
+      <div className="bg-card rounded-2xl max-w-xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between sticky top-0 bg-card rounded-t-2xl z-10">
           <div>
             <h3 className="text-lg font-semibold">Настройки</h3>
-            <div className="text-xs text-gray-500 mt-0.5">
+            <div className="text-xs text-muted-foreground mt-0.5">
               Параметры аккаунта и пароль
             </div>
           </div>
           <button
             onClick={onClose}
             type="button"
-            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            className="text-muted-foreground hover:text-foreground text-xl leading-none"
           >
             ×
           </button>
@@ -8751,14 +8751,14 @@ function SettingsModal({
 
         {/* Табы — показываем только если есть доступ к обоим */}
         {isOwner && (
-          <div className="px-6 pt-4 border-b border-gray-100 flex gap-1">
+          <div className="px-6 pt-4 border-b border-border flex gap-1">
             <button
               type="button"
               onClick={() => setTab('account')}
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'account'
                   ? 'border-brand-600 text-brand-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               Аккаунт
@@ -8769,7 +8769,7 @@ function SettingsModal({
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'branding'
                   ? 'border-brand-600 text-brand-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               Брендинг
@@ -8780,7 +8780,7 @@ function SettingsModal({
               className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'password'
                   ? 'border-brand-600 text-brand-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               Пароль
@@ -8792,11 +8792,11 @@ function SettingsModal({
           {/* ========== Вкладка АККАУНТ ========== */}
           {isOwner && tab === 'account' && (
             loadingTenant ? (
-              <div className="text-center text-gray-400 text-sm py-8">Загружаем...</div>
+              <div className="text-center text-muted-foreground text-sm py-8">Загружаем...</div>
             ) : tenant ? (
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">
+                  <label className="text-xs text-muted-foreground block mb-1">
                     Название <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -8811,7 +8811,7 @@ function SettingsModal({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-gray-500 block mb-1">Город</label>
+                    <label className="text-xs text-muted-foreground block mb-1">Город</label>
                     <input
                       type="text"
                       value={city}
@@ -8821,7 +8821,7 @@ function SettingsModal({
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 block mb-1">Телефон</label>
+                    <label className="text-xs text-muted-foreground block mb-1">Телефон</label>
                     <input
                       type="tel"
                       value={phone}
@@ -8834,7 +8834,7 @@ function SettingsModal({
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">Email</label>
+                  <label className="text-xs text-muted-foreground block mb-1">Email</label>
                   <input
                     type="email"
                     value={email}
@@ -8855,27 +8855,27 @@ function SettingsModal({
                 </button>
 
                 {/* Read-only блок: план, лимиты, slug */}
-                <div className="mt-6 pt-4 border-t border-gray-100 space-y-2">
-                  <h5 className="text-xs uppercase tracking-wide text-gray-400">
+                <div className="mt-6 pt-4 border-t border-border space-y-2">
+                  <h5 className="text-xs uppercase tracking-wide text-muted-foreground">
                     Тариф
                   </h5>
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <div className="text-xs text-gray-500">План</div>
-                      <div className="font-medium text-gray-800">
+                      <div className="text-xs text-muted-foreground">План</div>
+                      <div className="font-medium text-foreground">
                         {PLAN_LABELS[tenant.plan] ?? tenant.plan}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-500">Лимит альбомов</div>
-                      <div className="font-medium text-gray-800">
+                      <div className="text-xs text-muted-foreground">Лимит альбомов</div>
+                      <div className="font-medium text-foreground">
                         {tenant.max_albums}
                       </div>
                     </div>
                     {tenant.plan_expires && (
                       <div className="col-span-2">
-                        <div className="text-xs text-gray-500">Действует до</div>
-                        <div className="font-medium text-gray-800">
+                        <div className="text-xs text-muted-foreground">Действует до</div>
+                        <div className="font-medium text-foreground">
                           {new Date(tenant.plan_expires).toLocaleDateString('ru-RU', {
                             day: 'numeric', month: 'long', year: 'numeric',
                           })}
@@ -8883,39 +8883,39 @@ function SettingsModal({
                       </div>
                     )}
                     <div>
-                      <div className="text-xs text-gray-500">Идентификатор</div>
-                      <div className="font-mono text-xs text-gray-700">
+                      <div className="text-xs text-muted-foreground">Идентификатор</div>
+                      <div className="font-mono text-xs text-foreground">
                         {tenant.slug}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-500">Создан</div>
-                      <div className="text-xs text-gray-700">
+                      <div className="text-xs text-muted-foreground">Создан</div>
+                      <div className="text-xs text-foreground">
                         {new Date(tenant.created_at).toLocaleDateString('ru-RU')}
                       </div>
                     </div>
                   </div>
-                  <p className="text-xs text-gray-400 mt-2">
+                  <p className="text-xs text-muted-foreground mt-2">
                     Для смены тарифа или лимитов обратитесь в поддержку.
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="text-center text-gray-400 text-sm py-8">Нет данных</div>
+              <div className="text-center text-muted-foreground text-sm py-8">Нет данных</div>
             )
           )}
 
           {/* ========== Вкладка БРЕНДИНГ ========== */}
           {isOwner && tab === 'branding' && (
             loadingTenant ? (
-              <div className="text-center text-gray-400 text-sm py-8">Загружаем...</div>
+              <div className="text-center text-muted-foreground text-sm py-8">Загружаем...</div>
             ) : tenant ? (
               <div className="space-y-5">
                 {/* Логотип */}
                 <div>
-                  <label className="text-xs text-gray-500 block mb-2">
+                  <label className="text-xs text-muted-foreground block mb-2">
                     Логотип
-                    <span className="text-gray-400 ml-2">PNG или JPG до 5 МБ · будет обрезан до квадрата</span>
+                    <span className="text-muted-foreground ml-2">PNG или JPG до 5 МБ · будет обрезан до квадрата</span>
                   </label>
                   <div className="flex items-center gap-4">
                     {tenant.logo_url ? (
@@ -8923,10 +8923,10 @@ function SettingsModal({
                         key={logoPreviewKey}
                         src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${tenant.logo_url}?t=${logoPreviewKey}`}
                         alt="Логотип"
-                        className="w-16 h-16 rounded-lg object-cover border border-gray-200"
+                        className="w-16 h-16 rounded-lg object-cover border border-border"
                       />
                     ) : (
-                      <div className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 text-xs border border-gray-200">
+                      <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center text-muted-foreground text-xs border border-border">
                         Нет
                       </div>
                     )}
@@ -8964,16 +8964,16 @@ function SettingsModal({
 
                 {/* Цвет бренда */}
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">
+                  <label className="text-xs text-muted-foreground block mb-1">
                     Фирменный цвет
-                    <span className="text-gray-400 ml-2">HEX вида #RRGGBB</span>
+                    <span className="text-muted-foreground ml-2">HEX вида #RRGGBB</span>
                   </label>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
                       value={brandColor || '#3b82f6'}
                       onChange={e => setBrandColor(e.target.value)}
-                      className="h-10 w-14 rounded border border-gray-200 cursor-pointer"
+                      className="h-10 w-14 rounded border border-border cursor-pointer"
                       disabled={savingBranding}
                     />
                     <input
@@ -8988,7 +8988,7 @@ function SettingsModal({
                       <button
                         type="button"
                         onClick={() => setBrandColor('')}
-                        className="text-xs text-gray-500 hover:text-gray-800"
+                        className="text-xs text-muted-foreground hover:text-foreground"
                         disabled={savingBranding}
                       >
                         Сбросить
@@ -8999,9 +8999,9 @@ function SettingsModal({
 
                 {/* Welcome-text */}
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">
+                  <label className="text-xs text-muted-foreground block mb-1">
                     Приветствие для родителей
-                    <span className="text-gray-400 ml-2">
+                    <span className="text-muted-foreground ml-2">
                       {welcomeText.length} / 1000 · показывается на первом шаге
                     </span>
                   </label>
@@ -9018,9 +9018,9 @@ function SettingsModal({
 
                 {/* Footer-text */}
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">
+                  <label className="text-xs text-muted-foreground block mb-1">
                     Подпись внизу страницы
-                    <span className="text-gray-400 ml-2">
+                    <span className="text-muted-foreground ml-2">
                       {footerText.length} / 500
                     </span>
                   </label>
@@ -9044,25 +9044,25 @@ function SettingsModal({
                   >
                     {savingBranding ? 'Сохраняю...' : 'Сохранить брендинг'}
                   </button>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-muted-foreground">
                     Логотип сохраняется сразу при загрузке
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="text-center text-gray-400 text-sm py-8">Нет данных</div>
+              <div className="text-center text-muted-foreground text-sm py-8">Нет данных</div>
             )
           )}
 
           {/* ========== Вкладка ПАРОЛЬ ========== */}
           {tab === 'password' && (
             <div className="space-y-4">
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 При смене пароля вы будете разлогинены на других устройствах.
               </p>
 
               <div>
-                <label className="text-xs text-gray-500 block mb-1">
+                <label className="text-xs text-muted-foreground block mb-1">
                   Текущий пароль
                 </label>
                 <input
@@ -9076,8 +9076,8 @@ function SettingsModal({
               </div>
 
               <div>
-                <label className="text-xs text-gray-500 block mb-1">
-                  Новый пароль <span className="text-gray-400">(не короче 8 символов)</span>
+                <label className="text-xs text-muted-foreground block mb-1">
+                  Новый пароль <span className="text-muted-foreground">(не короче 8 символов)</span>
                 </label>
                 <input
                   type="password"
@@ -9091,7 +9091,7 @@ function SettingsModal({
               </div>
 
               <div>
-                <label className="text-xs text-gray-500 block mb-1">
+                <label className="text-xs text-muted-foreground block mb-1">
                   Повторите новый пароль
                 </label>
                 <input
@@ -9165,8 +9165,8 @@ function AlbumDailyChart({ daily }: { daily: { date: string; submitted: number; 
   }
 
   return (
-    <div className="bg-gray-50 rounded-xl p-4 overflow-x-auto">
-      <div className="flex gap-4 mb-2 text-xs text-gray-500">
+    <div className="bg-muted rounded-xl p-4 overflow-x-auto">
+      <div className="flex gap-4 mb-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-3 h-0.5 bg-green-500 rounded" />Завершили
         </span>
@@ -9255,16 +9255,16 @@ function SpreadTab({ spreadData, album }: {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-gray-800">
+        <h3 className="font-semibold text-foreground">
           Личный разворот
           {withPhotos.length > 0 && (
-            <span className="ml-2 text-sm font-normal text-gray-400">
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
               {withPhotos.length} чел. · {totalPhotos} фото
             </span>
           )}
         </h3>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-400">{min}–{max} фото · +{price} ₽</span>
+          <span className="text-xs text-muted-foreground">{min}–{max} фото · +{price} ₽</span>
           {withPhotos.length > 0 && (
             <button
               onClick={downloadAll}
@@ -9278,34 +9278,34 @@ function SpreadTab({ spreadData, album }: {
       </div>
 
       {withPhotos.length === 0 ? (
-        <p className="text-sm text-gray-400 text-center py-8">
+        <p className="text-sm text-muted-foreground text-center py-8">
           Пока никто не загружал фото для личного разворота
         </p>
       ) : (
         <div className="space-y-3">
           {withPhotos.map(c => (
-            <div key={c.child_id} className="border border-gray-100 rounded-xl overflow-hidden">
+            <div key={c.child_id} className="border border-border rounded-xl overflow-hidden">
               {/* Строка ученика */}
               <button
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 text-left"
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted text-left"
                 onClick={() => setExpanded(expanded === c.child_id ? null : c.child_id)}
               >
                 <div className="flex items-center gap-3">
                   <span className="font-medium text-sm">{c.full_name}</span>
-                  <span className="text-xs text-gray-400">{c.class}</span>
+                  <span className="text-xs text-muted-foreground">{c.class}</span>
                   <span className={`text-xs font-medium ${c.photos.length < min ? 'text-amber-500' : 'text-green-600'}`}>
                     {c.photos.length} фото{c.photos.length < min ? ` (мало, нужно ${min})` : ''}
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-amber-600 text-sm font-medium">+{price} ₽</span>
-                  <span className="text-gray-400 text-xs">{expanded === c.child_id ? '▲' : '▼'}</span>
+                  <span className="text-muted-foreground text-xs">{expanded === c.child_id ? '▲' : '▼'}</span>
                 </div>
               </button>
 
               {/* Превью фото */}
               {expanded === c.child_id && (
-                <div className="px-4 pb-4 border-t border-gray-50">
+                <div className="px-4 pb-4 border-t border-border">
                   <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mt-3">
                     {c.photos.map((p, i) => (
                       <a
@@ -9315,7 +9315,7 @@ function SpreadTab({ spreadData, album }: {
                         rel="noopener noreferrer"
                         download={p.filename}
                         title={p.filename}
-                        className="relative aspect-square block rounded-lg overflow-hidden border border-gray-100 hover:border-brand-300 transition-colors group"
+                        className="relative aspect-square block rounded-lg overflow-hidden border border-border hover:border-brand-300 transition-colors group"
                       >
                         <img
                           src={p.url}
@@ -9337,8 +9337,8 @@ function SpreadTab({ spreadData, album }: {
           ))}
 
           {/* Итого */}
-          <div className="flex justify-end pt-2 border-t border-gray-100">
-            <span className="text-sm font-semibold text-gray-700">
+          <div className="flex justify-end pt-2 border-t border-border">
+            <span className="text-sm font-semibold text-foreground">
               Итого доплата за разворот:&nbsp;
               <span className="text-amber-600">{withPhotos.length * price} ₽</span>
             </span>
@@ -9417,7 +9417,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
   const [rebindingPaths, setRebindingPaths] = useState<Set<string>>(new Set())
 
   const status = workflow?.workflow_status ?? (album as any).workflow_status ?? 'active'
-  const statusInfo = WORKFLOW_LABELS[status] ?? { label: status, color: 'bg-gray-100 text-gray-700' }
+  const statusInfo = WORKFLOW_LABELS[status] ?? { label: status, color: 'bg-muted text-foreground' }
 
   const post = async (body: Record<string, unknown>) => {
     const res = await fetch('/api/workflow', {
@@ -9864,7 +9864,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
             {statusInfo.label}
           </span>
           {workflow?.workflow_submitted_at && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-muted-foreground">
               Передан {new Date(workflow.workflow_submitted_at).toLocaleDateString('ru-RU')}
             </span>
           )}
@@ -9885,7 +9885,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
           {/* unsubmit: submitted → ready (партнёр + superadmin) */}
           {status === 'submitted' && canEdit && (
             <button
-              className="text-sm px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+              className="text-sm px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-foreground"
               onClick={handleUnsubmit}
             >
               ↩ Отменить передачу
@@ -9924,8 +9924,8 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
         <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
           <div className="flex items-start justify-between gap-3 mb-2">
             <div>
-              <h4 className="font-semibold text-gray-800">Цветокор и ретушь</h4>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <h4 className="font-semibold text-foreground">Цветокор и ретушь</h4>
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Скачайте оригиналы для обработки в Lightroom/Photoshop, затем загрузите
                 обратно — система заменит фото в макете
               </p>
@@ -9944,7 +9944,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
             </button>
           </div>
 
-          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none mt-1">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none mt-1">
             <input
               type="checkbox"
               checked={includeUnselected}
@@ -9953,7 +9953,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
             />
             <span>
               Скачать также невыбранные фото
-              <span className="text-gray-400 ml-1">
+              <span className="text-muted-foreground ml-1">
                 (по умолчанию только выбранные родителями портреты и групповые; учителя и общий раздел всегда включены)
               </span>
             </span>
@@ -9961,8 +9961,8 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
 
           {/* Панель частичной выгрузки — показывается когда альбом слишком большой */}
           {bigAlbumOptions && (
-            <div className="mt-3 p-3 bg-white border border-blue-200 rounded-lg space-y-2">
-              <p className="text-sm text-gray-700">
+            <div className="mt-3 p-3 bg-card border border-blue-200 rounded-lg space-y-2">
+              <p className="text-sm text-foreground">
                 В альбоме <span className="font-medium">{bigAlbumOptions.total_count} фото</span> с
                 оригиналами, это больше лимита одной выгрузки ({bigAlbumOptions.max_per_request}).
                 Выберите категории для частичной выгрузки:
@@ -9992,14 +9992,14 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                           checked={selectedCategories.has(cat)}
                           onChange={() => toggleCategory(cat)}
                         />
-                        <span className="text-gray-700">{label}</span>
-                        <span className="text-gray-400 text-xs ml-auto">{count}</span>
+                        <span className="text-foreground">{label}</span>
+                        <span className="text-muted-foreground text-xs ml-auto">{count}</span>
                       </label>
                     )
                   })}
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-blue-100">
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted-foreground">
                   Выбрано: {selectedSum} из {bigAlbumOptions.total_count}
                   {selectedSum > bigAlbumOptions.max_per_request && (
                     <span className="text-red-500 ml-1">
@@ -10033,7 +10033,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
           {/* Загрузка обработанных оригиналов (фаза К.4) */}
           <div className="mt-3 pt-3 border-t border-blue-100">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-gray-500 flex-1">
+              <p className="text-xs text-muted-foreground flex-1">
                 После ретуши загрузите файлы обратно — система заменит оригиналы по имени файла.
                 Имена должны совпадать с теми, что были в скачанном ZIP.
               </p>
@@ -10061,7 +10061,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
             </div>
 
             {uploadingRetouched && retouchedProgress.total > 0 && (
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-2">
+              <div className="h-2 bg-muted rounded-full overflow-hidden mt-2">
                 <div
                   className="h-full bg-blue-500 rounded-full transition-all"
                   style={{
@@ -10128,16 +10128,16 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                         return (
                           <li
                             key={u.storage_path}
-                            className="flex items-center gap-2 bg-white border border-amber-100 rounded px-2 py-1.5"
+                            className="flex items-center gap-2 bg-card border border-amber-100 rounded px-2 py-1.5"
                           >
-                            <span className="text-xs text-gray-700 truncate flex-1 min-w-0" title={u.filename}>
+                            <span className="text-xs text-foreground truncate flex-1 min-w-0" title={u.filename}>
                               {u.filename}
                             </span>
-                            <span className="text-gray-400 text-xs">→</span>
+                            <span className="text-muted-foreground text-xs">→</span>
                             <input
                               type="text"
                               list={`album-photos-${(album as any).id}`}
-                              className="text-xs border border-gray-300 rounded px-2 py-0.5 flex-1 min-w-0"
+                              className="text-xs border border-border rounded px-2 py-0.5 flex-1 min-w-0"
                               placeholder="Начните вводить имя оригинала…"
                               value={selectedFilename}
                               onFocus={ensureAlbumPhotos}
@@ -10158,7 +10158,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                               {isProcessing ? '…' : 'Привязать'}
                             </button>
                             <button
-                              className="text-xs px-1 text-gray-400 hover:text-red-500"
+                              className="text-xs px-1 text-muted-foreground hover:text-red-500"
                               onClick={() => handleDiscardRetouched(u.storage_path)}
                               disabled={isProcessing}
                               title="Удалить файл"
@@ -10180,9 +10180,9 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
       {/* Оригинальные фото */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h4 className="font-semibold text-gray-800">
+          <h4 className="font-semibold text-foreground">
             Оригинальные фото
-            {originals.length > 0 && <span className="text-gray-400 font-normal text-sm ml-2">{originals.length} файлов</span>}
+            {originals.length > 0 && <span className="text-muted-foreground font-normal text-sm ml-2">{originals.length} файлов</span>}
           </h4>
           {canEdit && (
             <label className={`btn-secondary text-sm cursor-pointer ${uploadingOriginals ? 'opacity-50' : ''}`}>
@@ -10202,7 +10202,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
         </div>
 
         {uploadingOriginals && (
-          <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
+          <div className="h-2 bg-muted rounded-full overflow-hidden mb-3">
             <div
               className="h-full bg-blue-500 rounded-full transition-all"
               style={{ width: `${uploadProgress.total ? (uploadProgress.done / uploadProgress.total) * 100 : 0}%` }}
@@ -10211,18 +10211,18 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
         )}
 
         {originals.length === 0 ? (
-          <p className="text-sm text-gray-400">Оригиналы не загружены</p>
+          <p className="text-sm text-muted-foreground">Оригиналы не загружены</p>
         ) : (
           <div className="space-y-1">
             {originals.map(o => (
-              <div key={o.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg group">
+              <div key={o.id} className="flex items-center justify-between py-2 px-3 bg-muted rounded-lg group">
                 <div>
-                  <span className="text-sm text-gray-800">{o.filename}</span>
-                  {o.file_size && <span className="text-xs text-gray-400 ml-2">{formatSize(o.file_size)}</span>}
+                  <span className="text-sm text-foreground">{o.filename}</span>
+                  {o.file_size && <span className="text-xs text-muted-foreground ml-2">{formatSize(o.file_size)}</span>}
                 </div>
                 {canEdit && (
                   <button
-                    className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-lg"
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 text-lg"
                     onClick={() => handleDeleteOriginal(o.id)}
                   >×</button>
                 )}
@@ -10235,16 +10235,16 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
       {/* Готовые файлы от OkeyBook */}
       {delivery.length > 0 && (
         <div>
-          <h4 className="font-semibold text-gray-800 mb-3">
+          <h4 className="font-semibold text-foreground mb-3">
             Готовые файлы
-            <span className="text-xs font-normal text-gray-400 ml-2">доступны для скачивания</span>
+            <span className="text-xs font-normal text-muted-foreground ml-2">доступны для скачивания</span>
           </h4>
           <div className="space-y-2">
             {delivery.map(f => (
               <div key={f.id} className="flex items-center justify-between py-3 px-4 bg-green-50 border border-green-200 rounded-xl">
                 <div>
-                  <p className="text-sm font-medium text-gray-800">{f.label || f.filename}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-sm font-medium text-foreground">{f.label || f.filename}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
                     {f.filename}
                     {f.file_size ? ` · ${formatSize(f.file_size)}` : ''}
                     {f.expires_at ? ` · до ${new Date(f.expires_at).toLocaleDateString('ru-RU')}` : ''}
@@ -10264,7 +10264,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
       )}
 
       {status === 'submitted' && delivery.length === 0 && (
-        <div className="bg-gray-50 rounded-xl p-6 text-center text-gray-400 text-sm">
+        <div className="bg-muted rounded-xl p-6 text-center text-muted-foreground text-sm">
           Альбом в очереди у OkeyBook. Файлы появятся здесь когда вёрстка будет готова.
         </div>
       )}
@@ -10328,9 +10328,9 @@ function PartnersDashboardModal({ onClose, onNotify, onError, originalsProgress,
       onMouseDown={e => { if (e.target === e.currentTarget) setBackdropStart(true) }}
       onMouseUp={e => { if (backdropStart && e.target === e.currentTarget) onClose(); setBackdropStart(false) }}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl min-h-[80vh] flex flex-col">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-7xl min-h-[80vh] flex flex-col">
         {/* Шапка */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
             <h2 className="text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
@@ -10354,13 +10354,13 @@ function PartnersDashboardModal({ onClose, onNotify, onError, originalsProgress,
               </div>
             )}
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-muted-foreground text-2xl leading-none">×</button>
         </div>
 
         <div className="flex flex-1 overflow-hidden">
           {/* Список партнёров */}
-          <div className="w-56 border-r border-gray-100 flex flex-col flex-shrink-0">
-            <div className="p-3 border-b border-gray-50">
+          <div className="w-56 border-r border-border flex flex-col flex-shrink-0">
+            <div className="p-3 border-b border-border">
               <input className="input w-full text-sm" placeholder="Поиск..."
                 value={search} onChange={e => setSearch(e.target.value)} />
             </div>
@@ -10369,16 +10369,16 @@ function PartnersDashboardModal({ onClose, onNotify, onError, originalsProgress,
                 <button
                   key={t.id}
                   onClick={() => loadPartnerDashboard(t)}
-                  className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${
-                    selectedTenant?.id === t.id ? 'bg-gray-50 border-l-2 border-l-gray-900' : ''
+                  className={`w-full text-left px-4 py-3 border-b border-border hover:bg-muted transition-colors ${
+                    selectedTenant?.id === t.id ? 'bg-muted border-l-2 border-l-gray-900' : ''
                   }`}
                 >
-                  <p className="text-sm font-medium text-gray-900 truncate">{t.name}</p>
-                  {t.city && <p className="text-xs text-gray-400">{t.city}</p>}
+                  <p className="text-sm font-medium text-foreground truncate">{t.name}</p>
+                  {t.city && <p className="text-xs text-muted-foreground">{t.city}</p>}
                 </button>
               ))}
               {filtered.length === 0 && (
-                <p className="text-xs text-gray-400 text-center py-8">Нет партнёров</p>
+                <p className="text-xs text-muted-foreground text-center py-8">Нет партнёров</p>
               )}
             </div>
           </div>
@@ -10386,12 +10386,12 @@ function PartnersDashboardModal({ onClose, onNotify, onError, originalsProgress,
           {/* Дашборд партнёра */}
           <div className="flex-1 overflow-y-auto p-6">
             {!selectedTenant && (
-              <div className="flex items-center justify-center h-full text-gray-300">
+              <div className="flex items-center justify-center h-full text-muted-foreground">
                 Выберите партнёра слева
               </div>
             )}
             {selectedTenant && loading && (
-              <div className="flex items-center justify-center h-full text-gray-400">
+              <div className="flex items-center justify-center h-full text-muted-foreground">
                 Загрузка...
               </div>
             )}
@@ -10466,35 +10466,35 @@ function PartnerDashboardContent({ tenant, dashboard, onOpenAlbum, onNotify, onE
       {/* Шапка партнёра */}
       <div className="mb-6">
         <h3 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>{tenant.name}</h3>
-        {tenant.city && <p className="text-gray-500 text-sm">{tenant.city}</p>}
+        {tenant.city && <p className="text-muted-foreground text-sm">{tenant.city}</p>}
       </div>
 
       {/* Сводные карточки */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <div className="card p-4">
-          <p className="text-xs text-gray-500 mb-1">Активных альбомов</p>
+          <p className="text-xs text-muted-foreground mb-1">Активных альбомов</p>
           <p className="text-2xl font-bold">{active.length}</p>
         </div>
         <div className="card p-4">
-          <p className="text-xs text-gray-500 mb-1">Учеников</p>
+          <p className="text-xs text-muted-foreground mb-1">Учеников</p>
           <p className="text-2xl font-bold">{totalChildren}</p>
         </div>
         <div className="card p-4">
-          <p className="text-xs text-gray-500 mb-1">Завершили выбор</p>
+          <p className="text-xs text-muted-foreground mb-1">Завершили выбор</p>
           <p className="text-2xl font-bold text-green-600">
             {submittedCount}
-            {totalChildren > 0 && <span className="text-sm font-normal text-gray-400 ml-1">{Math.round(submittedCount / totalChildren * 100)}%</span>}
+            {totalChildren > 0 && <span className="text-sm font-normal text-muted-foreground ml-1">{Math.round(submittedCount / totalChildren * 100)}%</span>}
           </p>
         </div>
         <div className="card p-4">
-          <p className="text-xs text-gray-500 mb-1">В процессе</p>
+          <p className="text-xs text-muted-foreground mb-1">В процессе</p>
           <p className="text-2xl font-bold text-blue-500">{inProgressCount}</p>
         </div>
       </div>
 
       {/* Карточки альбомов */}
       {active.length === 0 ? (
-        <p className="text-gray-400 text-sm text-center py-12">Нет активных альбомов</p>
+        <p className="text-muted-foreground text-sm text-center py-12">Нет активных альбомов</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {active.map(album => {
@@ -10507,29 +10507,29 @@ function PartnerDashboardContent({ tenant, dashboard, onOpenAlbum, onNotify, onE
               >
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <p className="font-semibold text-gray-900">{album.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="font-semibold text-foreground">{album.title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
                       {album.city && `${album.city} · `}{album.year}
                       {(album as any).classes && ` · ${(album as any).classes}`}
                     </p>
                     {(album as any).template_title && (
-                      <p className="text-xs text-gray-400">{(album as any).template_title}</p>
+                      <p className="text-xs text-muted-foreground">{(album as any).template_title}</p>
                     )}
                   </div>
                   <span className={`text-sm font-bold ${
-                    stats.pct === 100 ? 'text-green-600' : 'text-gray-700'
+                    stats.pct === 100 ? 'text-green-600' : 'text-foreground'
                   }`}>{stats.pct}%</span>
                 </div>
 
                 {/* Прогресс-бар */}
-                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-2">
+                <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-2">
                   <div
                     className="h-full bg-green-500 rounded-full"
                     style={{ width: `${stats.pct}%` }}
                   />
                 </div>
 
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-muted-foreground">
                   {stats.submitted} из {stats.total} учеников
                   {stats.inProgress > 0 && (
                     <span className="ml-2 text-blue-400">{stats.inProgress} в процессе</span>
@@ -10654,10 +10654,10 @@ function CreatePartnerModal({ onClose, onSuccess }: {
       onMouseDown={e => { if (e.target === e.currentTarget) setBackdropStart(true) }}
       onMouseUp={e => { if (backdropStart && e.target === e.currentTarget) onClose(); setBackdropStart(false) }}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 my-4">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-lg p-6 my-4">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-bold">Новый партнёр</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-muted-foreground text-2xl leading-none">×</button>
         </div>
 
         {error && <div className="bg-red-50 text-red-600 text-sm rounded-xl p-3 mb-4">{error}</div>}
@@ -10665,7 +10665,7 @@ function CreatePartnerModal({ onClose, onSuccess }: {
         <div className="space-y-4">
           {/* Данные тенанта */}
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Арендатор</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Арендатор</p>
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium mb-1">Название <span className="text-red-500">*</span></label>
@@ -10676,7 +10676,7 @@ function CreatePartnerModal({ onClose, onSuccess }: {
                 <label className="block text-sm font-medium mb-1">Slug (для URL) <span className="text-red-500">*</span></label>
                 <input className="input w-full" placeholder="solnyshko"
                   value={form.slug} onChange={e => set('slug', e.target.value)} />
-                <p className="text-xs text-gray-400 mt-1">Латинские буквы, цифры, дефис. Генерируется автоматически.</p>
+                <p className="text-xs text-muted-foreground mt-1">Латинские буквы, цифры, дефис. Генерируется автоматически.</p>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -10707,9 +10707,9 @@ function CreatePartnerModal({ onClose, onSuccess }: {
           </div>
 
           {/* Владелец аккаунта */}
-          <div className="border-t border-gray-100 pt-4">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Владелец аккаунта</p>
-            <p className="text-xs text-gray-400 mb-3">Получит роль owner и сможет управлять арендатором.</p>
+          <div className="border-t border-border pt-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Владелец аккаунта</p>
+            <p className="text-xs text-muted-foreground mb-3">Получит роль owner и сможет управлять арендатором.</p>
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium mb-1">ФИО <span className="text-red-500">*</span></label>
@@ -10730,7 +10730,7 @@ function CreatePartnerModal({ onClose, onSuccess }: {
                     Сгенерировать
                   </button>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Передайте пароль владельцу.</p>
+                <p className="text-xs text-muted-foreground mt-1">Передайте пароль владельцу.</p>
               </div>
             </div>
           </div>
@@ -10889,7 +10889,7 @@ function SectionEditor({
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <label className="block text-sm font-medium text-gray-700">
+        <label className="block text-sm font-medium text-foreground">
           Структура секций
         </label>
         {!disabled && (
@@ -10898,7 +10898,7 @@ function SectionEditor({
       </div>
 
       {sections.length === 0 ? (
-        <div className="text-xs text-gray-400 italic border border-dashed rounded-md p-3">
+        <div className="text-xs text-muted-foreground italic border border-dashed rounded-md p-3">
           Секций нет. Добавьте хотя бы «Портреты учеников» — без них альбом
           собирать нечего.
         </div>
@@ -10939,7 +10939,7 @@ function SectionEditor({
         </DndContext>
       )}
 
-      <div className="text-xs text-gray-500 italic mt-2">
+      <div className="text-xs text-muted-foreground italic mt-2">
         Перетаскивайте секции для изменения порядка. Внутри «Общего раздела»
         можно так же редактировать слоты.
       </div>
@@ -10984,19 +10984,19 @@ function SortableSectionItem({
     <li
       ref={setNodeRef}
       style={style}
-      className="flex items-start gap-2 bg-white border rounded-md px-2 py-2"
+      className="flex items-start gap-2 bg-card border rounded-md px-2 py-2"
     >
       {/* Drag handle — отдельная зона, чтобы клик по «удалить» не цеплял drag */}
       <button
         type="button"
-        className="text-gray-400 hover:text-gray-700 cursor-grab active:cursor-grabbing px-1 select-none"
+        className="text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing px-1 select-none"
         aria-label="Перетащить"
         {...attributes}
         {...listeners}
       >
         ⋮⋮
       </button>
-      <span className="text-gray-400 font-mono text-xs w-5 shrink-0 pt-1">
+      <span className="text-muted-foreground font-mono text-xs w-5 shrink-0 pt-1">
         {index + 1}.
       </span>
       <div className="min-w-0 flex-1">
@@ -11029,7 +11029,7 @@ function SortableSectionItem({
         <button
           type="button"
           onClick={onRemove}
-          className="text-gray-400 hover:text-red-600 text-sm shrink-0 px-1"
+          className="text-muted-foreground hover:text-red-600 text-sm shrink-0 px-1"
           aria-label="Удалить секцию"
         >
           ×
@@ -11052,8 +11052,8 @@ function DensityPicker({
   disabled?: boolean
 }) {
   return (
-    <div className="mt-2 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-md px-2 py-1.5">
-      <span className="text-xs text-gray-600 shrink-0">Плотность</span>
+    <div className="mt-2 flex items-center gap-2 bg-muted border border-border rounded-md px-2 py-1.5">
+      <span className="text-xs text-muted-foreground shrink-0">Плотность</span>
       <select
         value={density ?? ''}
         onChange={(e) => {
@@ -11061,7 +11061,7 @@ function DensityPicker({
           onChange(v === '' ? null : (v as PresetDensityValue))
         }}
         disabled={disabled}
-        className="text-xs px-2 py-1 border border-gray-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+        className="text-xs px-2 py-1 border border-border rounded bg-card focus:outline-none focus:ring-1 focus:ring-blue-400"
         aria-label="Плотность портретов"
       >
         <option value="">по умолчанию</option>
@@ -11111,7 +11111,7 @@ function SlotEditor({
   return (
     <div className="mt-1.5">
       {slots.length === 0 ? (
-        <div className="text-xs text-gray-400 italic mb-1.5">
+        <div className="text-xs text-muted-foreground italic mb-1.5">
           Слотов пока нет — общий раздел не будет генерироваться.
         </div>
       ) : (
@@ -11168,25 +11168,25 @@ function SortableSlotItem({
     <li
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded px-1.5 py-1"
+      className="flex items-center gap-1.5 bg-muted border border-border rounded px-1.5 py-1"
     >
       <button
         type="button"
-        className="text-gray-400 hover:text-gray-700 cursor-grab active:cursor-grabbing select-none text-xs"
+        className="text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing select-none text-xs"
         aria-label="Перетащить слот"
         {...attributes}
         {...listeners}
       >
         ⋮
       </button>
-      <span className="text-xs text-gray-700 flex-1">
+      <span className="text-xs text-foreground flex-1">
         {SLOT_LABELS[slot] ?? slot}
       </span>
       {!disabled && (
         <button
           type="button"
           onClick={onRemove}
-          className="text-gray-400 hover:text-red-600 text-xs shrink-0 px-1"
+          className="text-muted-foreground hover:text-red-600 text-xs shrink-0 px-1"
           aria-label="Удалить слот"
         >
           ×
@@ -11218,12 +11218,12 @@ function AddSlotButton({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-xs px-2 py-0.5 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+        className="text-xs px-2 py-0.5 border border-border rounded text-foreground hover:bg-muted"
       >
         + Слот
       </button>
       {open && (
-        <div className="absolute left-0 mt-1 z-10 bg-white border border-gray-200 rounded-md shadow-md py-1 min-w-[220px]">
+        <div className="absolute left-0 mt-1 z-10 bg-card border border-border rounded-md shadow-md py-1 min-w-[220px]">
           {SLOT_TYPE_ORDER.map((s) => (
             <button
               key={s}
@@ -11232,7 +11232,7 @@ function AddSlotButton({
                 onPick(s)
                 setOpen(false)
               }}
-              className="block w-full text-left px-3 py-1.5 text-xs hover:bg-gray-100"
+              className="block w-full text-left px-3 py-1.5 text-xs hover:bg-muted"
             >
               {SLOT_LABELS[s] ?? s}
             </button>
@@ -11266,12 +11266,12 @@ function AddSectionButton({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-xs px-2 py-1 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+        className="text-xs px-2 py-1 border border-border rounded-md text-foreground hover:bg-muted"
       >
         + Секция
       </button>
       {open && (
-        <div className="absolute right-0 mt-1 z-10 bg-white border border-gray-200 rounded-md shadow-md py-1 min-w-[220px]">
+        <div className="absolute right-0 mt-1 z-10 bg-card border border-border rounded-md shadow-md py-1 min-w-[220px]">
           {SECTION_TYPE_ORDER.map((t) => (
             <button
               key={t}
@@ -11280,7 +11280,7 @@ function AddSectionButton({
                 onPick(t)
                 setOpen(false)
               }}
-              className="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100"
+              className="block w-full text-left px-3 py-1.5 text-sm hover:bg-muted"
             >
               {SECTION_TYPE_LABELS[t]}
             </button>
@@ -11349,12 +11349,12 @@ function PresetsModal({
       onMouseDown={handleBackdropMouseDown}
       onMouseUp={handleBackdropMouseUp}
     >
-      <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-card rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b flex items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold">Пресеты вёрстки</h2>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <p className="text-sm text-muted-foreground mt-0.5">
               Структура альбома для нового движка сборки. Редактирование структуры появится в следующих обновлениях.
             </p>
           </div>
@@ -11370,7 +11370,7 @@ function PresetsModal({
             )}
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+              className="text-muted-foreground hover:text-foreground text-2xl leading-none"
               type="button"
               aria-label="Закрыть"
             >
@@ -11394,9 +11394,9 @@ function PresetsModal({
             />
           )}
           {loading ? (
-            <div className="text-gray-500 text-sm">Загрузка…</div>
+            <div className="text-muted-foreground text-sm">Загрузка…</div>
           ) : presets.length === 0 ? (
-            <div className="text-gray-500 text-sm">Пресетов пока нет.</div>
+            <div className="text-muted-foreground text-sm">Пресетов пока нет.</div>
           ) : (
             <div className="space-y-4">
               {presets.map((p) => (
@@ -11537,14 +11537,14 @@ function PresetForm({
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             Название
           </label>
           <input
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
             placeholder="Например: Мой пресет для школ"
             autoFocus
             disabled={busy}
@@ -11552,7 +11552,7 @@ function PresetForm({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             Тип печати
           </label>
           <div className="flex gap-3">
@@ -11582,13 +11582,13 @@ function PresetForm({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             Дизайн
           </label>
           <select
             value={templateSetId}
             onChange={(e) => setTemplateSetId(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+            className="w-full px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 bg-card"
             disabled={busy || templateSets.length === 0}
           >
             <option value="">По умолчанию (okeybook-default)</option>
@@ -11599,14 +11599,14 @@ function PresetForm({
               </option>
             ))}
           </select>
-          <div className="text-xs text-gray-500 mt-1">
+          <div className="text-xs text-muted-foreground mt-1">
             Набор шаблонов (мастеров), по которым будет вёрстаться альбом.
             Оставьте «По умолчанию», если не уверены.
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             Диапазон страниц
           </label>
           <div className="flex items-center gap-2">
@@ -11616,24 +11616,24 @@ function PresetForm({
               max={200}
               value={minPages}
               onChange={(e) => setMinPages(Number(e.target.value) || 0)}
-              className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="w-24 px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
               disabled={busy}
               aria-label="Минимум страниц"
             />
-            <span className="text-gray-400">–</span>
+            <span className="text-muted-foreground">–</span>
             <input
               type="number"
               min={1}
               max={200}
               value={maxPages}
               onChange={(e) => setMaxPages(Number(e.target.value) || 0)}
-              className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="w-24 px-3 py-2 border border-border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
               disabled={busy}
               aria-label="Максимум страниц"
             />
-            <span className="text-sm text-gray-500">страниц</span>
+            <span className="text-sm text-muted-foreground">страниц</span>
           </div>
-          <div className="text-xs text-gray-500 mt-1">
+          <div className="text-xs text-muted-foreground mt-1">
             Если число страниц фиксировано (например, Мини всегда 6) — поставьте одинаковые значения.
           </div>
           {rangeError && (
@@ -11733,13 +11733,13 @@ function PresetCard({
   }
 
   return (
-    <div className="border rounded-xl p-4 hover:border-gray-300 transition-colors">
+    <div className="border rounded-xl p-4 hover:border-border transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-base font-medium">{preset.display_name}</h3>
             {isGlobal ? (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                 глобальный
               </span>
             ) : (
@@ -11748,7 +11748,7 @@ function PresetCard({
               </span>
             )}
           </div>
-          <div className="text-sm text-gray-500 mt-1">
+          <div className="text-sm text-muted-foreground mt-1">
             {sheetLabel} · {pagesLabel}
             {preset.print_type && (
               <>
@@ -11757,8 +11757,8 @@ function PresetCard({
               </>
             )}
           </div>
-          <div className="text-xs text-gray-500 mt-0.5">
-            Дизайн: <span className="text-gray-700">{templateSetLabel}</span>
+          <div className="text-xs text-muted-foreground mt-0.5">
+            Дизайн: <span className="text-foreground">{templateSetLabel}</span>
           </div>
         </div>
         {/* РЭ.21.7.2: кнопка «Редактировать» — только для своих пресетов.
@@ -11799,7 +11799,7 @@ function SectionStructureDisplay({
 }) {
   if (!structure || structure.length === 0) {
     return (
-      <div className="text-xs text-gray-400 italic">
+      <div className="text-xs text-muted-foreground italic">
         Структура не задана (используется legacy-логика rule engine).
       </div>
     )
@@ -11836,7 +11836,7 @@ function SectionStructureDisplay({
     <ol className="space-y-1.5 text-sm">
       {structure.map((section, idx) => (
         <li key={idx} className="flex gap-2">
-          <span className="text-gray-400 font-mono text-xs w-5 shrink-0 pt-0.5">
+          <span className="text-muted-foreground font-mono text-xs w-5 shrink-0 pt-0.5">
             {idx + 1}.
           </span>
           <div className="min-w-0 flex-1">
@@ -11844,14 +11844,14 @@ function SectionStructureDisplay({
               {sectionLabel[section.type] ?? section.type}
             </div>
             {section.type === 'common' && Array.isArray((section as { slots?: string[] }).slots) && (
-              <div className="text-xs text-gray-500 mt-0.5">
+              <div className="text-xs text-muted-foreground mt-0.5">
                 {(section as { slots: string[] }).slots
                   .map((s) => slotLabel[s] ?? s)
                   .join(' · ')}
               </div>
             )}
             {section.type === 'students' && (
-              <div className="text-xs text-gray-500 mt-0.5">
+              <div className="text-xs text-muted-foreground mt-0.5">
                 Плотность: {densityLabel ?? 'по умолчанию'}
               </div>
             )}

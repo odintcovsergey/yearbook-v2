@@ -244,7 +244,7 @@ export default function TextStylePanel({
     <div
       ref={ref}
       data-text-style-panel="true"
-      className="fixed bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-50 select-none"
+      className="fixed bg-card rounded-lg shadow-xl border border-border p-3 z-50 select-none"
       style={{
         left: `${left}px`,
         top: `${top}px`,
@@ -261,13 +261,13 @@ export default function TextStylePanel({
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between mb-2">
-        <div className="text-xs text-gray-400 truncate" title={label}>
+        <div className="text-xs text-muted-foreground truncate" title={label}>
           Шрифт: {label}
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="text-gray-400 hover:text-gray-600 text-base leading-none px-1"
+          className="text-muted-foreground hover:text-muted-foreground text-base leading-none px-1"
           title="Закрыть (Esc)"
           aria-label="Закрыть"
         >
@@ -278,12 +278,12 @@ export default function TextStylePanel({
       {/* РЭ.55: Селект шрифта */}
       <div className="mb-3">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-gray-600">Шрифт</span>
+          <span className="text-xs text-muted-foreground">Шрифт</span>
           {fontFamily !== null && (
             <button
               type="button"
               onClick={() => handleFontSelect('')}
-              className="text-[10px] text-gray-500 hover:text-gray-900"
+              className="text-[10px] text-muted-foreground hover:text-foreground"
               title="Сбросить к шрифту из шаблона"
             >
               <RotateCcw size={12} />
@@ -293,7 +293,7 @@ export default function TextStylePanel({
         <select
           value={fontFamily ?? ''}
           onChange={(e) => handleFontSelect(e.target.value)}
-          className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-200 bg-white"
+          className="w-full px-2 py-1.5 text-xs border border-border rounded focus:outline-none focus:ring-2 focus:ring-brand-200 bg-card"
           style={{
             // Применяем выбранный шрифт прямо в select-боксе для preview.
             fontFamily: fontFamily ? `'${fontFamily}', serif` : 'inherit',
@@ -315,8 +315,8 @@ export default function TextStylePanel({
       {/* Slider размера */}
       <div className="mb-3">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-gray-600">Размер</span>
-          <span className="text-xs text-gray-900 font-mono tabular-nums">
+          <span className="text-xs text-muted-foreground">Размер</span>
+          <span className="text-xs text-foreground font-mono tabular-nums">
             {Math.round(mult * 100)}%
           </span>
         </div>
@@ -327,14 +327,14 @@ export default function TextStylePanel({
           step={5}
           value={mult * 100}
           onChange={handleSizeSlider}
-          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer"
         />
       </div>
 
       {/* Палитра цветов */}
       <div className="mb-3">
-        <div className="text-xs text-gray-600 mb-1">
-          Цвет {color === null && <span className="text-gray-400">(по умолчанию)</span>}
+        <div className="text-xs text-muted-foreground mb-1">
+          Цвет {color === null && <span className="text-muted-foreground">(по умолчанию)</span>}
         </div>
         <div className="grid grid-cols-5 gap-1.5">
           {TEXT_STYLE_PALETTE.map(({ hex, name }) => {
@@ -349,7 +349,7 @@ export default function TextStylePanel({
                 className={`w-9 h-9 rounded border transition-all ${
                   isActive
                     ? 'border-brand-600 ring-2 ring-brand-200'
-                    : 'border-gray-300 hover:border-gray-400'
+                    : 'border-border hover:border-border'
                 }`}
                 style={{ backgroundColor: hex }}
               >
@@ -371,19 +371,19 @@ export default function TextStylePanel({
 
       {/* РЭ.54: Выравнивание во фрейме */}
       <div className="mb-3">
-        <div className="text-xs text-gray-600 mb-1">Выравнивание</div>
+        <div className="text-xs text-muted-foreground mb-1">Выравнивание</div>
         <div className="flex items-center gap-2">
           {/* Горизонтальное */}
-          <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+          <div className="inline-flex rounded border border-border overflow-hidden">
             {(['left', 'center', 'right'] as const).map((v) => (
               <button
                 key={v}
                 type="button"
                 onClick={() => handleHAlign(v)}
-                className={`px-2 py-1 text-sm leading-none border-r border-gray-300 last:border-r-0 ${
+                className={`px-2 py-1 text-sm leading-none border-r border-border last:border-r-0 ${
                   hAlign === v
                     ? 'bg-brand-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                    : 'bg-card text-foreground hover:bg-muted'
                 }`}
                 title={
                   v === 'left'
@@ -399,16 +399,16 @@ export default function TextStylePanel({
             ))}
           </div>
           {/* Вертикальное */}
-          <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+          <div className="inline-flex rounded border border-border overflow-hidden">
             {(['top', 'middle', 'bottom'] as const).map((v) => (
               <button
                 key={v}
                 type="button"
                 onClick={() => handleVAlign(v)}
-                className={`px-2 py-1 text-sm leading-none border-r border-gray-300 last:border-r-0 ${
+                className={`px-2 py-1 text-sm leading-none border-r border-border last:border-r-0 ${
                   vAlign === v
                     ? 'bg-brand-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                    : 'bg-card text-foreground hover:bg-muted'
                 }`}
                 title={
                   v === 'top'
@@ -431,7 +431,7 @@ export default function TextStylePanel({
                 setVAlign(null)
                 emitChange(mult, color, null, null, fontFamily)
               }}
-              className="text-[10px] text-gray-500 hover:text-gray-900 ml-auto"
+              className="text-[10px] text-muted-foreground hover:text-foreground ml-auto"
               title="Сбросить выравнивание к шаблону"
             >
               <RotateCcw size={12} />
@@ -441,12 +441,12 @@ export default function TextStylePanel({
       </div>
 
       {/* Actions */}
-      <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+      <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
         <button
           type="button"
           onClick={handleReset}
           disabled={isDefault}
-          className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:text-muted-foreground disabled:cursor-not-allowed"
           title="Вернуть размер и цвет к настройкам шаблона"
         >
           <RotateCcw size={12} /> По умолчанию

@@ -252,9 +252,9 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
   }, [detail, visualSpreads, templateById])
 
   return (
-    <div className="bg-gray-50 rounded-lg p-3 mb-4">
+    <div className="bg-muted rounded-lg p-3 mb-4">
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-        <div className="text-xs text-gray-500 uppercase">
+        <div className="text-xs text-muted-foreground uppercase">
           Превью разворотов ({visualSpreads.length})
         </div>
         <button
@@ -267,7 +267,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
       </div>
 
       {loading && (
-        <div className="text-xs text-gray-400 py-4">Загружаем шаблон…</div>
+        <div className="text-xs text-muted-foreground py-4">Загружаем шаблон…</div>
       )}
 
       {error && (
@@ -293,7 +293,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
               const containerWidth = (tmpl.width_mm / tmpl.height_mm) * TARGET_HEIGHT_PX
               return (
                 <div key={vs.instance.spread_index} className="flex-shrink-0">
-                  <div className="bg-white rounded shadow-sm border border-gray-200">
+                  <div className="bg-card rounded shadow-sm border border-border">
                     <AlbumSpreadCanvas
                       instance={vs.instance}
                       template={tmpl}
@@ -303,7 +303,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       pageSide="spread"
                     />
                   </div>
-                  <div className="text-[10px] text-center text-gray-500 mt-1">
+                  <div className="text-[10px] text-center text-muted-foreground mt-1">
                     {idx + 1}
                   </div>
                 </div>
@@ -322,7 +322,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
 
             return (
               <div key={vs.key} className="flex-shrink-0">
-                <div className="bg-white rounded shadow-sm border border-gray-200 flex">
+                <div className="bg-card rounded shadow-sm border border-border flex">
                   {/* Левая страница */}
                   {vs.left && leftTmpl ? (
                     <AlbumSpreadCanvas
@@ -369,7 +369,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                     />
                   )}
                 </div>
-                <div className="text-[10px] text-center text-gray-500 mt-1">
+                <div className="text-[10px] text-center text-muted-foreground mt-1">
                   {idx + 1}
                 </div>
               </div>
@@ -406,16 +406,16 @@ function ForzacOrEmptySlot({
     return (
       <div
         style={{ width, height }}
-        className={`bg-gray-50 ${side === 'left' ? 'border-r border-gray-100' : ''}`}
+        className={`bg-muted ${side === 'left' ? 'border-r border-border' : ''}`}
       />
     )
   }
   return (
     <div
       style={{ width, height }}
-      className={`bg-gray-50 ${side === 'left' ? 'border-r border-gray-100' : ''} flex items-center justify-center`}
+      className={`bg-muted ${side === 'left' ? 'border-r border-border' : ''} flex items-center justify-center`}
     >
-      <span className="text-[10px] text-gray-400 italic select-none">
+      <span className="text-[10px] text-muted-foreground italic select-none">
         Форзац
       </span>
     </div>

@@ -163,15 +163,15 @@ export default function DesignsListPage() {
   const myDesigns = designs.filter((d) => !d.is_global)
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
         {/* Заголовок */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <div className="text-xs text-gray-400 mb-1">
+            <div className="text-xs text-muted-foreground mb-1">
               <button
                 onClick={() => router.push('/app')}
-                className="hover:text-gray-700"
+                className="hover:text-foreground"
               >
                 Главная
               </button>
@@ -179,7 +179,7 @@ export default function DesignsListPage() {
               <span>Шаблоны</span>
             </div>
             <h1 className="text-2xl font-bold">Дизайны и шаблоны</h1>
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Сначала выберите дизайн — общий стиль альбома (например
               «Сказочный для садиков» или «Школьный строгий»). Внутри
               дизайна — готовые шаблоны от OkeyBook и ваша личная
@@ -188,13 +188,13 @@ export default function DesignsListPage() {
           </div>
           <button
             onClick={() => router.push('/app')}
-            className="text-sm text-gray-600 hover:text-gray-900"
+            className="text-sm text-muted-foreground hover:text-foreground"
           >
             ← К альбомам
           </button>
         </div>
 
-        {loading && <div className="text-gray-500 mb-4">Загрузка...</div>}
+        {loading && <div className="text-muted-foreground mb-4">Загрузка...</div>}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
             {error}
@@ -202,7 +202,7 @@ export default function DesignsListPage() {
         )}
 
         {!loading && designs.length === 0 && (
-          <div className="bg-white border border-gray-200 rounded p-6 text-center text-gray-500">
+          <div className="bg-card border border-border rounded p-6 text-center text-muted-foreground">
             Нет доступных дизайнов. Обратитесь в OkeyBook для подключения.
           </div>
         )}
@@ -210,9 +210,9 @@ export default function DesignsListPage() {
         {/* РЭ.28.4: Раздел «Мои дизайны» — показываем только если есть клоны. */}
         {myDesigns.length > 0 && (
           <section className="mb-8">
-            <h2 className="text-lg font-semibold text-gray-800 mb-3">
+            <h2 className="text-lg font-semibold text-foreground mb-3">
               Мои дизайны
-              <span className="text-sm font-normal text-gray-500 ml-2">
+              <span className="text-sm font-normal text-muted-foreground ml-2">
                 ({myDesigns.length})
               </span>
             </h2>
@@ -234,9 +234,9 @@ export default function DesignsListPage() {
         {/* РЭ.28.4: Раздел «Глобальные шаблоны OkeyBook». */}
         {globalDesigns.length > 0 && (
           <section>
-            <h2 className="text-lg font-semibold text-gray-800 mb-3">
+            <h2 className="text-lg font-semibold text-foreground mb-3">
               {myDesigns.length > 0 ? 'Глобальные шаблоны OkeyBook' : 'Доступные дизайны'}
-              <span className="text-sm font-normal text-gray-500 ml-2">
+              <span className="text-sm font-normal text-muted-foreground ml-2">
                 ({globalDesigns.length})
               </span>
             </h2>
@@ -292,7 +292,7 @@ function DesignCard({
   const hasPreviews = design.previews.length > 0
 
   return (
-    <div className="bg-white border border-gray-200/70 rounded-2xl p-5 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 hover:border-brand-300 transition-all duration-150 flex flex-col">
+    <div className="bg-card border border-border rounded-2xl p-5 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 hover:border-brand-300 transition-all duration-150 flex flex-col">
       {/* Превью — клик открывает дизайн */}
       <button
         type="button"
@@ -304,7 +304,7 @@ function DesignCard({
             {design.previews.map((svg, i) => (
               <div
                 key={i}
-                className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden flex items-center justify-center"
+                className="bg-muted border border-border rounded-lg overflow-hidden flex items-center justify-center"
                 style={{ aspectRatio: '1 / 1.4', minHeight: '90px' }}
                 dangerouslySetInnerHTML={{ __html: svg }}
               />
@@ -313,14 +313,14 @@ function DesignCard({
             {Array.from({ length: 3 - design.previews.length }).map((_, i) => (
               <div
                 key={`empty-${i}`}
-                className="bg-gray-50 border border-dashed border-gray-200 rounded-lg"
+                className="bg-muted border border-dashed border-border rounded-lg"
                 style={{ aspectRatio: '1 / 1.4', minHeight: '90px' }}
               />
             ))}
           </div>
         ) : (
           <div
-            className="bg-gray-50 border border-dashed border-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-xs"
+            className="bg-muted border border-dashed border-border rounded-lg flex items-center justify-center text-muted-foreground text-xs"
             style={{ aspectRatio: '3 / 1.4', minHeight: '90px' }}
           >
             Нет превью мастеров
@@ -332,7 +332,7 @@ function DesignCard({
       <button
         type="button"
         onClick={onOpen}
-        className="font-semibold text-gray-900 truncate text-left hover:text-brand-700"
+        className="font-semibold text-foreground truncate text-left hover:text-brand-700"
         title={design.name}
       >
         {design.name}
@@ -340,7 +340,7 @@ function DesignCard({
 
       {/* Размеры (РЭ.28.4): полезно при выборе для клонирования */}
       {design.page_width_mm && design.page_height_mm && (
-        <div className="text-xs text-gray-500 mt-1">
+        <div className="text-xs text-muted-foreground mt-1">
           {Math.round(design.page_width_mm)}×{Math.round(design.page_height_mm)} мм
         </div>
       )}
@@ -357,7 +357,7 @@ function DesignCard({
           </span>
         )}
         {design.print_type === 'layflat' && (
-          <span className="px-2.5 py-0.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+          <span className="px-2.5 py-0.5 bg-muted text-muted-foreground text-xs font-medium rounded-full">
             твёрдая обложка
           </span>
         )}
@@ -369,16 +369,16 @@ function DesignCard({
       </div>
 
       {/* Счётчики */}
-      <div className="text-xs text-gray-500 mt-3 flex items-center gap-1.5 flex-wrap">
+      <div className="text-xs text-muted-foreground mt-3 flex items-center gap-1.5 flex-wrap">
         {design.recommended_count > 0 && (
           <span className="inline-flex items-center gap-1"><Package size={13} /> {design.recommended_count} готовых от OkeyBook</span>
         )}
-        {design.recommended_count > 0 && design.my_count > 0 && <span className="text-gray-300">·</span>}
+        {design.recommended_count > 0 && design.my_count > 0 && <span className="text-muted-foreground">·</span>}
         {design.my_count > 0 && (
           <span className="inline-flex items-center gap-1"><Folder size={13} /> {design.my_count} моих шаблонов</span>
         )}
         {design.recommended_count === 0 && design.my_count === 0 && (
-          <span className="text-gray-400">пока шаблонов нет — можно создать свой</span>
+          <span className="text-muted-foreground">пока шаблонов нет — можно создать свой</span>
         )}
       </div>
 
@@ -397,7 +397,7 @@ function DesignCard({
           <button
             type="button"
             onClick={onClone}
-            className="ml-auto px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs rounded-lg border border-gray-200"
+            className="ml-auto px-2.5 py-1 bg-muted hover:bg-muted text-foreground text-xs rounded-lg border border-border"
             title="Скопировать этот дизайн с изменёнными размерами"
           >
             Создать на основе…

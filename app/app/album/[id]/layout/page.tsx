@@ -163,7 +163,7 @@ export default function LayoutEditorPage({
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center text-gray-500">
+        <div className="min-h-screen flex items-center justify-center text-muted-foreground">
           Загружаем редактор…
         </div>
       }
@@ -196,12 +196,12 @@ function EndpaperPlaceholder({
   const height = width / aspectRatio
   return (
     <div
-      className="bg-white rounded shadow-sm border border-gray-200 flex items-center justify-center select-none"
+      className="bg-card rounded shadow-sm border border-border flex items-center justify-center select-none"
       style={{ width: `${width}px`, height: `${height}px` }}
       title="Физический форзац типографии — не часть макета"
     >
       <span
-        className="italic text-gray-300"
+        className="italic text-muted-foreground"
         style={{ fontSize: `${Math.max(16, height * 0.06)}px`, letterSpacing: '0.05em' }}
       >
         Форзац
@@ -234,7 +234,7 @@ function EmptyPagePlaceholder({
         'rounded border border-dashed flex items-center justify-center select-none transition-colors ' +
         (isClickable
           ? 'border-brand-300 bg-brand-50 hover:bg-brand-50 hover:border-brand-400 cursor-pointer'
-          : 'border-gray-300 bg-gray-50/60')
+          : 'border-border bg-muted')
       }
       style={{ width: `${width}px`, height: `${height}px` }}
       title={isClickable ? `${label} — нажмите чтобы выбрать шаблон` : label}
@@ -254,7 +254,7 @@ function EmptyPagePlaceholder({
     >
       <span
         className={
-          'text-center px-4 ' + (isClickable ? 'text-brand-500' : 'text-gray-400')
+          'text-center px-4 ' + (isClickable ? 'text-brand-500' : 'text-muted-foreground')
         }
         style={{ fontSize: `${Math.max(11, height * 0.025)}px` }}
       >
@@ -1524,7 +1524,7 @@ function LayoutEditorPageInner({
   // ─── Loading / error состояния ──────────────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-500">
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
         Загружаем редактор…
       </div>
     )
@@ -1537,7 +1537,7 @@ function LayoutEditorPageInner({
         <button
           type="button"
           onClick={() => router.push(`/app?album=${albumId}`)}
-          className="text-sm px-4 py-2 rounded border border-gray-300 hover:bg-gray-50"
+          className="text-sm px-4 py-2 rounded border border-border hover:bg-muted"
         >
           ← В кабинет
         </button>
@@ -1688,21 +1688,21 @@ function LayoutEditorPageInner({
   })()
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="h-screen flex flex-col bg-muted">
       {/* ═══ Header ═══ */}
-      <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+      <header className="bg-card border-b border-border px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button
             type="button"
             onClick={() => router.push(`/app?album=${albumId}`)}
-            className="text-sm text-gray-600 hover:text-gray-900"
+            className="text-sm text-muted-foreground hover:text-foreground"
           >
             ← К альбому
           </button>
-          <h1 className="text-base font-semibold text-gray-900">
+          <h1 className="text-base font-semibold text-foreground">
             {albumTitle || 'Альбом'}
           </h1>
-          <span className="text-xs text-gray-400">— Layout редактор</span>
+          <span className="text-xs text-muted-foreground">— Layout редактор</span>
           {/* Л.4a — бейдж режима когда нельзя редактировать */}
           {isReadOnly && (
             <span
@@ -1711,7 +1711,7 @@ function LayoutEditorPageInner({
                   ? 'bg-orange-100 text-orange-700'
                   : readOnlyReason === 'view_as'
                     ? 'bg-blue-100 text-blue-700'
-                    : 'bg-gray-100 text-gray-700'
+                    : 'bg-muted text-foreground'
               }`}
               title={
                 readOnlyReason === 'submitted'
@@ -1743,7 +1743,7 @@ function LayoutEditorPageInner({
               type="button"
               onClick={handleUndo}
               disabled={history.past.length === 0}
-              className="px-2.5 py-1 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="px-2.5 py-1 text-sm rounded border border-border bg-card hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               title={
                 typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
                   ? 'Отменить (⌘Z)'
@@ -1752,14 +1752,14 @@ function LayoutEditorPageInner({
             >
               ↶ Отменить
               {history.past.length > 0 && (
-                <span className="ml-1 text-xs text-gray-400">({history.past.length})</span>
+                <span className="ml-1 text-xs text-muted-foreground">({history.past.length})</span>
               )}
             </button>
             <button
               type="button"
               onClick={handleRedo}
               disabled={history.future.length === 0}
-              className="px-2.5 py-1 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="px-2.5 py-1 text-sm rounded border border-border bg-card hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               title={
                 typeof navigator !== 'undefined' && navigator.platform.toLowerCase().includes('mac')
                   ? 'Повторить (⌘⇧Z)'
@@ -1768,7 +1768,7 @@ function LayoutEditorPageInner({
             >
               ↷ Повторить
               {history.future.length > 0 && (
-                <span className="ml-1 text-xs text-gray-400">({history.future.length})</span>
+                <span className="ml-1 text-xs text-muted-foreground">({history.future.length})</span>
               )}
             </button>
             </div>
@@ -1847,10 +1847,10 @@ function LayoutEditorPageInner({
                     {currentPair.isSpread && leftPage && leftTemplate ? (
                       // Spread-мастер: один canvas, полная ширина
                       <div
-                        className={`bg-white rounded shadow-sm border ${
+                        className={`bg-card rounded shadow-sm border ${
                           currentIdx === currentPair.leftIdx
                             ? 'border-brand-400 ring-2 ring-brand-200'
-                            : 'border-gray-200'
+                            : 'border-border'
                         }`}
                         onClick={() => {
                           if (currentPair.leftIdx !== undefined)
@@ -1884,10 +1884,10 @@ function LayoutEditorPageInner({
                       <>
                         {leftPage && leftTemplate ? (
                           <div
-                            className={`bg-white rounded shadow-sm border cursor-pointer ${
+                            className={`bg-card rounded shadow-sm border cursor-pointer ${
                               currentIdx === currentPair.leftIdx
                                 ? 'border-brand-400 ring-2 ring-brand-200'
-                                : 'border-gray-200'
+                                : 'border-border'
                             }`}
                             onClick={() => {
                               if (currentPair.leftIdx !== undefined)
@@ -1957,10 +1957,10 @@ function LayoutEditorPageInner({
                         )}
                         {rightPage && rightTemplate ? (
                           <div
-                            className={`bg-white rounded shadow-sm border cursor-pointer ${
+                            className={`bg-card rounded shadow-sm border cursor-pointer ${
                               currentIdx === currentPair.rightIdx
                                 ? 'border-brand-400 ring-2 ring-brand-200'
-                                : 'border-gray-200'
+                                : 'border-border'
                             }`}
                             onClick={() => {
                               if (currentPair.rightIdx !== undefined)
@@ -2044,11 +2044,11 @@ function LayoutEditorPageInner({
                     }
                   }}
                   disabled={currentPairIdx <= 0}
-                  className="px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   ◀ Назад
                 </button>
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-muted-foreground">
                   Разворот {currentPairIdx + 1} из {visualSpreads.length}
                 </span>
                 <button
@@ -2061,7 +2061,7 @@ function LayoutEditorPageInner({
                     }
                   }}
                   disabled={currentPairIdx >= visualSpreads.length - 1}
-                  className="px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Вперёд ▶
                 </button>
@@ -2073,7 +2073,7 @@ function LayoutEditorPageInner({
                   <button
                     type="button"
                     onClick={() => setReplaceTemplateForIdx(currentIdx)}
-                    className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+                    className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted text-foreground"
                     title={`Текущий шаблон: ${currentTemplate.name}. Заменить на другой.`}
                   >
                     <RefreshCw size={16} /> Заменить шаблон{' '}
@@ -2089,7 +2089,7 @@ function LayoutEditorPageInner({
                   <button
                     type="button"
                     onClick={() => setTextStylesModalOpen(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted text-foreground"
                     title="Размер и цвет имён, цитат, ФИО, должностей — для всего альбома сразу"
                   >
                     <Type size={16} /> Стили текстов
@@ -2101,10 +2101,10 @@ function LayoutEditorPageInner({
                   <button
                     type="button"
                     onClick={() => setBgPickerOpen(true)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border bg-white hover:bg-gray-50 ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border bg-card hover:bg-muted ${
                       currentBgOverride
                         ? 'border-brand-400 text-brand-700'
-                        : 'border-gray-300 text-gray-700'
+                        : 'border-border text-foreground'
                     }`}
                     title="Выбрать конкретный фон для этого разворота (перебить авторотацию)"
                   >
@@ -2114,7 +2114,7 @@ function LayoutEditorPageInner({
               </div>
             </>
           ) : (
-            <p className="text-gray-500">Шаблон не найден для текущего разворота</p>
+            <p className="text-muted-foreground">Шаблон не найден для текущего разворота</p>
           )}
         </main>
 
@@ -2124,10 +2124,10 @@ function LayoutEditorPageInner({
         {!isReadOnly ? (
           <PhotoPalette spreads={spreads} photos={photos} />
         ) : (
-          <aside className="hidden md:flex w-80 bg-gray-50 border-l border-gray-200 flex-col items-center justify-center p-6 text-center">
-            <div className="mb-2 flex justify-center text-gray-300"><Eye size={40} /></div>
-            <p className="text-sm font-medium text-gray-700 mb-1">Только просмотр</p>
-            <p className="text-xs text-gray-500">
+          <aside className="hidden md:flex w-80 bg-muted border-l border-border flex-col items-center justify-center p-6 text-center">
+            <div className="mb-2 flex justify-center text-muted-foreground"><Eye size={40} /></div>
+            <p className="text-sm font-medium text-foreground mb-1">Только просмотр</p>
+            <p className="text-xs text-muted-foreground">
               {readOnlyReason === 'submitted'
                 ? 'Альбом передан в работу — изменения заблокированы. Обратитесь в OkeyBook если нужны правки.'
                 : readOnlyReason === 'view_as'
@@ -2206,7 +2206,7 @@ function LayoutEditorPageInner({
           {dragState?.mode === 'palette' ? (
             // Палитра → placeholder: фикс 120px overlay (миниатюра палитры
             // и так маленькая, фикс размер уместен).
-            <div className="aspect-[3/4] w-[120px] bg-gray-100 rounded overflow-hidden border-2 border-brand-500 shadow-xl">
+            <div className="aspect-[3/4] w-[120px] bg-muted rounded overflow-hidden border-2 border-brand-500 shadow-xl">
               <img
                 src={dragState.photo.thumb_url}
                 alt={dragState.photo.filename}
@@ -2331,10 +2331,10 @@ function LayoutEditorPageInner({
 
       {/* Toast «заменяем оригинал» — поверх редактора, blocking */}
       {replacingOriginal && (
-        <div className="fixed bottom-4 right-4 bg-white border border-blue-200 rounded-lg shadow-lg px-4 py-3 z-50">
+        <div className="fixed bottom-4 right-4 bg-card border border-blue-200 rounded-lg shadow-lg px-4 py-3 z-50">
           <div className="flex items-center gap-3 text-sm">
             <span className="animate-spin">⏳</span>
-            <span className="text-gray-700">
+            <span className="text-foreground">
               Загружаем: <span className="font-medium">{replacingOriginal}</span>
             </span>
           </div>
@@ -2354,13 +2354,13 @@ function LayoutEditorPageInner({
           role="dialog"
         >
           <div
-            className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6"
+            className="bg-card rounded-xl shadow-2xl max-w-md w-full p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            <h2 className="text-lg font-semibold text-foreground mb-4">
               <Sparkles size={20} className="inline" /> Добро пожаловать в редактор макета
             </h2>
-            <ul className="space-y-3 text-sm text-gray-700">
+            <ul className="space-y-3 text-sm text-foreground">
               <li className="flex gap-3">
                 <span className="text-brand-500 flex-shrink-0"><Camera size={18} /></span>
                 <span>
