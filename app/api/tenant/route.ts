@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, type AuthContext } from '@/lib/auth'
-import { ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
+import { ycUpload, ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
 import { renderPreviewSvg } from '@/lib/album-builder/render-preview-svg'
 import { buildAlbumCoverPreviews } from '@/lib/cover/preview-album'
 import { validatePreset } from '@/lib/presets/validate'
@@ -2442,8 +2442,8 @@ export async function POST(req: NextRequest) {
     // type ∈ {portrait, group, teacher,
     //         common_spread, common_full, common_half,
     //         common_quarter, common_sixth}.
-    // Делает WebP full (2048px) + thumb (400px) через sharp,
-    // заливает оба в Storage, создаёт запись в photos.
+    // Делает WebP full (2048px) через sharp, заливает в YC (yc:),
+    // создаёт запись в photos. Legacy-путь; основной — /api/upload.
     // ----------------------------------------------------------
     const file = form.get('file') as File | null
     const type = form.get('type') as string | null
@@ -2475,32 +2475,21 @@ export async function POST(req: NextRequest) {
 
     const sharp = (await import('sharp')).default
     const buffer = Buffer.from(await file.arrayBuffer())
-    const originalName = file.name.replace(/\.[^.]+$/, '')
+    const originalName = file.name.replace(/\.[^.]+$/, '').replace(/[^\w.\-]/g, '_')
 
-    const sharpInstance = sharp(buffer).rotate()
+    const fullBuffer = await sharp(buffer).rotate()
+      .resize({ width: 2048, height: 2048, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 85 })
+      .toBuffer()
 
-    const [fullBuffer, thumbBuffer] = await Promise.all([
-      sharpInstance.clone()
-        .resize({ width: 2048, height: 2048, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 85 })
-        .toBuffer(),
-      sharpInstance.clone()
-        .resize({ width: 400, height: 400, fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 75 })
-        .toBuffer(),
-    ])
-
-    const timestamp = Date.now()
-    const fullPath  = `${albumId}/${type}/${timestamp}_${originalName}.webp`
-    const thumbPath = `${albumId}/${type}/thumbs/${timestamp}_${originalName}.webp`
-
-    const [fullUpload, thumbUpload] = await Promise.all([
-      supabaseAdmin.storage.from('photos').upload(fullPath, fullBuffer, { contentType: 'image/webp', upsert: false }),
-      supabaseAdmin.storage.from('photos').upload(thumbPath, thumbBuffer, { contentType: 'image/webp', upsert: false }),
-    ])
-
-    if (fullUpload.error) {
-      return NextResponse.json({ error: fullUpload.error.message }, { status: 500 })
+    // Префикс yc: — Yandex Object Storage (приватный бакет, как в /api/upload).
+    // thumb_path: null — getThumbUrl отдаёт full через signed URL (раньше путь
+    // лил в публичный Supabase-бакет photos — это устранено).
+    const storagePath = `yc:${albumId}/${type}/${Date.now()}_${originalName}.webp`
+    try {
+      await ycUpload(storagePath.slice(3), fullBuffer, 'image/webp')
+    } catch (err: any) {
+      return NextResponse.json({ error: `Ошибка хранилища: ${err.message}` }, { status: 502 })
     }
 
     const { data: photo, error: dbError } = await supabaseAdmin
@@ -2508,8 +2497,8 @@ export async function POST(req: NextRequest) {
       .insert({
         album_id: albumId,
         filename: file.name,
-        storage_path: fullPath,
-        thumb_path: thumbUpload.error ? null : thumbPath,
+        storage_path: storagePath,
+        thumb_path: null,
         type,
       })
       .select()
