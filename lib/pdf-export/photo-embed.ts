@@ -490,9 +490,18 @@ function extractFilenameFromUrl(url: string): string {
  */
 function storageKeyFromUrl(url: string): string {
   try {
-    const segments = new URL(url).pathname.split('/').filter(Boolean);
-    // Первый сегмент — имя бакета, остальное — storage_path.
-    return segments.slice(1).join('/');
+    const u = new URL(url);
+    const segments = u.pathname.split('/').filter(Boolean);
+    // YC отдаёт signed URL в virtual-hosted стиле: имя бакета в ДОМЕНЕ
+    // (yearbook-photos.storage.yandexcloud.net/<storage_path>) — тогда весь
+    // путь и есть ключ. В path-style (storage.yandexcloud.net/<bucket>/<path>)
+    // первый сегмент — имя бакета, его отбрасываем. Раньше код всегда резал
+    // первый сегмент и в virtual-hosted терял id альбома → ключ не совпадал
+    // с urlToFilename → оригинал не находился.
+    if (u.hostname.startsWith('storage.')) {
+      return segments.slice(1).join('/');
+    }
+    return segments.join('/');
   } catch {
     return '';
   }

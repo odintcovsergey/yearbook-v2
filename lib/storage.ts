@@ -58,19 +58,34 @@ export function stripYcPrefix(storagePath: string): string {
   return storagePath.startsWith('yc:') ? storagePath.slice(3) : storagePath
 }
 
+// Окно стабильности подписи. Время подписи округляется вниз к началу окна,
+// поэтому для одного и того же объекта signed URL получается БАЙТ-В-БАЙТ
+// одинаковым в течение всего окна → браузер кэширует картинку, а не качает
+// её заново при каждом перезапросе данных (выбор портрета, обновление locks).
+// 6 часов — компромисс: ссылка живёт долго, но регулярно ротируется.
+const SIGN_WINDOW_MS = 6 * 60 * 60 * 1000
+
 /**
  * Signed (presigned GET) URL для чтения объекта приватного бакета.
  * TTL по умолчанию 24 часа — для просмотра в кабинете/родительской странице
- * и скачивания готовых PDF. Ссылка генерится на сервере при каждом запросе,
- * в БД НЕ хранится. Годится для любых объектов бакета (фото, thumbnails, PDF).
+ * и скачивания готовых PDF. Ссылка генерится на сервере, в БД НЕ хранится.
+ * Годится для любых объектов бакета (фото, thumbnails, PDF).
+ *
+ * Время подписи фиксируется к началу 6-часового окна (signingDate), а в ответ
+ * подмешивается Cache-Control — иначе подпись менялась бы каждую секунду и
+ * браузер не мог кэшировать фото (перекачивал всё при каждом заходе/действии).
  */
 export async function getPhotoSignedUrl(storagePath: string, expiresIn = 86400): Promise<string> {
   if (!storagePath) return ''
+  const windowStart = new Date(Math.floor(Date.now() / SIGN_WINDOW_MS) * SIGN_WINDOW_MS)
   const cmd = new GetObjectCommand({
     Bucket: BUCKET(),
     Key: stripYcPrefix(storagePath),
+    // 'private' — кэширует только браузер пользователя, не промежуточные CDN
+    // (фото детей — персональные данные). max-age = длина окна стабильности.
+    ResponseCacheControl: `private, max-age=${Math.floor(SIGN_WINDOW_MS / 1000)}`,
   })
-  return getSignedUrl(ycStorage, cmd, { expiresIn })
+  return getSignedUrl(ycStorage, cmd, { expiresIn, signingDate: windowStart })
 }
 
 /**
