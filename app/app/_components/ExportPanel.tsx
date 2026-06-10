@@ -240,7 +240,7 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
               value={selectedSlug}
               onChange={(e) => setSelectedSlug(e.target.value)}
               disabled={exporting}
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-muted disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-foreground dark:bg-background focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-muted disabled:cursor-not-allowed"
             >
               {profiles.map((p) => (
                 <option key={p.slug} value={p.slug}>
@@ -259,7 +259,7 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
           type="button"
           onClick={handleExport}
           disabled={exportDisabled}
-          className="px-5 py-2 bg-black text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:bg-muted disabled:cursor-not-allowed transition whitespace-nowrap"
+          className="px-5 py-2 bg-black dark:bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-gray-800 dark:hover:bg-brand-700 disabled:bg-muted disabled:cursor-not-allowed transition whitespace-nowrap"
         >
           {exporting ? 'Экспорт…' : '📄 Экспортировать'}
         </button>

@@ -240,3 +240,9 @@ body {
 .dark .text-orange-600,.dark .text-orange-700 { color: #FDBA74; }
 .dark .text-brand-600, .dark .text-brand-700 { color: #5EEAD4; }
 .dark .text-purple-700 { color: #D8B4FE; }
+
+/* Нативный <select> без явного фона рисуется браузером белым — в тёмной теме
+   делаем тёмным (и сам список <option> тоже). Явный dark:bg-* на конкретном
+   селекте перекроет это (выше по специфичности). Чинит все ~34 селекта разом. */
+.dark select { background-color: var(--background); color: var(--foreground); }
+.dark select option { background-color: var(--card); color: var(--foreground); }
