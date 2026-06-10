@@ -6427,6 +6427,10 @@ export async function POST(req: NextRequest) {
         .eq('id', user_id)
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+      // Гасим сессии отключённого — иначе он работает по старому токену до его
+      // истечения (F6). При hard delete сессии и так удаляются ниже.
+      await supabaseAdmin.from('sessions').delete().eq('user_id', user_id)
     } else {
       // Hard delete — явно сносим связанные данные
       await supabaseAdmin.from('sessions').delete().eq('user_id', user_id)

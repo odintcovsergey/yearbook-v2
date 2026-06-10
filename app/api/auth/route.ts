@@ -15,6 +15,46 @@ import {
 export const dynamic = 'force-dynamic'
 
 // ============================================================
+// F5 — анти-брутфорс логина
+// Считаем неудачные попытки за окно; превышение → 429.
+// Все обращения к login_attempts обёрнуты в try/catch: если миграция
+// ещё не применена (нет таблицы) — вход работает как раньше, без блокировки.
+// ============================================================
+const LOGIN_WINDOW_MS = 15 * 60 * 1000   // окно подсчёта
+const MAX_FAILS_PER_EMAIL = 5            // на один email
+const MAX_FAILS_PER_IP = 20              // на один IP (распределённый перебор)
+
+function clientIp(req: NextRequest): string {
+  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || req.headers.get('x-real-ip')
+    || 'unknown'
+}
+
+async function isLoginRateLimited(email: string, ip: string): Promise<boolean> {
+  try {
+    const since = new Date(Date.now() - LOGIN_WINDOW_MS).toISOString()
+    const [emailRes, ipRes] = await Promise.all([
+      supabaseAdmin.from('login_attempts').select('id', { count: 'exact', head: true })
+        .eq('email', email).eq('success', false).gt('attempted_at', since),
+      supabaseAdmin.from('login_attempts').select('id', { count: 'exact', head: true })
+        .eq('ip', ip).eq('success', false).gt('attempted_at', since),
+    ])
+    return (emailRes.count ?? 0) >= MAX_FAILS_PER_EMAIL
+      || (ipRes.count ?? 0) >= MAX_FAILS_PER_IP
+  } catch {
+    return false  // таблицы нет / сбой БД — не блокируем вход
+  }
+}
+
+async function recordLoginAttempt(email: string, ip: string, success: boolean): Promise<void> {
+  try {
+    await supabaseAdmin.from('login_attempts').insert({ email, ip, success })
+  } catch {
+    // не мешаем входу, если запись не удалась
+  }
+}
+
+// ============================================================
 // POST /api/auth — action-based routing
 // ============================================================
 
@@ -31,22 +71,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Email и пароль обязательны' }, { status: 400 })
     }
 
+    const emailNorm = email.toLowerCase().trim()
+    const ip = clientIp(req)
+
+    // F5: блокируем после серии неудачных попыток (по email или по IP).
+    if (await isLoginRateLimited(emailNorm, ip)) {
+      return NextResponse.json(
+        { error: 'Слишком много попыток входа. Попробуйте через 15 минут.' },
+        { status: 429 },
+      )
+    }
+
     // Ищем пользователя
     const { data: user } = await supabaseAdmin
       .from('users')
       .select('id, email, password_hash, full_name, role, tenant_id, is_active')
-      .eq('email', email.toLowerCase().trim())
+      .eq('email', emailNorm)
       .single()
 
     if (!user || !user.is_active) {
+      await recordLoginAttempt(emailNorm, ip, false)
       return NextResponse.json({ error: 'Неверный email или пароль' }, { status: 401 })
     }
 
     // Проверяем пароль
     const valid = await verifyPassword(password, user.password_hash)
     if (!valid) {
+      await recordLoginAttempt(emailNorm, ip, false)
       return NextResponse.json({ error: 'Неверный email или пароль' }, { status: 401 })
     }
+
+    // Успех — фиксируем (для аудита и чтобы счётчик окна был полным).
+    await recordLoginAttempt(emailNorm, ip, true)
 
     // Создаём токены
     const tenantId = user.tenant_id ?? ''
