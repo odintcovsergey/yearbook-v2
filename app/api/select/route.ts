@@ -201,7 +201,10 @@ export async function POST(req: NextRequest) {
 
   // Проверить что все выбранные фото существуют в базе
   const allPhotoIds = [portraitPage, ...(coverOption === 'other' && portraitCover ? [portraitCover] : []), ...groupPhotos]
-  const { data: existingPhotos } = await supabaseAdmin.from('photos').select('id').in('id', allPhotoIds)
+  // C3: фото должны принадлежать альбому этого ребёнка — иначе можно
+  // привязать чужой photo_id из другого альбома/партнёра.
+  const { data: existingPhotos } = await supabaseAdmin.from('photos')
+    .select('id').eq('album_id', child.album_id).in('id', allPhotoIds)
   const existingPhotoIds = new Set((existingPhotos ?? []).map((p: any) => p.id))
 
   if (!existingPhotoIds.has(portraitPage))

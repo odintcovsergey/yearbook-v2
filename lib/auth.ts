@@ -1,11 +1,9 @@
 /**
- * lib/auth.ts — Двойная авторизация
+ * lib/auth.ts — Авторизация через JWT
  *
- * Поддерживает ДВА режима одновременно:
- * 1. Legacy: x-admin-secret → superadmin (для текущего фронта)
- * 2. JWT: httpOnly cookie "auth_token" → user с ролью и tenant_id
- *
- * Текущие заказы продолжают работать без изменений.
+ * httpOnly cookie "auth_token" → user с ролью и tenant_id.
+ * Legacy-режим (x-admin-secret → superadmin) удалён — F4 аудита безопасности.
+ * Поле isLegacy в AuthContext сохранено для совместимости и всегда false.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -165,23 +163,12 @@ export async function verifyPassword(password: string, stored: string): Promise<
 // ГЛАВНАЯ ФУНКЦИЯ — получить AuthContext из запроса
 // ============================================================
 // Порядок проверки:
-// 1. x-admin-secret → legacy superadmin
-// 2. Cookie auth_token → JWT
-// 3. Unauthorized
+// 1. Cookie auth_token → JWT
+// 2. Unauthorized
 
 export async function getAuth(req: NextRequest): Promise<AuthContext | null> {
-  // --- Режим 1: Legacy (текущий фронт) ---
-  const adminSecret = req.headers.get('x-admin-secret')
-  if (adminSecret && adminSecret === process.env.ADMIN_SECRET) {
-    return {
-      userId: null,
-      tenantId: DEFAULT_TENANT_ID(),
-      role: 'superadmin',
-      isLegacy: true,
-    }
-  }
-
-  // --- Режим 2: JWT ---
+  // Legacy-вход через x-admin-secret удалён (F4 аудита): статический god-key
+  // без ротации/аудита. Остался только JWT-режим.
   const cookieToken = req.cookies.get('auth_token')?.value
   if (cookieToken) {
     const payload = await verifyAccessToken(cookieToken)

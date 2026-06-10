@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { ycUpload, ycDelete, stripYcPrefix, getPhotoSignedUrl } from '@/lib/storage'
+import { isSupportedImage } from '@/lib/image-validate'
 import sharp from 'sharp'
 
 export const dynamic = 'force-dynamic'
@@ -128,6 +129,12 @@ export async function POST(req: NextRequest) {
 
   // Читаем файл
   const buffer = Buffer.from(await file.arrayBuffer())
+
+  // D3: проверяем по байтам, что это изображение (не полагаемся на content-type
+  // от клиента и не на sharp — он не декодирует HEIC).
+  if (!isSupportedImage(buffer)) {
+    return NextResponse.json({ error: 'Файл не является изображением' }, { status: 400 })
+  }
 
   // Определяем размеры через sharp
   let width = 0, height = 0

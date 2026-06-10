@@ -17,6 +17,16 @@ export async function POST(req: NextRequest) {
 
   if (!quote_id) return NextResponse.json({ ok: true })
 
+  // B1: цитата должна быть партнёра этого альбома или глобальной (tenant_id IS NULL).
+  const { data: album } = await supabaseAdmin
+    .from('albums').select('tenant_id').eq('id', child.album_id).single()
+  const { data: quote } = await supabaseAdmin
+    .from('quotes').select('id, tenant_id').eq('id', quote_id).maybeSingle()
+  if (!quote) return NextResponse.json({ error: 'Цитата не найдена' }, { status: 404 })
+  if ((quote as any).tenant_id !== null && (quote as any).tenant_id !== (album as any)?.tenant_id) {
+    return NextResponse.json({ error: 'Цитата не найдена' }, { status: 404 })
+  }
+
   // Проверить не занята ли цитата другим
   const { data: taken } = await supabaseAdmin
     .from('quote_selections')

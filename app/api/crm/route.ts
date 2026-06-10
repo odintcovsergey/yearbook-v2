@@ -257,9 +257,11 @@ export async function POST(req: NextRequest) {
     const update: Record<string, unknown> = { title, stage_id, amount: amount || null, deadline: deadline || null, assigned_to: assigned_to || null, notes }
     if (client_id !== undefined) update.client_id = client_id || null
     if (album_id !== undefined) update.album_id = album_id || null
-    // Если переводим в закрытый этап — ставим closed_at
-    const { data: stage } = await supabaseAdmin.from('deal_stages').select('is_closed').eq('id', stage_id).single()
-    if (stage?.is_closed) update.closed_at = new Date().toISOString()
+    // B1: этап должен принадлежать этому же партнёру.
+    const { data: stage } = await supabaseAdmin.from('deal_stages')
+      .select('is_closed').eq('id', stage_id).eq('tenant_id', tid).single()
+    if (!stage) return NextResponse.json({ error: 'Этап не найден' }, { status: 400 })
+    if (stage.is_closed) update.closed_at = new Date().toISOString()
     else update.closed_at = null
     const { data, error } = await supabaseAdmin
       .from('deals').update(update).eq('id', id)
@@ -273,8 +275,11 @@ export async function POST(req: NextRequest) {
   if (action === 'move_deal') {
     const { id, stage_id } = body
     if (!await assertOwns('deals', id, tid)) return NextResponse.json({ error: 'not found' }, { status: 404 })
-    const { data: stage } = await supabaseAdmin.from('deal_stages').select('is_closed').eq('id', stage_id).single()
-    const closed_at = stage?.is_closed ? new Date().toISOString() : null
+    // B1: этап должен принадлежать этому же партнёру.
+    const { data: stage } = await supabaseAdmin.from('deal_stages')
+      .select('is_closed').eq('id', stage_id).eq('tenant_id', tid).single()
+    if (!stage) return NextResponse.json({ error: 'Этап не найден' }, { status: 400 })
+    const closed_at = stage.is_closed ? new Date().toISOString() : null
     const { data, error } = await supabaseAdmin
       .from('deals').update({ stage_id, closed_at }).eq('id', id)
       .select('*, deal_stages(name, color), clients(name, city), albums(title, city, year)')

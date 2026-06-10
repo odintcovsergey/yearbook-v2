@@ -27,6 +27,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'album_id, filename, content_type, upload_type required' }, { status: 400 })
   }
 
+  // D3: presign доверяет content_type клиента — ограничиваем белым списком.
+  // originals = картинки; delivery = готовые файлы (PDF/ZIP/картинки).
+  const ct = String(content_type).toLowerCase()
+  const allowed = ct.startsWith('image/')
+    || ct === 'application/pdf'
+    || ct === 'application/zip'
+    || ct === 'application/x-zip-compressed'
+  if (!allowed) {
+    return NextResponse.json({ error: 'Недопустимый тип файла' }, { status: 400 })
+  }
+
   // Проверяем доступ
   const { data: album } = await supabaseAdmin
     .from('albums').select('id, tenant_id').eq('id', album_id).single()

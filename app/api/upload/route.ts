@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, isAuthError, logAction } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase'
 import { ycUpload } from '@/lib/storage'
+import { isSupportedImage, MAX_IMAGE_BYTES } from '@/lib/image-validate'
 
 export const runtime = 'nodejs'
 
@@ -61,13 +62,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Альбом архивирован' }, { status: 400 })
   }
 
+  // D3: ограничение размера + проверка, что это реально изображение (по байтам).
+  if (file.size > MAX_IMAGE_BYTES) {
+    return NextResponse.json({ error: 'Файл слишком большой' }, { status: 400 })
+  }
+  const buffer = Buffer.from(await file.arrayBuffer())
+  if (!isSupportedImage(buffer)) {
+    return NextResponse.json({ error: 'Файл не является изображением' }, { status: 400 })
+  }
+
   // Формируем путь — префикс yc: означает Yandex Object Storage
   const cleanName = originalName.replace(/\.[^.]+$/, '').replace(/[^\w.\-]/g, '_')
   const storagePath = `yc:${albumId}/${type}/${Date.now()}_${cleanName}.webp`
   const ycKey = storagePath.slice(3) // без префикса yc:
 
   // Загружаем в YC
-  const buffer = Buffer.from(await file.arrayBuffer())
   try {
     await ycUpload(ycKey, buffer, 'image/webp')
   } catch (err: any) {

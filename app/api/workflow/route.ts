@@ -336,11 +336,13 @@ export async function POST(req: NextRequest) {
   // ── delete_original — удалить оригинал ───────────────────────────────────
   if (action === 'delete_original') {
     if (!isSuperOrOkeybook && !isOwner) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    // B2: файл должен принадлежать этому альбому (album уже проверен на доступ).
     const { data: photo } = await supabaseAdmin
-      .from('original_photos').select('storage_path').eq('id', body.file_id).single()
+      .from('original_photos').select('storage_path')
+      .eq('id', body.file_id).eq('album_id', album_id).single()
     if (photo) {
       await ycDelete(stripYcPrefix(photo.storage_path))
-      await supabaseAdmin.from('original_photos').delete().eq('id', body.file_id)
+      await supabaseAdmin.from('original_photos').delete().eq('id', body.file_id).eq('album_id', album_id)
     }
     return NextResponse.json({ ok: true })
   }
@@ -384,9 +386,11 @@ export async function POST(req: NextRequest) {
 
   // ── mark_downloaded — партнёр скачал delivery файл ───────────────────────
   if (action === 'mark_downloaded') {
+    // B2: файл должен принадлежать этому альбому.
     await supabaseAdmin.from('delivery_files')
       .update({ downloaded_at: new Date().toISOString() })
       .eq('id', body.file_id)
+      .eq('album_id', album_id)
       .is('downloaded_at', null)
     return NextResponse.json({ ok: true })
   }

@@ -56,11 +56,18 @@ export async function GET(req: NextRequest) {
       const logoUrl = (t as any).logo_url
         ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${(t as any).logo_url}`
         : null
+      // C2: отдаём родителю только брендинговые ключи, а не весь settings
+      // (там могут быть служебные поля).
+      const s = (t as any).settings ?? {}
       tenant = {
         name: (t as any).name,
         slug: (t as any).slug,
         logo_url: logoUrl,
-        settings: (t as any).settings ?? {},
+        settings: {
+          brand_color: s.brand_color ?? null,
+          welcome_text: s.welcome_text ?? null,
+          footer_text: s.footer_text ?? null,
+        },
       }
     }
   }
