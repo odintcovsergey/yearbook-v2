@@ -1,9 +1,21 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ['./app/**/*.{js,ts,jsx,tsx}', './components/**/*.{js,ts,jsx,tsx}', './types/**/*.ts'],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
+        // Семантические токены темы (значения в app/globals.css :root и .dark).
+        // Тёмная тема включается классом .dark только в обёртке кабинета.
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
+        card: 'var(--card)',
+        'card-foreground': 'var(--card-foreground)',
+        muted: 'var(--muted)',
+        'muted-foreground': 'var(--muted-foreground)',
+        border: 'var(--border-color)',
+        input: 'var(--input)',
+        ring: 'var(--ring)',
         // Мятная фирменная палитра OkeyBook (из логотипа). См. docs/design-guide-okeybook.md
         brand: {
           50: '#E1F5EE',   // очень светлый — подложки, hover-фоны

@@ -33,6 +33,7 @@ import {
   ChevronsUpDown,
 } from 'lucide-react'
 import CRMModal from './CRMModal'
+import { ThemeToggle } from './_components/ThemeToggle'
 // РЭ.21.7.3: drag-and-drop секций в редакторе пресета.
 import {
   DndContext,
@@ -519,6 +520,7 @@ export default function AppPage() {
             >
               <Gift size={16} /> Рефералки
             </button>
+            <ThemeToggle />
             <button onClick={handleLogout} className="btn-secondary">Выйти</button>
           </div>
         </div>
