@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction } from '@/lib/auth'
-import { ycGetObjectBuffer, ycUpload, getDownloadSignedUrl } from '@/lib/storage'
-import JSZip from 'jszip'
+import { getPhotoSignedUrl } from '@/lib/storage'
 
 export const dynamic = 'force-dynamic'
 // ZIP может собираться долго при большом числе фото. Лимит 60 сек уже стоит
@@ -255,40 +254,26 @@ export async function GET(req: NextRequest) {
     zipPathByPhoto.set(p.id, zipPath)
   }
 
-  const zip = new JSZip()
+  // Бакет приватный, но прогонять сотни МБ оригиналов через serverless-
+  // функцию нельзя (лимит времени/размера Vercel + кросс-облако до YC —
+  // функция висит и обрывается). Поэтому функция отдаёт лишь СПИСОК signed-
+  // ссылок, а архив собирает браузер: качает каждый оригинал напрямую из YC
+  // и пакует на лету (см. handleDownloadOriginalsZip на клиенте). Генерация
+  // ссылок — только HMAC, без сетевого трафика, мгновенно.
+  const files = await Promise.all(
+    (photos as any[])
+      .filter((p) => p.original_path)
+      .map(async (p) => ({
+        id: p.id,
+        filename: p.filename,
+        type: p.type,
+        zip_path: zipPathByPhoto.get(p.id)!,
+        url: await getPhotoSignedUrl(p.original_path),
+      }))
+  )
 
-  // Читаем оригиналы напрямую из приватного бакета (S3 GetObject, креды
-  // сервера). Батчами по 5 — компромисс между скоростью и нагрузкой на
-  // память внутри Vercel function (буферим объекты).
-  const failures: { id: string; filename: string; reason: string }[] = []
-  const successes: string[] = []
-  const batchSize = 5
-  for (let i = 0; i < photos.length; i += batchSize) {
-    const batch = (photos as any[]).slice(i, i + batchSize)
-    await Promise.all(
-      batch.map(async (p) => {
-        if (!p.original_path) {
-          failures.push({ id: p.id, filename: p.filename, reason: 'no original_path' })
-          return
-        }
-        try {
-          const buffer = await ycGetObjectBuffer(p.original_path)
-          const zipPath = zipPathByPhoto.get(p.id)!
-          zip.file(zipPath, buffer)
-          successes.push(p.id)
-        } catch (err: any) {
-          failures.push({
-            id: p.id,
-            filename: p.filename,
-            reason: err?.message || 'fetch failed',
-          })
-        }
-      })
-    )
-  }
-
-  // Собираем манифест после скачивания — отражает реальное содержимое
-  // ZIP (успешно докачанные файлы + список ошибок).
+  // Манифест — список всего, что войдёт в архив. Реальные ошибки скачивания
+  // теперь на стороне браузера (он показывает, сколько файлов не докачалось).
   const manifest = {
     album_id: album.id,
     album_title: album.title,
@@ -297,22 +282,16 @@ export async function GET(req: NextRequest) {
     generated_by: auth.userId,
     categories: (requestedCategories ?? ALL_CATEGORIES.slice()) as Category[],
     only_selected: !includeUnselected,
-    total_requested: photos.length,
-    total_downloaded: successes.length,
-    failures: failures.length,
-    photos: (photos as any[])
-      .filter((p) => successes.includes(p.id))
-      .map((p) => ({
-        id: p.id,
-        filename: p.filename,
-        type: p.type,
-        zip_path: zipPathByPhoto.get(p.id),
-        attached_children: childByPhoto.get(p.id) ?? [],
-        attached_teachers: teacherByPhoto.get(p.id) ?? [],
-      })),
-    ...(failures.length > 0 ? { failed_photos: failures } : {}),
+    total: files.length,
+    photos: files.map((f) => ({
+      id: f.id,
+      filename: f.filename,
+      type: f.type,
+      zip_path: f.zip_path,
+      attached_children: childByPhoto.get(f.id) ?? [],
+      attached_teachers: teacherByPhoto.get(f.id) ?? [],
+    })),
   }
-  zip.file('manifest.json', JSON.stringify(manifest, null, 2))
 
   // README с короткой инструкцией для ретушёра — чтобы открывая ZIP
   // человек сразу понимал что куда. Дополнительно полезно если архив
@@ -320,9 +299,7 @@ export async function GET(req: NextRequest) {
   const readme = [
     `Альбом: ${album.title}`,
     `Сгенерирован: ${manifest.generated_at}`,
-    `Файлов в архиве: ${successes.length}${
-      failures.length > 0 ? ` (${failures.length} не докачались, см. manifest.json)` : ''
-    }`,
+    `Файлов в архиве: ${files.length}`,
     includeUnselected
       ? 'Режим: ВСЕ загруженные оригиналы (включая невыбранные)'
       : 'Режим: только выбранные родителями + все учителя и общий раздел',
@@ -388,23 +365,11 @@ export async function GET(req: NextRequest) {
     '  подскажет из автокомплита. Кнопка «Привязать» подменит',
     '  оригинал на новую версию.',
   ].join('\n')
-  zip.file('README.txt', readme)
-
-  const zipBuffer = await zip.generateAsync({
-    type: 'nodebuffer',
-    compression: 'DEFLATE',
-    // Фото уже сжаты (JPEG), повторное сжатие почти ничего не даёт.
-    // Level 1 — самый быстрый, экономит секунды на сборке.
-    compressionOptions: { level: 1 },
-  })
 
   await logAction(auth, 'workflow.download_originals_zip', 'album', albumId, {
-    requested: photos.length,
-    downloaded: successes.length,
-    failures: failures.length,
+    requested: files.length,
     categories: requestedCategories ?? null,
     only_selected: !includeUnselected,
-    size_bytes: zipBuffer.length,
   })
 
   const safeTitle = (album.title || 'альбом').replace(
@@ -413,26 +378,13 @@ export async function GET(req: NextRequest) {
   )
   const filename = `оригиналы_${safeTitle}.zip`
 
-  // Vercel-функция не может вернуть тело больше ~4.5 МБ — архив оригиналов
-  // почти всегда крупнее. Поэтому грузим ZIP в YC и отдаём клиенту signed
-  // URL: браузер качает файл напрямую из хранилища, минуя лимит функции.
-  const zipKey = `${albumId}/exports/${Date.now()}_originals.zip`
-  try {
-    await ycUpload(zipKey, zipBuffer, 'application/zip')
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: `Не удалось сохранить архив: ${err?.message || 'upload failed'}` },
-      { status: 500 },
-    )
-  }
-  const downloadUrl = await getDownloadSignedUrl(zipKey, filename, 'application/zip')
-
+  // Отдаём список ссылок + тексты manifest/README. Архив собирает браузер
+  // (потоково, из прямых YC-ссылок) — см. client-zip на клиенте.
   return NextResponse.json({
-    download_url: downloadUrl,
     filename,
-    size_bytes: zipBuffer.length,
-    total: photos.length,
-    downloaded: successes.length,
-    failed: failures.length,
+    total: files.length,
+    files,
+    manifest,
+    readme,
   })
 }

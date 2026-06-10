@@ -9378,6 +9378,8 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
   const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 })
   // Фаза К.2 — скачивание оригиналов для ретуши
   const [downloadingOriginalsZip, setDownloadingOriginalsZip] = useState(false)
+  // Прогресс потоковой сборки архива в браузере (n/total), null = не идёт
+  const [originalsZipProgress, setOriginalsZipProgress] = useState<string | null>(null)
   // По умолчанию false — выгружаем только выбранные родителями portrait/group
   // + все teacher/common_*. Чекбокс позволяет фотографу запросить весь архив
   // (например, чтобы отретушировать заранее, до завершения отбора).
@@ -9539,30 +9541,84 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
       // Сбрасываем панель частичной выгрузки если она была открыта
       setBigAlbumOptions(null)
 
-      // Сервер собрал ZIP, загрузил его в хранилище и вернул ссылку —
-      // браузер качает файл напрямую из YC (минуя лимит размера ответа
-      // Vercel-функции). Имя файла навязано через Content-Disposition в ссылке.
+      // Сервер вернул СПИСОК signed-ссылок на оригиналы + тексты manifest/
+      // README. Архив собираем здесь, в браузере: качаем каждый оригинал
+      // напрямую из YC и пакуем потоково (client-zip). Это обходит лимит
+      // serverless-функции Vercel — сотни МБ через неё не прогнать.
       const data = await res.json()
-      if (!data?.download_url) {
-        onError('Сервер не вернул ссылку на архив')
+      const fileList: Array<{ url: string; zip_path: string; filename: string }> =
+        data?.files ?? []
+      if (fileList.length === 0) {
+        onError('Нет оригиналов для скачивания')
         return
       }
 
-      const a = document.createElement('a')
-      a.href = data.download_url
-      a.rel = 'noopener noreferrer'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+      const { downloadZip } = await import('client-zip')
 
-      const failedNum = Number(data.failed ?? 0)
+      // File System Access API (Chrome) — пишем архив сразу на диск потоком,
+      // не держим сотни МБ в памяти вкладки. Если API нет (Safari/Firefox) —
+      // фолбэк: собираем blob целиком (ок для небольших альбомов).
+      let fileHandle: any = null
+      const canStreamToDisk = typeof (window as any).showSaveFilePicker === 'function'
+      if (canStreamToDisk) {
+        try {
+          fileHandle = await (window as any).showSaveFilePicker({
+            suggestedName: data.filename || 'оригиналы.zip',
+            types: [{ description: 'ZIP-архив', accept: { 'application/zip': ['.zip'] } }],
+          })
+        } catch (e: any) {
+          // Пользователь отменил выбор файла — тихо выходим.
+          if (e?.name === 'AbortError') return
+        }
+      }
+
+      let failed = 0
+      let done = 0
+      const total = fileList.length
+      setOriginalsZipProgress(`0/${total}`)
+
+      // Источник для архива: служебные файлы + каждый оригинал как поток.
+      const zipInputs = async function* () {
+        yield { name: 'manifest.json', input: JSON.stringify(data.manifest, null, 2) }
+        yield { name: 'README.txt', input: data.readme ?? '' }
+        for (const f of fileList) {
+          try {
+            const r = await fetch(f.url)
+            if (!r.ok) { failed++; done++; setOriginalsZipProgress(`${done}/${total}`); continue }
+            yield { name: f.zip_path, input: r }
+          } catch {
+            failed++
+          }
+          done++
+          setOriginalsZipProgress(`${done}/${total}`)
+        }
+      }
+
+      const zipResponse = downloadZip(zipInputs())
+
+      if (fileHandle) {
+        const writable = await fileHandle.createWritable()
+        await zipResponse.body!.pipeTo(writable)
+      } else {
+        const blob = await zipResponse.blob()
+        const objectUrl = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = objectUrl
+        a.download = data.filename || 'оригиналы.zip'
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+      }
+
       onNotify(
-        `Скачано ${data.downloaded ?? '?'} оригиналов${failedNum > 0 ? ` (${failedNum} не докачались, см. manifest.json)` : ''}`
+        `Скачано ${total - failed} оригиналов${failed > 0 ? ` (${failed} не докачались — проверьте интернет и повторите)` : ''}`
       )
     } catch (e: any) {
       onError(e?.message || 'Не удалось скачать оригиналы')
     } finally {
       setDownloadingOriginalsZip(false)
+      setOriginalsZipProgress(null)
     }
   }
 
@@ -9882,7 +9938,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                   : 'Скачать оригиналы выбранных родителями фото + учителей + общего раздела'
               }
             >
-              {downloadingOriginalsZip ? 'Собираем ZIP…' : <><Download size={16} /> Скачать оригиналы</>}
+              {downloadingOriginalsZip ? (originalsZipProgress ? `Скачивание ${originalsZipProgress}…` : 'Собираем ZIP…') : <><Download size={16} /> Скачать оригиналы</>}
             </button>
           </div>
 
@@ -9965,7 +10021,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
                       selectedSum > bigAlbumOptions.max_per_request
                     }
                   >
-                    {downloadingOriginalsZip ? 'Собираем…' : 'Скачать выбранные'}
+                    {downloadingOriginalsZip ? (originalsZipProgress ? `Скачивание ${originalsZipProgress}…` : 'Собираем…') : 'Скачать выбранные'}
                   </button>
                 </div>
               </div>
