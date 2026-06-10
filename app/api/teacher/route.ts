@@ -92,15 +92,35 @@ export async function POST(req: NextRequest) {
   // Сохранить карточку учителя
   if (action === 'save') {
     const { teacher_id, full_name, position, description, photo_id } = body
+
+    // Карточка должна принадлежать альбому этого родителя — иначе зная чужой
+    // teacher_id можно было бы править карточку другого партнёра (C3).
+    const { data: ownTeacher } = await supabaseAdmin
+      .from('teachers')
+      .select('id')
+      .eq('id', teacher_id)
+      .eq('album_id', resp.album_id)
+      .single()
+    if (!ownTeacher) return NextResponse.json({ error: 'Карточка не найдена' }, { status: 404 })
+
     await supabaseAdmin.from('teachers').update({
       full_name: full_name?.trim() ?? '',
       position: position?.trim() ?? '',
       description: description?.trim() ?? '',
       submitted_at: new Date().toISOString(),
-    }).eq('id', teacher_id)
+    }).eq('id', teacher_id).eq('album_id', resp.album_id)
 
     await supabaseAdmin.from('photo_teachers').delete().eq('teacher_id', teacher_id)
     if (photo_id) {
+      // Фото тоже должно быть из этого альбома и быть фото учителя.
+      const { data: ownPhoto } = await supabaseAdmin
+        .from('photos')
+        .select('id')
+        .eq('id', photo_id)
+        .eq('album_id', resp.album_id)
+        .eq('type', 'teacher')
+        .single()
+      if (!ownPhoto) return NextResponse.json({ error: 'Фото не найдено' }, { status: 404 })
       await supabaseAdmin.from('photo_teachers').insert({ photo_id, teacher_id })
     }
     return NextResponse.json({ ok: true })
@@ -109,8 +129,18 @@ export async function POST(req: NextRequest) {
   // Удалить карточку учителя
   if (action === 'delete') {
     const { teacher_id } = body
+
+    // Та же проверка владения, что и в save.
+    const { data: ownTeacher } = await supabaseAdmin
+      .from('teachers')
+      .select('id')
+      .eq('id', teacher_id)
+      .eq('album_id', resp.album_id)
+      .single()
+    if (!ownTeacher) return NextResponse.json({ error: 'Карточка не найдена' }, { status: 404 })
+
     await supabaseAdmin.from('photo_teachers').delete().eq('teacher_id', teacher_id)
-    await supabaseAdmin.from('teachers').delete().eq('id', teacher_id)
+    await supabaseAdmin.from('teachers').delete().eq('id', teacher_id).eq('album_id', resp.album_id)
     return NextResponse.json({ ok: true })
   }
 
