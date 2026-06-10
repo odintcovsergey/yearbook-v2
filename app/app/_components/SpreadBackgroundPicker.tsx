@@ -62,14 +62,14 @@ export default function SpreadBackgroundPicker({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col"
+        className="bg-card rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Шапка */}
-        <div className="px-5 py-4 border-b border-gray-200 flex items-start justify-between gap-4">
+        <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">Фон разворота</h2>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <h2 className="text-base font-semibold text-foreground">Фон разворота</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
               {category
                 ? <>Категория этого разворота: <b>{categoryLabel}</b>. По умолчанию фоны раздела чередуются автоматически — выберите конкретный, чтобы зафиксировать его на этом развороте.</>
                 : 'Выберите фон для этого разворота.'}
@@ -78,7 +78,7 @@ export default function SpreadBackgroundPicker({
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            className="text-muted-foreground hover:text-foreground text-xl leading-none"
             aria-label="Закрыть"
           >
             ×
@@ -86,12 +86,12 @@ export default function SpreadBackgroundPicker({
         </div>
 
         {/* Управление */}
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3 flex-wrap">
+        <div className="px-5 py-3 border-b border-border flex items-center gap-3 flex-wrap">
           <button
             type="button"
             onClick={onReset}
             disabled={!currentOverride}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             title="Убрать ручной фон, вернуть автоматическую ротацию раздела"
           >
             <RotateCcw size={14} /> Вернуть авто
@@ -99,10 +99,10 @@ export default function SpreadBackgroundPicker({
           {currentOverride ? (
             <span className="text-xs text-brand-600">Сейчас: фон задан вручную</span>
           ) : (
-            <span className="text-xs text-gray-400">Сейчас: авто (ротация раздела)</span>
+            <span className="text-xs text-muted-foreground">Сейчас: авто (ротация раздела)</span>
           )}
           {category && (
-            <label className="ml-auto flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+            <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
               <input
                 type="checkbox"
                 checked={showAll}
@@ -116,7 +116,7 @@ export default function SpreadBackgroundPicker({
         {/* Сетка фонов */}
         <div className="px-5 py-4 overflow-y-auto">
           {visible.length === 0 ? (
-            <div className="text-sm text-gray-400 text-center py-8">
+            <div className="text-sm text-muted-foreground text-center py-8">
               {category && !showAll
                 ? 'В этой категории пока нет загруженных фонов. Включите «все категории» или загрузите фоны в супер-админке.'
                 : 'Фоны не загружены.'}
@@ -133,7 +133,7 @@ export default function SpreadBackgroundPicker({
                     className={`relative rounded overflow-hidden border-2 transition-colors ${
                       selected
                         ? 'border-brand-500 ring-2 ring-brand-200'
-                        : 'border-gray-200 hover:border-brand-300'
+                        : 'border-border hover:border-brand-300'
                     }`}
                     title={
                       showAll
@@ -145,7 +145,7 @@ export default function SpreadBackgroundPicker({
                     <img
                       src={publicUrl(bg.url)}
                       alt="Фон"
-                      className="w-full h-20 object-cover bg-gray-100"
+                      className="w-full h-20 object-cover bg-muted"
                     />
                     {showAll && (
                       <span className="absolute bottom-0 left-0 right-0 text-[10px] bg-black/55 text-white px-1 py-0.5 truncate">

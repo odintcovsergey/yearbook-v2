@@ -95,7 +95,7 @@ function PhotoTile({
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={`relative aspect-[3/4] bg-gray-100 rounded overflow-hidden border border-gray-200 hover:ring-2 hover:ring-brand-300 transition cursor-grab active:cursor-grabbing ${
+      className={`relative aspect-[3/4] bg-muted rounded overflow-hidden border border-border hover:ring-2 hover:ring-brand-300 transition cursor-grab active:cursor-grabbing ${
         isDragging ? 'opacity-40' : ''
       }`}
       title={photo.filename}
@@ -133,7 +133,7 @@ function Section({
   if (photos.length === 0) return null
   return (
     <div className="mb-4">
-      <h3 className="text-xs font-semibold text-gray-700 mb-2 sticky top-[88px] bg-white py-1 z-[5]">
+      <h3 className="text-xs font-semibold text-foreground mb-2 sticky top-[88px] bg-card py-1 z-[5]">
         {title} ({photos.length})
       </h3>
       <div className="grid grid-cols-3 gap-2">
@@ -297,9 +297,9 @@ export default function PhotoPalette({ spreads, photos }: Props) {
   }
 
   return (
-    <aside className="w-[30%] min-w-[300px] max-w-[440px] bg-white border-l border-gray-200 overflow-y-auto">
-      <div className="p-3 sticky top-0 bg-white z-10 border-b border-gray-100">
-        <h2 className="text-sm font-semibold text-gray-900 mb-2">
+    <aside className="w-[30%] min-w-[300px] max-w-[440px] bg-card border-l border-border overflow-y-auto">
+      <div className="p-3 sticky top-0 bg-card z-10 border-b border-border">
+        <h2 className="text-sm font-semibold text-foreground mb-2">
           Палитра фото
         </h2>
         <input
@@ -307,7 +307,7 @@ export default function PhotoPalette({ spreads, photos }: Props) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Поиск по имени файла…"
-          className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-brand-200"
+          className="w-full px-2 py-1.5 text-xs border border-border rounded focus:outline-none focus:ring-2 focus:ring-brand-200"
         />
         {/* РЭ.54.c: табы по категориям. */}
         <div className="flex flex-wrap gap-1 mt-2">
@@ -322,10 +322,10 @@ export default function PhotoPalette({ spreads, photos }: Props) {
                 className={`px-2 py-1 text-[11px] rounded border transition-colors ${
                   isActive
                     ? 'bg-brand-600 text-white border-brand-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    : 'bg-card text-foreground border-border hover:bg-muted'
                 }`}
               >
-                {TAB_LABELS[tab]} <span className={isActive ? 'opacity-90' : 'text-gray-400'}>({count})</span>
+                {TAB_LABELS[tab]} <span className={isActive ? 'opacity-90' : 'text-muted-foreground'}>({count})</span>
               </button>
             )
           })}
@@ -334,7 +334,7 @@ export default function PhotoPalette({ spreads, photos }: Props) {
 
       <div className="p-3">
         {filtered.length === 0 ? (
-          <p className="text-xs text-gray-500 text-center py-8">
+          <p className="text-xs text-muted-foreground text-center py-8">
             {query ? 'Ничего не найдено' : 'Нет фото в альбоме'}
           </p>
         ) : activeTab === 'all' ? (

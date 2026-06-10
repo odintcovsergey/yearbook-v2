@@ -415,13 +415,13 @@ export default function PresetEditorModal({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-lg w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-card rounded-lg w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold">{preset.display_name}</h2>
-            <div className="text-xs text-gray-500 font-mono mt-0.5">
+            <div className="text-xs text-muted-foreground font-mono mt-0.5">
               {preset.id}
               {preset.tenant_id === null && (
                 <span className="ml-2 bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
@@ -430,7 +430,7 @@ export default function PresetEditorModal({
               )}
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-2xl leading-none">
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-2xl leading-none">
             ×
           </button>
         </div>
@@ -438,12 +438,12 @@ export default function PresetEditorModal({
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* ─── Базовые поля ─── */}
           <section className="space-y-3">
-            <h3 className="font-semibold text-sm text-gray-700 uppercase tracking-wide">
+            <h3 className="font-semibold text-sm text-foreground uppercase tracking-wide">
               Базовые параметры
             </h3>
 
             <div>
-              <label className="text-sm text-gray-600 block mb-1">Название</label>
+              <label className="text-sm text-muted-foreground block mb-1">Название</label>
               <input
                 type="text"
                 value={displayName}
@@ -466,10 +466,10 @@ export default function PresetEditorModal({
                     className="mt-0.5"
                   />
                   <div className="text-sm">
-                    <span className="font-medium text-gray-800">
+                    <span className="font-medium text-foreground">
                       Показывать в каталоге для партнёров
                     </span>
-                    <span className="text-gray-600 block text-xs mt-0.5">
+                    <span className="text-muted-foreground block text-xs mt-0.5">
                       Если включено — этот шаблон появится в разделе
                       «Шаблоны» у партнёров (внутри своего дизайна). Партнёры
                       смогут клонировать его в свою личную библиотеку.
@@ -487,7 +487,7 @@ export default function PresetEditorModal({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm text-gray-600 block mb-1">Мин. страниц</label>
+                <label className="text-sm text-muted-foreground block mb-1">Мин. страниц</label>
                 <input
                   type="number"
                   min={1}
@@ -500,7 +500,7 @@ export default function PresetEditorModal({
                 />
               </div>
               <div>
-                <label className="text-sm text-gray-600 block mb-1">Макс. страниц</label>
+                <label className="text-sm text-muted-foreground block mb-1">Макс. страниц</label>
                 <input
                   type="number"
                   min={1}
@@ -518,10 +518,10 @@ export default function PresetEditorModal({
           {/* ─── Личный раздел (РЭ.22.3 — двух-осевая модель) ─── */}
           <section className="space-y-3 border-t pt-6">
             <div>
-              <h3 className="font-semibold text-sm text-gray-700 uppercase tracking-wide">
+              <h3 className="font-semibold text-sm text-foreground uppercase tracking-wide">
                 Личный раздел
               </h3>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Выберите режим: одна страница на ученика, разворот на ученика
                 или сетка из нескольких. Engine ищет в template_set мастер
                 с подходящим slot_capacity по этим параметрам.
@@ -529,7 +529,7 @@ export default function PresetEditorModal({
             </div>
 
             <div>
-              <label className="text-sm text-gray-600 block mb-1">Режим</label>
+              <label className="text-sm text-muted-foreground block mb-1">Режим</label>
               <select
                 value={studentLayoutMode}
                 onChange={(e) =>
@@ -547,7 +547,7 @@ export default function PresetEditorModal({
             {(studentLayoutMode === 'page' || studentLayoutMode === 'spread') && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-sm text-gray-600 block mb-1">
+                  <label className="text-sm text-muted-foreground block mb-1">
                     Фото с друзьями
                   </label>
                   <input
@@ -565,7 +565,7 @@ export default function PresetEditorModal({
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-gray-600 block mb-1">Цитата</label>
+                  <label className="text-sm text-muted-foreground block mb-1">Цитата</label>
                   <select
                     value={String(studentHasQuote)}
                     onChange={(e) => setStudentHasQuote(e.target.value === 'true')}
@@ -582,7 +582,7 @@ export default function PresetEditorModal({
               <>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm text-gray-600 block mb-1">
+                    <label className="text-sm text-muted-foreground block mb-1">
                       Учеников на страницу
                     </label>
                     <input
@@ -598,14 +598,14 @@ export default function PresetEditorModal({
                       className="w-full border rounded px-3 py-2 text-sm"
                       placeholder="2..12"
                     />
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Базовый размер сетки. Адаптивный хвост (последняя
                       неполная страница) подбирается engine'ом автоматически
                       из доступных мастеров template_set.
                     </p>
                   </div>
                   <div>
-                    <label className="text-sm text-gray-600 block mb-1">Цитата</label>
+                    <label className="text-sm text-muted-foreground block mb-1">Цитата</label>
                     <select
                       value={String(studentHasQuote)}
                       onChange={(e) => setStudentHasQuote(e.target.value === 'true')}
@@ -631,10 +631,10 @@ export default function PresetEditorModal({
           {/* ─── РЭ.37.6: ручной сценарий transition-разворота ─── */}
           <section className="space-y-3 border-t pt-6">
             <div>
-              <h3 className="font-semibold text-sm text-gray-700 uppercase tracking-wide">
+              <h3 className="font-semibold text-sm text-foreground uppercase tracking-wide">
                 Переходный разворот
               </h3>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Что engine кладёт на переходном развороте после раздела
                 учеников. По умолчанию — автоматически (OkeyBook-логика).
                 Можно задать вручную, если стандартный результат не
@@ -654,7 +654,7 @@ export default function PresetEditorModal({
                 />
                 <span className="text-sm">
                   <span className="font-medium">По умолчанию</span>
-                  <span className="block text-xs text-gray-600 mt-0.5">
+                  <span className="block text-xs text-muted-foreground mt-0.5">
                     Engine сам подбирает мастера для левой/правой страницы по
                     OkeyBook-правилам: combo-мастер на хвосте, J-цепочка для
                     закрытия. Подходит в 90% случаев.
@@ -672,7 +672,7 @@ export default function PresetEditorModal({
                 />
                 <span className="text-sm">
                   <span className="font-medium">Вручную — мой сценарий</span>
-                  <span className="block text-xs text-gray-600 mt-0.5">
+                  <span className="block text-xs text-muted-foreground mt-0.5">
                     Выберите мастера для левой и правой страницы.
                     Симметризация хвоста при этом не применяется
                     (вы сами решили что класть).
@@ -692,7 +692,7 @@ export default function PresetEditorModal({
                 ) : (
                   <>
                     <div>
-                      <label className="text-sm text-gray-700 block mb-1">
+                      <label className="text-sm text-foreground block mb-1">
                         Левая страница перехода
                       </label>
                       <select
@@ -702,7 +702,7 @@ export default function PresetEditorModal({
                             e.target.value === '' ? null : e.target.value,
                           )
                         }
-                        className="w-full border rounded px-3 py-2 text-sm bg-white"
+                        className="w-full border rounded px-3 py-2 text-sm bg-card"
                       >
                         <option value="">
                           — (оставить хвост раздела учеников как есть)
@@ -713,7 +713,7 @@ export default function PresetEditorModal({
                           </option>
                         ))}
                       </select>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         Engine положит этот мастер вместо последней страницы
                         раздела учеников. Если мастер содержит portrait-слоты
                         — хвостовые ученики попадут туда. Иначе — биндятся
@@ -722,7 +722,7 @@ export default function PresetEditorModal({
                     </div>
 
                     <div>
-                      <label className="text-sm text-gray-700 block mb-1">
+                      <label className="text-sm text-foreground block mb-1">
                         Правая страница перехода
                       </label>
                       <select
@@ -732,7 +732,7 @@ export default function PresetEditorModal({
                             e.target.value === '' ? null : e.target.value,
                           )
                         }
-                        className="w-full border rounded px-3 py-2 text-sm bg-white"
+                        className="w-full border rounded px-3 py-2 text-sm bg-card"
                       >
                         <option value="">
                           — (закрыть как обычно — J-цепочка)
@@ -743,7 +743,7 @@ export default function PresetEditorModal({
                           </option>
                         ))}
                       </select>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         Если левая страница transition оказалась на левой
                         развороте — правая будет «висеть». Этот мастер закроет
                         её. Если не выбрано — engine закроет автоматически
@@ -767,10 +767,10 @@ export default function PresetEditorModal({
           {/* ─── section_structure редактор ─── */}
           <section className="space-y-3 border-t pt-6">
             <div>
-              <h3 className="font-semibold text-sm text-gray-700 uppercase tracking-wide">
+              <h3 className="font-semibold text-sm text-foreground uppercase tracking-wide">
                 Структура альбома (section_structure)
               </h3>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Порядок секций сверху вниз. Engine собирает альбом следуя этому
                 списку. Перетащите секцию за ⋮⋮ слева чтобы изменить порядок
                 (или используйте стрелки ▲▼).
@@ -796,7 +796,7 @@ export default function PresetEditorModal({
         </div>
 
         {/* ─── Footer: save / cancel ─── */}
-        <div className="px-6 py-4 border-t bg-gray-50">
+        <div className="px-6 py-4 border-t bg-muted">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm mb-3">
               {error}
@@ -806,7 +806,7 @@ export default function PresetEditorModal({
             <button
               onClick={onClose}
               disabled={saving}
-              className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded"
+              className="px-4 py-2 text-sm text-foreground hover:bg-muted rounded"
             >
               Отмена
             </button>
@@ -872,7 +872,7 @@ function SectionsEditor({
 
   if (sections.length === 0) {
     return (
-      <div className="text-sm text-gray-500 italic border border-dashed rounded p-4">
+      <div className="text-sm text-muted-foreground italic border border-dashed rounded p-4">
         Структура пустая. Добавьте секции через кнопки ниже.
       </div>
     )
@@ -956,14 +956,14 @@ function SortableSectionItem({
     <div
       ref={setNodeRef}
       style={style}
-      className="bg-gray-50 border rounded px-3 py-2 flex items-start gap-2"
+      className="bg-muted border rounded px-3 py-2 flex items-start gap-2"
     >
       {/* Drag-handle ⋮⋮ — слушатели DnD только на нём, чтобы кнопки
           ▲▼ и × внутри карточки работали обычным кликом. */}
       <div
         {...attributes}
         {...listeners}
-        className="text-gray-400 hover:text-gray-700 cursor-grab active:cursor-grabbing select-none px-1 pt-1"
+        className="text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing select-none px-1 pt-1"
         aria-label="Перетащите чтобы изменить порядок"
         title="Перетащите чтобы изменить порядок"
       >
@@ -973,7 +973,7 @@ function SortableSectionItem({
         <button
           onClick={() => onMove(idx, -1)}
           disabled={idx === 0}
-          className="text-xs text-gray-500 hover:text-gray-900 disabled:opacity-30 px-1"
+          className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30 px-1"
           aria-label="Вверх"
         >
           ▲
@@ -981,7 +981,7 @@ function SortableSectionItem({
         <button
           onClick={() => onMove(idx, 1)}
           disabled={idx === totalSections - 1}
-          className="text-xs text-gray-500 hover:text-gray-900 disabled:opacity-30 px-1"
+          className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30 px-1"
           aria-label="Вниз"
         >
           ▼
@@ -989,16 +989,16 @@ function SortableSectionItem({
       </div>
       <div className="flex-1">
         <div className="font-medium text-sm">{SECTION_LABELS[s.type]}</div>
-        <div className="text-xs text-gray-500 font-mono">{s.type}</div>
+        <div className="text-xs text-muted-foreground font-mono">{s.type}</div>
         {SECTION_DESCRIPTIONS[s.type] && (
-          <div className="text-xs text-gray-600 mt-1">
+          <div className="text-xs text-muted-foreground mt-1">
             {SECTION_DESCRIPTIONS[s.type]}
           </div>
         )}
         {/* common_additional: max_spreads */}
         {s.type === 'common_additional' && (
           <div className="mt-2 flex items-center gap-2">
-            <label className="text-xs text-gray-600">max_spreads:</label>
+            <label className="text-xs text-muted-foreground">max_spreads:</label>
             <input
               type="number"
               min={0}
@@ -1020,7 +1020,7 @@ function SortableSectionItem({
                 мастера общего раздела.
               </p>
             ) : templatesLoading ? (
-              <p className="text-xs text-gray-400 italic">
+              <p className="text-xs text-muted-foreground italic">
                 Загрузка мастеров…
               </p>
             ) : (
@@ -1043,7 +1043,7 @@ function SortableSectionItem({
                 переходный мастер.
               </p>
             ) : templatesLoading ? (
-              <p className="text-xs text-gray-400 italic">
+              <p className="text-xs text-muted-foreground italic">
                 Загрузка мастеров…
               </p>
             ) : (
@@ -1069,7 +1069,7 @@ function SortableSectionItem({
                 мастер вступительной/финальной страницы.
               </p>
             ) : templatesLoading ? (
-              <p className="text-xs text-gray-400 italic">
+              <p className="text-xs text-muted-foreground italic">
                 Загрузка мастеров…
               </p>
             ) : (
@@ -1087,7 +1087,7 @@ function SortableSectionItem({
         {/* Старая common: max_spreads */}
         {s.type === 'common' && 'mode' in s && s.mode === 'auto' && (
           <div className="mt-2 flex items-center gap-2">
-            <label className="text-xs text-gray-600">max_spreads:</label>
+            <label className="text-xs text-muted-foreground">max_spreads:</label>
             <input
               type="number"
               min={0}
@@ -1136,7 +1136,7 @@ function AddSectionPicker({
             disabled={disabled}
             className={`text-xs px-3 py-1.5 rounded border ${
               disabled
-                ? 'border-gray-200 text-gray-400 cursor-not-allowed'
+                ? 'border-border text-muted-foreground cursor-not-allowed'
                 : 'border-purple-300 text-purple-700 hover:bg-purple-50'
             }`}
             title={SECTION_LABELS[type]}
@@ -1219,7 +1219,7 @@ function TransitionMasterSelector({
 
   return (
     <div className="space-y-1">
-      <label className="text-xs text-gray-600">Мастер переходной страницы:</label>
+      <label className="text-xs text-muted-foreground">Мастер переходной страницы:</label>
       <select
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value === '' ? null : e.target.value)}
@@ -1287,7 +1287,7 @@ function SoftSectionMasterPicker({
 
   return (
     <div className="space-y-1">
-      <label className="text-xs text-gray-600">
+      <label className="text-xs text-muted-foreground">
         Мастер {sectionLabel} страницы:
       </label>
       <select
@@ -1310,7 +1310,7 @@ function SoftSectionMasterPicker({
           или удалён). Engine применит правило по умолчанию.
         </p>
       )}
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-muted-foreground">
         {sectionType === 'soft_intro'
           ? 'Выберите свой мастер (учителя, классный руководитель, воспитатели и т.д.) или оставьте по умолчанию — engine положит общее фото класса.'
           : 'Выберите свой мастер для финальной страницы или оставьте по умолчанию — engine положит общее фото класса / прощание.'}

@@ -307,22 +307,22 @@ export default function TemplatesPage() {
   if (!authChecked) return null
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
         {/* Заголовок */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <div className="text-xs text-gray-400 mb-1">
+            <div className="text-xs text-muted-foreground mb-1">
               <button
                 onClick={() => router.push('/app')}
-                className="hover:text-gray-700"
+                className="hover:text-foreground"
               >
                 Главная
               </button>
               {' / '}
               <button
                 onClick={() => router.push('/app/templates')}
-                className="hover:text-gray-700"
+                className="hover:text-foreground"
               >
                 Шаблоны
               </button>
@@ -332,14 +332,14 @@ export default function TemplatesPage() {
             <h1 className="text-2xl font-bold">
               Шаблоны: {designInfo?.name ?? '...'}
             </h1>
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Готовые шаблоны от OkeyBook для этого дизайна + ваша личная
               библиотека. При создании альбома выберете один из шаблонов.
             </p>
           </div>
           <button
             onClick={() => router.push('/app/templates')}
-            className="text-sm text-gray-600 hover:text-gray-900"
+            className="text-sm text-muted-foreground hover:text-foreground"
           >
             ← К дизайнам
           </button>
@@ -358,7 +358,7 @@ export default function TemplatesPage() {
           </div>
         )}
 
-        {loading && <div className="text-gray-500 mb-4">Загрузка...</div>}
+        {loading && <div className="text-muted-foreground mb-4">Загрузка...</div>}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
             {error}
@@ -367,11 +367,11 @@ export default function TemplatesPage() {
 
         {/* СЕКЦИЯ 1: Готовые от OkeyBook */}
         <section className="mb-10">
-          <h2 className="text-lg font-semibold text-gray-700 mb-3">
+          <h2 className="text-lg font-semibold text-foreground mb-3">
             Готовые от OkeyBook ({globalTemplates.length})
           </h2>
           {globalTemplates.length === 0 && !loading && (
-            <div className="text-gray-400 text-sm bg-white border border-gray-200 rounded p-4">
+            <div className="text-muted-foreground text-sm bg-card border border-border rounded p-4">
               Пока нет рекомендованных шаблонов от OkeyBook.
             </div>
           )}
@@ -392,7 +392,7 @@ export default function TemplatesPage() {
         {/* СЕКЦИЯ 2: Мои шаблоны */}
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-700">
+            <h2 className="text-lg font-semibold text-foreground">
               Мои шаблоны ({myTemplates.length})
             </h2>
             {!isViewer && (
@@ -405,7 +405,7 @@ export default function TemplatesPage() {
             )}
           </div>
           {myTemplates.length === 0 && !loading && (
-            <div className="text-gray-400 text-sm bg-white border border-gray-200 rounded p-4">
+            <div className="text-muted-foreground text-sm bg-card border border-border rounded p-4">
               У вас пока нет своих шаблонов. Нажмите «Сохранить в мои» на
               любом готовом шаблоне или «Создать свой шаблон» сверху.
             </div>
@@ -465,15 +465,15 @@ function TemplateCard(props: TemplateCardProps) {
 
   return (
     <div
-      className={`bg-white border rounded-xl p-3 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-150 ${
-        isInvalid ? 'border-red-300' : 'border-gray-200/70'
+      className={`bg-card border rounded-xl p-3 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-150 ${
+        isInvalid ? 'border-red-300' : 'border-border'
       }`}
     >
       {/* Крупное превью — students. РЭ.47: aspect ratio 1:1.4 (страница
           вертикальная), минимальная высота уменьшена с 160 до 110px для
           компактного грида. */}
       <div
-        className="w-full bg-gray-50 border border-gray-200 rounded-lg mb-2 overflow-hidden flex items-center justify-center"
+        className="w-full bg-muted border border-border rounded-lg mb-2 overflow-hidden flex items-center justify-center"
         style={{ aspectRatio: '1 / 1.4' }}
         dangerouslySetInnerHTML={{
           __html:
@@ -483,19 +483,19 @@ function TemplateCard(props: TemplateCardProps) {
       />
 
       {/* Название */}
-      <div className="font-semibold text-gray-900 text-sm truncate" title={template.display_name}>
+      <div className="font-semibold text-foreground text-sm truncate" title={template.display_name}>
         {template.display_name}
       </div>
 
       {/* Описание */}
-      <div className="text-xs text-gray-500 mb-2 truncate" title={template.description || ''}>
+      <div className="text-xs text-muted-foreground mb-2 truncate" title={template.description || ''}>
         {template.description || '—'}
       </div>
 
       {/* Бейджи */}
       <div className="flex flex-wrap gap-1 mb-2">
         {template.sheet_type === 'hard' && (
-          <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-full">
+          <span className="px-2 py-0.5 bg-muted text-muted-foreground text-[10px] font-medium rounded-full">
             твёрдая
           </span>
         )}
@@ -505,7 +505,7 @@ function TemplateCard(props: TemplateCardProps) {
           </span>
         )}
         {template.student_layout_mode && (
-          <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-full">
+          <span className="px-2 py-0.5 bg-muted text-muted-foreground text-[10px] font-medium rounded-full">
             {layoutModeLabel(template.student_layout_mode, template.student_grid_size)}
           </span>
         )}
@@ -545,14 +545,14 @@ function TemplateCard(props: TemplateCardProps) {
               <button
                 onClick={(props as Extract<TemplateCardProps, { kind: 'my' }>).onEdit}
                 disabled={busy}
-                className="flex-1 px-2 py-1 bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 text-gray-800 rounded-lg text-xs"
+                className="flex-1 px-2 py-1 bg-muted hover:bg-muted disabled:bg-muted text-foreground rounded-lg text-xs"
               >
                 Редактировать
               </button>
               <button
                 onClick={(props as Extract<TemplateCardProps, { kind: 'my' }>).onDelete}
                 disabled={busy}
-                className="px-2 py-1 bg-red-100 hover:bg-red-200 disabled:bg-gray-100 text-red-700 rounded-lg text-xs"
+                className="px-2 py-1 bg-red-100 hover:bg-red-200 disabled:bg-muted text-red-700 rounded-lg text-xs"
                 title="Удалить шаблон"
               >
                 {busy ? '...' : '×'}

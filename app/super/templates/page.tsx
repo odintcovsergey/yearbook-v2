@@ -146,7 +146,7 @@ export default function TemplatesPage() {
 
   if (!authChecked) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-400">
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
         Проверка авторизации…
       </div>
     )
@@ -158,7 +158,7 @@ export default function TemplatesPage() {
         <div className="flex items-start justify-between mb-6">
           <div>
             <h1 className="text-2xl font-semibold mb-1 flex items-center gap-2"><Ruler size={22} /> Шаблоны вёрстки</h1>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               Наборы master-разворотов для построения альбомов
             </p>
           </div>
@@ -173,7 +173,7 @@ export default function TemplatesPage() {
         </div>
 
         {loading && (
-          <div className="text-center py-12 text-gray-400">Загрузка…</div>
+          <div className="text-center py-12 text-muted-foreground">Загрузка…</div>
         )}
 
         {error && !loading && (
@@ -184,7 +184,7 @@ export default function TemplatesPage() {
         )}
 
         {!loading && !error && templates.length === 0 && (
-          <div className="card p-12 text-center text-gray-500">
+          <div className="card p-12 text-center text-muted-foreground">
             <div className="mb-4">Шаблоны не загружены.</div>
             <button onClick={() => setShowUpload(true)} className="btn-primary">
               + Загрузить первый IDML
@@ -276,7 +276,7 @@ function RenameModal({
 
   return (
     <ModalShell onClose={onClose} title="Переименовать дизайн">
-      <p className="text-sm text-gray-500 mb-3">
+      <p className="text-sm text-muted-foreground mb-3">
         Меняется только отображаемое имя. Технический идентификатор (slug)
         остаётся прежним.
       </p>
@@ -288,7 +288,7 @@ function RenameModal({
         className="w-full border rounded px-3 py-2 text-sm mb-1"
         placeholder="Название дизайна"
       />
-      <div className="text-xs text-gray-400 font-mono mb-3">{template.slug}</div>
+      <div className="text-xs text-muted-foreground font-mono mb-3">{template.slug}</div>
       {err && <div className="text-sm text-red-600 mb-3">{err}</div>}
       <div className="flex justify-end gap-2">
         <button onClick={onClose} disabled={saving} className="btn-secondary">
@@ -330,14 +330,14 @@ function DeleteModal({
 
   return (
     <ModalShell onClose={onClose} title="Удалить дизайн">
-      <p className="text-sm text-gray-700 mb-3">
+      <p className="text-sm text-foreground mb-3">
         Дизайн <b>«{template.name}»</b> будет удалён вместе со всеми его
         мастерами и фонами. Действие необратимо.
       </p>
-      <p className="text-sm text-gray-500 mb-2">
+      <p className="text-sm text-muted-foreground mb-2">
         Если на дизайне есть альбомы или пресеты — сервер не даст его удалить.
       </p>
-      <p className="text-sm text-gray-700 mb-1">
+      <p className="text-sm text-foreground mb-1">
         Для подтверждения введите название дизайна:
       </p>
       <input
@@ -355,7 +355,7 @@ function DeleteModal({
         <button
           onClick={run}
           disabled={!matches || deleting}
-          className="px-4 py-2 text-sm rounded bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white"
+          className="px-4 py-2 text-sm rounded bg-red-600 hover:bg-red-700 disabled:bg-muted text-white"
         >
           {deleting ? 'Удаление…' : 'Удалить навсегда'}
         </button>
@@ -382,7 +382,7 @@ function ModalShell({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
+        className="bg-card rounded-xl shadow-xl w-full max-w-md p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-lg font-semibold mb-4">{title}</h3>

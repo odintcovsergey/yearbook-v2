@@ -115,7 +115,7 @@ export default function CoversPage() {
   }
 
   if (!authChecked) {
-    return <div className="min-h-screen flex items-center justify-center text-gray-400">Проверка авторизации…</div>
+    return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Проверка авторизации…</div>
   }
 
   return (
@@ -124,7 +124,7 @@ export default function CoversPage() {
         <div className="flex items-start justify-between mb-6">
           <div>
             <h1 className="text-2xl font-semibold mb-1 flex items-center gap-2"><BookImage size={22} /> Библиотека обложек</h1>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               Обложки альбома (полотно задняя + корешок + передняя). Корешок плавающий — пунктир показывает его границы.
             </p>
           </div>
@@ -134,7 +134,7 @@ export default function CoversPage() {
           </div>
         </div>
 
-        {loading && <div className="text-center py-12 text-gray-400">Загрузка…</div>}
+        {loading && <div className="text-center py-12 text-muted-foreground">Загрузка…</div>}
 
         {error && !loading && (
           <div className="card p-6 text-center">
@@ -144,7 +144,7 @@ export default function CoversPage() {
         )}
 
         {!loading && !error && covers.length === 0 && (
-          <div className="card p-12 text-center text-gray-500">
+          <div className="card p-12 text-center text-muted-foreground">
             <div className="mb-4">Обложек пока нет.</div>
             <button onClick={() => setShowUpload(true)} className="btn-primary">+ Загрузить первую обложку</button>
           </div>
@@ -155,7 +155,7 @@ export default function CoversPage() {
             {covers.map(c => (
               <div key={c.id} className="card p-4">
                 <div
-                  className="w-full bg-gray-50 border border-gray-200 rounded mb-3 overflow-hidden flex items-center justify-center"
+                  className="w-full bg-muted border border-border rounded mb-3 overflow-hidden flex items-center justify-center"
                   style={{ aspectRatio: '2 / 1' }}
                   dangerouslySetInnerHTML={{ __html: c.preview_svg }}
                 />
@@ -163,14 +163,14 @@ export default function CoversPage() {
                   <div className="font-medium text-sm truncate" title={c.name}>{c.name}</div>
                   {c.is_published
                     ? <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-700 shrink-0">опубл.</span>
-                    : <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500 shrink-0">черновик</span>}
+                    : <span className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground shrink-0">черновик</span>}
                 </div>
-                <div className="text-xs text-gray-500 mb-2">
+                <div className="text-xs text-muted-foreground mb-2">
                   {TYPE_LABEL[c.cover_type]}
                   {c.gender_hint ? ` · ${c.gender_hint}` : ''}
                   {c.is_global ? ' · глобальная' : ''}
                 </div>
-                <div className="text-xs text-gray-400 mb-3">
+                <div className="text-xs text-muted-foreground mb-3">
                   {c.nominal_spine_width_mm != null
                     ? `корешок (макет) ${c.nominal_spine_width_mm} мм`
                     : <><AlertTriangle size={12} className="inline" /> зоны не распознаны</>}

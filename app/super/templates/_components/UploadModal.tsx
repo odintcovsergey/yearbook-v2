@@ -131,7 +131,7 @@ export default function UploadModal({
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">IDML файл</label>
+              <label className="text-sm font-medium text-foreground block mb-1">IDML файл</label>
               <input
                 type="file"
                 accept=".idml"
@@ -142,7 +142,7 @@ export default function UploadModal({
             </div>
 
             <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">Название</label>
+              <label className="text-sm font-medium text-foreground block mb-1">Название</label>
               <input
                 type="text"
                 value={form.name}
@@ -154,7 +154,7 @@ export default function UploadModal({
             </div>
 
             <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">Slug</label>
+              <label className="text-sm font-medium text-foreground block mb-1">Slug</label>
               <input
                 type="text"
                 value={form.slug}
@@ -163,13 +163,13 @@ export default function UploadModal({
                 placeholder="okeybook-default"
                 required
               />
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="text-xs text-muted-foreground mt-1">
                 Только нижний регистр, цифры и дефисы
               </div>
             </div>
 
             <div>
-              <label className="text-sm font-medium text-gray-700 block mb-2">Тип печати</label>
+              <label className="text-sm font-medium text-foreground block mb-2">Тип печати</label>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="print_type" checked={form.print_type === 'layflat'}
@@ -185,8 +185,8 @@ export default function UploadModal({
             </div>
 
             <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">
-                Описание <span className="text-gray-400">(не обязательно)</span>
+              <label className="text-sm font-medium text-foreground block mb-1">
+                Описание <span className="text-muted-foreground">(не обязательно)</span>
               </label>
               <textarea
                 value={form.description}
@@ -196,7 +196,7 @@ export default function UploadModal({
               />
             </div>
 
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-muted-foreground">
               Шаблон будет доступен всем tenant'ам системы (global).
             </div>
 

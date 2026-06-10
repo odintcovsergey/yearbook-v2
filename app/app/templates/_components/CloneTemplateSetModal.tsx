@@ -163,7 +163,7 @@ export function CloneTemplateSetModal({
   // Цвет рамки aspect-блока по уровню.
   const aspectBoxClass =
     aspectCheck === null
-      ? 'border-gray-200 bg-gray-50 text-gray-500'
+      ? 'border-border bg-muted text-muted-foreground'
       : aspectCheck.level === 'ok'
         ? 'border-green-200 bg-green-50 text-green-800'
         : aspectCheck.level === 'warning'
@@ -176,18 +176,18 @@ export function CloneTemplateSetModal({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+        className="bg-card rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Шапка */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">
             Создать дизайн на основе «{source.name}»
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            className="text-muted-foreground hover:text-foreground text-xl leading-none"
             aria-label="Закрыть"
           >
             ×
@@ -198,7 +198,7 @@ export function CloneTemplateSetModal({
         <div className="px-5 py-4 space-y-4">
           {/* Название */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Название
             </label>
             <input
@@ -206,7 +206,7 @@ export function CloneTemplateSetModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={submitting}
-              className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Например: Мой Стандарт 21×30"
             />
           </div>
@@ -214,7 +214,7 @@ export function CloneTemplateSetModal({
           {/* Размеры страницы */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground mb-1">
                 Ширина страницы, мм
               </label>
               <input
@@ -225,16 +225,16 @@ export function CloneTemplateSetModal({
                 min={50}
                 max={500}
                 step={1}
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="text-xs text-muted-foreground mt-1">
                 {Number.isFinite(widthNum) && widthNum > 0
                   ? `≈ ${mmToPx(widthNum)} px (при 300 DPI)`
                   : '\u00a0'}
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground mb-1">
                 Высота страницы, мм
               </label>
               <input
@@ -245,9 +245,9 @@ export function CloneTemplateSetModal({
                 min={50}
                 max={500}
                 step={1}
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="text-xs text-muted-foreground mt-1">
                 {Number.isFinite(heightNum) && heightNum > 0
                   ? `≈ ${mmToPx(heightNum)} px (при 300 DPI)`
                   : '\u00a0'}
@@ -257,9 +257,9 @@ export function CloneTemplateSetModal({
 
           {/* Bleed */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Припуск под обрез, мм
-              <span className="font-normal text-gray-400 ml-1">(опционально)</span>
+              <span className="font-normal text-muted-foreground ml-1">(опционально)</span>
             </label>
             <input
               type="number"
@@ -270,9 +270,9 @@ export function CloneTemplateSetModal({
               max={20}
               step={0.5}
               placeholder={`по умолчанию ${defaultBleed}`}
-              className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-muted-foreground mt-1">
               {Number.isFinite(bleedNum) && bleedNum >= 0
                 ? `≈ ${mmToPx(bleedNum)} px (при 300 DPI)`
                 : 'Будет использовано значение из исходного дизайна'}
@@ -294,7 +294,7 @@ export function CloneTemplateSetModal({
           )}
 
           {/* Описание ниже формы */}
-          <div className="text-xs text-gray-500 leading-relaxed border-t border-gray-100 pt-3">
+          <div className="text-xs text-muted-foreground leading-relaxed border-t border-border pt-3">
             При клонировании создастся независимая копия исходного дизайна
             с пересчётом всех мастеров и placeholder&apos;ов под новые размеры.
             Все mm-значения округляются до целых пикселей при 300 DPI —
@@ -310,12 +310,12 @@ export function CloneTemplateSetModal({
         </div>
 
         {/* Футер */}
-        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border bg-muted rounded-b-lg">
           <button
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900 disabled:opacity-50"
+            className="px-4 py-2 text-sm text-foreground hover:text-foreground disabled:opacity-50"
           >
             Отмена
           </button>

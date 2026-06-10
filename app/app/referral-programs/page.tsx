@@ -31,15 +31,15 @@ export default function PartnerReferralProgramsPage() {
   }, [router])
 
   if (!authChecked) {
-    return <div className="min-h-screen flex items-center justify-center text-gray-400">Проверка авторизации…</div>
+    return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Проверка авторизации…</div>
   }
 
   return (
     <div className="min-h-screen p-6">
       <div className="max-w-6xl mx-auto">
-        <button onClick={() => router.push('/app')} className="text-sm text-gray-400 hover:text-gray-600 mb-2">← В кабинет</button>
+        <button onClick={() => router.push('/app')} className="text-sm text-muted-foreground hover:text-muted-foreground mb-2">← В кабинет</button>
         <h1 className="text-2xl font-semibold mb-1">🎁 Реферальные программы</h1>
-        <p className="text-sm text-gray-500 mb-6">
+        <p className="text-sm text-muted-foreground mb-6">
           Готовые программы от OkeyBook можно «Дублировать себе» и доработать, либо создать свою.
           Награды применяются вручную — система показывает их родителям и ведёт учёт, кто кого привёл.
           Назначается программа альбому в его настройках (шестерёнка).
@@ -47,7 +47,7 @@ export default function PartnerReferralProgramsPage() {
         {canManage ? (
           <ReferralProgramsManager apiBase="/api/referral-programs" />
         ) : (
-          <div className="text-center text-gray-400 py-12">
+          <div className="text-center text-muted-foreground py-12">
             Управление программами доступно владельцу и менеджерам кабинета.
           </div>
         )}

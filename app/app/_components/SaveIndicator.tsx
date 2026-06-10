@@ -10,7 +10,7 @@ export default function SaveIndicator({ status }: { status: SaveStatus }) {
     return <span className="text-xs text-amber-600">● Не сохранено</span>
   }
   if (status === 'saving') {
-    return <span className="text-xs text-gray-500">Сохраняется…</span>
+    return <span className="text-xs text-muted-foreground">Сохраняется…</span>
   }
   if (status === 'error') {
     return <span className="text-xs text-red-600">⚠ Ошибка сохранения</span>

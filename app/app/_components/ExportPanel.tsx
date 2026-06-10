@@ -219,11 +219,11 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
   const exportDisabled = !hasLayout || !selectedSlug || exporting
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
+    <div className="bg-card border border-border rounded-xl p-5 mb-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold">Экспорт PDF</h3>
         {!hasLayout && (
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-muted-foreground">
             Layout не собран — сначала нажмите «Собрать автоматически»
           </span>
         )}
@@ -232,15 +232,15 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
       {/* Профиль + кнопка */}
       <div className="flex flex-col md:flex-row md:items-end gap-3 mb-3">
         <div className="flex-1">
-          <label className="block text-xs text-gray-500 mb-1">Профиль</label>
+          <label className="block text-xs text-muted-foreground mb-1">Профиль</label>
           {loadingProfiles ? (
-            <div className="text-sm text-gray-400">Загрузка профилей…</div>
+            <div className="text-sm text-muted-foreground">Загрузка профилей…</div>
           ) : (
             <select
               value={selectedSlug}
               onChange={(e) => setSelectedSlug(e.target.value)}
               disabled={exporting}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-foreground dark:bg-background focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-muted disabled:cursor-not-allowed"
             >
               {profiles.map((p) => (
                 <option key={p.slug} value={p.slug}>
@@ -250,7 +250,7 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
             </select>
           )}
           {selectedProfile && (
-            <div className="mt-1 text-xs text-gray-500">
+            <div className="mt-1 text-xs text-muted-foreground">
               {profileDescription(selectedProfile)}
             </div>
           )}
@@ -259,7 +259,7 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
           type="button"
           onClick={handleExport}
           disabled={exportDisabled}
-          className="px-5 py-2 bg-black text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition whitespace-nowrap"
+          className="px-5 py-2 bg-black dark:bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-gray-800 dark:hover:bg-brand-700 disabled:bg-muted disabled:cursor-not-allowed transition whitespace-nowrap"
         >
           {exporting ? 'Экспорт…' : '📄 Экспортировать'}
         </button>
@@ -267,7 +267,7 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
 
       {/* Прогресс / результат / ошибка */}
       {exporting && (
-        <div className="text-sm text-gray-600 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-3">
+        <div className="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-3">
           <div className="flex items-center gap-2">
             <Spinner />
             <span>Идёт сборка PDF… Это может занять 30–60 секунд.</span>
@@ -300,7 +300,7 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
               href={lastResult.download_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3 py-1.5 bg-white border border-green-600 text-green-700 text-xs font-medium rounded hover:bg-green-100"
+              className="px-3 py-1.5 bg-card border border-green-600 text-green-700 text-xs font-medium rounded hover:bg-green-100"
             >
               Скачать
             </a>
@@ -309,14 +309,14 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
       )}
 
       {/* История */}
-      <div className="border-t border-gray-100 pt-4">
-        <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">
+      <div className="border-t border-border pt-4">
+        <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
           История экспортов
         </div>
         {loadingHistory ? (
-          <div className="text-sm text-gray-400">Загрузка истории…</div>
+          <div className="text-sm text-muted-foreground">Загрузка истории…</div>
         ) : exports.length === 0 ? (
-          <div className="text-sm text-gray-400">Пока нет экспортов</div>
+          <div className="text-sm text-muted-foreground">Пока нет экспортов</div>
         ) : (
           <ul className="space-y-1.5">
             {exports.map((ex) => (
@@ -328,7 +328,7 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
                   <div className="truncate" title={ex.filename}>
                     {ex.filename}
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-muted-foreground">
                     {formatDate(ex.created_at)}
                     {ex.export_profiles?.name &&
                       ` · ${ex.export_profiles.name}`}

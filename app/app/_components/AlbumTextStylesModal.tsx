@@ -155,21 +155,21 @@ export default function AlbumTextStylesModal({
       onClick={handleCancel}
     >
       <div
-        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col"
+        className="bg-card rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Шапка — компактная */}
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <div>
             <h3 className="text-base font-semibold">Стили текстов альбома</h3>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Настраивается для группы — применяется ко всем элементам.
               Точечный клик на текст переопределяет глобальный стиль.
             </p>
           </div>
           <button
             onClick={handleCancel}
-            className="text-gray-400 hover:text-gray-700 text-2xl leading-none ml-2"
+            className="text-muted-foreground hover:text-foreground text-2xl leading-none ml-2"
             aria-label="Закрыть"
           >
             ×
@@ -188,33 +188,33 @@ export default function AlbumTextStylesModal({
                 <div
                   key={group}
                   className={`border rounded-lg p-2.5 ${
-                    isModified ? 'border-brand-300 bg-brand-50' : 'border-gray-200'
+                    isModified ? 'border-brand-300 bg-brand-50' : 'border-border'
                   }`}
                 >
                   <div className="flex items-baseline justify-between mb-1.5">
-                    <div className="font-medium text-gray-900 text-sm truncate">
+                    <div className="font-medium text-foreground text-sm truncate">
                       {GROUP_LABELS[group]}
                     </div>
                     {isModified && (
                       <button
                         type="button"
                         onClick={() => resetGroup(group)}
-                        className="inline-flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-900 whitespace-nowrap ml-2"
+                        className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground whitespace-nowrap ml-2"
                       >
                         <RotateCcw size={11} /> сброс
                       </button>
                     )}
                   </div>
-                  <p className="text-[10px] text-gray-400 font-mono mb-2 truncate" title={GROUP_HINTS[group]}>
+                  <p className="text-[10px] text-muted-foreground font-mono mb-2 truncate" title={GROUP_HINTS[group]}>
                     {GROUP_HINTS[group]}
                   </p>
 
                   {/* РЭ.55: Селект шрифта */}
                   <div className="mb-2">
-                    <div className="text-[11px] text-gray-600 mb-0.5">
+                    <div className="text-[11px] text-muted-foreground mb-0.5">
                       Шрифт{' '}
                       {!ov?.font_family && (
-                        <span className="text-gray-400">(из шаблона)</span>
+                        <span className="text-muted-foreground">(из шаблона)</span>
                       )}
                     </div>
                     <select
@@ -225,7 +225,7 @@ export default function AlbumTextStylesModal({
                           font_family: v === '' ? null : v,
                         })
                       }}
-                      className="w-full px-2 py-1 text-[11px] border border-gray-300 rounded bg-white focus:outline-none focus:ring-2 focus:ring-brand-200"
+                      className="w-full px-2 py-1 text-[11px] border border-border rounded bg-card focus:outline-none focus:ring-2 focus:ring-brand-200"
                       style={{
                         fontFamily: ov?.font_family
                           ? `'${ov.font_family}', serif`
@@ -248,8 +248,8 @@ export default function AlbumTextStylesModal({
                   {/* Slider размера */}
                   <div className="mb-2">
                     <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-[11px] text-gray-600">Размер</span>
-                      <span className="text-[11px] text-gray-900 font-mono tabular-nums">
+                      <span className="text-[11px] text-muted-foreground">Размер</span>
+                      <span className="text-[11px] text-foreground font-mono tabular-nums">
                         {ov?.size_pct !== null && ov?.size_pct !== undefined
                           ? `${size}%`
                           : 'из шаблона'}
@@ -268,16 +268,16 @@ export default function AlbumTextStylesModal({
                           size_pct: pct === 100 ? null : pct,
                         })
                       }}
-                      className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer"
                     />
                   </div>
 
                   {/* Палитра цветов — компактнее */}
                   <div className="mb-2">
-                    <div className="text-[11px] text-gray-600 mb-1">
+                    <div className="text-[11px] text-muted-foreground mb-1">
                       Цвет{' '}
                       {color === null && (
-                        <span className="text-gray-400">(из шаблона)</span>
+                        <span className="text-muted-foreground">(из шаблона)</span>
                       )}
                     </div>
                     <div className="flex flex-wrap gap-1">
@@ -298,7 +298,7 @@ export default function AlbumTextStylesModal({
                             className={`w-6 h-6 rounded border transition-all ${
                               isActive
                                 ? 'border-brand-600 ring-2 ring-brand-200'
-                                : 'border-gray-300 hover:border-gray-400'
+                                : 'border-border hover:border-border'
                             }`}
                             style={{ backgroundColor: hex }}
                           >
@@ -318,15 +318,15 @@ export default function AlbumTextStylesModal({
 
                   {/* РЭ.54.b: Выравнивание (H + V) */}
                   <div>
-                    <div className="text-[11px] text-gray-600 mb-1">
+                    <div className="text-[11px] text-muted-foreground mb-1">
                       Выравнивание{' '}
                       {ov?.halign == null && ov?.valign == null && (
-                        <span className="text-gray-400">(из шаблона)</span>
+                        <span className="text-muted-foreground">(из шаблона)</span>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5">
                       {/* H-align */}
-                      <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+                      <div className="inline-flex rounded border border-border overflow-hidden">
                         {(['left', 'center', 'right'] as const).map((v) => (
                           <button
                             key={v}
@@ -336,10 +336,10 @@ export default function AlbumTextStylesModal({
                                 halign: ov?.halign === v ? null : v,
                               })
                             }
-                            className={`px-1.5 py-0.5 text-[11px] leading-none border-r border-gray-300 last:border-r-0 ${
+                            className={`px-1.5 py-0.5 text-[11px] leading-none border-r border-border last:border-r-0 ${
                               ov?.halign === v
                                 ? 'bg-brand-600 text-white'
-                                : 'bg-white text-gray-700 hover:bg-gray-100'
+                                : 'bg-card text-foreground hover:bg-muted'
                             }`}
                             title={
                               v === 'left'
@@ -355,7 +355,7 @@ export default function AlbumTextStylesModal({
                         ))}
                       </div>
                       {/* V-align */}
-                      <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+                      <div className="inline-flex rounded border border-border overflow-hidden">
                         {(['top', 'middle', 'bottom'] as const).map((v) => (
                           <button
                             key={v}
@@ -365,10 +365,10 @@ export default function AlbumTextStylesModal({
                                 valign: ov?.valign === v ? null : v,
                               })
                             }
-                            className={`px-1.5 py-0.5 text-[11px] leading-none border-r border-gray-300 last:border-r-0 ${
+                            className={`px-1.5 py-0.5 text-[11px] leading-none border-r border-border last:border-r-0 ${
                               ov?.valign === v
                                 ? 'bg-brand-600 text-white'
-                                : 'bg-white text-gray-700 hover:bg-gray-100'
+                                : 'bg-card text-foreground hover:bg-muted'
                             }`}
                             title={
                               v === 'top'
@@ -398,12 +398,12 @@ export default function AlbumTextStylesModal({
         )}
 
         {/* Подвал — компактный */}
-        <div className="border-t px-3 py-2 flex items-center justify-between gap-2 bg-gray-50">
+        <div className="border-t px-3 py-2 flex items-center justify-between gap-2 bg-muted">
           <button
             type="button"
             onClick={resetAll}
             disabled={!hasAnyOverride || saving}
-            className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:text-muted-foreground disabled:cursor-not-allowed"
           >
             <RotateCcw size={12} /> Сбросить всё
           </button>
@@ -412,7 +412,7 @@ export default function AlbumTextStylesModal({
               type="button"
               onClick={handleCancel}
               disabled={saving}
-              className="px-3 py-1.5 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 rounded text-sm disabled:opacity-50"
+              className="px-3 py-1.5 bg-card border border-border hover:bg-muted text-foreground rounded text-sm disabled:opacity-50"
             >
               Отмена
             </button>

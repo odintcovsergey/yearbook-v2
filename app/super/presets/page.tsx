@@ -65,25 +65,25 @@ export default function PresetsPage() {
   const tenantPresets = presets.filter(p => p.tenant_id !== null)
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Пресеты вёрстки</h1>
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Редактор структуры альбома. Каждый пресет описывает порядок секций,
               плотность портретов и параметры личного раздела.
             </p>
           </div>
           <button
             onClick={() => router.push('/super')}
-            className="text-sm text-gray-600 hover:text-gray-900"
+            className="text-sm text-muted-foreground hover:text-foreground"
           >
             ← К панели
           </button>
         </div>
 
-        {loading && <div className="text-gray-500">Загрузка...</div>}
+        {loading && <div className="text-muted-foreground">Загрузка...</div>}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
             {error}
@@ -96,7 +96,7 @@ export default function PresetsPage() {
               <h2 className="text-lg font-semibold mb-3">
                 Глобальные пресеты ({globalPresets.length})
               </h2>
-              <p className="text-xs text-gray-500 mb-3">
+              <p className="text-xs text-muted-foreground mb-3">
                 Доступны всем партнёрам по умолчанию. Редактирует только суперадмин.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -152,13 +152,13 @@ function PresetCard({ preset, onEdit }: { preset: Preset; onEdit: () => void }) 
     : []
 
   return (
-    <div className="bg-white border rounded-lg p-4 hover:border-purple-300 transition">
+    <div className="bg-card border rounded-lg p-4 hover:border-purple-300 transition">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-gray-900 truncate">
+          <div className="font-medium text-foreground truncate">
             {preset.display_name}
           </div>
-          <div className="text-xs text-gray-500 mt-0.5 font-mono">
+          <div className="text-xs text-muted-foreground mt-0.5 font-mono">
             {preset.id}
           </div>
           <div className="flex flex-wrap gap-1.5 mt-2">
@@ -168,17 +168,17 @@ function PresetCard({ preset, onEdit }: { preset: Preset; onEdit: () => void }) 
               </span>
             )}
             {preset.sheet_type && (
-              <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">
+              <span className="text-xs bg-muted text-foreground px-2 py-0.5 rounded">
                 {preset.sheet_type === 'hard' ? 'плотные' : 'мягкие'}
               </span>
             )}
             {preset.min_pages != null && preset.max_pages != null && (
-              <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">
+              <span className="text-xs bg-muted text-foreground px-2 py-0.5 rounded">
                 {preset.min_pages}–{preset.max_pages} стр.
               </span>
             )}
           </div>
-          <div className="text-xs text-gray-600 mt-2">
+          <div className="text-xs text-muted-foreground mt-2">
             {sections.length > 0 ? (
               <span>
                 Секций: <span className="font-semibold">{sections.length}</span>

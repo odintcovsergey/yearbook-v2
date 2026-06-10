@@ -172,13 +172,13 @@ export default function CRMModal({ onClose, currentUserId }: {
       onMouseDown={e => { if (e.target === e.currentTarget) setBackdropStart(true) }}
       onMouseUp={e => { if (backdropStart && e.target === e.currentTarget) onClose(); setBackdropStart(false) }}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl min-h-[80vh] flex flex-col">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-7xl min-h-[80vh] flex flex-col">
         {/* Шапка */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>CRM</h2>
             {/* Вкладки */}
-            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            <div className="flex gap-1 bg-muted rounded-lg p-1">
               {([
                 { key: 'kanban', label: 'Воронка', icon: KanbanSquare },
                 { key: 'clients', label: 'Клиенты', icon: Building2 },
@@ -189,7 +189,7 @@ export default function CRMModal({ onClose, currentUserId }: {
                   key={t.key}
                   onClick={() => setTab(t.key)}
                   className={`inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md font-medium transition-all ${
-                    tab === t.key ? 'bg-white shadow text-brand-700' : 'text-gray-500 hover:text-gray-700'
+                    tab === t.key ? 'bg-card shadow text-brand-700' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   <t.icon size={16} /> {t.label}
@@ -197,13 +197,13 @@ export default function CRMModal({ onClose, currentUserId }: {
               ))}
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-muted-foreground text-2xl leading-none">×</button>
         </div>
 
         {/* Контент */}
         <div className="flex-1 overflow-hidden">
           {loading ? (
-            <div className="flex items-center justify-center h-64 text-gray-400">Загрузка...</div>
+            <div className="flex items-center justify-center h-64 text-muted-foreground">Загрузка...</div>
           ) : error ? (
             <div className="flex items-center justify-center h-64 text-red-500">{error}</div>
           ) : tab === 'kanban' ? (
@@ -292,17 +292,17 @@ function KanbanColumn({ stage, deals, isOver, children }: {
     <div
       ref={setNodeRef}
       className={`flex flex-col w-60 flex-shrink-0 rounded-xl transition-colors ${
-        isOver ? 'bg-blue-50 ring-2 ring-blue-200' : 'bg-gray-50'
+        isOver ? 'bg-blue-50 ring-2 ring-blue-200' : 'bg-muted'
       }`}
     >
       <div className="px-3 py-2.5 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: stage.color }} />
-          <span className="text-sm font-semibold text-gray-700">{stage.name}</span>
-          <span className="text-xs text-gray-400 bg-gray-200 rounded-full px-1.5">{deals.length}</span>
+          <span className="text-sm font-semibold text-foreground">{stage.name}</span>
+          <span className="text-xs text-muted-foreground bg-muted rounded-full px-1.5">{deals.length}</span>
         </div>
         {total > 0 && (
-          <span className="text-xs text-gray-400">{total.toLocaleString('ru-RU')} ₽</span>
+          <span className="text-xs text-muted-foreground">{total.toLocaleString('ru-RU')} ₽</span>
         )}
       </div>
       <div className="flex-1 overflow-y-auto px-2 pb-2 flex flex-col gap-2 min-h-[60px]">
@@ -417,7 +417,7 @@ function KanbanView({
               ))}
               <button
                 onClick={() => openNew(stage.id)}
-                className="w-full py-1.5 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-left px-2"
+                className="w-full py-1.5 text-sm text-muted-foreground hover:text-muted-foreground hover:bg-muted rounded-lg transition-colors text-left px-2"
               >
                 + Сделка
               </button>
@@ -429,10 +429,10 @@ function KanbanView({
       {/* Ghost-карточка под курсором во время перетаскивания */}
       <DragOverlay dropAnimation={null}>
         {activeDeal ? (
-          <div className="bg-white rounded-lg p-3 shadow-2xl border border-blue-200 w-56 rotate-2 opacity-95">
-            <p className="text-sm font-medium text-gray-900">{activeDeal.title}</p>
+          <div className="bg-card rounded-lg p-3 shadow-2xl border border-blue-200 w-56 rotate-2 opacity-95">
+            <p className="text-sm font-medium text-foreground">{activeDeal.title}</p>
             {activeDeal.clients && (
-              <p className="text-xs text-gray-400 mt-1">{activeDeal.clients.name}</p>
+              <p className="text-xs text-muted-foreground mt-1">{activeDeal.clients.name}</p>
             )}
           </div>
         ) : null}
@@ -488,8 +488,8 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
   }
 
   return (
-    <div className={`bg-white rounded-lg shadow-sm border transition-all group cursor-pointer ${
-      isDragging ? 'border-blue-200 shadow-md' : 'border-gray-100 hover:border-gray-200'
+    <div className={`bg-card rounded-lg shadow-sm border transition-all group cursor-pointer ${
+      isDragging ? 'border-blue-200 shadow-md' : 'border-border hover:border-border'
     }`}
       onClick={onEdit}>
       {/* Ручка перетаскивания */}
@@ -498,28 +498,28 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
         onClick={e => e.stopPropagation()}
         {...(dragHandleProps ?? {})}
       >
-        <p className="text-sm font-medium text-gray-900 leading-snug flex-1 cursor-pointer" onClick={onEdit}>{deal.title}</p>
+        <p className="text-sm font-medium text-foreground leading-snug flex-1 cursor-pointer" onClick={onEdit}>{deal.title}</p>
         <div className="flex items-center gap-1">
-          <span className="text-gray-200 hover:text-gray-400 cursor-grab active:cursor-grabbing text-lg select-none" title="Перетащить">⠿</span>
+          <span className="text-gray-200 hover:text-muted-foreground cursor-grab active:cursor-grabbing text-lg select-none" title="Перетащить">⠿</span>
           <button
-            className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-lg leading-none"
+            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 text-lg leading-none"
             onClick={e => { e.stopPropagation(); if (confirm('Удалить сделку?')) onDelete() }}
           >×</button>
         </div>
       </div>
       <div className="px-3 pb-3">
       {deal.clients && (
-        <p className="text-xs text-gray-400 mt-1">{deal.clients.name}</p>
+        <p className="text-xs text-muted-foreground mt-1">{deal.clients.name}</p>
       )}
       {deal.albums && (
         <p className="text-xs text-blue-400 mt-0.5"><BookOpen size={12} className="inline" /> {deal.albums.title}</p>
       )}
       <div className="flex items-center justify-between mt-2 gap-2">
         {deal.amount ? (
-          <span className="text-xs font-medium text-gray-600">{deal.amount.toLocaleString('ru-RU')} ₽</span>
+          <span className="text-xs font-medium text-muted-foreground">{deal.amount.toLocaleString('ru-RU')} ₽</span>
         ) : <span />}
         {deal.deadline && (
-          <span className={`text-xs ${isOverdueFlag ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+          <span className={`text-xs ${isOverdueFlag ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>
             {isOverdueFlag ? <><AlertTriangle size={14} className="inline" /> </> : ''}{formatDate(deal.deadline)}
           </span>
         )}
@@ -529,7 +529,7 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
         <div className="flex gap-2 items-center">
           <button
             ref={moveButtonRef}
-            className="text-xs text-gray-300 hover:text-gray-500 transition-colors"
+            className="text-xs text-muted-foreground hover:text-muted-foreground transition-colors"
             onClick={openMoveMenu}
           >
             Переместить ▾
@@ -553,13 +553,13 @@ function DealCard({ deal, stages, clients, onMove, onEdit, onDelete, onAlbumCrea
         <>
           <div className="fixed inset-0 z-[80]" onClick={e => { e.stopPropagation(); setShowMove(false) }} />
           <div
-            className="fixed z-[90] bg-white rounded-lg shadow-xl border border-gray-100 py-1 min-w-[180px]"
+            className="fixed z-[90] bg-card rounded-lg shadow-xl border border-border py-1 min-w-[180px]"
             style={{ top: menuPos.top, left: menuPos.left }}
           >
             {stages.filter(s => s.id !== deal.stage_id).map(s => (
               <button
                 key={s.id}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
                 onClick={e => { e.stopPropagation(); onMove(deal.id, s.id); setShowMove(false) }}
               >
                 <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: s.color }} />
@@ -624,7 +624,7 @@ function DealFormModal({ deal, defaultStageId, stages, clients, members, albums,
 
   return (
     <div className="fixed inset-0 bg-black/40 z-60 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+      <div className="bg-card rounded-xl shadow-xl w-full max-w-md p-6">
         <h3 className="font-bold text-lg mb-4">{deal ? 'Редактировать сделку' : 'Новая сделка'}</h3>
         <div className="space-y-3">
           <input className="input w-full" placeholder="Название сделки *" value={form.title}
@@ -719,15 +719,15 @@ function ClientsView({ clients, deals, onCreateClient, onUpdateClient, onDeleteC
   return (
     <div className="flex h-full overflow-hidden">
       {/* Список */}
-      <div className="w-80 border-r border-gray-100 flex flex-col">
-        <div className="p-3 border-b border-gray-100 flex gap-2">
+      <div className="w-80 border-r border-border flex flex-col">
+        <div className="p-3 border-b border-border flex gap-2">
           <input className="input flex-1 text-sm" placeholder="Поиск клиента..." value={search}
             onChange={e => setSearch(e.target.value)} />
           <button className="btn-primary text-sm px-3" onClick={() => { setEditClient(null); setShowForm(true) }}>+</button>
         </div>
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 && (
-            <div className="p-6 text-center text-gray-400 text-sm">
+            <div className="p-6 text-center text-muted-foreground text-sm">
               {clients.length === 0 ? 'Нет клиентов. Добавьте первого.' : 'Не найдено'}
             </div>
           )}
@@ -737,10 +737,10 @@ function ClientsView({ clients, deals, onCreateClient, onUpdateClient, onDeleteC
               <button
                 key={client.id}
                 onClick={() => selectClient(client)}
-                className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${selected?.id === client.id ? 'bg-gray-50 border-l-2 border-l-gray-900' : ''}`}
+                className={`w-full text-left px-4 py-3 border-b border-border hover:bg-muted transition-colors ${selected?.id === client.id ? 'bg-muted border-l-2 border-l-gray-900' : ''}`}
               >
-                <p className="font-medium text-sm text-gray-900">{client.name}</p>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="font-medium text-sm text-foreground">{client.name}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {client.city && `${client.city} · `}{dCount} сделок
                 </p>
               </button>
@@ -773,7 +773,7 @@ function ClientsView({ clients, deals, onCreateClient, onUpdateClient, onDeleteC
             }}
           />
         ) : (
-          <div className="flex items-center justify-center h-full text-gray-300 text-sm">
+          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             Выберите клиента из списка
           </div>
         )}
@@ -817,8 +817,8 @@ function ClientDetail({ client, deals, contacts, contactsLoading, onEdit, onDele
     <div>
       <div className="flex items-start justify-between mb-4">
         <div>
-          <h3 className="text-xl font-bold text-gray-900">{client.name}</h3>
-          {client.city && <p className="text-gray-500 text-sm mt-0.5">{client.city}</p>}
+          <h3 className="text-xl font-bold text-foreground">{client.name}</h3>
+          {client.city && <p className="text-muted-foreground text-sm mt-0.5">{client.city}</p>}
         </div>
         <div className="flex gap-2">
           <button className="btn-secondary text-sm" onClick={onEdit}>Изменить</button>
@@ -826,13 +826,13 @@ function ClientDetail({ client, deals, contacts, contactsLoading, onEdit, onDele
         </div>
       </div>
 
-      {client.address && <p className="text-sm text-gray-600 mb-2"><MapPin size={14} className="inline" /> {client.address}</p>}
+      {client.address && <p className="text-sm text-muted-foreground mb-2"><MapPin size={14} className="inline" /> {client.address}</p>}
       {client.website && (
         <p className="text-sm mb-2">
           <Globe size={14} className="inline" /> <a href={client.website} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">{client.website}</a>
         </p>
       )}
-      {client.notes && <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 mb-4">{client.notes}</p>}
+      {client.notes && <p className="text-sm text-muted-foreground bg-muted rounded-lg p-3 mb-4">{client.notes}</p>}
 
       {client.tags?.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-4">
@@ -844,37 +844,37 @@ function ClientDetail({ client, deals, contacts, contactsLoading, onEdit, onDele
 
       {/* Контакты */}
       <div className="flex items-center justify-between mb-2 mt-5">
-        <h4 className="font-semibold text-sm text-gray-700">
+        <h4 className="font-semibold text-sm text-foreground">
           Контакты {!contactsLoading && `(${contacts.length})`}
         </h4>
         <button
-          className="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded px-2 py-0.5"
+          className="text-xs text-muted-foreground hover:text-foreground border border-border rounded px-2 py-0.5"
           onClick={() => { setEditContact(null); setShowContactForm(true) }}
         >
           + Добавить
         </button>
       </div>
       {contactsLoading ? (
-        <p className="text-xs text-gray-300">Загрузка...</p>
+        <p className="text-xs text-muted-foreground">Загрузка...</p>
       ) : contacts.length === 0 ? (
-        <p className="text-sm text-gray-400 mb-4">Нет контактов</p>
+        <p className="text-sm text-muted-foreground mb-4">Нет контактов</p>
       ) : (
         <div className="space-y-2 mb-4">
           {contacts.map(c => (
-            <div key={c.id} className="flex items-start gap-3 py-2 px-3 bg-gray-50 rounded-lg group">
+            <div key={c.id} className="flex items-start gap-3 py-2 px-3 bg-muted rounded-lg group">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-800">{c.full_name}</p>
-                {c.role && <p className="text-xs text-gray-500">{c.role}</p>}
+                <p className="text-sm font-medium text-foreground">{c.full_name}</p>
+                {c.role && <p className="text-xs text-muted-foreground">{c.role}</p>}
                 <div className="flex gap-3 mt-0.5">
                   {c.phone && <a href={`tel:${c.phone}`} className="text-xs text-blue-500 hover:underline">{c.phone}</a>}
                   {c.email && <a href={`mailto:${c.email}`} className="text-xs text-blue-500 hover:underline">{c.email}</a>}
                 </div>
-                {c.notes && <p className="text-xs text-gray-400 mt-0.5">{c.notes}</p>}
+                {c.notes && <p className="text-xs text-muted-foreground mt-0.5">{c.notes}</p>}
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button className="text-xs text-gray-400 hover:text-gray-700 px-1"
+                <button className="text-xs text-muted-foreground hover:text-foreground px-1"
                   onClick={() => { setEditContact(c); setShowContactForm(true) }}><Pencil size={16} /></button>
-                <button className="text-xs text-gray-300 hover:text-red-400 px-1"
+                <button className="text-xs text-muted-foreground hover:text-red-400 px-1"
                   onClick={() => { if (confirm('Удалить контакт?')) onDeleteContact(c.id) }}>×</button>
               </div>
             </div>
@@ -883,21 +883,21 @@ function ClientDetail({ client, deals, contacts, contactsLoading, onEdit, onDele
       )}
 
       {/* Сделки клиента */}
-      <h4 className="font-semibold text-sm text-gray-700 mb-2 mt-2">Сделки ({deals.length})</h4>
+      <h4 className="font-semibold text-sm text-foreground mb-2 mt-2">Сделки ({deals.length})</h4>
       {deals.length === 0 ? (
-        <p className="text-sm text-gray-400">Нет сделок</p>
+        <p className="text-sm text-muted-foreground">Нет сделок</p>
       ) : (
         <div className="space-y-2">
           {deals.map(d => (
-            <div key={d.id} className="flex items-center gap-3 py-2 px-3 bg-gray-50 rounded-lg">
+            <div key={d.id} className="flex items-center gap-3 py-2 px-3 bg-muted rounded-lg">
               {d.deal_stages && (
                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.deal_stages.color }} />
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-800 truncate">{d.title}</p>
-                <p className="text-xs text-gray-400">{d.deal_stages?.name}</p>
+                <p className="text-sm font-medium text-foreground truncate">{d.title}</p>
+                <p className="text-xs text-muted-foreground">{d.deal_stages?.name}</p>
               </div>
-              {d.amount && <span className="text-sm text-gray-600 flex-shrink-0">{d.amount.toLocaleString('ru-RU')} ₽</span>}
+              {d.amount && <span className="text-sm text-muted-foreground flex-shrink-0">{d.amount.toLocaleString('ru-RU')} ₽</span>}
             </div>
           ))}
         </div>
@@ -949,7 +949,7 @@ function ContactFormModal({ contact, onSave, onClose }: {
   return (
     <div className="fixed inset-0 bg-black/40 z-60 flex items-center justify-center p-4"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+      <div className="bg-card rounded-xl shadow-xl w-full max-w-sm p-6">
         <h3 className="font-bold text-lg mb-4">{contact ? 'Редактировать контакт' : 'Новый контакт'}</h3>
         <div className="space-y-3">
           <input className="input w-full" placeholder="ФИО *" value={form.full_name}
@@ -1005,7 +1005,7 @@ function ClientFormModal({ client, onSave, onClose }: {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-60 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+      <div className="bg-card rounded-xl shadow-xl w-full max-w-md p-6">
         <h3 className="font-bold text-lg mb-4">{client ? 'Редактировать клиента' : 'Новый клиент'}</h3>
         <div className="space-y-3">
           <input className="input w-full" placeholder="Название школы / организации *" value={form.name}
@@ -1062,14 +1062,14 @@ function TasksView({ tasks, members, clients, deals, currentUserId, onCreateTask
   })
 
   const TaskRow = ({ task }: { task: Task }) => (
-    <div className="flex items-start gap-3 py-2.5 px-4 hover:bg-gray-50 rounded-lg group">
+    <div className="flex items-start gap-3 py-2.5 px-4 hover:bg-muted rounded-lg group">
       <button
         onClick={() => onCompleteTask(task.id)}
-        className="mt-0.5 w-5 h-5 rounded-full border-2 border-gray-300 hover:border-green-500 hover:bg-green-50 flex-shrink-0 transition-colors"
+        className="mt-0.5 w-5 h-5 rounded-full border-2 border-border hover:border-green-500 hover:bg-green-50 flex-shrink-0 transition-colors"
       />
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-gray-900">{task.title}</p>
-        <p className="text-xs text-gray-400 mt-0.5">
+        <p className="text-sm text-foreground">{task.title}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
           {task.deals?.title && `${task.deals.title} · `}
           {task.clients?.name && <><School size={12} className="inline" /> {task.clients.name} · </>}
           {task.due_date && (
@@ -1080,7 +1080,7 @@ function TasksView({ tasks, members, clients, deals, currentUserId, onCreateTask
         </p>
       </div>
       <button
-        className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-lg"
+        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 text-lg"
         onClick={() => onDeleteTask(task.id)}
       >×</button>
     </div>
@@ -1088,11 +1088,11 @@ function TasksView({ tasks, members, clients, deals, currentUserId, onCreateTask
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <div className="flex gap-1 bg-muted rounded-lg p-1">
           {([['mine', 'Мои'], ['all', 'Все']] as const).map(([k, l]) => (
             <button key={k} onClick={() => setFilter(k)}
-              className={`px-3 py-1 text-sm rounded-md ${filter === k ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}>
+              className={`px-3 py-1 text-sm rounded-md ${filter === k ? 'bg-card shadow text-foreground' : 'text-muted-foreground'}`}>
               {l}
             </button>
           ))}
@@ -1102,7 +1102,7 @@ function TasksView({ tasks, members, clients, deals, currentUserId, onCreateTask
 
       <div className="flex-1 overflow-y-auto p-4">
         {filtered.length === 0 && (
-          <div className="text-center py-12 text-gray-400 text-sm">
+          <div className="text-center py-12 text-muted-foreground text-sm">
             Нет активных задач
           </div>
         )}
@@ -1115,13 +1115,13 @@ function TasksView({ tasks, members, clients, deals, currentUserId, onCreateTask
         )}
         {today.length > 0 && (
           <div className="mb-4">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 mb-1">Сегодня</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 mb-1">Сегодня</p>
             {today.map(t => <TaskRow key={t.id} task={t} />)}
           </div>
         )}
         {upcoming.length > 0 && (
           <div>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 mb-1">Предстоящие</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 mb-1">Предстоящие</p>
             {upcoming.map(t => <TaskRow key={t.id} task={t} />)}
           </div>
         )}
@@ -1170,7 +1170,7 @@ function TaskFormModal({ members, clients, deals, currentUserId, onSave, onClose
 
   return (
     <div className="fixed inset-0 bg-black/40 z-60 flex items-center justify-center p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+      <div className="bg-card rounded-xl shadow-xl w-full max-w-md p-6">
         <h3 className="font-bold text-lg mb-4">Новая задача</h3>
         <div className="space-y-3">
           <input className="input w-full" placeholder="Что нужно сделать? *" value={form.title}
@@ -1264,9 +1264,9 @@ function QuickAlbumModal({ dealId, suggestedTitle, suggestedCity, onCreated, onC
   return (
     <div className="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center p-4"
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+      <div className="bg-card rounded-xl shadow-xl w-full max-w-sm p-6">
         <h3 className="font-bold text-lg mb-1">Создать альбом</h3>
-        <p className="text-sm text-gray-400 mb-4">Альбом будет привязан к сделке</p>
+        <p className="text-sm text-muted-foreground mb-4">Альбом будет привязан к сделке</p>
         {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
         <div className="space-y-3">
           <input className="input w-full" placeholder="Название альбома *" value={form.title}
@@ -1338,8 +1338,8 @@ function StagesView({ stages, onSave }: {
     <div className="max-w-lg mx-auto p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="font-bold text-gray-900">Этапы воронки</h3>
-          <p className="text-xs text-gray-400 mt-0.5">Переименуйте, поменяйте цвет или порядок</p>
+          <h3 className="font-bold text-foreground">Этапы воронки</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Переименуйте, поменяйте цвет или порядок</p>
         </div>
         <button
           className="btn-primary text-sm"
@@ -1352,13 +1352,13 @@ function StagesView({ stages, onSave }: {
 
       <div className="space-y-2">
         {local.map((stage, idx) => (
-          <div key={stage.id} className="flex items-center gap-3 bg-gray-50 rounded-lg px-3 py-2.5">
+          <div key={stage.id} className="flex items-center gap-3 bg-muted rounded-lg px-3 py-2.5">
             {/* Порядок */}
             <div className="flex flex-col gap-0.5">
               <button onClick={() => moveUp(idx)} disabled={idx === 0}
-                className="text-gray-300 hover:text-gray-600 disabled:opacity-20 text-xs leading-none">▲</button>
+                className="text-muted-foreground hover:text-muted-foreground disabled:opacity-20 text-xs leading-none">▲</button>
               <button onClick={() => moveDown(idx)} disabled={idx === local.length - 1}
-                className="text-gray-300 hover:text-gray-600 disabled:opacity-20 text-xs leading-none">▼</button>
+                className="text-muted-foreground hover:text-muted-foreground disabled:opacity-20 text-xs leading-none">▼</button>
             </div>
 
             {/* Цвет */}
@@ -1376,7 +1376,7 @@ function StagesView({ stages, onSave }: {
 
             {/* Название */}
             <input
-              className="flex-1 text-sm bg-transparent border-b border-transparent hover:border-gray-200 focus:border-gray-400 outline-none py-0.5"
+              className="flex-1 text-sm bg-transparent border-b border-transparent hover:border-border focus:border-border outline-none py-0.5"
               value={stage.name}
               onChange={e => update(stage.id, { name: e.target.value })}
             />
@@ -1391,7 +1391,7 @@ function StagesView({ stages, onSave }: {
             </div>
 
             {/* Закрытый этап */}
-            <label className="flex items-center gap-1 text-xs text-gray-400 flex-shrink-0 cursor-pointer">
+            <label className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0 cursor-pointer">
               <input type="checkbox" checked={stage.is_closed}
                 onChange={e => update(stage.id, { is_closed: e.target.checked })}
                 className="rounded" />
@@ -1401,7 +1401,7 @@ function StagesView({ stages, onSave }: {
         ))}
       </div>
 
-      <p className="text-xs text-gray-300 mt-4">
+      <p className="text-xs text-muted-foreground mt-4">
         «Закрыт» — сделки в этом этапе считаются завершёнными и получают дату закрытия
       </p>
     </div>

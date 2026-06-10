@@ -63,33 +63,33 @@ export default function TemplateSetCard({
           aria-label="Действия с дизайном"
           disabled={busy}
           onClick={() => setMenuOpen(o => !o)}
-          className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-100 text-gray-500 disabled:opacity-40"
+          className="w-8 h-8 flex items-center justify-center rounded hover:bg-muted text-muted-foreground disabled:opacity-40"
         >
           <span className="text-xl leading-none">⋮</span>
         </button>
         {menuOpen && (
-          <div className="absolute right-0 mt-1 w-56 bg-white border rounded-lg shadow-lg py-1 text-sm">
+          <div className="absolute right-0 mt-1 w-56 bg-card border rounded-lg shadow-lg py-1 text-sm">
             <button
               onClick={() => pick('rename')}
-              className="w-full text-left px-3 py-2 hover:bg-gray-50"
+              className="w-full text-left px-3 py-2 hover:bg-muted"
             >
               <Pencil size={14} /> Переименовать
             </button>
             <button
               onClick={() => pick('duplicate')}
-              className="w-full text-left px-3 py-2 hover:bg-gray-50"
+              className="w-full text-left px-3 py-2 hover:bg-muted"
             >
               <Copy size={14} /> Дублировать
             </button>
             <button
               onClick={() => pick('toggle_global')}
-              className="w-full text-left px-3 py-2 hover:bg-gray-50"
+              className="w-full text-left px-3 py-2 hover:bg-muted"
             >
               {template.is_global ? <><Lock size={14} /> Убрать из глобальных</> : <><Globe size={14} /> Сделать глобальным</>}
             </button>
             <button
               onClick={() => pick('toggle_published')}
-              className="w-full text-left px-3 py-2 hover:bg-gray-50"
+              className="w-full text-left px-3 py-2 hover:bg-muted"
             >
               {template.is_published ? <><Download size={14} /> В черновик</> : <><Upload size={14} /> Опубликовать</>}
             </button>
@@ -137,15 +137,15 @@ export default function TemplateSetCard({
           {template.name}
         </h3>
 
-        <div className="text-xs text-gray-500 font-mono mb-3">{template.slug}</div>
+        <div className="text-xs text-muted-foreground font-mono mb-3">{template.slug}</div>
 
         {template.description && (
-          <div className="text-sm text-gray-600 mb-3 line-clamp-2">
+          <div className="text-sm text-muted-foreground mb-3 line-clamp-2">
             {template.description}
           </div>
         )}
 
-        <div className="text-xs text-gray-500 space-y-0.5">
+        <div className="text-xs text-muted-foreground space-y-0.5">
           <div>
             {template.spread_count} разворотов · {Math.round(template.page_width_mm)}×
             {Math.round(template.page_height_mm)} мм ·{' '}

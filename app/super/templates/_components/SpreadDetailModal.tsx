@@ -42,11 +42,11 @@ export default function SpreadDetailModal({ spread, onClose }: Props) {
         downOnBackdrop.current = false
       }}
     >
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-auto">
-        <div className="flex items-start justify-between p-4 border-b border-gray-200">
+      <div className="bg-card rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-auto">
+        <div className="flex items-start justify-between p-4 border-b border-border">
           <div>
             <h2 className="text-lg font-semibold">{spread.name}</h2>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               {spread.type}
               {' · '}
               {Math.round(spread.width_mm)} × {Math.round(spread.height_mm)} mm
@@ -55,7 +55,7 @@ export default function SpreadDetailModal({ spread, onClose }: Props) {
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none px-2"
+            className="text-muted-foreground hover:text-muted-foreground text-xl leading-none px-2"
             aria-label="Закрыть"
           >
             ×

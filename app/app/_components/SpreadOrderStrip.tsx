@@ -167,13 +167,13 @@ export default function SpreadOrderStrip({
   }
 
   return (
-    <div className="bg-white border-t border-gray-200 px-4 py-3">
+    <div className="bg-card border-t border-border px-4 py-3">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Развороты ({visualSpreads.length}){' '}
-          <span className="text-gray-400">· страниц: {spreads.length}</span>{' '}
+          <span className="text-muted-foreground">· страниц: {spreads.length}</span>{' '}
           {!readOnly && (
-            <span className="text-gray-400">— перетащите страницу чтобы изменить порядок</span>
+            <span className="text-muted-foreground">— перетащите страницу чтобы изменить порядок</span>
           )}
         </p>
       </div>
@@ -236,7 +236,7 @@ export default function SpreadOrderStrip({
                     spreads.length - 1
                   onAddRequest(insertAfter)
                 }}
-                className="flex-shrink-0 flex flex-col items-center justify-center w-24 border-2 border-dashed border-gray-300 hover:border-brand-400 hover:bg-brand-50 rounded text-gray-400 hover:text-brand-600 transition-colors"
+                className="flex-shrink-0 flex flex-col items-center justify-center w-24 border-2 border-dashed border-border hover:border-brand-400 hover:bg-brand-50 rounded text-muted-foreground hover:text-brand-600 transition-colors"
                 title="Добавить разворот после текущего"
               >
                 <span className="leading-none"><Plus size={14} /></span>
@@ -297,7 +297,7 @@ function SpreadCard({
       className={`group flex-shrink-0 relative rounded border-2 transition-colors ${
         isActive
           ? 'border-brand-500 ring-2 ring-brand-200'
-          : 'border-gray-200 hover:border-gray-400'
+          : 'border-border hover:border-border'
       }`}
       title={`Разворот ${position}`}
     >
@@ -336,7 +336,7 @@ function SpreadCard({
               <EmptySideThumb width={PAGE_THUMB_WIDTH} />
             )}
             {/* Разделитель между страницами разворота */}
-            <div className="w-px bg-gray-300" />
+            <div className="w-px bg-muted" />
             {/* Правая половина */}
             {rightPage && rightTemplate ? (
               <DraggablePage
@@ -361,7 +361,7 @@ function SpreadCard({
       {/* Номер разворота — в углу */}
       <span
         className={`absolute top-0 left-0 px-1.5 py-0.5 text-[10px] font-medium rounded-br pointer-events-none ${
-          isActive ? 'bg-brand-500 text-white' : 'bg-white/90 text-gray-700'
+          isActive ? 'bg-brand-500 text-white' : 'bg-card text-foreground'
         }`}
       >
         {position}
@@ -423,7 +423,7 @@ function DraggablePage({
     <div
       ref={setNodeRef}
       style={style}
-      className={`relative group/page overflow-hidden bg-white ${
+      className={`relative group/page overflow-hidden bg-card ${
         isCurrent ? 'ring-1 ring-brand-300' : ''
       }`}
     >
@@ -472,7 +472,7 @@ function EmptySideThumb({ width }: { width: number }) {
   const height = width * 1.4
   return (
     <div
-      className="bg-gray-50 border border-dashed border-gray-300"
+      className="bg-muted border border-dashed border-border"
       style={{ width, height }}
       title="Пустая страница"
     />

@@ -285,7 +285,7 @@ export default function PhotoTransformPanel({
   return (
     <div
       ref={ref}
-      className="fixed bg-white rounded-lg shadow-xl border border-gray-200 p-3 z-50 select-none"
+      className="fixed bg-card rounded-lg shadow-xl border border-border p-3 z-50 select-none"
       style={{
         left: `${left}px`,
         top: `${top}px`,
@@ -293,13 +293,13 @@ export default function PhotoTransformPanel({
       }}
     >
       <div className="flex items-center justify-between mb-2">
-        <div className="text-xs text-gray-400 truncate" title={label}>
+        <div className="text-xs text-muted-foreground truncate" title={label}>
           Кадрирование: {label}
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="text-gray-400 hover:text-gray-600 text-base leading-none px-1"
+          className="text-muted-foreground hover:text-muted-foreground text-base leading-none px-1"
           title="Закрыть (Esc)"
           aria-label="Закрыть"
         >
@@ -310,8 +310,8 @@ export default function PhotoTransformPanel({
       {/* Slider масштаба */}
       <div className="mb-3">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-gray-600">Масштаб</span>
-          <span className="text-xs text-gray-900 font-mono tabular-nums">
+          <span className="text-xs text-muted-foreground">Масштаб</span>
+          <span className="text-xs text-foreground font-mono tabular-nums">
             {Math.round(scale * 100)}%
           </span>
         </div>
@@ -327,13 +327,13 @@ export default function PhotoTransformPanel({
             setScale(v)
             emitChange(v, offsetX, offsetY, rotateDeg)
           }}
-          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer"
         />
       </div>
 
       {/* Touchpad + numeric inputs */}
       <div className="mb-3">
-        <div className="text-xs text-gray-600 mb-1">Позиция</div>
+        <div className="text-xs text-muted-foreground mb-1">Позиция</div>
         <div className="flex items-start gap-2">
           <div
             ref={touchpadRef}
@@ -342,7 +342,7 @@ export default function PhotoTransformPanel({
             onPointerUp={handleTouchpadUp}
             onPointerCancel={handleTouchpadUp}
             onDoubleClick={handleTouchpadDoubleClick}
-            className="relative bg-gray-100 rounded border border-gray-300 cursor-crosshair touch-none"
+            className="relative bg-muted rounded border border-border cursor-crosshair touch-none"
             style={{
               width: `${TOUCHPAD_SIZE}px`,
               height: `${TOUCHPAD_SIZE}px`,
@@ -351,7 +351,7 @@ export default function PhotoTransformPanel({
           >
             {/* Cross lines в центре */}
             <div
-              className="absolute bg-gray-300"
+              className="absolute bg-muted"
               style={{
                 left: '50%',
                 top: '0',
@@ -360,7 +360,7 @@ export default function PhotoTransformPanel({
               }}
             />
             <div
-              className="absolute bg-gray-300"
+              className="absolute bg-muted"
               style={{
                 left: '0',
                 top: '50%',
@@ -382,7 +382,7 @@ export default function PhotoTransformPanel({
           </div>
 
           <div className="flex flex-col gap-1.5 flex-1">
-            <label className="text-xs text-gray-500 flex items-center gap-1">
+            <label className="text-xs text-muted-foreground flex items-center gap-1">
               <span className="w-3">X</span>
               <input
                 type="number"
@@ -391,10 +391,10 @@ export default function PhotoTransformPanel({
                 step={0.05}
                 value={offsetX}
                 onChange={handleOffsetXInput}
-                className="flex-1 text-xs px-1.5 py-0.5 border border-gray-300 rounded font-mono"
+                className="flex-1 text-xs px-1.5 py-0.5 border border-border rounded font-mono"
               />
             </label>
-            <label className="text-xs text-gray-500 flex items-center gap-1">
+            <label className="text-xs text-muted-foreground flex items-center gap-1">
               <span className="w-3">Y</span>
               <input
                 type="number"
@@ -403,7 +403,7 @@ export default function PhotoTransformPanel({
                 step={0.05}
                 value={offsetY}
                 onChange={handleOffsetYInput}
-                className="flex-1 text-xs px-1.5 py-0.5 border border-gray-300 rounded font-mono"
+                className="flex-1 text-xs px-1.5 py-0.5 border border-border rounded font-mono"
               />
             </label>
           </div>
@@ -414,13 +414,13 @@ export default function PhotoTransformPanel({
       <div className="mb-3">
         <div className="flex items-center justify-between mb-1">
           <span
-            className="text-xs text-gray-600 cursor-pointer select-none"
+            className="text-xs text-muted-foreground cursor-pointer select-none"
             onDoubleClick={handleRotateReset}
             title="Двойной клик — сбросить поворот"
           >
             Поворот
           </span>
-          <span className="text-xs text-gray-900 font-mono tabular-nums">
+          <span className="text-xs text-foreground font-mono tabular-nums">
             {rotateDeg > 0 ? `+${rotateDeg.toFixed(1)}` : rotateDeg.toFixed(1)}°
           </span>
         </div>
@@ -431,17 +431,17 @@ export default function PhotoTransformPanel({
           step={0.5}
           value={rotateDeg}
           onChange={handleRotateSlider}
-          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+          className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer"
         />
       </div>
 
       {/* Actions */}
-      <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+      <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
         <button
           type="button"
           onClick={handleReset}
           disabled={isDefault}
-          className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:text-muted-foreground disabled:cursor-not-allowed"
           title="Сбросить к умолчанию (центрирование, 100%, без поворота)"
         >
           <RotateCcw size={12} /> Сбросить
