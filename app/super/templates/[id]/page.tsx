@@ -92,7 +92,7 @@ type LoadError = { kind: 'notfound' | 'badrequest' | 'network'; message: string 
 
 const SpreadCanvas = dynamic(
   () => import('../_components/SpreadCanvas'),
-  { ssr: false, loading: () => <div className="text-gray-400 text-sm">Загрузка canvas…</div> },
+  { ssr: false, loading: () => <div className="text-muted-foreground text-sm">Загрузка canvas…</div> },
 )
 const SpreadDetailModal = dynamic(
   () => import('../_components/SpreadDetailModal'),
@@ -266,7 +266,7 @@ export default function TemplateDetailPage() {
 
   if (!authChecked) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-400">
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
         Проверка авторизации…
       </div>
     )
@@ -286,14 +286,14 @@ export default function TemplateDetailPage() {
           {data && (
             <>
               <h1 className="text-2xl font-semibold mb-1">{data.template_set.name}</h1>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 <code>{data.template_set.slug}</code>
                 {' · '}
                 {Math.round(data.template_set.page_width_mm)} × {Math.round(data.template_set.page_height_mm)} mm
                 {' · '}
                 {data.spread_templates.length} разворотов
               </p>
-              <div className="flex items-center gap-4 mt-2 text-xs text-gray-600">
+              <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <span
                     className="inline-block w-3 h-3 rounded"
@@ -321,7 +321,7 @@ export default function TemplateDetailPage() {
                 </button>
 
                 {buildOpen && (
-                  <div className="mt-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                  <div className="mt-3 p-4 bg-muted border border-border rounded-lg">
                     <h3 className="font-bold mb-3">Build Test — синтетический альбом</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                       <label className="flex items-center gap-2">
@@ -428,14 +428,14 @@ export default function TemplateDetailPage() {
 
                     {buildResult && (
                       <div className="mt-4 space-y-3">
-                        <div className="p-3 bg-white border border-gray-200 rounded text-sm">
+                        <div className="p-3 bg-card border border-border rounded text-sm">
                           <div className="font-bold mb-2">Сводка:</div>
                           <div>spreads: {buildResult.summary.total_spreads}</div>
                           <div>warnings: {buildResult.summary.total_warnings}</div>
-                          <div className="text-xs text-gray-500 mt-1">
+                          <div className="text-xs text-muted-foreground mt-1">
                             {buildResult.summary.preset_slug}
                             {' '}
-                            <span className="text-gray-400">({buildResult.summary.preset_name})</span>
+                            <span className="text-muted-foreground">({buildResult.summary.preset_name})</span>
                             {' · '}
                             students={buildResult.summary.students_count}
                             {' · '}
@@ -456,21 +456,21 @@ export default function TemplateDetailPage() {
                           </div>
                         )}
 
-                        <div className="p-3 bg-white border border-gray-200 rounded">
+                        <div className="p-3 bg-card border border-border rounded">
                           <div className="font-bold mb-2">Spreads:</div>
                           {buildResult.spreads.length === 0 && (
-                            <div className="text-xs text-gray-500">Пусто</div>
+                            <div className="text-xs text-muted-foreground">Пусто</div>
                           )}
                           {buildResult.spreads.map((s) => (
-                            <div key={s.spread_index} className="border-b border-gray-100 py-2 text-sm last:border-b-0">
+                            <div key={s.spread_index} className="border-b border-border py-2 text-sm last:border-b-0">
                               <div>
-                                <span className="font-mono text-gray-500">[{s.spread_index}]</span>{' '}
+                                <span className="font-mono text-muted-foreground">[{s.spread_index}]</span>{' '}
                                 <span className="font-bold">{s.template_name}</span>
                               </div>
                               {Object.keys(s.data).length > 0 && (
-                                <details className="mt-1 text-xs text-gray-600">
+                                <details className="mt-1 text-xs text-muted-foreground">
                                   <summary className="cursor-pointer">data ({Object.keys(s.data).length} ключей)</summary>
-                                  <pre className="mt-1 p-2 bg-gray-50 rounded overflow-auto">
+                                  <pre className="mt-1 p-2 bg-muted rounded overflow-auto">
                                     {JSON.stringify(s.data, null, 2)}
                                   </pre>
                                 </details>
@@ -594,7 +594,7 @@ export default function TemplateDetailPage() {
 
                     {sBuildResult && (
                       <div className="mt-4 space-y-3">
-                        <div className="p-3 bg-white border border-green-200 rounded text-sm">
+                        <div className="p-3 bg-card border border-green-200 rounded text-sm">
                           <div className="flex items-center justify-between mb-2">
                             <div className="font-bold">Сводка:</div>
                             <span
@@ -612,13 +612,13 @@ export default function TemplateDetailPage() {
                           <div>spreads: {sBuildResult.summary.total_spreads}</div>
                           <div>decisions: {sBuildResult.summary.total_decisions}</div>
                           <div>warnings: {sBuildResult.summary.total_warnings}</div>
-                          <div className="text-xs text-gray-500 mt-1">
+                          <div className="text-xs text-muted-foreground mt-1">
                             preset: {sBuildResult.summary.preset_id}{' '}
-                            <span className="text-gray-400">({sBuildResult.summary.preset_name})</span>
+                            <span className="text-muted-foreground">({sBuildResult.summary.preset_name})</span>
                             {' · '}density={sBuildResult.summary.preset_density ?? 'null'}
                             {' · '}sheet_type={sBuildResult.summary.preset_sheet_type ?? 'null'}
                           </div>
-                          <div className="text-xs text-gray-500 mt-1">
+                          <div className="text-xs text-muted-foreground mt-1">
                             students={sBuildResult.summary.students_count}
                             {' · '}
                             subjects={sBuildResult.summary.subjects_count}
@@ -627,11 +627,11 @@ export default function TemplateDetailPage() {
 
                         {/* Снапшот section_structure пресета — то что engine видел */}
                         {sBuildResult.preset_section_structure !== null && (
-                          <details className="p-3 bg-white border border-green-200 rounded text-sm">
+                          <details className="p-3 bg-card border border-green-200 rounded text-sm">
                             <summary className="font-bold cursor-pointer">
                               preset.section_structure (из БД)
                             </summary>
-                            <pre className="mt-2 p-2 bg-gray-50 rounded overflow-auto max-h-60 text-xs">
+                            <pre className="mt-2 p-2 bg-muted rounded overflow-auto max-h-60 text-xs">
                               {JSON.stringify(sBuildResult.preset_section_structure, null, 2)}
                             </pre>
                           </details>
@@ -648,19 +648,19 @@ export default function TemplateDetailPage() {
                           </div>
                         )}
 
-                        <div className="p-3 bg-white border border-green-200 rounded">
+                        <div className="p-3 bg-card border border-green-200 rounded">
                           <div className="font-bold mb-2">Decision trace:</div>
                           {sBuildResult.decision_trace.length === 0 && (
-                            <div className="text-xs text-gray-500">Пусто</div>
+                            <div className="text-xs text-muted-foreground">Пусто</div>
                           )}
                           {sBuildResult.decision_trace.map((d, i) => (
-                            <div key={i} className="border-b border-gray-100 py-1.5 text-xs last:border-b-0">
-                              <span className="font-mono text-gray-500">[#{d.spread_index}.{d.section_index}]</span>{' '}
+                            <div key={i} className="border-b border-border py-1.5 text-xs last:border-b-0">
+                              <span className="font-mono text-muted-foreground">[#{d.spread_index}.{d.section_index}]</span>{' '}
                               <span className="font-mono text-green-700">{d.family_id}</span>{' → '}
                               <span className="font-mono font-bold">{d.rule_id}</span>
                               {/* chain_trace для common-секции — наиболее полезная отладка */}
                               {typeof d.inputs.chain_trace === 'string' && (
-                                <div className="ml-4 mt-0.5 text-gray-500 font-mono">
+                                <div className="ml-4 mt-0.5 text-muted-foreground font-mono">
                                   {d.inputs.chain_trace}
                                 </div>
                               )}
@@ -668,10 +668,10 @@ export default function TemplateDetailPage() {
                           ))}
                         </div>
 
-                        <div className="p-3 bg-white border border-green-200 rounded">
+                        <div className="p-3 bg-card border border-green-200 rounded">
                           <div className="font-bold mb-2">Spreads:</div>
                           {sBuildResult.spreads.length === 0 && (
-                            <div className="text-xs text-gray-500">Пусто</div>
+                            <div className="text-xs text-muted-foreground">Пусто</div>
                           )}
                           {sBuildResult.spreads.map((s) => {
                             // Имя мастера ищем через masters_by_id из ответа
@@ -683,11 +683,11 @@ export default function TemplateDetailPage() {
                               ? sBuildResult.masters_by_id[s.right.master_id] ?? '?'
                               : null
                             return (
-                              <div key={s.spread_index} className="border-b border-gray-100 py-2 text-sm last:border-b-0">
+                              <div key={s.spread_index} className="border-b border-border py-2 text-sm last:border-b-0">
                                 <div>
-                                  <span className="font-mono text-gray-500">[{s.spread_index}]</span>{' '}
+                                  <span className="font-mono text-muted-foreground">[{s.spread_index}]</span>{' '}
                                   <span className="font-bold">{leftName ?? '—'}</span>
-                                  <span className="text-gray-400 mx-2">|</span>
+                                  <span className="text-muted-foreground mx-2">|</span>
                                   <span className="font-bold">{rightName ?? '—'}</span>
                                   {s.is_spread && (
                                     <span className="ml-2 px-1 bg-indigo-100 text-indigo-800 rounded text-xs">
@@ -695,9 +695,9 @@ export default function TemplateDetailPage() {
                                     </span>
                                   )}
                                 </div>
-                                <details className="mt-1 text-xs text-gray-600">
+                                <details className="mt-1 text-xs text-muted-foreground">
                                   <summary className="cursor-pointer">bindings</summary>
-                                  <pre className="mt-1 p-2 bg-gray-50 rounded overflow-auto max-h-60">
+                                  <pre className="mt-1 p-2 bg-muted rounded overflow-auto max-h-60">
                                     {JSON.stringify({ left: s.left?.bindings, right: s.right?.bindings }, null, 2)}
                                   </pre>
                                 </details>
@@ -715,7 +715,7 @@ export default function TemplateDetailPage() {
         </div>
 
         {loading && (
-          <div className="text-center py-12 text-gray-400">Загрузка…</div>
+          <div className="text-center py-12 text-muted-foreground">Загрузка…</div>
         )}
 
         {error && !loading && (
@@ -728,7 +728,7 @@ export default function TemplateDetailPage() {
         )}
 
         {!loading && !error && data && data.spread_templates.length === 0 && (
-          <div className="card p-12 text-center text-gray-500">
+          <div className="card p-12 text-center text-muted-foreground">
             В шаблоне нет ни одного разворота.
           </div>
         )}
@@ -749,9 +749,9 @@ export default function TemplateDetailPage() {
                   showLabels={false}
                 />
                 <div className="mt-2 text-xs">
-                  <div className="text-gray-400 tabular-nums">{s.sort_order}.</div>
+                  <div className="text-muted-foreground tabular-nums">{s.sort_order}.</div>
                   <div className="font-medium truncate">{s.name}</div>
-                  <div className="text-gray-500">
+                  <div className="text-muted-foreground">
                     ({s.type})
                     {s.is_spread && ' · spread'}
                   </div>

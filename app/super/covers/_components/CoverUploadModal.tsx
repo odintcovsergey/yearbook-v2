@@ -103,9 +103,9 @@ export default function CoverUploadModal({
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">IDML файл обложки</label>
+              <label className="text-sm font-medium text-foreground block mb-1">IDML файл обложки</label>
               <input type="file" accept=".idml" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="input" required />
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="text-xs text-muted-foreground mt-1">
                 Обложка = один разворот из 3 страниц (задняя | корешок | передняя), имя мастера на C-.
                 См. docs/designer-cover-instructions.md
               </div>
@@ -116,7 +116,7 @@ export default function CoverUploadModal({
               Опубликовать сразу (видна в выборе)
             </label>
 
-            <div className="text-xs text-gray-500">Обложка будет глобальной (для всех партнёров).</div>
+            <div className="text-xs text-muted-foreground">Обложка будет глобальной (для всех партнёров).</div>
 
             {error && <div className="text-sm text-red-600">{error}</div>}
 

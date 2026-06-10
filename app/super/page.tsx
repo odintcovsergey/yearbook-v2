@@ -2,6 +2,7 @@
 
 import { useState, useEffect, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import { ThemeToggle } from '../app/_components/ThemeToggle'
 import {
   Building2,
   Camera,
@@ -155,14 +156,14 @@ export default function SuperPage() {
   if (loading || !auth) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-400 text-sm">Загрузка...</div>
+        <div className="text-muted-foreground text-sm">Загрузка...</div>
       </div>
     )
   }
 
   return (
     <div className="min-h-screen">
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-10">
+      <header className="bg-card border-b border-border sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div>
             <h1
@@ -171,11 +172,12 @@ export default function SuperPage() {
             >
               Панель суперадминистратора
             </h1>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {auth.user?.full_name} · {auth.user?.email}
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <button onClick={handleLogout} className="btn-secondary">Выйти</button>
           </div>
         </div>
@@ -211,35 +213,35 @@ export default function SuperPage() {
         <YcStorageWidget />
 
         {/* Таб-бар */}
-        <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
+        <div className="flex gap-1 mb-6 bg-muted rounded-xl p-1 w-fit">
           {([
             { key: 'tenants' as const, label: 'Арендаторы', icon: Building2 },
             { key: 'partners' as const, label: 'Партнёры', icon: Camera },
             { key: 'queue' as const, label: `Очередь работ${queue.filter(a => a.workflow_status === 'submitted').length > 0 ? ` · ${queue.filter(a => a.workflow_status === 'submitted').length} новых` : ''}`, icon: Rocket },
           ] as { key: 'tenants' | 'partners' | 'queue'; label: string; icon: LucideIcon }[]).map(t => (
             <button key={t.key} onClick={() => setSuperTab(t.key)}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${superTab === t.key ? 'bg-white shadow text-brand-700' : 'text-gray-500 hover:text-gray-700'}`}>
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${superTab === t.key ? 'bg-card shadow text-brand-700' : 'text-muted-foreground hover:text-foreground'}`}>
               <t.icon size={16} /> {t.label}
             </button>
           ))}
           <button onClick={() => router.push('/super/templates')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
             <Ruler size={16} /> Шаблоны
           </button>
           <button onClick={() => router.push('/super/master-catalog')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
             <LayoutGrid size={16} /> Каталог мастеров
           </button>
           <button onClick={() => router.push('/super/presets')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
             <LayoutTemplate size={16} /> Пресеты
           </button>
           <button onClick={() => router.push('/super/referral-programs')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
             <Gift size={16} /> Реферальные программы
           </button>
           <button onClick={() => router.push('/super/covers')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-gray-500 hover:text-gray-700">
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
             <BookImage size={16} /> Обложки
           </button>
         </div>
@@ -285,14 +287,14 @@ export default function SuperPage() {
 
         <div className="card overflow-hidden">
           {filtered.length === 0 ? (
-            <div className="p-12 text-center text-gray-400 text-sm">
+            <div className="p-12 text-center text-muted-foreground text-sm">
               {search ? 'Ничего не найдено' : 'Пока нет арендаторов. Создайте первого.'}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-100">
-                  <tr className="text-left text-xs font-medium text-gray-500 uppercase">
+                <thead className="bg-muted border-b border-border">
+                  <tr className="text-left text-xs font-medium text-muted-foreground uppercase">
                     <th className="px-5 py-3">Название</th>
                     <th className="px-5 py-3">Slug</th>
                     <th className="px-5 py-3">Тариф</th>
@@ -301,19 +303,19 @@ export default function SuperPage() {
                     <th className="px-5 py-3">Создан</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-border">
                   {filtered.map(t => (
                     <tr
                       key={t.id}
                       onClick={() => setSelectedTenant(t)}
-                      className={`hover:bg-gray-50 transition-colors cursor-pointer ${!t.is_active ? 'opacity-50' : ''}`}
+                      className={`hover:bg-muted transition-colors cursor-pointer ${!t.is_active ? 'opacity-50' : ''}`}
                     >
                       <td className="px-5 py-3">
-                        <div className="font-medium text-gray-900">{t.name}</div>
-                        {t.city && <div className="text-xs text-gray-500">{t.city}</div>}
+                        <div className="font-medium text-foreground">{t.name}</div>
+                        {t.city && <div className="text-xs text-muted-foreground">{t.city}</div>}
                       </td>
                       <td className="px-5 py-3">
-                        <code className="text-xs bg-gray-100 px-2 py-0.5 rounded">{t.slug}</code>
+                        <code className="text-xs bg-muted px-2 py-0.5 rounded">{t.slug}</code>
                       </td>
                       <td className="px-5 py-3">
                         <span className={planColors[t.plan] ?? 'badge-gray'}>
@@ -325,10 +327,10 @@ export default function SuperPage() {
                       </td>
                       <td className="px-5 py-3 text-center">
                         <span className="font-medium">{t.active_album_count}</span>
-                        <span className="text-gray-400"> / {t.album_count}</span>
+                        <span className="text-muted-foreground"> / {t.album_count}</span>
                       </td>
                       <td className="px-5 py-3 text-center">{t.user_count}</td>
-                      <td className="px-5 py-3 text-gray-500 text-xs">
+                      <td className="px-5 py-3 text-muted-foreground text-xs">
                         {new Date(t.created_at).toLocaleDateString('ru-RU')}
                       </td>
                     </tr>
@@ -378,10 +380,10 @@ export default function SuperPage() {
 function StatCard({ label, value, subValue }: { label: string; value: number; subValue?: string }) {
   return (
     <div className="card p-5">
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
+      <div className="text-xs text-muted-foreground mb-1">{label}</div>
       <div className="flex items-baseline gap-2">
-        <div className="text-2xl font-semibold text-gray-900">{value}</div>
-        {subValue && <div className="text-sm text-gray-400">{subValue}</div>}
+        <div className="text-2xl font-semibold text-foreground">{value}</div>
+        {subValue && <div className="text-sm text-muted-foreground">{subValue}</div>}
       </div>
     </div>
   )
@@ -455,17 +457,17 @@ function YcStorageWidget() {
     <div className="card p-5 mb-8">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div>
-          <div className="text-xs text-gray-500 uppercase">Yandex Cloud Storage</div>
+          <div className="text-xs text-muted-foreground uppercase">Yandex Cloud Storage</div>
           {stats && (
             <div className="flex items-baseline gap-3 mt-1">
-              <div className="text-2xl font-semibold text-gray-900">{stats.total_size_gb} ГБ</div>
-              <div className="text-sm text-gray-400">
+              <div className="text-2xl font-semibold text-foreground">{stats.total_size_gb} ГБ</div>
+              <div className="text-sm text-muted-foreground">
                 {stats.total_object_count.toLocaleString('ru')} объектов · прогноз ₽{stats.estimated_cost_rub}/мес
               </div>
             </div>
           )}
           {!stats && !loading && (
-            <div className="text-sm text-gray-400 mt-1">
+            <div className="text-sm text-muted-foreground mt-1">
               Нажми «Обновить» чтобы посчитать размер хранилища
             </div>
           )}
@@ -474,7 +476,7 @@ function YcStorageWidget() {
           type="button"
           onClick={loadStats}
           disabled={loading}
-          className="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+          className="text-xs px-3 py-1.5 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition disabled:bg-muted disabled:cursor-not-allowed"
         >
           {loading ? 'Считаем…' : stats ? 'Обновить' : 'Обновить статистику'}
         </button>
@@ -492,17 +494,17 @@ function YcStorageWidget() {
               : 0
             return (
               <div key={cat.name} className="flex items-center gap-3 text-sm">
-                <div className="w-44 text-gray-600">{CATEGORY_LABELS[cat.name] ?? cat.name}</div>
-                <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                <div className="w-44 text-muted-foreground">{CATEGORY_LABELS[cat.name] ?? cat.name}</div>
+                <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
                   <div
                     className="h-full bg-blue-400 rounded-full"
                     style={{ width: `${Math.max(pct, 0.5)}%` }}
                   />
                 </div>
-                <div className="w-24 text-right text-gray-500 text-xs">
+                <div className="w-24 text-right text-muted-foreground text-xs">
                   {formatBytes(cat.size_bytes)}
                 </div>
-                <div className="w-20 text-right text-gray-400 text-xs">
+                <div className="w-20 text-right text-muted-foreground text-xs">
                   {cat.object_count.toLocaleString('ru')} файлов
                 </div>
               </div>
@@ -518,7 +520,7 @@ function YcStorageWidget() {
       )}
 
       {stats && (
-        <div className="text-xs text-gray-400 mt-3">
+        <div className="text-xs text-muted-foreground mt-3">
           Обновлено: {new Date(stats.scanned_at).toLocaleString('ru')}
           {' · '}
           Стоимость по тарифу Standard (₽1.95/ГБ/мес). Может быть ниже при настройке lifecycle.
@@ -638,21 +640,21 @@ function CreateTenantModal({
       onMouseUp={handleBackdropMouseUp}
     >
       <div
-        className="bg-white rounded-2xl max-w-2xl w-full shadow-xl my-auto"
+        className="bg-card rounded-2xl max-w-2xl w-full shadow-xl my-auto"
       >
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <h3 className="text-lg font-semibold">Новый арендатор</h3>
-          <button onClick={onClose} type="button" className="text-gray-400 hover:text-gray-700 text-xl leading-none">
+          <button onClick={onClose} type="button" className="text-muted-foreground hover:text-foreground text-xl leading-none">
             ×
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           <div>
-            <h4 className="text-xs font-medium text-gray-400 uppercase mb-3">Арендатор</h4>
+            <h4 className="text-xs font-medium text-muted-foreground uppercase mb-3">Арендатор</h4>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-foreground mb-1.5">
                   Название <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -667,7 +669,7 @@ function CreateTenantModal({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-foreground mb-1.5">
                   Slug (для URL) <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -680,14 +682,14 @@ function CreateTenantModal({
                   disabled={loading}
                   pattern="[a-z0-9-]+"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Латинские буквы, цифры, дефис. Генерируется автоматически из названия.
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Тариф</label>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Тариф</label>
                   <select
                     value={form.plan}
                     onChange={(e) => set('plan', e.target.value)}
@@ -701,7 +703,7 @@ function CreateTenantModal({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Город</label>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Город</label>
                   <input
                     type="text"
                     value={form.city}
@@ -715,7 +717,7 @@ function CreateTenantModal({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Email арендатора</label>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Email арендатора</label>
                   <input
                     type="email"
                     value={form.email}
@@ -726,7 +728,7 @@ function CreateTenantModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Телефон</label>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Телефон</label>
                   <input
                     type="tel"
                     value={form.phone}
@@ -740,15 +742,15 @@ function CreateTenantModal({
             </div>
           </div>
 
-          <div className="border-t border-gray-100 pt-5">
-            <h4 className="text-xs font-medium text-gray-400 uppercase mb-3">Владелец аккаунта</h4>
-            <p className="text-xs text-gray-500 mb-3">
+          <div className="border-t border-border pt-5">
+            <h4 className="text-xs font-medium text-muted-foreground uppercase mb-3">Владелец аккаунта</h4>
+            <p className="text-xs text-muted-foreground mb-3">
               Этот пользователь получит роль owner и сможет управлять арендатором.
             </p>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-foreground mb-1.5">
                   ФИО <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -763,7 +765,7 @@ function CreateTenantModal({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-foreground mb-1.5">
                   Email для входа <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -778,7 +780,7 @@ function CreateTenantModal({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-foreground mb-1.5">
                   Пароль <span className="text-red-500">*</span>
                 </label>
                 <div className="flex gap-2">
@@ -801,7 +803,7 @@ function CreateTenantModal({
                     Сгенерировать
                   </button>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Обязательно передайте пароль владельцу. После создания его можно будет сменить.
                 </p>
               </div>
@@ -1027,19 +1029,19 @@ function TenantDetailModal({
       onMouseDown={handleBackdropMouseDown}
       onMouseUp={handleBackdropMouseUp}
     >
-      <div className="bg-white rounded-2xl max-w-2xl w-full shadow-xl my-auto">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+      <div className="bg-card rounded-2xl max-w-2xl w-full shadow-xl my-auto">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold">{tenant.name}</h3>
-            <div className="text-xs text-gray-500 mt-0.5">
-              <code className="bg-gray-100 px-1.5 py-0.5 rounded">{tenant.slug}</code>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              <code className="bg-muted px-1.5 py-0.5 rounded">{tenant.slug}</code>
               {!tenant.is_active && <span className="ml-2 text-red-600">Заблокирован</span>}
             </div>
           </div>
           <button
             onClick={onClose}
             type="button"
-            className="text-gray-400 hover:text-gray-700 text-xl leading-none"
+            className="text-muted-foreground hover:text-foreground text-xl leading-none"
           >
             ×
           </button>
@@ -1050,19 +1052,19 @@ function TenantDetailModal({
             <div className="space-y-5">
               {/* Статистика */}
               <div className="grid grid-cols-3 gap-3">
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <div className="text-xs text-gray-500">Альбомов</div>
+                <div className="bg-muted rounded-xl p-4">
+                  <div className="text-xs text-muted-foreground">Альбомов</div>
                   <div className="text-xl font-semibold mt-1">
                     {tenant.active_album_count}
-                    <span className="text-gray-400 text-sm"> / {tenant.album_count}</span>
+                    <span className="text-muted-foreground text-sm"> / {tenant.album_count}</span>
                   </div>
                 </div>
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <div className="text-xs text-gray-500">Сотрудников</div>
+                <div className="bg-muted rounded-xl p-4">
+                  <div className="text-xs text-muted-foreground">Сотрудников</div>
                   <div className="text-xl font-semibold mt-1">{tenant.user_count}</div>
                 </div>
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <div className="text-xs text-gray-500">Тариф</div>
+                <div className="bg-muted rounded-xl p-4">
+                  <div className="text-xs text-muted-foreground">Тариф</div>
                   <div className="mt-1">
                     <span className={planColors[tenant.plan] ?? 'badge-gray'}>
                       {planLabels[tenant.plan] ?? tenant.plan}
@@ -1098,8 +1100,8 @@ function TenantDetailModal({
 
               {/* Назначение менеджера */}
               {tenant.slug !== 'main' && (
-                <div className="pt-3 border-t border-gray-100">
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                <div className="pt-3 border-t border-border">
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
                     Ответственный менеджер OkeyBook
                   </label>
                   <div className="flex items-center gap-2">
@@ -1116,10 +1118,10 @@ function TenantDetailModal({
                         </option>
                       ))}
                     </select>
-                    {assigningManager && <span className="text-xs text-gray-400">Сохраняем...</span>}
+                    {assigningManager && <span className="text-xs text-muted-foreground">Сохраняем...</span>}
                   </div>
                   {assignedManagerId && (
-                    <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Менеджер видит этого партнёра в разделе «Партнёры»
                     </p>
                   )}
@@ -1127,7 +1129,7 @@ function TenantDetailModal({
               )}
 
               {/* Действия */}
-              <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
                 <button onClick={() => setMode('edit')} className="btn-primary">
                   Редактировать
                 </button>
@@ -1152,7 +1154,7 @@ function TenantDetailModal({
                   </>
                 )}
                 {isMainTenant && (
-                  <div className="text-xs text-gray-400 self-center">
+                  <div className="text-xs text-muted-foreground self-center">
                     Главный арендатор — защищён от блокировки и удаления
                   </div>
                 )}
@@ -1163,7 +1165,7 @@ function TenantDetailModal({
           {mode === 'edit' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Название</label>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Название</label>
                 <input
                   type="text"
                   value={form.name}
@@ -1175,7 +1177,7 @@ function TenantDetailModal({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Тариф</label>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Тариф</label>
                   <select
                     value={form.plan}
                     onChange={(e) => set('plan', e.target.value)}
@@ -1189,7 +1191,7 @@ function TenantDetailModal({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-sm font-medium text-foreground mb-1.5">
                     Срок действия тарифа
                   </label>
                   <input
@@ -1199,7 +1201,7 @@ function TenantDetailModal({
                     className="input"
                     disabled={loading}
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     Пусто = без ограничения
                   </p>
                 </div>
@@ -1207,7 +1209,7 @@ function TenantDetailModal({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-sm font-medium text-foreground mb-1.5">
                     Лимит альбомов
                   </label>
                   <input
@@ -1220,7 +1222,7 @@ function TenantDetailModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-sm font-medium text-foreground mb-1.5">
                     Лимит хранилища (МБ)
                   </label>
                   <input
@@ -1235,7 +1237,7 @@ function TenantDetailModal({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Город</label>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Город</label>
                 <input
                   type="text"
                   value={form.city}
@@ -1247,7 +1249,7 @@ function TenantDetailModal({
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Email</label>
                   <input
                     type="email"
                     value={form.email}
@@ -1257,7 +1259,7 @@ function TenantDetailModal({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Телефон</label>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Телефон</label>
                   <input
                     type="tel"
                     value={form.phone}
@@ -1268,7 +1270,7 @@ function TenantDetailModal({
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-4 border-t border-gray-100">
+              <div className="flex gap-3 pt-4 border-t border-border">
                 <button onClick={handleSave} className="btn-primary flex-1" disabled={loading}>
                   {loading ? 'Сохраняем...' : 'Сохранить'}
                 </button>
@@ -1285,7 +1287,7 @@ function TenantDetailModal({
 
           {mode === 'create_user' && (
             <div className="space-y-4">
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Создать сотрудника в «{tenant.name}». Пользователь сможет войти в кабинет /app
                 с указанными email и паролем. Укажите свой email если создаёте аккаунт для себя.
               </p>
@@ -1294,8 +1296,8 @@ function TenantDetailModal({
                 <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
                   <div className="text-sm font-medium text-green-800">Пользователь создан</div>
                   <div className="text-sm text-green-700">
-                    <div><strong>Email:</strong> <code className="bg-white px-1.5 py-0.5 rounded text-xs">{createdUser.email}</code></div>
-                    <div className="mt-1"><strong>Пароль:</strong> <code className="bg-white px-1.5 py-0.5 rounded text-xs">{createdUser.password}</code></div>
+                    <div><strong>Email:</strong> <code className="bg-card px-1.5 py-0.5 rounded text-xs">{createdUser.email}</code></div>
+                    <div className="mt-1"><strong>Пароль:</strong> <code className="bg-card px-1.5 py-0.5 rounded text-xs">{createdUser.password}</code></div>
                   </div>
                   <div className="text-xs text-green-700 pt-2">
                     Пароль больше не будет показан. Запишите его или передайте сотруднику прямо сейчас.
@@ -1305,7 +1307,7 @@ function TenantDetailModal({
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Email</label>
                 <input
                   type="email"
                   value={userForm.email}
@@ -1318,7 +1320,7 @@ function TenantDetailModal({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Имя</label>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Имя</label>
                 <input
                   type="text"
                   value={userForm.full_name}
@@ -1330,8 +1332,8 @@ function TenantDetailModal({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Пароль <span className="text-gray-400 font-normal">(не короче 8 символов)</span>
+                <label className="block text-sm font-medium text-foreground mb-1.5">
+                  Пароль <span className="text-muted-foreground font-normal">(не короче 8 символов)</span>
                 </label>
                 <input
                   type="text"
@@ -1342,13 +1344,13 @@ function TenantDetailModal({
                   disabled={loading}
                   autoComplete="off"
                 />
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Показан открытым, чтобы вы его запомнили. Пользователь сможет его сменить после входа.
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Роль</label>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Роль</label>
                 <div className="flex gap-2 flex-wrap">
                   {(['owner', 'manager', 'viewer'] as const).map(r => (
                     <button
@@ -1359,20 +1361,20 @@ function TenantDetailModal({
                       className={`text-sm px-3 py-1.5 rounded-lg border transition-colors ${
                         userForm.role === r
                           ? 'border-gray-900 bg-gray-900 text-white'
-                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                          : 'border-border text-muted-foreground hover:border-border'
                       }`}
                     >
                       {r === 'owner' ? 'Владелец' : r === 'manager' ? 'Менеджер' : 'Наблюдатель'}
                     </button>
                   ))}
                 </div>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Владелец — полный доступ, включая команду и настройки. Менеджер — работа с альбомами.
                   Наблюдатель — только просмотр.
                 </p>
               </div>
 
-              <div className="flex gap-2 pt-2 border-t border-gray-100">
+              <div className="flex gap-2 pt-2 border-t border-border">
                 <button
                   onClick={handleCreateUser}
                   className="btn-primary"
@@ -1410,9 +1412,9 @@ function TenantDetailModal({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-foreground mb-1.5">
                   Для подтверждения введите slug арендатора:{' '}
-                  <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">{tenant.slug}</code>
+                  <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{tenant.slug}</code>
                 </label>
                 <input
                   type="text"
@@ -1454,9 +1456,9 @@ function TenantDetailModal({
 
 function InfoRow({ label, value }: { label: string; value: string | null }) {
   return (
-    <div className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
-      <span className="text-gray-500">{label}</span>
-      <span className="text-gray-900 font-medium">{value || <span className="text-gray-300">—</span>}</span>
+    <div className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-foreground font-medium">{value || <span className="text-muted-foreground">—</span>}</span>
     </div>
   )
 }
@@ -1594,7 +1596,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
     ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
     : '—'
 
-  if (loading) return <div className="text-center py-12 text-gray-400">Загрузка...</div>
+  if (loading) return <div className="text-center py-12 text-muted-foreground">Загрузка...</div>
 
   return (
     <div className="flex gap-4" style={{ minHeight: '60vh' }}>
@@ -1610,7 +1612,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
           ]).map(({ k, l }) => (
             <button key={k} onClick={() => setStatusFilter(k)}
               className={`text-xs px-2 py-1 rounded-lg border transition-colors ${
-                statusFilter === k ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-200 text-gray-500 hover:border-gray-400'
+                statusFilter === k ? 'bg-gray-900 text-white border-gray-900' : 'border-border text-muted-foreground hover:border-border'
               }`}>
               {l}
             </button>
@@ -1618,11 +1620,11 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
         </div>
 
         <div className="flex justify-end mb-2">
-          <button onClick={onRefresh} className="text-xs text-gray-400 hover:text-gray-600">↻ Обновить</button>
+          <button onClick={onRefresh} className="text-xs text-muted-foreground hover:text-muted-foreground">↻ Обновить</button>
         </div>
 
         {filtered.length === 0 ? (
-          <div className="text-center py-12 text-gray-300 text-sm">Нет альбомов</div>
+          <div className="text-center py-12 text-muted-foreground text-sm">Нет альбомов</div>
         ) : (
           <div className="space-y-2">
             {filtered.map(album => {
@@ -1632,13 +1634,13 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
                   key={album.id}
                   onClick={() => { onSelect(album); setNotes('') }}
                   className={`w-full text-left p-3 rounded-xl border-2 transition-all ${
-                    selected?.id === album.id ? 'border-gray-900 bg-gray-50' : 'border-gray-100 hover:border-gray-200'
+                    selected?.id === album.id ? 'border-gray-900 bg-muted' : 'border-border hover:border-border'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{album.title}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">
+                      <p className="text-sm font-semibold text-foreground truncate">{album.title}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         {album.tenants?.name} · {album.student_count} уч.
                       </p>
                     </div>
@@ -1647,7 +1649,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
                     </span>
                   </div>
                   {album.workflow_submitted_at && (
-                    <p className="text-xs text-gray-300 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Передан {formatDate(album.workflow_submitted_at)}
                     </p>
                   )}
@@ -1659,17 +1661,17 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
       </div>
 
       {/* Детали выбранного альбома */}
-      <div className="flex-1 border-l border-gray-100 pl-6">
+      <div className="flex-1 border-l border-border pl-6">
         {!selected ? (
-          <div className="flex items-center justify-center h-full text-gray-300 text-sm">
+          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             Выберите альбом из списка
           </div>
         ) : (
           <div className="space-y-5">
             {/* Заголовок */}
             <div>
-              <h3 className="text-xl font-bold text-gray-900">{selected.title}</h3>
-              <p className="text-sm text-gray-400 mt-0.5">
+              <h3 className="text-xl font-bold text-foreground">{selected.title}</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">
                 {selected.tenants?.name} · {selected.city && `${selected.city} · `}{selected.year} · {selected.student_count} учеников
               </p>
             </div>
@@ -1728,12 +1730,12 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
             {/* Загруженные delivery файлы */}
             {deliveryFiles.length > 0 && (
               <div>
-                <p className="text-sm font-semibold text-gray-700 mb-2">Переданные файлы</p>
+                <p className="text-sm font-semibold text-foreground mb-2">Переданные файлы</p>
                 {deliveryFiles.map(f => (
-                  <div key={f.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
+                  <div key={f.id} className="flex items-center justify-between py-2 px-3 bg-muted rounded-lg">
                     <div>
                       <p className="text-sm">{f.label || f.filename}</p>
-                      <p className="text-xs text-gray-400">{f.downloaded_at ? <><Check size={12} className="inline" /> скачан партнёром</> : 'ещё не скачан'}</p>
+                      <p className="text-xs text-muted-foreground">{f.downloaded_at ? <><Check size={12} className="inline" /> скачан партнёром</> : 'ещё не скачан'}</p>
                     </div>
                   </div>
                 ))}
@@ -1741,7 +1743,7 @@ function QueueView({ queue, loading, selected, onSelect, onRefresh, onNotify }: 
             )}
 
             {/* Действия */}
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
               <a
                 href={`/api/tenant?action=export_csv&album_id=${selected.id}`}
                 className="btn-secondary text-sm inline-flex items-center gap-2"
@@ -1832,12 +1834,12 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
   return (
     <div className="flex gap-4" style={{ minHeight: '70vh' }}>
       {/* Список партнёров */}
-      <div className="w-56 flex-shrink-0 border-r border-gray-100 pr-4">
-        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+      <div className="w-56 flex-shrink-0 border-r border-border pr-4">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
           Фотографы ({partners.length})
         </h3>
         {partners.length === 0 && (
-          <p className="text-sm text-gray-300">Нет активных партнёров</p>
+          <p className="text-sm text-muted-foreground">Нет активных партнёров</p>
         )}
         <div className="space-y-1">
           {partners.map(t => (
@@ -1847,11 +1849,11 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
               className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
                 selectedTenant?.id === t.id
                   ? 'bg-gray-900 text-white'
-                  : 'hover:bg-gray-50 text-gray-700'
+                  : 'hover:bg-muted text-foreground'
               }`}
             >
               <p className="font-medium truncate">{t.name}</p>
-              {t.city && <p className={`text-xs truncate ${selectedTenant?.id === t.id ? 'text-gray-300' : 'text-gray-400'}`}>{t.city}</p>}
+              {t.city && <p className={`text-xs truncate ${selectedTenant?.id === t.id ? 'text-muted-foreground' : 'text-muted-foreground'}`}>{t.city}</p>}
             </button>
           ))}
         </div>
@@ -1859,12 +1861,12 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
 
       {/* Список альбомов партнёра */}
       {selectedTenant && (
-        <div className="w-64 flex-shrink-0 border-r border-gray-100 pr-4">
+        <div className="w-64 flex-shrink-0 border-r border-border pr-4">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Альбомы
             </h3>
-            <span className="text-xs text-gray-400">{albums.length}</span>
+            <span className="text-xs text-muted-foreground">{albums.length}</span>
           </div>
 
           <input
@@ -1875,9 +1877,9 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
           />
 
           {albumsLoading ? (
-            <p className="text-sm text-gray-300 text-center py-6">Загрузка...</p>
+            <p className="text-sm text-muted-foreground text-center py-6">Загрузка...</p>
           ) : filteredAlbums.length === 0 ? (
-            <p className="text-sm text-gray-300 text-center py-6">Нет альбомов</p>
+            <p className="text-sm text-muted-foreground text-center py-6">Нет альбомов</p>
           ) : (
             <div className="space-y-1 overflow-y-auto" style={{ maxHeight: '60vh' }}>
               {filteredAlbums.map(a => (
@@ -1887,11 +1889,11 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
                   className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
                     selectedAlbum?.id === a.id
                       ? 'bg-gray-900 text-white'
-                      : 'hover:bg-gray-50 text-gray-700'
+                      : 'hover:bg-muted text-foreground'
                   }`}
                 >
                   <p className="font-medium truncate">{a.title}</p>
-                  <p className={`text-xs ${selectedAlbum?.id === a.id ? 'text-gray-300' : 'text-gray-400'}`}>
+                  <p className={`text-xs ${selectedAlbum?.id === a.id ? 'text-muted-foreground' : 'text-muted-foreground'}`}>
                     {a.city && `${a.city} · `}{a.year}
                     {a.workflow_status && ` · ${wfLabel(a.workflow_status)}`}
                   </p>
@@ -1905,12 +1907,12 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
       {/* Детали альбома */}
       <div className="flex-1 overflow-y-auto">
         {!selectedTenant && (
-          <div className="flex items-center justify-center h-full text-gray-300 text-sm">
+          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             Выберите фотографа слева
           </div>
         )}
         {selectedTenant && !selectedAlbum && (
-          <div className="flex items-center justify-center h-full text-gray-300 text-sm">
+          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             Выберите альбом
           </div>
         )}
@@ -1919,8 +1921,8 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
             {/* Заголовок */}
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="text-xl font-bold text-gray-900">{selectedAlbum.title}</h3>
-                <p className="text-sm text-gray-400">
+                <h3 className="text-xl font-bold text-foreground">{selectedAlbum.title}</h3>
+                <p className="text-sm text-muted-foreground">
                   {selectedTenant?.name} · {selectedAlbum.city} · {selectedAlbum.year}
                 </p>
               </div>
@@ -1943,13 +1945,13 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
             </div>
 
             {detailLoading ? (
-              <p className="text-sm text-gray-400">Загрузка...</p>
+              <p className="text-sm text-muted-foreground">Загрузка...</p>
             ) : albumDetail ? (
               <>
                 {/* Статистика */}
                 <div className="grid grid-cols-4 gap-3">
                   {[
-                    { l: 'Учеников', v: albumDetail.total ?? 0, c: 'bg-gray-50' },
+                    { l: 'Учеников', v: albumDetail.total ?? 0, c: 'bg-muted' },
                     { l: 'Завершили', v: albumDetail.submitted ?? 0, c: 'bg-green-50 text-green-700' },
                     { l: 'В процессе', v: albumDetail.in_progress ?? 0, c: 'bg-blue-50 text-blue-700' },
                     { l: 'Не начали', v: albumDetail.not_started ?? 0, c: 'bg-amber-50 text-amber-700' },
@@ -1963,38 +1965,38 @@ function PartnersView({ tenants, selectedTenant, onSelectTenant, currentUserId, 
 
                 {/* Прогресс */}
                 {(albumDetail.total ?? 0) > 0 && (
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden flex">
+                  <div className="h-2 bg-muted rounded-full overflow-hidden flex">
                     <div className="bg-green-500 h-full" style={{ width: `${Math.round((albumDetail.submitted ?? 0) / albumDetail.total * 100)}%` }} />
                     <div className="bg-blue-400 h-full" style={{ width: `${Math.round((albumDetail.in_progress ?? 0) / albumDetail.total * 100)}%` }} />
                   </div>
                 )}
 
                 {/* Workflow статус */}
-                <div className="bg-gray-50 rounded-xl p-4">
-                  <p className="text-sm font-semibold text-gray-700 mb-1">Статус производства</p>
-                  <p className="text-sm text-gray-600">{wfLabel(albumDetail.workflow?.workflow_status)}</p>
+                <div className="bg-muted rounded-xl p-4">
+                  <p className="text-sm font-semibold text-foreground mb-1">Статус производства</p>
+                  <p className="text-sm text-muted-foreground">{wfLabel(albumDetail.workflow?.workflow_status)}</p>
                   {albumDetail.workflow?.workflow_notes && (
                     <p className="text-xs text-amber-700 mt-2 bg-amber-50 rounded p-2">{albumDetail.workflow.workflow_notes}</p>
                   )}
                   {albumDetail.originals?.length > 0 && (
-                    <p className="text-xs text-gray-400 mt-2"><Folder size={12} className="inline" /> Оригиналов загружено: {albumDetail.originals.length}</p>
+                    <p className="text-xs text-muted-foreground mt-2"><Folder size={12} className="inline" /> Оригиналов загружено: {albumDetail.originals.length}</p>
                   )}
                 </div>
 
                 {/* Список учеников */}
                 {albumDetail.children && albumDetail.children.length > 0 && (
                   <div>
-                    <p className="text-sm font-semibold text-gray-700 mb-2">Ученики</p>
+                    <p className="text-sm font-semibold text-foreground mb-2">Ученики</p>
                     <div className="space-y-1 max-h-64 overflow-y-auto">
                       {albumDetail.children.map((c: any) => (
-                        <div key={c.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-50 rounded-lg text-sm">
-                          <span className="text-gray-800">{c.full_name}</span>
+                        <div key={c.id} className="flex items-center justify-between py-1.5 px-3 bg-muted rounded-lg text-sm">
+                          <span className="text-foreground">{c.full_name}</span>
                           <div className="flex items-center gap-3">
-                            <span className="text-xs text-gray-400">{c.class}</span>
+                            <span className="text-xs text-muted-foreground">{c.class}</span>
                             <span className={`text-xs px-2 py-0.5 rounded-full ${
                               c.submitted_at ? 'bg-green-100 text-green-700' :
                               c.started_at ? 'bg-blue-100 text-blue-700' :
-                              'bg-gray-100 text-gray-500'
+                              'bg-muted text-muted-foreground'
                             }`}>
                               {c.submitted_at ? 'Завершил' : c.started_at ? 'В процессе' : 'Не начал'}
                             </span>

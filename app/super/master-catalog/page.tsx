@@ -173,13 +173,13 @@ export default function MasterCatalogPage() {
   if (!authChecked) return null
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
         {/* Заголовок */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold">Каталог мастеров</h1>
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Все шаблоны страниц с превью. Можно проставить
               человеко-читаемое название для каждого, чтобы партнёры в
               конструкторе видели «Вариант 4: четыре ученика» вместо
@@ -188,7 +188,7 @@ export default function MasterCatalogPage() {
           </div>
           <button
             onClick={() => router.push('/super')}
-            className="text-sm text-gray-600 hover:text-gray-900"
+            className="text-sm text-muted-foreground hover:text-foreground"
           >
             ← К панели
           </button>
@@ -196,13 +196,13 @@ export default function MasterCatalogPage() {
 
         {/* Фильтр по page_role */}
         <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <span className="text-sm text-gray-600">Роль:</span>
+          <span className="text-sm text-muted-foreground">Роль:</span>
           <button
             onClick={() => setRoleFilter('all')}
             className={`px-3 py-1 rounded text-sm ${
               roleFilter === 'all'
                 ? 'bg-blue-600 text-white'
-                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                : 'bg-card border border-border text-foreground hover:bg-muted'
             }`}
           >
             Все ({masters.length})
@@ -212,7 +212,7 @@ export default function MasterCatalogPage() {
             className={`px-3 py-1 rounded text-sm ${
               roleFilter === 'unassigned'
                 ? 'bg-blue-600 text-white'
-                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                : 'bg-card border border-border text-foreground hover:bg-muted'
             }`}
           >
             Без роли ({masters.filter(m => !m.page_role).length})
@@ -226,7 +226,7 @@ export default function MasterCatalogPage() {
                 className={`px-3 py-1 rounded text-sm ${
                   roleFilter === role
                     ? 'bg-blue-600 text-white'
-                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                    : 'bg-card border border-border text-foreground hover:bg-muted'
                 }`}
               >
                 {role} ({count})
@@ -235,7 +235,7 @@ export default function MasterCatalogPage() {
           })}
         </div>
 
-        {loading && <div className="text-gray-500">Загрузка...</div>}
+        {loading && <div className="text-muted-foreground">Загрузка...</div>}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
             {error}
@@ -243,7 +243,7 @@ export default function MasterCatalogPage() {
         )}
 
         {!loading && filtered.length === 0 && (
-          <div className="text-gray-500 text-sm">
+          <div className="text-muted-foreground text-sm">
             Нет мастеров с такой ролью.
           </div>
         )}
@@ -291,10 +291,10 @@ function MasterCard({ master, templateSetName, onSaveLabel }: MasterCardProps) {
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-card border border-border rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow">
       {/* SVG-превью */}
       <div
-        className="w-full bg-gray-50 border border-gray-200 rounded mb-3 overflow-hidden flex items-center justify-center"
+        className="w-full bg-muted border border-border rounded mb-3 overflow-hidden flex items-center justify-center"
         style={{ aspectRatio: master.is_spread ? '2 / 1.4' : '1 / 1.4' }}
         dangerouslySetInnerHTML={{ __html: master.preview_svg }}
       />
@@ -307,11 +307,11 @@ function MasterCard({ master, templateSetName, onSaveLabel }: MasterCardProps) {
         onBlur={handleBlur}
         placeholder={master.name}
         disabled={saving}
-        className="w-full px-2 py-1 text-sm border border-gray-300 rounded mb-2 focus:outline-none focus:border-blue-500 disabled:bg-gray-100"
+        className="w-full px-2 py-1 text-sm border border-border rounded mb-2 focus:outline-none focus:border-blue-500 disabled:bg-muted"
       />
 
       {/* Технический name (мелкий, серый) */}
-      <div className="text-xs text-gray-400 mb-2 truncate" title={master.name}>
+      <div className="text-xs text-muted-foreground mb-2 truncate" title={master.name}>
         {master.name}
         {templateSetName ? ` · ${templateSetName}` : ''}
       </div>
@@ -323,7 +323,7 @@ function MasterCard({ master, templateSetName, onSaveLabel }: MasterCardProps) {
             {master.page_role}
           </span>
         ) : (
-          <span className="inline-block px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded">
+          <span className="inline-block px-2 py-0.5 bg-muted text-muted-foreground text-xs rounded">
             нет роли
           </span>
         )}
@@ -335,7 +335,7 @@ function MasterCard({ master, templateSetName, onSaveLabel }: MasterCardProps) {
         {formatCapacity(master.slot_capacity).map((cap, i) => (
           <span
             key={i}
-            className="inline-block px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded"
+            className="inline-block px-2 py-0.5 bg-muted text-foreground text-xs rounded"
           >
             {cap}
           </span>

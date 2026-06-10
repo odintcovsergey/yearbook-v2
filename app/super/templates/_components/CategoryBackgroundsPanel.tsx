@@ -97,9 +97,9 @@ export default function CategoryBackgroundsPanel({ templateSetId }: Props) {
   }, [backgrounds])
 
   return (
-    <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+    <div className="mt-4 p-4 bg-muted border border-border rounded-lg">
       <h3 className="font-medium text-sm mb-1">Категорийные фоны (ротация)</h3>
-      <p className="text-xs text-gray-500 mb-4">
+      <p className="text-xs text-muted-foreground mb-4">
         Несколько фонов на раздел — движок подставляет их по роли страницы и
         крутит по кругу внутри раздела. Порядок ротации задаётся перетаскиванием.
         Если в категории пусто — используется общий фон набора выше.
@@ -109,7 +109,7 @@ export default function CategoryBackgroundsPanel({ templateSetId }: Props) {
       {error && <div className="mb-3 text-sm text-red-600">{error}</div>}
 
       {loading ? (
-        <div className="text-sm text-gray-400">Загрузка…</div>
+        <div className="text-sm text-muted-foreground">Загрузка…</div>
       ) : (
         <div className="space-y-5">
           {BACKGROUND_CATEGORIES.map((cat) => (
@@ -308,8 +308,8 @@ function CategorySection({
   return (
     <div>
       <div className="flex items-baseline gap-2 mb-2">
-        <span className="text-sm font-medium text-gray-800">{label}</span>
-        <span className="text-xs text-gray-400">
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        <span className="text-xs text-muted-foreground">
           {order.length > 0 ? `${order.length} фон(ов)` : 'пусто'}
         </span>
       </div>
@@ -352,7 +352,7 @@ function CategorySection({
           className={`w-28 h-20 flex flex-col items-center justify-center text-center rounded border border-dashed cursor-pointer text-xs transition-colors ${
             dragOver
               ? 'border-blue-400 bg-blue-50 text-blue-600'
-              : 'border-gray-300 bg-white text-gray-400 hover:border-blue-400 hover:text-blue-500'
+              : 'border-border bg-card text-muted-foreground hover:border-blue-400 hover:text-blue-500'
           }`}
         >
           {uploading ? 'Загружаю…' : (
@@ -406,13 +406,13 @@ function SortableThumb({
     <div
       ref={setNodeRef}
       style={style}
-      className="relative w-28 border border-gray-200 rounded bg-white overflow-hidden"
+      className="relative w-28 border border-border rounded bg-card overflow-hidden"
     >
       {/* Превью + drag-handle (вся картинка тянется) */}
       <div
         {...attributes}
         {...listeners}
-        className="relative h-20 bg-gray-100 cursor-grab active:cursor-grabbing"
+        className="relative h-20 bg-muted cursor-grab active:cursor-grabbing"
         title="Перетащите для изменения порядка ротации"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -444,7 +444,7 @@ function SortableThumb({
         value={bg.side}
         onChange={(e) => onChangeSide(e.target.value)}
         onPointerDown={(e) => e.stopPropagation()}
-        className="w-full text-[11px] border-t border-gray-200 px-1 py-0.5 bg-white text-gray-600 focus:outline-none"
+        className="w-full text-[11px] border-t border-border px-1 py-0.5 bg-card text-muted-foreground focus:outline-none"
         title="На какой части разворота применять фон"
       >
         {SIDES.map((s) => (

@@ -9921,7 +9921,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
 
       {/* Цветокор и ретушь (фаза К) ─────────────────────────────────────── */}
       {canEdit && (
-        <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4">
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
           <div className="flex items-start justify-between gap-3 mb-2">
             <div>
               <h4 className="font-semibold text-foreground">Цветокор и ретушь</h4>
@@ -11530,7 +11530,7 @@ function PresetForm({
   }
 
   return (
-    <div className="mb-6 border-2 border-blue-200 rounded-xl p-5 bg-blue-50/40">
+    <div className="mb-6 border-2 border-blue-200 rounded-xl p-5 bg-blue-50">
       <h3 className="text-base font-semibold mb-4">
         {mode === 'create' ? 'Новый пресет' : 'Редактирование пресета'}
       </h3>

@@ -172,7 +172,7 @@ export default function CommonRequiredPagesEditor({
 
   return (
     <div className="space-y-2">
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-muted-foreground">
         Партнёрам этого шаблона при автосборке общий раздел будет собираться
         строго по этому списку. Если каких-то фотографий клиента не хватит —
         engine пропустит страницу с предупреждением (партнёр сможет удалить
@@ -180,7 +180,7 @@ export default function CommonRequiredPagesEditor({
       </p>
 
       {pages.length === 0 ? (
-        <div className="text-sm text-gray-400 text-center py-6 border border-dashed border-gray-300 rounded">
+        <div className="text-sm text-muted-foreground text-center py-6 border border-dashed border-border rounded">
           Общий раздел пуст. Добавьте страницы кнопкой ниже.
         </div>
       ) : (
@@ -199,7 +199,7 @@ export default function CommonRequiredPagesEditor({
                   <React.Fragment key={pageId(idx, p)}>
                     {pos.spreadStart && (
                       <li className="pt-2 pb-0.5">
-                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                           {pos.spreadNum}-й общий разворот
                         </div>
                         {isIncomplete && (
@@ -231,7 +231,7 @@ export default function CommonRequiredPagesEditor({
         type="button"
         onClick={() => setPickerOpen(true)}
         disabled={disabled}
-        className="w-full px-3 py-2 text-sm border border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50/30 rounded text-gray-500 hover:text-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full px-3 py-2 text-sm border border-dashed border-border hover:border-blue-400 hover:bg-blue-50/30 rounded text-muted-foreground hover:text-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         + Добавить страницу общего раздела
       </button>
@@ -307,10 +307,10 @@ function SortablePageRow({ id, position, side, page, template, onDelete, disable
     <li
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-2 px-3 py-2 bg-white border rounded ${
+      className={`flex items-center gap-2 px-3 py-2 bg-card border rounded ${
         template === null
           ? 'border-amber-300 bg-amber-50/40'
-          : 'border-gray-200'
+          : 'border-border'
       }`}
     >
       {/* Drag handle */}
@@ -319,7 +319,7 @@ function SortablePageRow({ id, position, side, page, template, onDelete, disable
         {...attributes}
         {...listeners}
         disabled={disabled}
-        className="text-gray-300 hover:text-gray-600 cursor-grab disabled:cursor-not-allowed"
+        className="text-muted-foreground hover:text-muted-foreground cursor-grab disabled:cursor-not-allowed"
         title="Перетащите для изменения порядка"
         aria-label="Drag handle"
       >
@@ -327,7 +327,7 @@ function SortablePageRow({ id, position, side, page, template, onDelete, disable
       </button>
 
       {/* Position */}
-      <span className="text-xs text-gray-400 w-6 flex-shrink-0">{position}.</span>
+      <span className="text-xs text-muted-foreground w-6 flex-shrink-0">{position}.</span>
 
       {/* Side label (РЭ.32.Б.6) */}
       <span
@@ -344,10 +344,10 @@ function SortablePageRow({ id, position, side, page, template, onDelete, disable
 
       {/* Master name + summary */}
       <div className="flex-1 min-w-0">
-        <div className="text-sm text-gray-900 truncate">{page.master_name}</div>
+        <div className="text-sm text-foreground truncate">{page.master_name}</div>
         <div
           className={`text-xs truncate ${
-            template === null ? 'text-amber-700' : 'text-gray-500'
+            template === null ? 'text-amber-700' : 'text-muted-foreground'
           }`}
         >
           {summary}
@@ -359,7 +359,7 @@ function SortablePageRow({ id, position, side, page, template, onDelete, disable
         type="button"
         onClick={onDelete}
         disabled={disabled}
-        className="text-gray-400 hover:text-red-600 text-lg leading-none px-1 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="text-muted-foreground hover:text-red-600 text-lg leading-none px-1 disabled:opacity-50 disabled:cursor-not-allowed"
         title="Удалить страницу"
         aria-label="Удалить"
       >
