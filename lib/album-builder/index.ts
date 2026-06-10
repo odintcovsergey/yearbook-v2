@@ -57,7 +57,7 @@ export type { FindMasterResult } from './find-master';
 
 export { buildAlbum } from './build-from-preset';
 
-export { loadTemplateSet, loadPresetBySlug, loadPresetById } from './load-template-set';
+export { loadTemplateSet, loadTemplateSetById, loadPresetBySlug, loadPresetById } from './load-template-set';
 
 // ─── Rule engine реэкспорты (для движка 3 — buildFromSectionStructure) ─────
 

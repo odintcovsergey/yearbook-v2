@@ -5,7 +5,7 @@ import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/aut
 import { parseIdml } from '@/lib/idml-converter/parse'
 import { uploadTemplateSetToSupabase, type UploadResult } from '@/lib/idml-converter/upload'
 import type { ParsedTemplateSet } from '@/lib/idml-converter/types'
-import { buildAlbum, loadTemplateSet, loadPresetBySlug, loadPresetById } from '@/lib/album-builder'
+import { buildAlbum, loadTemplateSet, loadTemplateSetById, loadPresetBySlug, loadPresetById } from '@/lib/album-builder'
 import type {
   Student,
   Subject,
@@ -1967,7 +1967,7 @@ async function handleExportPdf(
   // 4. Load layout from album_layouts
   const { data: layoutRow, error: layoutErr } = await supabaseAdmin
     .from('album_layouts')
-    .select('id, spreads, has_user_edits')
+    .select('id, spreads, has_user_edits, template_set_id')
     .eq('album_id', albumId)
     .maybeSingle()
 
@@ -2016,10 +2016,20 @@ async function handleExportPdf(
     )
   }
 
-  // 5b. template_set
+  // 5b. template_set — ВАЖНО: грузим ровно тот набор, на котором собрана
+  // сохранённая вёрстка (album_layouts.template_set_id), а не дефолтный
+  // okeybook-default. Иначе для альбомов на не-дефолтном дизайне template_id
+  // разворотов не находятся → все развороты пропускаются → пустой PDF.
+  // Fallback на дефолт для старых вёрсток без template_set_id.
+  const layoutTemplateSetId =
+    typeof layoutRow.template_set_id === 'string' && layoutRow.template_set_id.length > 0
+      ? layoutRow.template_set_id
+      : null
   let templateSet: TemplateSet
   try {
-    templateSet = await loadTemplateSet(supabaseAdmin)
+    templateSet = layoutTemplateSetId
+      ? await loadTemplateSetById(supabaseAdmin, layoutTemplateSetId)
+      : await loadTemplateSet(supabaseAdmin)
   } catch (e) {
     return NextResponse.json(
       { error: `template_set load failed: ${(e as Error).message}` },

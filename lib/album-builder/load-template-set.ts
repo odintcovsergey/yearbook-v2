@@ -38,6 +38,40 @@ export async function loadTemplateSet(
 }
 
 /**
+ * Загрузка template_set по UUID (а не по slug). Нужна там, где набор уже
+ * зафиксирован за объектом — например PDF-экспорт грузит ровно тот набор,
+ * на котором собрана сохранённая вёрстка (album_layouts.template_set_id),
+ * иначе template_id'ы разворотов не совпадут с дефолтным набором.
+ *
+ * @param supabase — клиент с правами SELECT на template_sets и spread_templates
+ * @param id — UUID набора
+ */
+export async function loadTemplateSetById(
+  supabase: SupabaseClient,
+  id: string,
+): Promise<TemplateSet> {
+  const { data: ts, error: e1 } = await supabase
+    .from('template_sets')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (e1 || !ts) {
+    throw new Error(`template_set id=${id} not found: ${e1?.message ?? 'no row'}`);
+  }
+
+  const { data: spreads, error: e2 } = await supabase
+    .from('spread_templates')
+    .select('*')
+    .eq('template_set_id', ts.id)
+    .order('sort_order');
+  if (e2 || !spreads) {
+    throw new Error(`spread_templates for id=${id} not loaded: ${e2?.message ?? 'empty'}`);
+  }
+
+  return { ...ts, spreads } as TemplateSet;
+}
+
+/**
  * Загрузка config_preset из Supabase в формат, который ожидает buildAlbum().
  *
  * Используется:

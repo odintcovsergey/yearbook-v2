@@ -89,6 +89,27 @@ export async function getPhotoSignedUrl(storagePath: string, expiresIn = 86400):
 }
 
 /**
+ * Signed URL для СКАЧИВАНИЯ файла (zip/pdf) с принудительным именем и типом.
+ * В отличие от getPhotoSignedUrl, подпись свежая (одноразовое скачивание) и
+ * через ResponseContentDisposition браузер сохраняет файл с нужным именем,
+ * скачивая напрямую из YC — минуя лимит размера ответа Vercel-функции (~4.5 МБ).
+ */
+export async function getDownloadSignedUrl(
+  storagePath: string,
+  filename: string,
+  contentType = 'application/zip',
+  expiresIn = 3600,
+): Promise<string> {
+  const cmd = new GetObjectCommand({
+    Bucket: BUCKET(),
+    Key: stripYcPrefix(storagePath),
+    ResponseContentType: contentType,
+    ResponseContentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+  })
+  return getSignedUrl(ycStorage, cmd, { expiresIn })
+}
+
+/**
  * Прямое чтение байтов объекта на сервере (для ZIP/PDF-сборки).
  * Использует креды сервера через S3 GetObjectCommand — публичный HTTP-фетч
  * не нужен, работает на приватном бакете. Бросает ошибку при отсутствии объекта.

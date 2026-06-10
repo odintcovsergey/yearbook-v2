@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction } from '@/lib/auth'
-import { ycGetObjectBuffer } from '@/lib/storage'
+import { ycGetObjectBuffer, ycUpload, getDownloadSignedUrl } from '@/lib/storage'
 import JSZip from 'jszip'
 
 export const dynamic = 'force-dynamic'
@@ -413,19 +413,26 @@ export async function GET(req: NextRequest) {
   )
   const filename = `оригиналы_${safeTitle}.zip`
 
-  return new NextResponse(zipBuffer as unknown as BodyInit, {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(
-        filename
-      )}`,
-      'Content-Length': String(zipBuffer.length),
-      // Метаданные в заголовках — UI (К.2) считает их и показывает summary
-      // без необходимости открывать ZIP.
-      'X-Originals-Total': String(photos.length),
-      'X-Originals-Downloaded': String(successes.length),
-      'X-Originals-Failed': String(failures.length),
-    },
+  // Vercel-функция не может вернуть тело больше ~4.5 МБ — архив оригиналов
+  // почти всегда крупнее. Поэтому грузим ZIP в YC и отдаём клиенту signed
+  // URL: браузер качает файл напрямую из хранилища, минуя лимит функции.
+  const zipKey = `${albumId}/exports/${Date.now()}_originals.zip`
+  try {
+    await ycUpload(zipKey, zipBuffer, 'application/zip')
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: `Не удалось сохранить архив: ${err?.message || 'upload failed'}` },
+      { status: 500 },
+    )
+  }
+  const downloadUrl = await getDownloadSignedUrl(zipKey, filename, 'application/zip')
+
+  return NextResponse.json({
+    download_url: downloadUrl,
+    filename,
+    size_bytes: zipBuffer.length,
+    total: photos.length,
+    downloaded: successes.length,
+    failed: failures.length,
   })
 }

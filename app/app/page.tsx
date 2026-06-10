@@ -9539,27 +9539,25 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
       // Сбрасываем панель частичной выгрузки если она была открыта
       setBigAlbumOptions(null)
 
-      const blob = await res.blob()
-      const objectUrl = URL.createObjectURL(blob)
-      // Имя файла из Content-Disposition (UTF-8 encoded)
-      const cd = res.headers.get('Content-Disposition') || ''
-      const m = cd.match(/filename\*=UTF-8''([^;]+)/i)
-      const filename = m ? decodeURIComponent(m[1]) : `оригиналы_${(album as any).id}.zip`
+      // Сервер собрал ZIP, загрузил его в хранилище и вернул ссылку —
+      // браузер качает файл напрямую из YC (минуя лимит размера ответа
+      // Vercel-функции). Имя файла навязано через Content-Disposition в ссылке.
+      const data = await res.json()
+      if (!data?.download_url) {
+        onError('Сервер не вернул ссылку на архив')
+        return
+      }
 
       const a = document.createElement('a')
-      a.href = objectUrl
-      a.download = filename
+      a.href = data.download_url
+      a.rel = 'noopener noreferrer'
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      // Освобождаем blob через секунду чтобы браузер успел инициировать скачивание
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 
-      const downloaded = res.headers.get('X-Originals-Downloaded')
-      const failed = res.headers.get('X-Originals-Failed')
-      const failedNum = failed ? Number(failed) : 0
+      const failedNum = Number(data.failed ?? 0)
       onNotify(
-        `Скачано ${downloaded ?? '?'} оригиналов${failedNum > 0 ? ` (${failedNum} не докачались, см. manifest.json)` : ''}`
+        `Скачано ${data.downloaded ?? '?'} оригиналов${failedNum > 0 ? ` (${failedNum} не докачались, см. manifest.json)` : ''}`
       )
     } catch (e: any) {
       onError(e?.message || 'Не удалось скачать оригиналы')
