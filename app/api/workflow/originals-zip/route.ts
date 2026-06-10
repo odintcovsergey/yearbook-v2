@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction } from '@/lib/auth'
 import { getPhotoSignedUrl } from '@/lib/storage'
@@ -144,7 +145,7 @@ export async function GET(req: NextRequest) {
   }
   const { data: photosRaw, error: photosErr } = await photosQ
   if (photosErr) {
-    return NextResponse.json({ error: photosErr.message }, { status: 500 })
+    return serverError(photosErr, 'workflow/originals-zip')
   }
 
   // Применяем фильтр выбранности на уровне JS (а не SQL) потому что

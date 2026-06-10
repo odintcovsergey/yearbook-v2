@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
 
@@ -214,7 +215,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return serverError(error, 'referral-programs')
 
   // album_count для предупреждения при удалении. Партнёру считаем только
   // по его альбомам (чужие tenant'ы не светим).
@@ -341,7 +342,7 @@ export async function POST(req: NextRequest) {
       .from('referral_programs')
       .update({ is_active: body.is_active === true })
       .eq('id', id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'referral-programs')
     return NextResponse.json({ ok: true })
   }
 
@@ -361,7 +362,7 @@ export async function POST(req: NextRequest) {
       .from('referral_programs')
       .update({ is_global: makeGlobal, tenant_id: tenantId })
       .eq('id', id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'referral-programs')
     await logAction(auth, 'referral_program.set_global', 'referral_program', id, { makeGlobal })
     return NextResponse.json({ ok: true })
   }
@@ -501,7 +502,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   const { error } = await supabaseAdmin.from('referral_programs').delete().eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return serverError(error, 'referral-programs')
   await logAction(auth, 'referral_program.delete', 'referral_program', id, { name: guard.name })
   return NextResponse.json({ ok: true })
 }

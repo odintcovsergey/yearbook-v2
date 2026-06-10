@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { ycUpload, ycDelete, stripYcPrefix, getPhotoSignedUrl } from '@/lib/storage'
 import sharp from 'sharp'
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
     .eq('child_id', child.id)
     .order('sort_order')
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return serverError(error, 'personal-spread')
 
   // Бакет приватный — отдаём signed URL (TTL 24ч) для показа в браузере.
   const photos = await Promise.all((data ?? []).map(async (p: any) => ({
@@ -183,7 +184,7 @@ export async function POST(req: NextRequest) {
   if (dbErr) {
     // Откатываем загрузку
     await ycDelete(storagePath)
-    return NextResponse.json({ error: dbErr.message }, { status: 500 })
+    return serverError(dbErr, 'personal-spread')
   }
 
   // Бакет приватный — добавляем signed URL для немедленного показа в браузере.

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
@@ -30,7 +31,7 @@ export async function PUT(req: NextRequest) {
       .update({ is_purchased: value })
       .eq('id', child.id)
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'select')
     }
     return NextResponse.json({ ok: true, is_purchased: value })
   }
@@ -225,7 +226,7 @@ export async function POST(req: NextRequest) {
 
   const { error: selError } = await supabaseAdmin.from('selections').insert(selectionRows)
   if (selError)
-    return NextResponse.json({ error: 'Ошибка сохранения: ' + selError.message }, { status: 500 })
+    return serverError(selError, 'select')
 
   // 6. Удалить временные блокировки этого ребёнка (теперь selections — источник правды)
   await supabaseAdmin.from('photo_locks').delete().eq('child_id', childId)

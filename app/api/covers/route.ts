@@ -5,6 +5,7 @@
  * SVG-превью, публикация/снятие, удаление.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
 import { parseIdml } from '@/lib/idml-converter/parse'
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
     .select('*')
     .order('created_at', { ascending: false })
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return serverError(error, 'covers')
   }
 
   const covers = (data ?? []).map((row: Record<string, unknown>) => ({
@@ -149,7 +150,7 @@ async function handleSetPublished(req: NextRequest): Promise<NextResponse> {
     .from('covers')
     .update({ is_published: isPublished })
     .eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return serverError(error, 'covers')
   return NextResponse.json({ ok: true })
 }
 
@@ -160,7 +161,7 @@ async function handleDelete(req: NextRequest, auth: AuthContext): Promise<NextRe
     return NextResponse.json({ error: 'id is required' }, { status: 400 })
   }
   const { error } = await supabaseAdmin.from('covers').delete().eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return serverError(error, 'covers')
   await logAction(auth, 'cover.delete', 'cover', id, {})
   return NextResponse.json({ ok: true })
 }

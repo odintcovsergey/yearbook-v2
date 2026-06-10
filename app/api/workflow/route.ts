@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction } from '@/lib/auth'
 import { ycUpload, ycDelete, stripYcPrefix, getPhotoSignedUrl } from '@/lib/storage'
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
       .in('workflow_status', statuses)
       .order('workflow_submitted_at', { ascending: true })
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'workflow')
 
     // Считаем учеников
     const albums = (data ?? []).map((a: any) => ({
@@ -176,7 +177,7 @@ export async function POST(req: NextRequest) {
 
     if (dbErr) {
       await ycDelete(storagePath)
-      return NextResponse.json({ error: dbErr.message }, { status: 500 })
+      return serverError(dbErr, 'workflow')
     }
 
     await logAction(auth, `workflow.upload_${uploadType}`, 'album', albumId, { filename: file.name })
@@ -367,7 +368,7 @@ export async function POST(req: NextRequest) {
       })
       .select().single()
 
-    if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 })
+    if (dbErr) return serverError(dbErr, 'workflow')
 
     // Переводим в delivered если был in_production
     if (album.workflow_status === 'in_production') {
@@ -548,7 +549,7 @@ export async function POST(req: NextRequest) {
       .from('photos')
       .update({ original_path: storage_path })
       .eq('id', photo_id)
-    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+    if (updErr) return serverError(updErr, 'workflow')
 
     if (oldPath && oldPath !== storage_path && oldPath.startsWith('yc:')) {
       await ycDelete(stripYcPrefix(oldPath)).catch(() => null)

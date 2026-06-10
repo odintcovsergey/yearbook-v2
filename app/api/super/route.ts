@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, hashPassword, logAction } from '@/lib/auth'
 
@@ -66,7 +67,7 @@ export async function GET(req: NextRequest) {
       .eq('is_active', true)
       .neq('role', 'superadmin')
       .order('full_name')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'super')
     return NextResponse.json({ managers: data ?? [] })
   }
 
@@ -78,7 +79,7 @@ export async function GET(req: NextRequest) {
       .eq('tenant_id', tenantId)
       .eq('archived', false)
       .order('created_at', { ascending: false })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'super')
     return NextResponse.json({ albums: data ?? [] })
   }
 
@@ -381,7 +382,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (userError) {
-      return NextResponse.json({ error: userError.message }, { status: 500 })
+      return serverError(userError, 'super')
     }
 
     await logAction(auth, 'superadmin.create_owner', 'user', (user as any).id, {
@@ -403,7 +404,7 @@ export async function POST(req: NextRequest) {
       .from('tenants')
       .update({ assigned_manager_id: manager_id || null })
       .eq('id', tenant_id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'super')
     return NextResponse.json({ ok: true })
   }
 
@@ -436,7 +437,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'super')
     }
 
     await logAction(auth, 'tenant.update', 'tenant', tenant_id, { fields: Object.keys(safeUpdates) })
@@ -457,7 +458,7 @@ export async function POST(req: NextRequest) {
       .eq('id', tenant_id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'super')
     }
 
     await logAction(auth, 'tenant.deactivate', 'tenant', tenant_id)
@@ -478,7 +479,7 @@ export async function POST(req: NextRequest) {
       .eq('id', tenant_id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'super')
     }
 
     await logAction(auth, 'tenant.activate', 'tenant', tenant_id)

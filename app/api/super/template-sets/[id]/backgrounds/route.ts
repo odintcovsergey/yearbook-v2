@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction } from '@/lib/auth'
 
@@ -58,7 +59,7 @@ export async function GET(
     .order('sort_order', { ascending: true })
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return serverError(error, 'super/template-sets/[id]/backgrounds')
   }
 
   const backgrounds = (data ?? []).map((row) => ({
@@ -242,7 +243,7 @@ export async function PATCH(
         .eq('id', ids[i])
         .eq('template_set_id', templateSetId)
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 })
+        return serverError(error, 'super/template-sets/[id]/backgrounds')
       }
     }
     return NextResponse.json({ ok: true })
@@ -260,7 +261,7 @@ export async function PATCH(
       .eq('id', id)
       .eq('template_set_id', templateSetId)
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'super/template-sets/[id]/backgrounds')
     }
     return NextResponse.json({ ok: true })
   }
@@ -306,7 +307,7 @@ export async function DELETE(
     .eq('template_set_id', templateSetId)
 
   if (dbErr) {
-    return NextResponse.json({ error: dbErr.message }, { status: 500 })
+    return serverError(dbErr, 'super/template-sets/[id]/backgrounds')
   }
 
   await logAction(auth, 'template_set.delete_category_background', 'template_set', templateSetId, {

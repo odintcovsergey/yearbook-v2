@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { ycUpload, getPhotoSignedUrl, stripYcPrefix } from '@/lib/storage'
 import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
@@ -218,7 +219,7 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await query
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'layout')
     }
     return NextResponse.json(data ?? [])
   }
@@ -252,7 +253,7 @@ export async function GET(req: NextRequest) {
 
     const { data: templateSet, error: setError } = await setQuery.maybeSingle()
     if (setError) {
-      return NextResponse.json({ error: setError.message }, { status: 500 })
+      return serverError(setError, 'layout')
     }
     if (!templateSet) {
       return NextResponse.json({ error: 'Template set not found' }, { status: 404 })
@@ -265,7 +266,7 @@ export async function GET(req: NextRequest) {
       .order('sort_order', { ascending: true })
 
     if (spreadsError) {
-      return NextResponse.json({ error: spreadsError.message }, { status: 500 })
+      return serverError(spreadsError, 'layout')
     }
 
     // Пул категорийных фонов набора (для ротации в редакторе/PDF). Партнёру
@@ -278,7 +279,7 @@ export async function GET(req: NextRequest) {
       .order('sort_order', { ascending: true })
 
     if (bgError) {
-      return NextResponse.json({ error: bgError.message }, { status: 500 })
+      return serverError(bgError, 'layout')
     }
 
     return NextResponse.json({
@@ -1773,7 +1774,7 @@ async function handleListExportProfiles(
 
   const { data, error } = await query
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return serverError(error, 'layout')
   }
 
   const profiles = (data ?? []).map((row) => mapExportProfile(row as Record<string, unknown>))
@@ -1820,7 +1821,7 @@ async function handleListAlbumExports(
     .limit(10)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return serverError(error, 'layout')
   }
 
   // Обогащаем download_url для каждой записи. Бакет приватный — отдаём

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 
 export const dynamic = 'force-dynamic'
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
   const { error } = await supabaseAdmin.from('quote_selections').insert({
     quote_id, child_id: child.id, album_id: child.album_id
   })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return serverError(error, 'quote')
 
   return NextResponse.json({ ok: true })
 }

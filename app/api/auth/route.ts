@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import {
   verifyPassword,
@@ -259,7 +260,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (userError) {
-      return NextResponse.json({ error: userError.message }, { status: 500 })
+      return serverError(userError, 'auth')
     }
 
     // Помечаем приглашение как принятое
@@ -337,7 +338,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'auth')
     }
 
     return NextResponse.json({ ok: true, user })

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, type AuthContext } from '@/lib/auth'
 import { ycUpload, ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
@@ -611,7 +612,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { data, error } = await query
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
     return NextResponse.json({ tenants: data ?? [] })
   }
 
@@ -636,7 +637,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { data, error } = await query
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
     return NextResponse.json({ programs: data ?? [] })
   }
 
@@ -1019,7 +1020,7 @@ export async function GET(req: NextRequest) {
       .order('name')
 
     if (mErr) {
-      return NextResponse.json({ error: mErr.message }, { status: 500 })
+      return serverError(mErr, 'tenant')
     }
 
     return NextResponse.json({ masters: masters ?? [] })
@@ -1036,7 +1037,7 @@ export async function GET(req: NextRequest) {
       .order('slug')
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     return NextResponse.json({ presets: data ?? [] })
@@ -1056,7 +1057,7 @@ export async function GET(req: NextRequest) {
       .order('cover_type')
       .order('name')
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
     return NextResponse.json({ covers: data ?? [] })
   }
@@ -1074,7 +1075,7 @@ export async function GET(req: NextRequest) {
       .or(`tenant_id.is.null,tenant_id.eq.${tid}`)
       .order('name')
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
     return NextResponse.json({ presets: data ?? [] })
   }
@@ -1098,7 +1099,7 @@ export async function GET(req: NextRequest) {
       .order('display_name')
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     return NextResponse.json({ presets: data ?? [] })
@@ -1134,7 +1135,7 @@ export async function GET(req: NextRequest) {
     }
     const { data: templateSets, error: tsErr } = await templateSetsQuery
     if (tsErr) {
-      return NextResponse.json({ error: tsErr.message }, { status: 500 })
+      return serverError(tsErr, 'tenant')
     }
     const tsIds = (templateSets ?? []).map((t: any) => t.id)
     if (tsIds.length === 0) {
@@ -1152,7 +1153,7 @@ export async function GET(req: NextRequest) {
       .in('template_set_id', tsIds)
       .order('name')
     if (mErr) {
-      return NextResponse.json({ error: mErr.message }, { status: 500 })
+      return serverError(mErr, 'tenant')
     }
 
     // 3) Рендерим SVG-превью для каждого мастера.
@@ -1234,7 +1235,7 @@ export async function GET(req: NextRequest) {
     }
     const { data: tsRows, error: tsErr } = await tsQuery.order('name')
     if (tsErr) {
-      return NextResponse.json({ error: tsErr.message }, { status: 500 })
+      return serverError(tsErr, 'tenant')
     }
     const tsIds = (tsRows ?? []).map((t: any) => t.id)
     if (tsIds.length === 0) {
@@ -1378,7 +1379,7 @@ export async function GET(req: NextRequest) {
     }
     const { data: rows, error: loadErr } = await query.order('display_name')
     if (loadErr) {
-      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+      return serverError(loadErr, 'tenant')
     }
 
     const results = []
@@ -1458,7 +1459,7 @@ export async function GET(req: NextRequest) {
     }
     const { data: rows, error: loadErr } = await query.order('display_name')
     if (loadErr) {
-      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+      return serverError(loadErr, 'tenant')
     }
 
     const results = []
@@ -1536,7 +1537,7 @@ export async function GET(req: NextRequest) {
     const { data: rows, error: loadErr } = await myListQuery
 
     if (loadErr) {
-      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+      return serverError(loadErr, 'tenant')
     }
 
     return NextResponse.json({ template_sets: rows ?? [] })
@@ -1624,7 +1625,7 @@ export async function GET(req: NextRequest) {
     if (photoType) query = query.eq('type', photoType)
 
     const { data: photos, error } = await query
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     // Привязки фото к детям (только для portrait/group)
     let tagsByPhoto: Record<string, string[]> = {}
@@ -1696,10 +1697,10 @@ export async function GET(req: NextRequest) {
     ])
 
     if (photosRes.error) {
-      return NextResponse.json({ error: photosRes.error.message }, { status: 500 })
+      return serverError(photosRes.error, 'tenant')
     }
     if (originalsRes.error) {
-      return NextResponse.json({ error: originalsRes.error.message }, { status: 500 })
+      return serverError(originalsRes.error, 'tenant')
     }
 
     const photos = photosRes.data ?? []
@@ -1814,7 +1815,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { data, error } = await query
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     const childIds = Array.from(
       new Set((data ?? []).map((d: any) => d.referrer_child_id).filter(Boolean))
@@ -1880,7 +1881,7 @@ export async function GET(req: NextRequest) {
       .order('category')
       .order('created_at')
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     // Подсчёт use_count — через JOIN с albums по tenant_id,
     // чтобы считать только выборы из альбомов этого tenant'а
@@ -1935,7 +1936,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { data, error } = await query
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     return NextResponse.json(data ?? [])
   }
@@ -1960,7 +1961,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { data, error } = await query
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     // Подтягиваем имена пригласивших для UI
     const inviterIds = Array.from(
@@ -1997,7 +1998,7 @@ export async function GET(req: NextRequest) {
       .eq('id', tid)
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     return NextResponse.json(data)
   }
@@ -2021,7 +2022,7 @@ export async function GET(req: NextRequest) {
       .select('child_id, filename, storage_path, sort_order, id, children(full_name, class)')
       .eq('album_id', albumId)
       .order('sort_order')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     // Группируем по ученику
     const byChild: Record<string, {
@@ -2423,7 +2424,7 @@ export async function POST(req: NextRequest) {
         })
 
       if (upErr) {
-        return NextResponse.json({ error: upErr.message }, { status: 500 })
+        return serverError(upErr, 'tenant')
       }
 
       const { error: dbErr } = await supabaseAdmin
@@ -2431,7 +2432,7 @@ export async function POST(req: NextRequest) {
         .update({ logo_url: logoPath })
         .eq('id', auth.tenantId)
 
-      if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 })
+      if (dbErr) return serverError(dbErr, 'tenant')
 
       // Public URL (обходим кэш CDN с timestamp'ом, чтобы UI сразу увидел новый логотип)
       const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${logoPath}?t=${Date.now()}`
@@ -2511,7 +2512,7 @@ export async function POST(req: NextRequest) {
       .select()
       .single()
 
-    if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 })
+    if (dbError) return serverError(dbError, 'tenant')
 
     await logAction(auth, 'photo.upload', 'photo', (photo as any).id, {
       album_id: albumId,
@@ -2591,7 +2592,7 @@ export async function POST(req: NextRequest) {
         .eq('id', tsid)
         .maybeSingle()
       if (tsErr) {
-        return NextResponse.json({ error: tsErr.message }, { status: 500 })
+        return serverError(tsErr, 'tenant')
       }
       if (!tsRow) {
         return NextResponse.json(
@@ -2681,7 +2682,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     return NextResponse.json({ ok: true, preset: created })
@@ -2734,7 +2735,7 @@ export async function POST(req: NextRequest) {
       .eq('id', presetId)
       .maybeSingle()
     if (loadErr) {
-      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+      return serverError(loadErr, 'tenant')
     }
     if (!existing) {
       return NextResponse.json({ error: 'Пресет не найден' }, { status: 404 })
@@ -2837,7 +2838,7 @@ export async function POST(req: NextRequest) {
           .eq('id', tsid)
           .maybeSingle()
         if (tsErr) {
-          return NextResponse.json({ error: tsErr.message }, { status: 500 })
+          return serverError(tsErr, 'tenant')
         }
         if (!tsRow) {
           return NextResponse.json({ error: 'Дизайн не найден' }, { status: 400 })
@@ -3107,7 +3108,7 @@ export async function POST(req: NextRequest) {
       .select('id, display_name')
       .single()
     if (updateErr) {
-      return NextResponse.json({ error: updateErr.message }, { status: 500 })
+      return serverError(updateErr, 'tenant')
     }
 
     return NextResponse.json({ ok: true, preset: updated, updated: true })
@@ -3151,7 +3152,7 @@ export async function POST(req: NextRequest) {
       .eq('id', templateId)
       .maybeSingle()
     if (loadErr) {
-      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+      return serverError(loadErr, 'tenant')
     }
     if (!master) {
       return NextResponse.json({ error: 'Мастер не найден' }, { status: 404 })
@@ -3164,7 +3165,7 @@ export async function POST(req: NextRequest) {
       .eq('id', master.template_set_id)
       .maybeSingle()
     if (tsErr) {
-      return NextResponse.json({ error: tsErr.message }, { status: 500 })
+      return serverError(tsErr, 'tenant')
     }
     if (!ts) {
       return NextResponse.json({ error: 'Мастер не найден' }, { status: 404 })
@@ -3186,7 +3187,7 @@ export async function POST(req: NextRequest) {
       .update({ display_label: displayLabel })
       .eq('id', templateId)
     if (updErr) {
-      return NextResponse.json({ error: updErr.message }, { status: 500 })
+      return serverError(updErr, 'tenant')
     }
 
     return NextResponse.json({
@@ -3234,7 +3235,7 @@ export async function POST(req: NextRequest) {
       .eq('id', sourceId)
       .maybeSingle()
     if (loadErr) {
-      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+      return serverError(loadErr, 'tenant')
     }
     if (!source) {
       return NextResponse.json({ error: 'Шаблон не найден' }, { status: 404 })
@@ -3277,7 +3278,7 @@ export async function POST(req: NextRequest) {
       .select('id, display_name')
       .single()
     if (insErr) {
-      return NextResponse.json({ error: insErr.message }, { status: 500 })
+      return serverError(insErr, 'tenant')
     }
 
     return NextResponse.json({ ok: true, template: created })
@@ -3331,7 +3332,7 @@ export async function POST(req: NextRequest) {
         .eq('id', tsid)
         .maybeSingle()
       if (tsErr) {
-        return NextResponse.json({ error: tsErr.message }, { status: 500 })
+        return serverError(tsErr, 'tenant')
       }
       if (!ts) {
         return NextResponse.json(
@@ -3374,7 +3375,7 @@ export async function POST(req: NextRequest) {
       .select('id, display_name')
       .single()
     if (insErr) {
-      return NextResponse.json({ error: insErr.message }, { status: 500 })
+      return serverError(insErr, 'tenant')
     }
 
     return NextResponse.json({ ok: true, template: created })
@@ -3420,7 +3421,7 @@ export async function POST(req: NextRequest) {
       .eq('id', templateId)
       .maybeSingle()
     if (loadErr) {
-      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+      return serverError(loadErr, 'tenant')
     }
     if (!preset) {
       return NextResponse.json({ error: 'Шаблон не найден' }, { status: 404 })
@@ -3460,7 +3461,7 @@ export async function POST(req: NextRequest) {
       .eq('section_structure_preset_id', templateId)
       .eq('archived', false)
     if (albumsErr) {
-      return NextResponse.json({ error: albumsErr.message }, { status: 500 })
+      return serverError(albumsErr, 'tenant')
     }
     if ((albums?.length ?? 0) > 0) {
       return NextResponse.json(
@@ -3478,7 +3479,7 @@ export async function POST(req: NextRequest) {
       .delete()
       .eq('id', templateId)
     if (delErr) {
-      return NextResponse.json({ error: delErr.message }, { status: 500 })
+      return serverError(delErr, 'tenant')
     }
 
     return NextResponse.json({ ok: true })
@@ -3574,7 +3575,7 @@ export async function POST(req: NextRequest) {
       .eq('id', sourceId)
       .maybeSingle()
     if (srcErr) {
-      return NextResponse.json({ error: srcErr.message }, { status: 500 })
+      return serverError(srcErr, 'tenant')
     }
     if (!source) {
       return NextResponse.json({ error: 'Дизайн не найден' }, { status: 404 })
@@ -3595,7 +3596,7 @@ export async function POST(req: NextRequest) {
       .select('*')
       .eq('template_set_id', sourceId)
     if (mastersErr) {
-      return NextResponse.json({ error: mastersErr.message }, { status: 500 })
+      return serverError(mastersErr, 'tenant')
     }
 
     // 3) prepareTemplateSetClone — все валидации внутри.
@@ -3744,7 +3745,7 @@ export async function POST(req: NextRequest) {
       .eq('id', tsId)
       .maybeSingle()
     if (loadErr) {
-      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+      return serverError(loadErr, 'tenant')
     }
     if (!ts) {
       return NextResponse.json({ error: 'Дизайн не найден' }, { status: 404 })
@@ -3811,7 +3812,7 @@ export async function POST(req: NextRequest) {
       .update(patch)
       .eq('id', tsId)
     if (updErr) {
-      return NextResponse.json({ error: updErr.message }, { status: 500 })
+      return serverError(updErr, 'tenant')
     }
 
     try {
@@ -3849,7 +3850,7 @@ export async function POST(req: NextRequest) {
       .eq('id', sourceId)
       .maybeSingle()
     if (srcErr) {
-      return NextResponse.json({ error: srcErr.message }, { status: 500 })
+      return serverError(srcErr, 'tenant')
     }
     if (!source) {
       return NextResponse.json({ error: 'Дизайн не найден' }, { status: 404 })
@@ -3886,7 +3887,7 @@ export async function POST(req: NextRequest) {
       .from('template_sets')
       .insert(insertSet)
     if (insSetErr) {
-      return NextResponse.json({ error: insSetErr.message }, { status: 500 })
+      return serverError(insSetErr, 'tenant')
     }
 
     // 3) Копируем мастера (новые id).
@@ -3896,7 +3897,7 @@ export async function POST(req: NextRequest) {
       .eq('template_set_id', sourceId)
     if (mErr) {
       await supabaseAdmin.from('template_sets').delete().eq('id', newSetId)
-      return NextResponse.json({ error: mErr.message }, { status: 500 })
+      return serverError(mErr, 'tenant')
     }
     const mastersToInsert = (srcMasters ?? []).map((m: Record<string, unknown>) => {
       const { id: _mid, created_at: _mc, updated_at: _mu, ...rest } = m
@@ -3909,7 +3910,7 @@ export async function POST(req: NextRequest) {
         .insert(mastersToInsert)
       if (insMErr) {
         await supabaseAdmin.from('template_sets').delete().eq('id', newSetId)
-        return NextResponse.json({ error: insMErr.message }, { status: 500 })
+        return serverError(insMErr, 'tenant')
       }
     }
 
@@ -3986,7 +3987,7 @@ export async function POST(req: NextRequest) {
       .eq('id', tsId)
       .maybeSingle()
     if (loadErr) {
-      return NextResponse.json({ error: loadErr.message }, { status: 500 })
+      return serverError(loadErr, 'tenant')
     }
     if (!ts) {
       return NextResponse.json({ error: 'Дизайн не найден' }, { status: 404 })
@@ -4010,7 +4011,7 @@ export async function POST(req: NextRequest) {
       .select('id', { count: 'exact', head: true })
       .eq('template_set_id', tsId)
     if (albumsErr) {
-      return NextResponse.json({ error: albumsErr.message }, { status: 500 })
+      return serverError(albumsErr, 'tenant')
     }
     // Проверка ссылок из presets.
     const { count: presetsCount, error: presetsErr } = await supabaseAdmin
@@ -4018,7 +4019,7 @@ export async function POST(req: NextRequest) {
       .select('id', { count: 'exact', head: true })
       .eq('template_set_id', tsId)
     if (presetsErr) {
-      return NextResponse.json({ error: presetsErr.message }, { status: 500 })
+      return serverError(presetsErr, 'tenant')
     }
 
     const ac = albumsCount ?? 0
@@ -4086,7 +4087,7 @@ export async function POST(req: NextRequest) {
       .delete()
       .eq('id', tsId)
     if (delTsErr) {
-      return NextResponse.json({ error: delTsErr.message }, { status: 500 })
+      return serverError(delTsErr, 'tenant')
     }
 
     // Audit log.
@@ -4174,7 +4175,7 @@ export async function POST(req: NextRequest) {
         .eq('id', body.section_structure_preset_id)
         .maybeSingle()
       if (psErr) {
-        return NextResponse.json({ error: psErr.message }, { status: 500 })
+        return serverError(psErr, 'tenant')
       }
       if (!ps) {
         return NextResponse.json(
@@ -4266,7 +4267,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'album.create', 'album', data.id, {
@@ -4333,7 +4334,7 @@ export async function POST(req: NextRequest) {
       .eq('id', sourceAlbumId)
       .maybeSingle()
     if (srcErr) {
-      return NextResponse.json({ error: srcErr.message }, { status: 500 })
+      return serverError(srcErr, 'tenant')
     }
     if (!sourceAlbum) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
@@ -4937,7 +4938,7 @@ export async function POST(req: NextRequest) {
           .eq('id', newVal)
           .maybeSingle()
         if (psErr) {
-          return NextResponse.json({ error: psErr.message }, { status: 500 })
+          return serverError(psErr, 'tenant')
         }
         if (!ps) {
           return NextResponse.json({ error: 'Шаблон не найден' }, { status: 400 })
@@ -5003,7 +5004,7 @@ export async function POST(req: NextRequest) {
         .eq('id', pid)
         .maybeSingle()
       if (progErr) {
-        return NextResponse.json({ error: progErr.message }, { status: 500 })
+        return serverError(progErr, 'tenant')
       }
       if (!prog) {
         return NextResponse.json({ error: 'Реферальная программа не найдена' }, { status: 400 })
@@ -5083,7 +5084,7 @@ export async function POST(req: NextRequest) {
       .eq('id', album_id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'album.update', 'album', album_id, { fields: Object.keys(updates) })
@@ -5132,7 +5133,7 @@ export async function POST(req: NextRequest) {
       .eq('id', album_id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'album.archive', 'album', album_id, {
@@ -5186,7 +5187,7 @@ export async function POST(req: NextRequest) {
       .eq('id', album_id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'album.unarchive', 'album', album_id)
@@ -5237,7 +5238,7 @@ export async function POST(req: NextRequest) {
       .eq('id', album_id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'album.delete', 'album', album_id, {
@@ -5271,7 +5272,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'child.create', 'child', data.id, {
@@ -5346,7 +5347,7 @@ export async function POST(req: NextRequest) {
       .select('id, full_name, class, access_token')
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'child.import', 'album', album_id, {
@@ -5479,7 +5480,7 @@ export async function POST(req: NextRequest) {
       .eq('id', child_id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'child.update', 'child', child_id, {
@@ -5521,7 +5522,7 @@ export async function POST(req: NextRequest) {
       .eq('id', child_id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'child.update_preset', 'child', child_id, {
@@ -5559,7 +5560,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'teacher.create', 'teacher', data.id, {
@@ -5616,7 +5617,7 @@ export async function POST(req: NextRequest) {
         .neq('id', teacher_id)
 
       if (resetErr) {
-        return NextResponse.json({ error: resetErr.message }, { status: 500 })
+        return serverError(resetErr, 'tenant')
       }
     }
 
@@ -5630,7 +5631,7 @@ export async function POST(req: NextRequest) {
       .eq('id', teacher_id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'teacher.update', 'teacher', teacher_id, {
@@ -5703,7 +5704,7 @@ export async function POST(req: NextRequest) {
       .single()
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'responsible.create', 'responsible', data.id, { album_id })
@@ -5738,7 +5739,7 @@ export async function POST(req: NextRequest) {
       .eq('id', responsible_id)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return serverError(error, 'tenant')
     }
 
     await logAction(auth, 'responsible.update', 'responsible', responsible_id, {
@@ -5815,7 +5816,7 @@ export async function POST(req: NextRequest) {
       .select()
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'photo.register', 'photo', (data as any).id, {
       album_id,
@@ -5874,7 +5875,7 @@ export async function POST(req: NextRequest) {
       .update({ original_path: normalizedPath })
       .eq('id', photo_id)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'photo.register_original', 'photo', photo_id, {
       original_path: normalizedPath,
@@ -5927,7 +5928,7 @@ export async function POST(req: NextRequest) {
       .select('id, storage_path, thumb_path, original_path, filename')
       .eq('album_id', album_id)
       .eq('type', photo_type)
-    if (photosErr) return NextResponse.json({ error: photosErr.message }, { status: 500 })
+    if (photosErr) return serverError(photosErr, 'tenant')
 
     if (!photos || photos.length === 0) {
       return NextResponse.json({ ok: true, deleted: 0, resetChildren: 0 })
@@ -6069,7 +6070,7 @@ export async function POST(req: NextRequest) {
       .from('photo_children')
       .upsert({ photo_id, child_id }, { onConflict: 'photo_id,child_id' })
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'photo.tag', 'photo', photo_id, { child_id })
 
@@ -6170,7 +6171,7 @@ export async function POST(req: NextRequest) {
       const { error } = await supabaseAdmin
         .from('photo_children')
         .upsert(inserts, { onConflict: 'photo_id,child_id', ignoreDuplicates: true })
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return serverError(error, 'tenant')
       linked = inserts.length
     }
 
@@ -6211,7 +6212,7 @@ export async function POST(req: NextRequest) {
       .update({ status })
       .eq('id', id)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'lead.update_status', 'lead', id, { status })
 
@@ -6243,7 +6244,7 @@ export async function POST(req: NextRequest) {
       .delete()
       .eq('id', id)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'lead.delete', 'lead', id)
 
@@ -6319,7 +6320,7 @@ export async function POST(req: NextRequest) {
       .select('id, email, role, token, expires_at, created_at')
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'user.invite', 'invitation', (invitation as any).id, {
       email,
@@ -6359,7 +6360,7 @@ export async function POST(req: NextRequest) {
       .delete()
       .eq('id', id)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'user.revoke_invitation', 'invitation', id)
 
@@ -6426,7 +6427,7 @@ export async function POST(req: NextRequest) {
         .update({ is_active: false })
         .eq('id', user_id)
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return serverError(error, 'tenant')
 
       // Гасим сессии отключённого — иначе он работает по старому токену до его
       // истечения (F6). При hard delete сессии и так удаляются ниже.
@@ -6440,7 +6441,7 @@ export async function POST(req: NextRequest) {
         .delete()
         .eq('id', user_id)
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      if (error) return serverError(error, 'tenant')
     }
 
     await logAction(auth, soft ? 'user.deactivate' : 'user.delete', 'user', user_id, {
@@ -6521,7 +6522,7 @@ export async function POST(req: NextRequest) {
       .update({ role })
       .eq('id', user_id)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'user.change_role', 'user', user_id, {
       from: (target as any).role,
@@ -6580,7 +6581,7 @@ export async function POST(req: NextRequest) {
       .update(update)
       .eq('id', auth.tenantId)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'tenant.update_settings', 'tenant', auth.tenantId, {
       fields: Object.keys(update),
@@ -6634,7 +6635,7 @@ export async function POST(req: NextRequest) {
       .update({ password_hash: newHash })
       .eq('id', auth.userId)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     // Выкидываем все остальные сессии (кроме текущей —
     // чтобы не разлогинить пользователя, который только что сменил пароль).
@@ -6742,7 +6743,7 @@ export async function POST(req: NextRequest) {
       .update(update)
       .eq('id', auth.tenantId)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'tenant.update_branding', 'tenant', auth.tenantId, {
       fields: Object.keys(body).filter(k => k !== 'action'),
@@ -6775,7 +6776,7 @@ export async function POST(req: NextRequest) {
       .select('id, text, category, tenant_id, created_at')
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'quote.create', 'quote', (data as any).id, { category })
 
@@ -6830,7 +6831,7 @@ export async function POST(req: NextRequest) {
       .update({ text, category })
       .eq('id', id)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'quote.update', 'quote', id, { category })
 
@@ -6891,7 +6892,7 @@ export async function POST(req: NextRequest) {
       .delete()
       .eq('id', id)
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'tenant')
 
     await logAction(auth, 'quote.delete', 'quote', id, {
       had_selections: useCount ?? 0,

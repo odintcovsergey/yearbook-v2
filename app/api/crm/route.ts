@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
 
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
       .select('*')
       .eq('tenant_id', tid)
       .order('name')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ clients: data })
   }
 
@@ -94,7 +95,7 @@ export async function GET(req: NextRequest) {
       .select('*')
       .eq('tenant_id', tid)
       .order('sort_order')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ stages: data })
   }
 
@@ -105,7 +106,7 @@ export async function GET(req: NextRequest) {
       .select('*, deal_stages(name, color), clients(name, city), albums(title, city, year)')
       .eq('tenant_id', tid)
       .order('created_at', { ascending: false })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ deals: data })
   }
 
@@ -117,7 +118,7 @@ export async function GET(req: NextRequest) {
       .eq('tenant_id', tid)
       .is('completed_at', null)
       .order('due_date', { nullsFirst: false })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ tasks: data })
   }
 
@@ -129,7 +130,7 @@ export async function GET(req: NextRequest) {
       .eq('tenant_id', tid)
       .eq('archived', false)
       .order('title')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ albums: data })
   }
 
@@ -142,7 +143,7 @@ export async function GET(req: NextRequest) {
       .eq('is_active', true)
       .neq('role', 'superadmin')
       .order('full_name')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ members: data })
   }
 
@@ -168,7 +169,7 @@ export async function POST(req: NextRequest) {
       .from('clients')
       .insert({ tenant_id: tid, name: name.trim(), city, address, website, notes, tags: tags ?? [] })
       .select().single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     await logAction(auth, 'crm.create_client', 'client', data.id, { name })
     return NextResponse.json({ client: data })
   }
@@ -180,7 +181,7 @@ export async function POST(req: NextRequest) {
     if (!await assertOwns('clients', id, tid)) return NextResponse.json({ error: 'not found' }, { status: 404 })
     const { data, error } = await supabaseAdmin
       .from('clients').update({ name, city, address, website, notes, tags }).eq('id', id).select().single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ client: data })
   }
 
@@ -192,7 +193,7 @@ export async function POST(req: NextRequest) {
     await supabaseAdmin.from('deals').update({ client_id: null }).eq('client_id', id).eq('tenant_id', tid)
     await supabaseAdmin.from('contacts').update({ client_id: null }).eq('client_id', id).eq('tenant_id', tid)
     const { error } = await supabaseAdmin.from('clients').delete().eq('id', id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     await logAction(auth, 'crm.delete_client', 'client', id, {})
     return NextResponse.json({ ok: true })
   }
@@ -205,7 +206,7 @@ export async function POST(req: NextRequest) {
       .from('contacts')
       .insert({ tenant_id: tid, full_name: full_name.trim(), client_id: client_id || null, role, phone, email, notes, birthday: birthday || null })
       .select().single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ contact: data })
   }
 
@@ -215,7 +216,7 @@ export async function POST(req: NextRequest) {
     if (!await assertOwns('contacts', id, tid)) return NextResponse.json({ error: 'not found' }, { status: 404 })
     const { data, error } = await supabaseAdmin
       .from('contacts').update({ full_name, role, phone, email, notes, birthday: birthday || null }).eq('id', id).select().single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ contact: data })
   }
 
@@ -224,7 +225,7 @@ export async function POST(req: NextRequest) {
     const { id } = body
     if (!await assertOwns('contacts', id, tid)) return NextResponse.json({ error: 'not found' }, { status: 404 })
     const { error } = await supabaseAdmin.from('contacts').delete().eq('id', id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ ok: true })
   }
 
@@ -244,7 +245,7 @@ export async function POST(req: NextRequest) {
       })
       .select('*, deal_stages(name, color), clients(name, city), albums(title, city, year)')
       .single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     await logAction(auth, 'crm.create_deal', 'deal', data.id, { title })
     return NextResponse.json({ deal: data })
   }
@@ -264,7 +265,7 @@ export async function POST(req: NextRequest) {
       .from('deals').update(update).eq('id', id)
       .select('*, deal_stages(name, color), clients(name, city), albums(title, city, year)')
       .single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ deal: data })
   }
 
@@ -278,7 +279,7 @@ export async function POST(req: NextRequest) {
       .from('deals').update({ stage_id, closed_at }).eq('id', id)
       .select('*, deal_stages(name, color), clients(name, city), albums(title, city, year)')
       .single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ deal: data })
   }
 
@@ -288,7 +289,7 @@ export async function POST(req: NextRequest) {
     if (!await assertOwns('deals', id, tid)) return NextResponse.json({ error: 'not found' }, { status: 404 })
     await supabaseAdmin.from('tasks').delete().eq('deal_id', id)
     const { error } = await supabaseAdmin.from('deals').delete().eq('id', id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     await logAction(auth, 'crm.delete_deal', 'deal', id, {})
     return NextResponse.json({ ok: true })
   }
@@ -307,7 +308,7 @@ export async function POST(req: NextRequest) {
       })
       .select('*, deals(title), clients(name)')
       .single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ task: data })
   }
 
@@ -317,7 +318,7 @@ export async function POST(req: NextRequest) {
     if (!await assertOwns('tasks', id, tid)) return NextResponse.json({ error: 'not found' }, { status: 404 })
     const { data, error } = await supabaseAdmin
       .from('tasks').update({ completed_at: new Date().toISOString() }).eq('id', id).select().single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ task: data })
   }
 
@@ -326,7 +327,7 @@ export async function POST(req: NextRequest) {
     const { id } = body
     if (!await assertOwns('tasks', id, tid)) return NextResponse.json({ error: 'not found' }, { status: 404 })
     const { error } = await supabaseAdmin.from('tasks').delete().eq('id', id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return serverError(error, 'crm')
     return NextResponse.json({ ok: true })
   }
 
