@@ -17,6 +17,7 @@ import {
   Upload,
   Download,
   Folder,
+  Lightbulb,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -88,6 +89,8 @@ export default function SuperPage() {
   const [queue, setQueue] = useState<any[]>([])
   const [queueLoading, setQueueLoading] = useState(false)
   const [selectedQueueAlbum, setSelectedQueueAlbum] = useState<any | null>(null)
+  // Счётчик новых идей на модерации — бейдж на кнопке «Идеи».
+  const [ideasPending, setIdeasPending] = useState(0)
 
   const notify = (text: string, type: 'ok' | 'err' = 'ok') => {
     setMsg({ text, type })
@@ -122,10 +125,17 @@ export default function SuperPage() {
     if (r.ok) setStats(await r.json())
   }
 
+  const loadIdeasPending = async () => {
+    const r = await api('/api/ideas?action=pending_count')
+    if (r.ok) setIdeasPending(await r.json().then((d: { pending: number }) => d.pending ?? 0))
+  }
+
   useEffect(() => {
     if (auth) {
       loadTenants()
       loadStats()
+      // Обновляется при возврате на /super после модерации (страница перемонтируется).
+      loadIdeasPending()
     }
   }, [auth])
 
@@ -243,6 +253,15 @@ export default function SuperPage() {
           <button onClick={() => router.push('/super/covers')}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
             <BookImage size={16} /> Обложки
+          </button>
+          <button onClick={() => router.push('/super/ideas')}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
+            <Lightbulb size={16} /> Идеи
+            {ideasPending > 0 && (
+              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500 text-white text-xs font-semibold">
+                {ideasPending}
+              </span>
+            )}
           </button>
         </div>
 
