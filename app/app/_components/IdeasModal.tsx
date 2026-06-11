@@ -255,18 +255,30 @@ export default function IdeasModal({ onClose, onNotify, onError }: Props) {
             <ul className="space-y-3">
               {ideas.map(idea => (
                 <li key={idea.id} className="card p-4 flex items-start gap-4">
-                  <button
-                    onClick={() => toggleVote(idea)}
-                    className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl border transition-colors shrink-0 ${
-                      idea.voted
-                        ? 'bg-brand-50 border-brand-300 text-brand-700'
-                        : 'bg-card border-border text-muted-foreground hover:border-brand-300 hover:text-brand-600'
-                    }`}
-                    title={idea.voted ? 'Снять голос' : 'Проголосовать'}
-                  >
-                    <ThumbsUp size={18} className={idea.voted ? 'fill-current' : ''} />
-                    <span className="text-sm font-semibold">{idea.votes_count}</span>
-                  </button>
+                  {/* На вкладке «Сделали» голосование не нужно — показываем факт
+                      «реализовано», без счётчика голосов (по ТЗ). */}
+                  {tab === 'done' ? (
+                    <div
+                      className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl border border-green-200 bg-green-50 text-green-700 shrink-0"
+                      title="Реализовано"
+                    >
+                      <CheckCircle2 size={18} />
+                      <span className="text-[11px] font-medium leading-tight">Готово</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => toggleVote(idea)}
+                      className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl border transition-colors shrink-0 ${
+                        idea.voted
+                          ? 'bg-brand-50 border-brand-300 text-brand-700'
+                          : 'bg-card border-border text-muted-foreground hover:border-brand-300 hover:text-brand-600'
+                      }`}
+                      title={idea.voted ? 'Снять голос' : 'Проголосовать'}
+                    >
+                      <ThumbsUp size={18} className={idea.voted ? 'fill-current' : ''} />
+                      <span className="text-sm font-semibold">{idea.votes_count}</span>
+                    </button>
+                  )}
                   <div className="min-w-0 flex-1">
                     {idea.title && <p className="font-medium mb-0.5">{idea.title}</p>}
                     <p className="text-sm text-foreground whitespace-pre-wrap break-words">{idea.body}</p>
