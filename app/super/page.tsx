@@ -17,6 +17,7 @@ import {
   Upload,
   Download,
   Folder,
+  Lightbulb,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -243,6 +244,10 @@ export default function SuperPage() {
           <button onClick={() => router.push('/super/covers')}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
             <BookImage size={16} /> Обложки
+          </button>
+          <button onClick={() => router.push('/super/ideas')}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
+            <Lightbulb size={16} /> Идеи
           </button>
         </div>
 
