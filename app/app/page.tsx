@@ -31,8 +31,10 @@ import {
   ArrowUp,
   ArrowDown,
   ChevronsUpDown,
+  Lightbulb,
 } from 'lucide-react'
 import CRMModal from './CRMModal'
+import IdeasModal from './_components/IdeasModal'
 import { ThemeToggle } from './_components/ThemeToggle'
 // РЭ.21.7.3: drag-and-drop секций в редакторе пресета.
 import {
@@ -261,6 +263,7 @@ export default function AppPage() {
   const [showCRM, setShowCRM] = useState(false)
   const [showPartners, setShowPartners] = useState(false)
   const [showPresets, setShowPresets] = useState(false)
+  const [showIdeas, setShowIdeas] = useState(false)
 
   const notify = (text: string, type: 'ok' | 'err' = 'ok') => {
     setMsg({ text, type })
@@ -519,6 +522,13 @@ export default function AppPage() {
               title="Реферальные программы: готовые и свои"
             >
               <Gift size={16} /> Рефералки
+            </button>
+            <button
+              onClick={() => setShowIdeas(true)}
+              className="btn-secondary"
+              title="Идеи и предложения сообщества — предложить и проголосовать"
+            >
+              <Lightbulb size={16} /> Идеи
             </button>
             <ThemeToggle />
             <button onClick={handleLogout} className="btn-secondary">Выйти</button>
@@ -831,6 +841,14 @@ export default function AppPage() {
       {showPresets && (
         <PresetsModal
           onClose={() => setShowPresets(false)}
+          onError={(text) => notify(text, 'err')}
+        />
+      )}
+
+      {showIdeas && (
+        <IdeasModal
+          onClose={() => setShowIdeas(false)}
+          onNotify={(text) => notify(text, 'ok')}
           onError={(text) => notify(text, 'err')}
         />
       )}
