@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { ThumbsUp, Lightbulb, Search, X, Plus, Loader2 } from 'lucide-react'
+import { ThumbsUp, Lightbulb, Search, X, Plus, Loader2, CheckCircle2 } from 'lucide-react'
 import { api } from '@/lib/api-client'
 
 // ============================================================
@@ -50,6 +50,12 @@ export default function IdeasModal({ onClose, onNotify, onError }: Props) {
   const [showForm, setShowForm] = useState(false)
   const [newText, setNewText] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  // После успешной отправки показываем заметное подтверждение прямо в окне
+  // (а не только мелькающий тост): идея ушла на модерацию.
+  const [justSubmitted, setJustSubmitted] = useState(false)
+
+  const openForm = () => { setShowForm(true); setJustSubmitted(false) }
+  const closeForm = () => { setShowForm(false); setJustSubmitted(false); setNewText('') }
 
   // Дебаунс поиска — не дёргаем API на каждую букву.
   useEffect(() => {
@@ -115,7 +121,7 @@ export default function IdeasModal({ onClose, onNotify, onError }: Props) {
       if (!res.ok) throw new Error(data.error ?? 'Не удалось отправить идею')
       onNotify(data.message ?? 'Идея отправлена на модерацию')
       setNewText('')
-      setShowForm(false)
+      setJustSubmitted(true) // показываем подтверждение в окне
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Ошибка')
     } finally {
@@ -133,12 +139,18 @@ export default function IdeasModal({ onClose, onNotify, onError }: Props) {
         onClick={e => e.stopPropagation()}
       >
         {/* Шапка */}
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
-          <h2 className="text-xl font-semibold flex items-center gap-2" style={{ fontFamily: 'var(--font-display)' }}>
-            <Lightbulb size={20} className="text-brand-600" /> Идеи и предложения
-          </h2>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setShowForm(v => !v)} className="btn-primary">
+        <div className="px-6 py-4 border-b border-border flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-xl font-semibold flex items-center gap-2" style={{ fontFamily: 'var(--font-display)' }}>
+              <Lightbulb size={20} className="text-brand-600" /> Идеи и предложения
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Предложите идею для развития сервиса — мы обязательно рассмотрим её реализацию.
+              Голосуйте за идеи других, чтобы поднять важные выше.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={openForm} className="btn-primary">
               <Plus size={16} /> Добавить идею
             </button>
             <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1">
@@ -147,8 +159,30 @@ export default function IdeasModal({ onClose, onNotify, onError }: Props) {
           </div>
         </div>
 
+        {/* Подтверждение после отправки */}
+        {showForm && justSubmitted && (
+          <div className="px-6 py-5 border-b border-border bg-green-50">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 size={22} className="text-green-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium text-green-800">Спасибо! Идея отправлена на модерацию.</p>
+                <p className="text-sm text-green-700 mt-1">
+                  Мы проверим её вручную, и после одобрения она появится в разделе «Голосование» —
+                  партнёры смогут за неё голосовать. Сейчас в общей ленте её ещё нет, это нормально.
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => { setJustSubmitted(false) }} className="btn-secondary">
+                    Предложить ещё
+                  </button>
+                  <button onClick={closeForm} className="btn-primary">Понятно</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Форма добавления */}
-        {showForm && (
+        {showForm && !justSubmitted && (
           <div className="px-6 py-4 border-b border-border bg-muted/40">
             <textarea
               value={newText}
@@ -161,10 +195,10 @@ export default function IdeasModal({ onClose, onNotify, onError }: Props) {
             />
             <div className="flex items-center justify-between mt-2">
               <span className="text-xs text-muted-foreground">
-                После отправки идея появится в ленте после проверки модератором.
+                Идея появится в ленте только после проверки модератором.
               </span>
               <div className="flex gap-2">
-                <button onClick={() => { setShowForm(false); setNewText('') }} className="btn-secondary">
+                <button onClick={closeForm} className="btn-secondary">
                   Отмена
                 </button>
                 <button onClick={submitIdea} disabled={submitting} className="btn-primary">

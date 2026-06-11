@@ -88,6 +88,7 @@ export async function GET(req: NextRequest) {
   try {
     if (action === 'list') return await handleList(req, auth)
     if (action === 'admin') return await handleAdmin(auth)
+    if (action === 'pending_count') return await handlePendingCount(auth)
     return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })
   } catch (err) {
     return serverError(err, 'ideas:get')
@@ -141,6 +142,18 @@ async function handleList(req: NextRequest, auth: AuthContext): Promise<NextResp
   const rows = (data ?? []) as IdeaRow[]
   const votedIds = await votedSetFor(auth.userId, rows.map(r => r.id))
   return NextResponse.json({ ideas: rows.map(r => toPublic(r, votedIds)) })
+}
+
+// Superadmin: лёгкий счётчик новых идей на модерации (для бейджа в супер-панели).
+async function handlePendingCount(auth: AuthContext): Promise<NextResponse> {
+  if (auth.role !== 'superadmin') {
+    return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+  }
+  const { count } = await supabaseAdmin
+    .from('ideas')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending')
+  return NextResponse.json({ pending: count ?? 0 })
 }
 
 // Superadmin: очередь модерации + опубликованные + сделанные, с контактами автора.
