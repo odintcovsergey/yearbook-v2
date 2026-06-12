@@ -353,6 +353,26 @@ function LayoutEditorPageInner({
       return next
     })
   }, [])
+  // Блок UX.2 — фактический размер рабочей зоны холста (между плашками
+  // сверху и навигацией снизу). Меряется ResizeObserver'ом через callback-ref
+  // ниже. Из него считается canvasContainerWidth — холст всегда вписан в
+  // доступное место по высоте и ширине, без вертикального скролла. Реагирует
+  // на resize окна и на сворачивание панелей (Блок UX.1) автоматически.
+  const [canvasArea, setCanvasArea] = useState({ width: 0, height: 0 })
+  const canvasAreaObserver = useRef<ResizeObserver | null>(null)
+  const setCanvasAreaRef = useCallback((el: HTMLDivElement | null) => {
+    canvasAreaObserver.current?.disconnect()
+    if (!el) {
+      canvasAreaObserver.current = null
+      return
+    }
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect
+      if (cr) setCanvasArea({ width: cr.width, height: cr.height })
+    })
+    ro.observe(el)
+    canvasAreaObserver.current = ro
+  }, [])
   // Drag-состояние:
   // - mode='palette': drag фото из правой колонки. DragOverlay используется
   //   с дефолтным 120px thumbnail (палитра маленькая, фикс размер уместен).
@@ -1718,12 +1738,20 @@ function LayoutEditorPageInner({
   // страницы (потому что мастер уже двухстраничный, у него width_mm
   // = ширина всего разворота). Для обычного разворота = ширина двух
   // страниц рядом (basePage * 2).
-  // Блок UX.1 — когда правая палитра свёрнута, холст забирает её ~30% ширины.
-  // Когда нижняя полоса миниатюр свёрнута — высвобождается ~12% высоты.
+  // Блок UX.2 — размер холста.
+  // Приоритет: фактически измеренная рабочая зона (canvasArea) даёт точное
+  // вписывание без скролла и сама реагирует на сворачивание панелей (Блок
+  // UX.1) и resize. Фоллбэк (до первого замера / SSR) — эвристика от viewport
+  // с поправкой на свёрнутые панели, чтобы не было «прыжка» при загрузке.
+  // -8px — небольшой зазор под тени/обводку активной страницы.
   const widthFactor = paletteCollapsed ? 0.96 : 0.7
   const heightFactor = stripCollapsed ? 0.82 : 0.7
-  const availableWidth = Math.max(400, viewport.width * widthFactor - 80)
-  const availableHeight = Math.max(400, viewport.height * heightFactor)
+  const fallbackWidth = Math.max(400, viewport.width * widthFactor - 80)
+  const fallbackHeight = Math.max(400, viewport.height * heightFactor)
+  const availableWidth =
+    canvasArea.width > 0 ? Math.max(280, canvasArea.width - 8) : fallbackWidth
+  const availableHeight =
+    canvasArea.height > 0 ? Math.max(280, canvasArea.height - 8) : fallbackHeight
   const basePageTemplate = leftTemplate ?? rightTemplate ?? currentTemplate ?? null
   const isPairSpread = currentPair?.isSpread === true
   const aspectRatio = basePageTemplate
@@ -1839,7 +1867,7 @@ function LayoutEditorPageInner({
       >
       <div className="flex-1 flex overflow-hidden">
         {/* ─── Левая колонка: canvas + навигация ─── */}
-        <main className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto">
+        <main className="flex-1 flex flex-col p-6 overflow-hidden">
           {/* РЭ.35.Е.4 + РЭ.36.UI: компактные pill-индикаторы под навигацией
               разворотов — «Мягкий переплёт» (для soft-альбомов) и
               «N предупреждений» (если engine при сборке оставил warnings).
@@ -1876,6 +1904,14 @@ function LayoutEditorPageInner({
             </div>
           )}
 
+          {/* Блок UX.2 — измеряемая рабочая зона. Холст вписывается в
+              место, оставшееся после плашек (сверху) и навигации (снизу):
+              flex-1 + min-h-0, без вертикального скролла. Размер зоны меряет
+              ResizeObserver (setCanvasAreaRef) → из него canvasContainerWidth. */}
+          <div
+            ref={setCanvasAreaRef}
+            className="flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden"
+          >
           {currentPair && (leftTemplate || rightTemplate) ? (
             <>
               {/* РЭ.35.Б: рендер разворота.
@@ -2084,9 +2120,16 @@ function LayoutEditorPageInner({
                   </div>
                 )
               })()}
+            </>
+          ) : (
+            <p className="text-muted-foreground">Шаблон не найден для текущего разворота</p>
+          )}
+          </div>
 
-              {/* Навигация — теперь по разворотам, а не по страницам */}
-              <div className="mt-4 flex items-center gap-3 flex-wrap">
+          {/* Навигация — теперь по разворотам (Блок UX.2: вынесена из
+              измеряемой зоны холста, занимает свою высоту под ним). */}
+          {currentPair && (leftTemplate || rightTemplate) && (
+            <div className="mt-4 flex items-center gap-3 flex-wrap self-center justify-center">
                 <button
                   type="button"
                   onClick={() => {
@@ -2165,10 +2208,7 @@ function LayoutEditorPageInner({
                     <ImageIcon size={16} /> Фон разворота{currentBgOverride ? ' •' : ''}
                   </button>
                 )}
-              </div>
-            </>
-          ) : (
-            <p className="text-muted-foreground">Шаблон не найден для текущего разворота</p>
+            </div>
           )}
         </main>
 
