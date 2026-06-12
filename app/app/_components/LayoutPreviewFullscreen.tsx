@@ -91,16 +91,35 @@ export default function LayoutPreviewFullscreen({
     [clampIdx],
   )
 
-  // Клавиатура: ← / → листают, Esc закрывает.
+  // Клавиатура: ← / → листают, Esc закрывает. capture-фаза + stop/prevent —
+  // чтобы перехватить раньше навигации редактора по разворотам (иначе они
+  // конкурируют и стрелки «не работают» в просмотре).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-      else if (e.key === 'ArrowLeft') goPrev()
-      else if (e.key === 'ArrowRight') goNext()
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        onClose()
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        e.stopPropagation()
+        goPrev()
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        e.stopPropagation()
+        goNext()
+      }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [onClose, goPrev, goNext])
+
+  // Фокус на оверлей при открытии — чтобы клавиатура (← / → / Esc) работала
+  // сразу, без предварительного клика мышью.
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    rootRef.current?.focus()
+  }, [])
 
   // Свайп пальцем (моб/тачпад) — порог 50px по горизонтали.
   const touchStartX = useRef<number | null>(null)
@@ -165,7 +184,11 @@ export default function LayoutPreviewFullscreen({
   const placeholderAspect = aspectRatio / (isPairSpread ? 1 : 2)
 
   return (
-    <div className="fixed inset-0 z-50 bg-neutral-900 flex flex-col">
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 bg-neutral-900 flex flex-col outline-none"
+    >
       {/* Верхняя панель: закрыть + счётчик. */}
       <div className="flex items-center justify-between px-4 py-2.5 text-white/90">
         <span className="text-sm font-medium">Просмотр макета</span>

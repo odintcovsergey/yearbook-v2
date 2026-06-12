@@ -1184,7 +1184,10 @@ function PhotoCropOverlay({
   return (
     <div
       ref={containerRef}
-      className="absolute"
+      // pointer-events-auto ОБЯЗАТЕЛЕН: родительский DOM-overlay —
+      // pointer-events-none, без этого весь кроп «мёртвый» (не тащится,
+      // кнопки не жмутся).
+      className="absolute pointer-events-auto"
       style={{
         left: `${frameLeft}px`,
         top: `${frameTop}px`,
