@@ -46,6 +46,7 @@ import { remapData } from '@/lib/template-replace'
 import WarningsPill, {
   type EnrichedWarning,
 } from './_components/WarningsPill'
+import LayoutPreviewFullscreen from '../../../_components/LayoutPreviewFullscreen'
 import {
   Eye,
   BookOpen,
@@ -303,6 +304,8 @@ function LayoutEditorPageInner({
   const [textStyleOverrides, setTextStyleOverrides] = useState<AlbumTextStyleOverrides>({})
   // РЭ.53.c: открыта ли модалка 'Стили текста альбома'.
   const [textStylesModalOpen, setTextStylesModalOpen] = useState(false)
+  // Блок UX.4: открыт ли полноэкранный просмотр макета («Вид»).
+  const [fullscreenOpen, setFullscreenOpen] = useState(false)
   const [currentIdx, setCurrentIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1818,6 +1821,16 @@ function LayoutEditorPageInner({
           )}
         </div>
         <div className="flex items-center gap-3">
+          {/* Блок UX.4 — полноэкранный просмотр макета. Доступен всегда
+              (и в read-only) — это и есть «оценить результат». */}
+          <button
+            type="button"
+            onClick={() => setFullscreenOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted text-foreground transition-colors"
+            title="Полноэкранный просмотр готового макета"
+          >
+            <Eye size={16} /> Вид
+          </button>
           {/* Л.3 — кнопки Undo/Redo. Скрыты в read-only. */}
           {!isReadOnly && (
             <div className="flex items-center gap-1">
@@ -2456,6 +2469,20 @@ function LayoutEditorPageInner({
           onPreview={(next) => setTextStyleOverrides(next)}
           onSave={handleSaveTextStyles}
           onClose={() => setTextStylesModalOpen(false)}
+        />
+      )}
+
+      {/* Блок UX.4 — полноэкранный просмотр готового макета («Вид»). */}
+      {fullscreenOpen && layout && (
+        <LayoutPreviewFullscreen
+          visualSpreads={visualSpreads}
+          spreads={spreads}
+          templatesById={templatesById}
+          isSoftAlbum={isSoftAlbum}
+          bgUrlByPairIdx={bgPaths.map(toBgPublicUrl)}
+          textStyleOverrides={textStyleOverrides}
+          initialPairIdx={currentPairIdx >= 0 ? currentPairIdx : 0}
+          onClose={() => setFullscreenOpen(false)}
         />
       )}
 
