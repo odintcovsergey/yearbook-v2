@@ -29,10 +29,8 @@ import SpreadOrderStrip from '../../../_components/SpreadOrderStrip'
 import TemplatePickerModal from '../../../_components/TemplatePickerModal'
 import SaveIndicator from '../../../_components/SaveIndicator'
 import PhotoContextMenu from '../../../_components/PhotoContextMenu'
-import PhotoTransformPanel from '../../../_components/PhotoTransformPanel'
 import TextStylePanel from '../../../_components/TextStylePanel'
 import AlbumTextStylesModal from '../../../_components/AlbumTextStylesModal'
-import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform'
 import {
   parseFontSizeMult,
   parseColor,
@@ -407,22 +405,6 @@ function LayoutEditorPageInner({
     | null
     | { label: string; url: string | null; clientX: number; clientY: number }
   >(null)
-  // КЭ.5 — panel кадрирования фото (scale + offset).
-  // Открывается одинарным кликом на photo placeholder с фото.
-  // spreadIndex нужен для адресации в /api/layout?action=update_data.
-  // РЭ.52.c: rightEdge / topEdge / leftEdge — границы placeholder'а
-  // в client координатах. PhotoTransformPanel сам решает: справа от
-  // rightEdge если место есть, иначе слева от leftEdge.
-  const [photoTransformPanel, setPhotoTransformPanel] = useState<
-    | null
-    | {
-        spreadIndex: number
-        label: string
-        rightEdge: number
-        topEdge: number
-        leftEdge: number
-      }
-  >(null)
   // Блок UX.3 — интерактивный кроп на холсте: какое фото сейчас кадрируется.
   const [cropEditor, setCropEditor] = useState<
     | null
@@ -751,7 +733,6 @@ function LayoutEditorPageInner({
   function handleUndo() {
     setEditingTextLabel(null)  // если редактируется текст — закрываем
     setPhotoContextMenu(null)  // и контекстное меню
-    setPhotoTransformPanel(null)  // и панель кадрирования (КЭ.5)
     setTextStylePanel(null)       // и панель стилей текста (Р.3)
     setHistory(h => {
       if (h.past.length === 0) return h
@@ -770,7 +751,6 @@ function LayoutEditorPageInner({
   function handleRedo() {
     setEditingTextLabel(null)
     setPhotoContextMenu(null)
-    setPhotoTransformPanel(null)
     setTextStylePanel(null) // Р.3
     setHistory(h => {
       if (h.future.length === 0) return h
@@ -1038,7 +1018,7 @@ function LayoutEditorPageInner({
   }
 
   // Р.3 — изменение стиля текста (размер + цвет) из TextStylePanel.
-  // Аналогично handleTransformChange: optimistic update layout state →
+  // Аналогично handleCropChange: optimistic update layout state →
   // saveStatus='pending' → существующий debounce save_album_layout
   // подхватит изменения. При default значениях (mult=1, color=null)
   // соответствующие служебные ключи __fontSize__/__color__ удаляются.
@@ -1124,7 +1104,6 @@ function LayoutEditorPageInner({
   useEffect(() => {
     setEditingTextLabel(null)
     setPhotoContextMenu(null)
-    setPhotoTransformPanel(null)  // КЭ.5 — закрываем кадрирование при смене разворота
     setCropEditor(null)           // Блок UX.3 — закрываем кроп на холсте
     setTextStylePanel(null)       // Р.3 — закрываем стилизацию текста
   }, [currentIdx])
@@ -1157,9 +1136,7 @@ function LayoutEditorPageInner({
       setCurrentIdx(instanceKey)
     }
     // Блок UX.3 — одинарный клик по фото открывает интерактивный кроп прямо
-    // на холсте (а не панель-ползунки). Панель доступна как «точная
-    // настройка» из тулбара кропа. Закрываем панель, если была открыта.
-    setPhotoTransformPanel(null)
+    // на холсте.
     setCropEditor({ spreadIndex: instanceKey, label })
   }
 
@@ -1168,17 +1145,6 @@ function LayoutEditorPageInner({
     () => ({
       onChange: handleCropChange,
       onClose: () => setCropEditor(null),
-      // «Точно» — открыть старую панель-ползунки как запасной точный способ.
-      onOpenPanel: (rightEdge: number, topEdge: number, leftEdge: number) => {
-        if (!cropEditor) return
-        setPhotoTransformPanel({
-          spreadIndex: cropEditor.spreadIndex,
-          label: cropEditor.label,
-          rightEdge,
-          topEdge,
-          leftEdge,
-        })
-      },
       // Обрамляют один непрерывный жест → один шаг undo (см. suspendHistoryRef).
       onGestureStart: () => {
         gestureStartSpreadsRef.current = layout?.spreads ?? null
@@ -1204,13 +1170,13 @@ function LayoutEditorPageInner({
       },
     }),
     // handleCropChange/layout читаются через замыкание; зависим от cropEditor
-    // (для onOpenPanel) и layout (для snapshot). eslint-disable: функции
-    // стабильны в рамках рендера.
+    // (handleCropChange читает cropEditor) и layout (для snapshot).
+    // eslint-disable: функции стабильны в рамках рендера.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [cropEditor, layout],
   )
 
-  // КЭ.5 — изменение transform из PhotoTransformPanel.
+  // КЭ.5 — изменение transform фото (интерактивный кроп на холсте).
   // Стратегия:
   //   1. Optimistic update layout state (мгновенный rerender canvas)
   //   2. saveStatus='pending' → существующий debounce-механизм save_album_layout
@@ -1227,9 +1193,8 @@ function LayoutEditorPageInner({
   // ПРИМЕЧАНИЕ: action=update_data из КЭ.3 в итоге может пригодиться для
   // realtime collaboration (если/когда добавим), но в одинарном-юзер
   // сценарии save_album_layout проще и dедупликует логику.
-  // Блок UX.3 — параметризованное ядро (label/spreadIndex явно), чтобы его
-  // могли звать и панель-ползунки (через photoTransformPanel), и
-  // интерактивный кроп на холсте (через cropEditor).
+  // Блок UX.3 — параметризованное ядро (label/spreadIndex явно), которое
+  // зовёт интерактивный кроп на холсте (через cropEditor).
   function applyTransformUpdate(
     spreadIndex: number,
     label: string,
@@ -1266,16 +1231,6 @@ function LayoutEditorPageInner({
     })
   }
 
-  // КЭ.5 — изменение transform из PhotoTransformPanel (ползунки).
-  function handleTransformChange(updates: {
-    scale?: string | null
-    offset?: string | null
-    rotate?: string | null
-  }) {
-    if (!photoTransformPanel) return
-    applyTransformUpdate(photoTransformPanel.spreadIndex, photoTransformPanel.label, updates)
-  }
-
   // Блок UX.3 — изменение transform из интерактивного кропа на холсте.
   function handleCropChange(updates: {
     scale?: string | null
@@ -1284,10 +1239,6 @@ function LayoutEditorPageInner({
   }) {
     if (!cropEditor) return
     applyTransformUpdate(cropEditor.spreadIndex, cropEditor.label, updates)
-  }
-
-  function handleTransformPanelClose() {
-    setPhotoTransformPanel(null)
   }
 
   function handleClearPhoto(label: string) {
@@ -2523,31 +2474,6 @@ function LayoutEditorPageInner({
           onClose={() => setPhotoContextMenu(null)}
         />
       )}
-
-      {/* ─── PhotoTransformPanel (КЭ.5 + Р.2) — кадрирование + поворот фото ─── */}
-      {photoTransformPanel && (() => {
-        // Извлекаем текущие значения transform из layout state.
-        // Если ключей __scale__/__offset__/__rotate__ нет → defaults (1, 0, 0, 0).
-        const spread = layout?.spreads[photoTransformPanel.spreadIndex]
-        const data = spread?.data ?? {}
-        const sc = parseScale(data[`__scale__${photoTransformPanel.label}`])
-        const [ox, oy] = parseOffset(data[`__offset__${photoTransformPanel.label}`])
-        const rot = parseRotate(data[`__rotate__${photoTransformPanel.label}`])
-        return (
-          <PhotoTransformPanel
-            label={photoTransformPanel.label}
-            scale={sc}
-            offsetX={ox}
-            offsetY={oy}
-            rotateDeg={rot}
-            rightEdge={photoTransformPanel.rightEdge}
-            topEdge={photoTransformPanel.topEdge}
-            leftEdge={photoTransformPanel.leftEdge}
-            onChange={handleTransformChange}
-            onClose={handleTransformPanelClose}
-          />
-        )
-      })()}
 
       {/* ─── TextStylePanel (Р.3 + РЭ.54) — override стиля текста ─── */}
       {textStylePanel && !isReadOnly && (() => {

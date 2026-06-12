@@ -331,9 +331,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === 'update_data') {
-    // КЭ.3 — точечный PATCH ключей data одного spread'а. Используется
-    // PhotoTransformPanel для записи __scale__<label> / __offset__<label>
-    // при движении слайдера/touchpad'а (с debounce 300мс).
+    // КЭ.3 — точечный PATCH ключей data одного spread'а (generic endpoint:
+    // __scale__<label> / __offset__<label> и любые другие точечные правки).
     return handleUpdateData(req, auth)
   }
 
@@ -1329,9 +1328,8 @@ async function handleSaveAlbumLayout(
 // ============================================================
 // КЭ.3 — точечный PATCH одного spread'а в album_layouts.spreads.
 //
-// Используется PhotoTransformPanel UI (КЭ.4-КЭ.5) для записи
-// __scale__<label> / __offset__<label> при движении слайдера/touchpad'а.
-// Также может использоваться для любых других точечных правок data
+// Может использоваться для точечной записи __scale__<label> /
+// __offset__<label> и любых других точечных правок data
 // (текстовые значения, замена URL фото, и т.д.) — endpoint generic.
 //
 // В отличие от save_album_layout который записывает ВЕСЬ spreads array,

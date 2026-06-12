@@ -206,7 +206,7 @@ export function parseRotate(v: unknown): number {
 /**
  * Сериализует rotate в string для записи в data.
  * Округляем до 2 знаков (UI step=0.5° достаточно). При значении 0
- * caller должен удалить ключ — см. PhotoTransformPanel.
+ * caller должен удалить ключ (см. интерактивный кроп на холсте).
  */
 export function serializeRotate(rotateDeg: number): string {
   const r = clamp(rotateDeg, ROTATE_MIN, ROTATE_MAX);
