@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback, Suspense } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
@@ -423,6 +423,14 @@ function LayoutEditorPageInner({
         leftEdge: number
       }
   >(null)
+  // Блок UX.3 — интерактивный кроп на холсте: какое фото сейчас кадрируется.
+  const [cropEditor, setCropEditor] = useState<
+    | null
+    | {
+        spreadIndex: number
+        label: string
+      }
+  >(null)
   // Р.3 — panel стилизации текста (размер + цвет).
   // Открывается одновременно с TextInlineEditor (handleTextClick).
   // Закрывается вместе с фиксацией текста (handleTextSubmit/Cancel)
@@ -458,6 +466,12 @@ function LayoutEditorPageInner({
   }>({ past: [], future: [] })
   const skipNextHistoryRef = useRef(false)
   const prevSpreadsRef = useRef<SpreadInstance[] | null>(null)
+  // Блок UX.3 — коалесинг истории для непрерывного жеста кропа (pan/zoom/
+  // rotate): пока жест активен, промежуточные изменения НЕ пишут историю;
+  // на конце жеста пишем ОДНУ запись (снимок до жеста). Иначе один drag дал
+  // бы десятки шагов undo.
+  const suspendHistoryRef = useRef(false)
+  const gestureStartSpreadsRef = useRef<SpreadInstance[] | null>(null)
 
   // Фаза Л.4a — read-only режим.
   // canEdit: false если backend сказал can_edit=false (workflow submitted,
@@ -703,7 +717,10 @@ function LayoutEditorPageInner({
     const current = layout.spreads
     const prev = prevSpreadsRef.current
     if (prev && prev !== current) {
-      if (skipNextHistoryRef.current) {
+      if (suspendHistoryRef.current) {
+        // Блок UX.3 — внутри жеста кропа: не пишем промежуточные шаги.
+        // Запись истории сделает onCropGestureEnd (один шаг на жест).
+      } else if (skipNextHistoryRef.current) {
         skipNextHistoryRef.current = false
       } else {
         // Игнорируем no-op изменения (deep equal через JSON.stringify
@@ -1105,6 +1122,7 @@ function LayoutEditorPageInner({
     setEditingTextLabel(null)
     setPhotoContextMenu(null)
     setPhotoTransformPanel(null)  // КЭ.5 — закрываем кадрирование при смене разворота
+    setCropEditor(null)           // Блок UX.3 — закрываем кроп на холсте
     setTextStylePanel(null)       // Р.3 — закрываем стилизацию текста
   }, [currentIdx])
 
@@ -1125,9 +1143,9 @@ function LayoutEditorPageInner({
   function handlePhotoClick(
     label: string,
     _url: string,
-    rightEdge: number,
-    topEdge: number,
-    leftEdge: number,
+    _rightEdge: number,
+    _topEdge: number,
+    _leftEdge: number,
     instanceKey: number,
   ) {
     // РЭ.54.d: переключаем активную страницу разворота если клик пришёл
@@ -1135,24 +1153,59 @@ function LayoutEditorPageInner({
     if (instanceKey !== currentIdx) {
       setCurrentIdx(instanceKey)
     }
-    // Если уже открыта panel для этого же label на этой же странице —
-    // не дёргаем (избегаем случайного двойного клика). Иначе показываем
-    // для нового.
-    if (
-      photoTransformPanel &&
-      photoTransformPanel.label === label &&
-      photoTransformPanel.spreadIndex === instanceKey
-    ) {
-      return
-    }
-    setPhotoTransformPanel({
-      spreadIndex: instanceKey,
-      label,
-      rightEdge,
-      topEdge,
-      leftEdge,
-    })
+    // Блок UX.3 — одинарный клик по фото открывает интерактивный кроп прямо
+    // на холсте (а не панель-ползунки). Панель доступна как «точная
+    // настройка» из тулбара кропа. Закрываем панель, если была открыта.
+    setPhotoTransformPanel(null)
+    setCropEditor({ spreadIndex: instanceKey, label })
   }
+
+  // Блок UX.3 — колбэки интерактивного кропа (для AlbumSpreadCanvas.cropHandlers).
+  const cropHandlers = useMemo(
+    () => ({
+      onChange: handleCropChange,
+      onClose: () => setCropEditor(null),
+      // «Точно» — открыть старую панель-ползунки как запасной точный способ.
+      onOpenPanel: (rightEdge: number, topEdge: number, leftEdge: number) => {
+        if (!cropEditor) return
+        setPhotoTransformPanel({
+          spreadIndex: cropEditor.spreadIndex,
+          label: cropEditor.label,
+          rightEdge,
+          topEdge,
+          leftEdge,
+        })
+      },
+      // Обрамляют один непрерывный жест → один шаг undo (см. suspendHistoryRef).
+      onGestureStart: () => {
+        gestureStartSpreadsRef.current = layout?.spreads ?? null
+        suspendHistoryRef.current = true
+      },
+      onGestureEnd: () => {
+        suspendHistoryRef.current = false
+        const snapshot = gestureStartSpreadsRef.current
+        gestureStartSpreadsRef.current = null
+        // Пишем ОДНУ запись истории — снимок ДО жеста, если что-то изменилось.
+        const cur = layout?.spreads ?? null
+        if (
+          snapshot &&
+          cur &&
+          snapshot !== cur &&
+          JSON.stringify(snapshot) !== JSON.stringify(cur)
+        ) {
+          setHistory((h) => ({
+            past: [...h.past.slice(-49), snapshot],
+            future: [],
+          }))
+        }
+      },
+    }),
+    // handleCropChange/layout читаются через замыкание; зависим от cropEditor
+    // (для onOpenPanel) и layout (для snapshot). eslint-disable: функции
+    // стабильны в рамках рендера.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cropEditor, layout],
+  )
 
   // КЭ.5 — изменение transform из PhotoTransformPanel.
   // Стратегия:
@@ -1171,13 +1224,18 @@ function LayoutEditorPageInner({
   // ПРИМЕЧАНИЕ: action=update_data из КЭ.3 в итоге может пригодиться для
   // realtime collaboration (если/когда добавим), но в одинарном-юзер
   // сценарии save_album_layout проще и dедупликует логику.
-  function handleTransformChange(updates: {
-    scale?: string | null
-    offset?: string | null
-    rotate?: string | null
-  }) {
-    if (!photoTransformPanel) return
-    const { label, spreadIndex } = photoTransformPanel
+  // Блок UX.3 — параметризованное ядро (label/spreadIndex явно), чтобы его
+  // могли звать и панель-ползунки (через photoTransformPanel), и
+  // интерактивный кроп на холсте (через cropEditor).
+  function applyTransformUpdate(
+    spreadIndex: number,
+    label: string,
+    updates: {
+      scale?: string | null
+      offset?: string | null
+      rotate?: string | null
+    },
+  ) {
     setLayout((prev) => {
       if (!prev) return prev
       const newSpreads = prev.spreads.map((s, idx) => {
@@ -1203,6 +1261,26 @@ function LayoutEditorPageInner({
       })
       return { ...prev, spreads: newSpreads }
     })
+  }
+
+  // КЭ.5 — изменение transform из PhotoTransformPanel (ползунки).
+  function handleTransformChange(updates: {
+    scale?: string | null
+    offset?: string | null
+    rotate?: string | null
+  }) {
+    if (!photoTransformPanel) return
+    applyTransformUpdate(photoTransformPanel.spreadIndex, photoTransformPanel.label, updates)
+  }
+
+  // Блок UX.3 — изменение transform из интерактивного кропа на холсте.
+  function handleCropChange(updates: {
+    scale?: string | null
+    offset?: string | null
+    rotate?: string | null
+  }) {
+    if (!cropEditor) return
+    applyTransformUpdate(cropEditor.spreadIndex, cropEditor.label, updates)
   }
 
   function handleTransformPanelClose() {
@@ -1980,6 +2058,12 @@ function LayoutEditorPageInner({
                           textStyleOverrides={textStyleOverrides}
                           backgroundUrl={currentSpreadBgUrl}
                           pageSide="spread"
+                          croppingLabel={
+                            leftPage && cropEditor?.spreadIndex === leftPage.spread_index
+                              ? cropEditor.label
+                              : null
+                          }
+                          cropHandlers={cropHandlers}
                         />
                       </div>
                     ) : (
@@ -2019,6 +2103,12 @@ function LayoutEditorPageInner({
                           textStyleOverrides={textStyleOverrides}
                           backgroundUrl={currentSpreadBgUrl}
                           pageSide="left"
+                          croppingLabel={
+                            leftPage && cropEditor?.spreadIndex === leftPage.spread_index
+                              ? cropEditor.label
+                              : null
+                          }
+                          cropHandlers={cropHandlers}
                             />
                           </div>
                         ) : showLeftEndpaper ? (
@@ -2092,6 +2182,12 @@ function LayoutEditorPageInner({
                           textStyleOverrides={textStyleOverrides}
                           backgroundUrl={currentSpreadBgUrl}
                           pageSide="right"
+                          croppingLabel={
+                            rightPage && cropEditor?.spreadIndex === rightPage.spread_index
+                              ? cropEditor.label
+                              : null
+                          }
+                          cropHandlers={cropHandlers}
                             />
                           </div>
                         ) : showRightEndpaper ? (
