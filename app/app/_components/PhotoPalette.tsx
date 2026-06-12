@@ -297,7 +297,7 @@ export default function PhotoPalette({ spreads, photos }: Props) {
   }
 
   return (
-    <aside className="w-[30%] min-w-[300px] max-w-[440px] bg-card border-l border-border overflow-y-auto">
+    <aside className="w-full h-full bg-card border-l border-border overflow-y-auto">
       <div className="p-3 sticky top-0 bg-card z-10 border-b border-border">
         <h2 className="text-sm font-semibold text-foreground mb-2">
           Палитра фото

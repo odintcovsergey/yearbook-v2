@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, Suspense } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
@@ -46,6 +46,7 @@ import { remapData } from '@/lib/template-replace'
 import WarningsPill, {
   type EnrichedWarning,
 } from './_components/WarningsPill'
+import LayoutPreviewFullscreen from '../../../_components/LayoutPreviewFullscreen'
 import {
   Eye,
   BookOpen,
@@ -56,6 +57,10 @@ import {
   Camera,
   Pencil,
   Save,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 
 // Konva-компонент: SSR-incompatible (использует window.Image).
@@ -299,10 +304,78 @@ function LayoutEditorPageInner({
   const [textStyleOverrides, setTextStyleOverrides] = useState<AlbumTextStyleOverrides>({})
   // РЭ.53.c: открыта ли модалка 'Стили текста альбома'.
   const [textStylesModalOpen, setTextStylesModalOpen] = useState(false)
+  // Блок UX.4: открыт ли полноэкранный просмотр макета («Вид»).
+  const [fullscreenOpen, setFullscreenOpen] = useState(false)
   const [currentIdx, setCurrentIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [viewport, setViewport] = useState({ width: 1440, height: 900 })
+  // Блок UX.1 — сворачивание панелей редактора (правая палитра + нижняя
+  // полоса миниатюр) чтобы высвободить место под вёрстку на ноутбуках.
+  // Состояние запоминается в localStorage. Чисто визуально — на данные
+  // макета не влияет.
+  const [paletteCollapsed, setPaletteCollapsed] = useState(false)
+  const [stripCollapsed, setStripCollapsed] = useState(false)
+  useEffect(() => {
+    try {
+      setPaletteCollapsed(
+        window.localStorage.getItem('yearbook_editor_palette_collapsed') === '1',
+      )
+      setStripCollapsed(
+        window.localStorage.getItem('yearbook_editor_strip_collapsed') === '1',
+      )
+    } catch {
+      // ignore (приватный режим и т.п.)
+    }
+  }, [])
+  const togglePaletteCollapsed = useCallback(() => {
+    setPaletteCollapsed((prev) => {
+      const next = !prev
+      try {
+        window.localStorage.setItem(
+          'yearbook_editor_palette_collapsed',
+          next ? '1' : '0',
+        )
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }, [])
+  const toggleStripCollapsed = useCallback(() => {
+    setStripCollapsed((prev) => {
+      const next = !prev
+      try {
+        window.localStorage.setItem(
+          'yearbook_editor_strip_collapsed',
+          next ? '1' : '0',
+        )
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }, [])
+  // Блок UX.2 — фактический размер рабочей зоны холста (между плашками
+  // сверху и навигацией снизу). Меряется ResizeObserver'ом через callback-ref
+  // ниже. Из него считается canvasContainerWidth — холст всегда вписан в
+  // доступное место по высоте и ширине, без вертикального скролла. Реагирует
+  // на resize окна и на сворачивание панелей (Блок UX.1) автоматически.
+  const [canvasArea, setCanvasArea] = useState({ width: 0, height: 0 })
+  const canvasAreaObserver = useRef<ResizeObserver | null>(null)
+  const setCanvasAreaRef = useCallback((el: HTMLDivElement | null) => {
+    canvasAreaObserver.current?.disconnect()
+    if (!el) {
+      canvasAreaObserver.current = null
+      return
+    }
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect
+      if (cr) setCanvasArea({ width: cr.width, height: cr.height })
+    })
+    ro.observe(el)
+    canvasAreaObserver.current = ro
+  }, [])
   // Drag-состояние:
   // - mode='palette': drag фото из правой колонки. DragOverlay используется
   //   с дефолтным 120px thumbnail (палитра маленькая, фикс размер уместен).
@@ -350,6 +423,14 @@ function LayoutEditorPageInner({
         leftEdge: number
       }
   >(null)
+  // Блок UX.3 — интерактивный кроп на холсте: какое фото сейчас кадрируется.
+  const [cropEditor, setCropEditor] = useState<
+    | null
+    | {
+        spreadIndex: number
+        label: string
+      }
+  >(null)
   // Р.3 — panel стилизации текста (размер + цвет).
   // Открывается одновременно с TextInlineEditor (handleTextClick).
   // Закрывается вместе с фиксацией текста (handleTextSubmit/Cancel)
@@ -385,6 +466,12 @@ function LayoutEditorPageInner({
   }>({ past: [], future: [] })
   const skipNextHistoryRef = useRef(false)
   const prevSpreadsRef = useRef<SpreadInstance[] | null>(null)
+  // Блок UX.3 — коалесинг истории для непрерывного жеста кропа (pan/zoom/
+  // rotate): пока жест активен, промежуточные изменения НЕ пишут историю;
+  // на конце жеста пишем ОДНУ запись (снимок до жеста). Иначе один drag дал
+  // бы десятки шагов undo.
+  const suspendHistoryRef = useRef(false)
+  const gestureStartSpreadsRef = useRef<SpreadInstance[] | null>(null)
 
   // Фаза Л.4a — read-only режим.
   // canEdit: false если backend сказал can_edit=false (workflow submitted,
@@ -630,7 +717,10 @@ function LayoutEditorPageInner({
     const current = layout.spreads
     const prev = prevSpreadsRef.current
     if (prev && prev !== current) {
-      if (skipNextHistoryRef.current) {
+      if (suspendHistoryRef.current) {
+        // Блок UX.3 — внутри жеста кропа: не пишем промежуточные шаги.
+        // Запись истории сделает onCropGestureEnd (один шаг на жест).
+      } else if (skipNextHistoryRef.current) {
         skipNextHistoryRef.current = false
       } else {
         // Игнорируем no-op изменения (deep equal через JSON.stringify
@@ -742,6 +832,9 @@ function LayoutEditorPageInner({
   // нужны для перемещения курсора в тексте) или если editingText активен.
   useEffect(() => {
     function onArrow(e: KeyboardEvent) {
+      // Блок UX.4 — когда открыт полноэкранный «Вид», стрелки листают ЕГО
+      // (он сам обрабатывает их в capture-фазе), редактор не вмешивается.
+      if (fullscreenOpen) return
       const target = e.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return
@@ -761,7 +854,7 @@ function LayoutEditorPageInner({
     }
     window.addEventListener('keydown', onArrow)
     return () => window.removeEventListener('keydown', onArrow)
-  }, [layout?.spreads.length])
+  }, [layout?.spreads.length, fullscreenOpen])
 
   function handleDragStart(event: DragStartEvent) {
     if (isReadOnly) return  // Л.4a — drag заблокирован в read-only
@@ -1032,6 +1125,7 @@ function LayoutEditorPageInner({
     setEditingTextLabel(null)
     setPhotoContextMenu(null)
     setPhotoTransformPanel(null)  // КЭ.5 — закрываем кадрирование при смене разворота
+    setCropEditor(null)           // Блок UX.3 — закрываем кроп на холсте
     setTextStylePanel(null)       // Р.3 — закрываем стилизацию текста
   }, [currentIdx])
 
@@ -1052,9 +1146,9 @@ function LayoutEditorPageInner({
   function handlePhotoClick(
     label: string,
     _url: string,
-    rightEdge: number,
-    topEdge: number,
-    leftEdge: number,
+    _rightEdge: number,
+    _topEdge: number,
+    _leftEdge: number,
     instanceKey: number,
   ) {
     // РЭ.54.d: переключаем активную страницу разворота если клик пришёл
@@ -1062,24 +1156,59 @@ function LayoutEditorPageInner({
     if (instanceKey !== currentIdx) {
       setCurrentIdx(instanceKey)
     }
-    // Если уже открыта panel для этого же label на этой же странице —
-    // не дёргаем (избегаем случайного двойного клика). Иначе показываем
-    // для нового.
-    if (
-      photoTransformPanel &&
-      photoTransformPanel.label === label &&
-      photoTransformPanel.spreadIndex === instanceKey
-    ) {
-      return
-    }
-    setPhotoTransformPanel({
-      spreadIndex: instanceKey,
-      label,
-      rightEdge,
-      topEdge,
-      leftEdge,
-    })
+    // Блок UX.3 — одинарный клик по фото открывает интерактивный кроп прямо
+    // на холсте (а не панель-ползунки). Панель доступна как «точная
+    // настройка» из тулбара кропа. Закрываем панель, если была открыта.
+    setPhotoTransformPanel(null)
+    setCropEditor({ spreadIndex: instanceKey, label })
   }
+
+  // Блок UX.3 — колбэки интерактивного кропа (для AlbumSpreadCanvas.cropHandlers).
+  const cropHandlers = useMemo(
+    () => ({
+      onChange: handleCropChange,
+      onClose: () => setCropEditor(null),
+      // «Точно» — открыть старую панель-ползунки как запасной точный способ.
+      onOpenPanel: (rightEdge: number, topEdge: number, leftEdge: number) => {
+        if (!cropEditor) return
+        setPhotoTransformPanel({
+          spreadIndex: cropEditor.spreadIndex,
+          label: cropEditor.label,
+          rightEdge,
+          topEdge,
+          leftEdge,
+        })
+      },
+      // Обрамляют один непрерывный жест → один шаг undo (см. suspendHistoryRef).
+      onGestureStart: () => {
+        gestureStartSpreadsRef.current = layout?.spreads ?? null
+        suspendHistoryRef.current = true
+      },
+      onGestureEnd: () => {
+        suspendHistoryRef.current = false
+        const snapshot = gestureStartSpreadsRef.current
+        gestureStartSpreadsRef.current = null
+        // Пишем ОДНУ запись истории — снимок ДО жеста, если что-то изменилось.
+        const cur = layout?.spreads ?? null
+        if (
+          snapshot &&
+          cur &&
+          snapshot !== cur &&
+          JSON.stringify(snapshot) !== JSON.stringify(cur)
+        ) {
+          setHistory((h) => ({
+            past: [...h.past.slice(-49), snapshot],
+            future: [],
+          }))
+        }
+      },
+    }),
+    // handleCropChange/layout читаются через замыкание; зависим от cropEditor
+    // (для onOpenPanel) и layout (для snapshot). eslint-disable: функции
+    // стабильны в рамках рендера.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cropEditor, layout],
+  )
 
   // КЭ.5 — изменение transform из PhotoTransformPanel.
   // Стратегия:
@@ -1098,13 +1227,18 @@ function LayoutEditorPageInner({
   // ПРИМЕЧАНИЕ: action=update_data из КЭ.3 в итоге может пригодиться для
   // realtime collaboration (если/когда добавим), но в одинарном-юзер
   // сценарии save_album_layout проще и dедупликует логику.
-  function handleTransformChange(updates: {
-    scale?: string | null
-    offset?: string | null
-    rotate?: string | null
-  }) {
-    if (!photoTransformPanel) return
-    const { label, spreadIndex } = photoTransformPanel
+  // Блок UX.3 — параметризованное ядро (label/spreadIndex явно), чтобы его
+  // могли звать и панель-ползунки (через photoTransformPanel), и
+  // интерактивный кроп на холсте (через cropEditor).
+  function applyTransformUpdate(
+    spreadIndex: number,
+    label: string,
+    updates: {
+      scale?: string | null
+      offset?: string | null
+      rotate?: string | null
+    },
+  ) {
     setLayout((prev) => {
       if (!prev) return prev
       const newSpreads = prev.spreads.map((s, idx) => {
@@ -1130,6 +1264,26 @@ function LayoutEditorPageInner({
       })
       return { ...prev, spreads: newSpreads }
     })
+  }
+
+  // КЭ.5 — изменение transform из PhotoTransformPanel (ползунки).
+  function handleTransformChange(updates: {
+    scale?: string | null
+    offset?: string | null
+    rotate?: string | null
+  }) {
+    if (!photoTransformPanel) return
+    applyTransformUpdate(photoTransformPanel.spreadIndex, photoTransformPanel.label, updates)
+  }
+
+  // Блок UX.3 — изменение transform из интерактивного кропа на холсте.
+  function handleCropChange(updates: {
+    scale?: string | null
+    offset?: string | null
+    rotate?: string | null
+  }) {
+    if (!cropEditor) return
+    applyTransformUpdate(cropEditor.spreadIndex, cropEditor.label, updates)
   }
 
   function handleTransformPanelClose() {
@@ -1668,8 +1822,27 @@ function LayoutEditorPageInner({
   // страницы (потому что мастер уже двухстраничный, у него width_mm
   // = ширина всего разворота). Для обычного разворота = ширина двух
   // страниц рядом (basePage * 2).
-  const availableWidth = Math.max(400, viewport.width * 0.7 - 80)
-  const availableHeight = Math.max(400, viewport.height * 0.7)
+  // Блок UX.2 — размер холста.
+  // Приоритет: фактически измеренная рабочая зона (canvasArea) даёт точное
+  // вписывание без скролла и сама реагирует на сворачивание панелей (Блок
+  // UX.1) и resize. Фоллбэк (до первого замера / SSR) — эвристика от viewport
+  // с поправкой на свёрнутые панели, чтобы не было «прыжка» при загрузке.
+  // -8px — небольшой зазор под тени/обводку активной страницы.
+  const widthFactor = paletteCollapsed ? 0.96 : 0.7
+  const heightFactor = stripCollapsed ? 0.82 : 0.7
+  // Блок UX.1 (плавность) — развёрнутая ширина правой палитры (как было в
+  // w-[30%] min 300 max 440). Анимируем ширину внешней обёртки 0↔это,
+  // внутреннюю палитру держим фиксированной ширины (не «плющим» при
+  // сворачивании). Канвас сам растёт через ResizeObserver (Блок UX.2).
+  const paletteExpandedPx = Math.round(
+    Math.min(440, Math.max(300, viewport.width * 0.3)),
+  )
+  const fallbackWidth = Math.max(400, viewport.width * widthFactor - 80)
+  const fallbackHeight = Math.max(400, viewport.height * heightFactor)
+  const availableWidth =
+    canvasArea.width > 0 ? Math.max(280, canvasArea.width - 8) : fallbackWidth
+  const availableHeight =
+    canvasArea.height > 0 ? Math.max(280, canvasArea.height - 8) : fallbackHeight
   const basePageTemplate = leftTemplate ?? rightTemplate ?? currentTemplate ?? null
   const isPairSpread = currentPair?.isSpread === true
   const aspectRatio = basePageTemplate
@@ -1736,6 +1909,16 @@ function LayoutEditorPageInner({
           )}
         </div>
         <div className="flex items-center gap-3">
+          {/* Блок UX.4 — полноэкранный просмотр макета. Доступен всегда
+              (и в read-only) — это и есть «оценить результат». */}
+          <button
+            type="button"
+            onClick={() => setFullscreenOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted text-foreground transition-colors"
+            title="Полноэкранный просмотр готового макета"
+          >
+            <Eye size={16} /> Вид
+          </button>
           {/* Л.3 — кнопки Undo/Redo. Скрыты в read-only. */}
           {!isReadOnly && (
             <div className="flex items-center gap-1">
@@ -1785,7 +1968,7 @@ function LayoutEditorPageInner({
       >
       <div className="flex-1 flex overflow-hidden">
         {/* ─── Левая колонка: canvas + навигация ─── */}
-        <main className="flex-1 flex flex-col items-center justify-center p-6 overflow-auto">
+        <main className="flex-1 flex flex-col p-6 overflow-hidden">
           {/* РЭ.35.Е.4 + РЭ.36.UI: компактные pill-индикаторы под навигацией
               разворотов — «Мягкий переплёт» (для soft-альбомов) и
               «N предупреждений» (если engine при сборке оставил warnings).
@@ -1822,6 +2005,14 @@ function LayoutEditorPageInner({
             </div>
           )}
 
+          {/* Блок UX.2 — измеряемая рабочая зона. Холст вписывается в
+              место, оставшееся после плашек (сверху) и навигации (снизу):
+              flex-1 + min-h-0, без вертикального скролла. Размер зоны меряет
+              ResizeObserver (setCanvasAreaRef) → из него canvasContainerWidth. */}
+          <div
+            ref={setCanvasAreaRef}
+            className="flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden"
+          >
           {currentPair && (leftTemplate || rightTemplate) ? (
             <>
               {/* РЭ.35.Б: рендер разворота.
@@ -1877,6 +2068,12 @@ function LayoutEditorPageInner({
                           textStyleOverrides={textStyleOverrides}
                           backgroundUrl={currentSpreadBgUrl}
                           pageSide="spread"
+                          croppingLabel={
+                            leftPage && cropEditor?.spreadIndex === leftPage.spread_index
+                              ? cropEditor.label
+                              : null
+                          }
+                          cropHandlers={cropHandlers}
                         />
                       </div>
                     ) : (
@@ -1916,6 +2113,12 @@ function LayoutEditorPageInner({
                           textStyleOverrides={textStyleOverrides}
                           backgroundUrl={currentSpreadBgUrl}
                           pageSide="left"
+                          croppingLabel={
+                            leftPage && cropEditor?.spreadIndex === leftPage.spread_index
+                              ? cropEditor.label
+                              : null
+                          }
+                          cropHandlers={cropHandlers}
                             />
                           </div>
                         ) : showLeftEndpaper ? (
@@ -1989,6 +2192,12 @@ function LayoutEditorPageInner({
                           textStyleOverrides={textStyleOverrides}
                           backgroundUrl={currentSpreadBgUrl}
                           pageSide="right"
+                          croppingLabel={
+                            rightPage && cropEditor?.spreadIndex === rightPage.spread_index
+                              ? cropEditor.label
+                              : null
+                          }
+                          cropHandlers={cropHandlers}
                             />
                           </div>
                         ) : showRightEndpaper ? (
@@ -2030,9 +2239,16 @@ function LayoutEditorPageInner({
                   </div>
                 )
               })()}
+            </>
+          ) : (
+            <p className="text-muted-foreground">Шаблон не найден для текущего разворота</p>
+          )}
+          </div>
 
-              {/* Навигация — теперь по разворотам, а не по страницам */}
-              <div className="mt-4 flex items-center gap-3 flex-wrap">
+          {/* Навигация — теперь по разворотам (Блок UX.2: вынесена из
+              измеряемой зоны холста, занимает свою высоту под ним). */}
+          {currentPair && (leftTemplate || rightTemplate) && (
+            <div className="mt-4 flex items-center gap-3 flex-wrap self-center justify-center">
                 <button
                   type="button"
                   onClick={() => {
@@ -2111,52 +2327,108 @@ function LayoutEditorPageInner({
                     <ImageIcon size={16} /> Фон разворота{currentBgOverride ? ' •' : ''}
                   </button>
                 )}
-              </div>
-            </>
-          ) : (
-            <p className="text-muted-foreground">Шаблон не найден для текущего разворота</p>
+            </div>
           )}
         </main>
 
-        {/* ─── Правая колонка: палитра ─── */}
-        {/* Л.4a — палитра видна только в edit-режиме.
-            В read-only / mobile отображается компактный баннер. */}
-        {!isReadOnly ? (
-          <PhotoPalette spreads={spreads} photos={photos} />
-        ) : (
-          <aside className="hidden md:flex w-80 bg-muted border-l border-border flex-col items-center justify-center p-6 text-center">
-            <div className="mb-2 flex justify-center text-muted-foreground"><Eye size={40} /></div>
-            <p className="text-sm font-medium text-foreground mb-1">Только просмотр</p>
-            <p className="text-xs text-muted-foreground">
-              {readOnlyReason === 'submitted'
-                ? 'Альбом передан в работу — изменения заблокированы. Обратитесь в OkeyBook если нужны правки.'
-                : readOnlyReason === 'view_as'
-                  ? 'Вы смотрите альбом партнёра. Сохранение от его имени запрещено.'
-                  : readOnlyReason === 'mobile'
-                    ? 'Откройте на компьютере для редактирования макета.'
-                    : 'Редактирование заблокировано'}
-            </p>
-          </aside>
-        )}
+        {/* ─── Правая колонка: рейка сворачивания + палитра (Блок UX.1) ─── */}
+        {/* Рейка-шеврон сворачивает правую панель, освобождая место под холст.
+            Сворачивание ПЛАВНОЕ: внешняя обёртка анимирует ширину 0↔развёрнутая
+            (overflow-hidden), внутренняя палитра фиксированной ширины — её
+            просто «задвигает», без сплющивания контента. Канвас растёт следом
+            через ResizeObserver (Блок UX.2). На мобильном (md:) обе скрыты. */}
+        <button
+          type="button"
+          onClick={togglePaletteCollapsed}
+          className="hidden md:flex w-6 shrink-0 items-center justify-center bg-card border-l border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          title={paletteCollapsed ? 'Развернуть панель фото' : 'Свернуть панель фото'}
+          aria-label={paletteCollapsed ? 'Развернуть панель фото' : 'Свернуть панель фото'}
+        >
+          {paletteCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+        </button>
+        {(() => {
+          const innerWidth = isReadOnly ? 320 : paletteExpandedPx
+          return (
+            <div
+              className="hidden md:block shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
+              style={{ width: paletteCollapsed ? 0 : innerWidth }}
+            >
+              {/* Фиксированная внутренняя ширина — палитра не «плющится». */}
+              <div style={{ width: innerWidth, height: '100%' }}>
+                {/* Л.4a — палитра видна только в edit-режиме.
+                    В read-only отображается компактный баннер. */}
+                {!isReadOnly ? (
+                  <PhotoPalette spreads={spreads} photos={photos} />
+                ) : (
+                  <aside className="flex h-full w-full bg-muted border-l border-border flex-col items-center justify-center p-6 text-center">
+                    <div className="mb-2 flex justify-center text-muted-foreground"><Eye size={40} /></div>
+                    <p className="text-sm font-medium text-foreground mb-1">Только просмотр</p>
+                    <p className="text-xs text-muted-foreground">
+                      {readOnlyReason === 'submitted'
+                        ? 'Альбом передан в работу — изменения заблокированы. Обратитесь в OkeyBook если нужны правки.'
+                        : readOnlyReason === 'view_as'
+                          ? 'Вы смотрите альбом партнёра. Сохранение от его имени запрещено.'
+                          : readOnlyReason === 'mobile'
+                            ? 'Откройте на компьютере для редактирования макета.'
+                            : 'Редактирование заблокировано'}
+                    </p>
+                  </aside>
+                )}
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       {/* М.1 — strip миниатюр с drag-to-reorder.
           В read-only режиме доступна только клик-навигация.
-          М.2 — кнопки удаления (✕ при hover) и добавления (➕ в конце). */}
+          М.2 — кнопки удаления (✕ при hover) и добавления (➕ в конце).
+          Блок UX.1 — полосу можно свернуть, освобождая высоту под холст.
+          Сворачивание ПЛАВНОЕ через grid-template-rows 1fr↔0fr (анимирует
+          авто-высоту без замеров). Когда свёрнута — тонкая полоска-кнопка. */}
       {layout && (
-        <SpreadOrderStrip
-          spreads={spreads}
-          templates={templates}
-          currentIdx={currentIdx}
-          onSelect={setCurrentIdx}
-          onReorder={handleReorderSpreads}
-          onDelete={isReadOnly ? undefined : handleDeleteSpread}
-          onAddRequest={isReadOnly ? undefined : handleAddRequest}
-          readOnly={isReadOnly}
-          softShift={isSoftAlbum}
-          backgroundUrl={backgroundUrl}
-          pageBackgroundUrl={(idx) => bgUrlByPageIdx.get(idx) ?? null}
-        />
+        <>
+          {stripCollapsed && (
+            <button
+              type="button"
+              onClick={toggleStripCollapsed}
+              className="w-full flex items-center justify-center gap-2 bg-card border-t border-border py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title="Развернуть полосу разворотов"
+            >
+              <ChevronUp size={14} /> Развороты ({visualSpreads.length})
+            </button>
+          )}
+          <div
+            className="grid transition-[grid-template-rows] duration-300 ease-in-out"
+            style={{ gridTemplateRows: stripCollapsed ? '0fr' : '1fr' }}
+          >
+            <div className="overflow-hidden min-h-0">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={toggleStripCollapsed}
+                  className="absolute top-2.5 right-3 z-10 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  title="Свернуть полосу разворотов"
+                >
+                  Свернуть <ChevronDown size={14} />
+                </button>
+                <SpreadOrderStrip
+                  spreads={spreads}
+                  templates={templates}
+                  currentIdx={currentIdx}
+                  onSelect={setCurrentIdx}
+                  onReorder={handleReorderSpreads}
+                  onDelete={isReadOnly ? undefined : handleDeleteSpread}
+                  onAddRequest={isReadOnly ? undefined : handleAddRequest}
+                  readOnly={isReadOnly}
+                  softShift={isSoftAlbum}
+                  backgroundUrl={backgroundUrl}
+                  pageBackgroundUrl={(idx) => bgUrlByPageIdx.get(idx) ?? null}
+                />
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Этап 6 — модалка выбора ручного фона текущего разворота */}
@@ -2326,6 +2598,20 @@ function LayoutEditorPageInner({
           onPreview={(next) => setTextStyleOverrides(next)}
           onSave={handleSaveTextStyles}
           onClose={() => setTextStylesModalOpen(false)}
+        />
+      )}
+
+      {/* Блок UX.4 — полноэкранный просмотр готового макета («Вид»). */}
+      {fullscreenOpen && layout && (
+        <LayoutPreviewFullscreen
+          visualSpreads={visualSpreads}
+          spreads={spreads}
+          templatesById={templatesById}
+          isSoftAlbum={isSoftAlbum}
+          bgUrlByPairIdx={bgPaths.map(toBgPublicUrl)}
+          textStyleOverrides={textStyleOverrides}
+          initialPairIdx={currentPairIdx >= 0 ? currentPairIdx : 0}
+          onClose={() => setFullscreenOpen(false)}
         />
       )}
 

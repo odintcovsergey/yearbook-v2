@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type FocusEvent as ReactFocusEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, type KeyboardEvent as ReactKeyboardEvent, type FocusEvent as ReactFocusEvent } from 'react'
 import { Stage, Layer, Rect, Image as KonvaImage, Text, Group } from 'react-konva'
 import { useDroppable, useDraggable } from '@dnd-kit/core'
+import { RotateCw, SlidersHorizontal, RefreshCw, Check } from 'lucide-react'
 import type {
   SpreadInstance,
   SpreadTemplate,
@@ -19,6 +20,15 @@ import {
   parseRotate,
   computeAutoZoomForRotation,
   hasCustomTransform,
+  serializeScale,
+  serializeOffset,
+  serializeRotate,
+  SCALE_MIN,
+  SCALE_MAX,
+  OFFSET_MIN,
+  OFFSET_MAX,
+  ROTATE_MIN,
+  ROTATE_MAX,
 } from '@/lib/photo-transform'
 import {
   parseBalanceOverrides,
@@ -113,6 +123,12 @@ type Props = {
   // - 'right' — картинка шириной 2× template.width_mm, x=-template.width_mm
   // Default 'spread' для обратной совместимости (можно опускать).
   pageSide?: 'spread' | 'left' | 'right'
+  // Блок UX.3 — интерактивный кроп на холсте. Если задан label, над этим
+  // фото показывается PhotoCropOverlay (полный исходник + жесты), Konva-копия
+  // и DropZone для него скрываются, остальной канвас затемняется. Колбэки в
+  // cropHandlers пишут тот же формат трансформа. Только в mode==='edit'.
+  croppingLabel?: string | null
+  cropHandlers?: CropHandlers
 }
 
 // ─── Хелпер: загрузка HTMLImageElement из URL ────────────────────────────
@@ -950,6 +966,331 @@ function DropZone({
   )
 }
 
+// ─── Интерактивный кроп на холсте (Блок UX.3) ──────────────────────────────
+// Набор колбэков, которыми оверлей кропа общается с редактором (page.tsx).
+export type CropHandlers = {
+  // Записать новый трансформ (те же сериализованные ключи, что у панели).
+  onChange: (updates: {
+    scale?: string | null
+    offset?: string | null
+    rotate?: string | null
+  }) => void
+  // Завершить кроп (кнопка «Готово», клик по затемнению, Esc).
+  onClose: () => void
+  // Открыть старую панель-ползунки как точную настройку (запасной способ).
+  onOpenPanel: (rightEdge: number, topEdge: number, leftEdge: number) => void
+  // Обрамляют один непрерывный жест — чтобы он стал ОДНИМ шагом undo.
+  onGestureStart: () => void
+  onGestureEnd: () => void
+}
+
+// PhotoCropOverlay — DOM-оверлей над фото-плейсхолдером. Показывает полный
+// исходник: яркая часть внутри рамки = текущий кроп (1:1 с Konva/PDF),
+// тусклая за рамкой = что обрезается. Жесты: тащить = pan (offset),
+// угловые маркеры/колесо = zoom (scale), верхняя ручка = поворот (rotate).
+// Формат трансформа НЕ меняется — пишем те же __scale__/__offset__/__rotate__
+// через handlers.onChange, поэтому готовые макеты и серверный PDF-рендер
+// не ломаются.
+function PhotoCropOverlay({
+  placeholder,
+  scale,
+  url,
+  transform,
+  handlers,
+}: {
+  placeholder: PhotoPlaceholder
+  scale: number
+  url: string
+  transform: { scale: number; offsetX: number; offsetY: number; rotateDeg: number }
+  handlers: CropHandlers
+}) {
+  const img = useImage(url)
+  const containerRef = useRef<HTMLDivElement>(null)
+  // Живые снимки — чтобы window-listener'ы жестов не залипали на устаревшем
+  // замыкании при ререндерах.
+  const tRef = useRef(transform)
+  tRef.current = transform
+  const handlersRef = useRef(handlers)
+  handlersRef.current = handlers
+
+  const frameW = placeholder.width_mm * scale
+  const frameH = placeholder.height_mm * scale
+  const frameLeft = placeholder.x_mm * scale
+  const frameTop = placeholder.y_mm * scale
+  const targetRatio = placeholder.width_mm / placeholder.height_mm
+
+  const clamp = (v: number, lo: number, hi: number) =>
+    Math.min(Math.max(v, lo), hi)
+
+  // Отправить новый полный трансформ (все три поля; default → null удаляет
+  // ключ, как делает панель).
+  const emit = (nx: { s: number; ox: number; oy: number; rot: number }) => {
+    handlersRef.current.onChange({
+      scale: Math.abs(nx.s - 1) < 1e-4 ? null : serializeScale(nx.s),
+      offset:
+        Math.abs(nx.ox) < 1e-4 && Math.abs(nx.oy) < 1e-4
+          ? null
+          : serializeOffset(nx.ox, nx.oy),
+      rotate: Math.abs(nx.rot) < 1e-4 ? null : serializeRotate(nx.rot),
+    })
+  }
+
+  const frameCenterClient = () => {
+    const r = containerRef.current?.getBoundingClientRect()
+    if (!r) return { x: 0, y: 0 }
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  }
+
+  // Универсальный запуск жеста с window-listener'ами и коалесингом undo.
+  const runGesture = (
+    onMove: (ev: PointerEvent) => void,
+  ) => {
+    handlersRef.current.onGestureStart()
+    const move = (ev: PointerEvent) => onMove(ev)
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      handlersRef.current.onGestureEnd()
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  // PAN — перетаскивание исходника. Экранную дельту разворачиваем в локальные
+  // оси изображения (−θ), делим на эффективный масштаб → дельта offset.
+  const startPan = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const nW = img?.naturalWidth ?? 0
+    const nH = img?.naturalHeight ?? 0
+    if (nW <= 0 || nH <= 0) return
+    const start = { ...tRef.current }
+    const sx = e.clientX
+    const sy = e.clientY
+    const cp = computeCrop(nW, nH, targetRatio, start.scale, start.offsetX, start.offsetY)
+    const dispScale = cp.cropW > 0 ? frameW / cp.cropW : 1
+    const autoZoom = computeAutoZoomForRotation(start.rotateDeg, targetRatio)
+    const remW = nW - cp.cropW
+    const remH = nH - cp.cropH
+    const theta = (start.rotateDeg * Math.PI) / 180
+    const cos = Math.cos(theta)
+    const sin = Math.sin(theta)
+    runGesture((ev) => {
+      const dx = ev.clientX - sx
+      const dy = ev.clientY - sy
+      const localDX = dx * cos + dy * sin
+      const localDY = -dx * sin + dy * cos
+      const dox = remW > 0 ? (-2 * localDX) / (dispScale * autoZoom * remW) : 0
+      const doy = remH > 0 ? (-2 * localDY) / (dispScale * autoZoom * remH) : 0
+      emit({
+        s: start.scale,
+        ox: clamp(start.offsetX + dox, OFFSET_MIN, OFFSET_MAX),
+        oy: clamp(start.offsetY + doy, OFFSET_MIN, OFFSET_MAX),
+        rot: start.rotateDeg,
+      })
+    })
+  }
+
+  // ZOOM — угловой маркер. Масштаб ∝ расстоянию указателя от центра рамки.
+  const startZoom = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const start = { ...tRef.current }
+    const c = frameCenterClient()
+    const startDist = Math.hypot(e.clientX - c.x, e.clientY - c.y) || 1
+    runGesture((ev) => {
+      const d = Math.hypot(ev.clientX - c.x, ev.clientY - c.y)
+      const s = clamp((start.scale * d) / startDist, SCALE_MIN, SCALE_MAX)
+      emit({ s, ox: start.offsetX, oy: start.offsetY, rot: start.rotateDeg })
+    })
+  }
+
+  // ROTATE — верхняя ручка. Дельта угла указателя вокруг центра рамки.
+  const startRotate = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const start = { ...tRef.current }
+    const c = frameCenterClient()
+    const startAngle = Math.atan2(e.clientY - c.y, e.clientX - c.x)
+    runGesture((ev) => {
+      const a = Math.atan2(ev.clientY - c.y, ev.clientX - c.x)
+      const deltaDeg = ((a - startAngle) * 180) / Math.PI
+      const rot = clamp(start.rotateDeg + deltaDeg, ROTATE_MIN, ROTATE_MAX)
+      emit({ s: start.scale, ox: start.offsetX, oy: start.offsetY, rot })
+    })
+  }
+
+  // Колесо = zoom вокруг центра (один шаг = одно изменение).
+  const onWheel = (e: ReactWheelEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const cur = tRef.current
+    const factor = e.deltaY < 0 ? 1.06 : 0.94
+    const s = clamp(cur.scale * factor, SCALE_MIN, SCALE_MAX)
+    emit({ s, ox: cur.offsetX, oy: cur.offsetY, rot: cur.rotateDeg })
+  }
+
+  const reset = () => {
+    handlersRef.current.onGestureStart()
+    emit({ s: 1, ox: 0, oy: 0, rot: 0 })
+    handlersRef.current.onGestureEnd()
+  }
+  const openPanel = () => {
+    const r = containerRef.current?.getBoundingClientRect()
+    if (r) handlersRef.current.onOpenPanel(r.right, r.top, r.left)
+  }
+
+  const nW = img?.naturalWidth ?? 0
+  const nH = img?.naturalHeight ?? 0
+  const ready = nW > 0 && nH > 0
+  const cp = ready
+    ? computeCrop(nW, nH, targetRatio, transform.scale, transform.offsetX, transform.offsetY)
+    : null
+  const dispScale = cp && cp.cropW > 0 ? frameW / cp.cropW : 1
+  const autoZoom = computeAutoZoomForRotation(transform.rotateDeg, targetRatio)
+  const groupStyle: CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    transform: `rotate(${transform.rotateDeg}deg) scale(${autoZoom})`,
+    transformOrigin: 'center center',
+    pointerEvents: 'none',
+  }
+  const imgStyle: CSSProperties = {
+    position: 'absolute',
+    left: `${cp ? -cp.cropX * dispScale : 0}px`,
+    top: `${cp ? -cp.cropY * dispScale : 0}px`,
+    width: `${nW * dispScale}px`,
+    height: `${nH * dispScale}px`,
+    maxWidth: 'none',
+    pointerEvents: 'none',
+  }
+
+  // Скругление окна кропа: круглый портрет (учителя) → эллипс, иначе
+  // corner_radius_mm рамки (обычно 0). Чтобы превью совпадало с Konva/PDF.
+  const clipRadius = placeholder.is_circle
+    ? '50%'
+    : `${(placeholder.corner_radius_mm ?? 0) * scale}px`
+
+  const corners: { key: string; cur: string; pos: CSSProperties }[] = [
+    { key: 'nw', cur: 'nwse-resize', pos: { left: -7, top: -7 } },
+    { key: 'ne', cur: 'nesw-resize', pos: { right: -7, top: -7 } },
+    { key: 'sw', cur: 'nesw-resize', pos: { left: -7, bottom: -7 } },
+    { key: 'se', cur: 'nwse-resize', pos: { right: -7, bottom: -7 } },
+  ]
+
+  return (
+    <div
+      ref={containerRef}
+      // pointer-events-auto ОБЯЗАТЕЛЕН: родительский DOM-overlay —
+      // pointer-events-none, без этого весь кроп «мёртвый» (не тащится,
+      // кнопки не жмутся).
+      className="absolute pointer-events-auto"
+      style={{
+        left: `${frameLeft}px`,
+        top: `${frameTop}px`,
+        width: `${frameW}px`,
+        height: `${frameH}px`,
+        touchAction: 'none',
+      }}
+    >
+      {/* Тусклый полный исходник — контекст «что обрезается» (вылезает за рамку) */}
+      <div className="absolute inset-0" style={{ overflow: 'visible' }}>
+        <div style={groupStyle}>
+          {ready && (
+            <img src={url} alt="" draggable={false} style={{ ...imgStyle, opacity: 0.35 }} />
+          )}
+        </div>
+      </div>
+      {/* Яркий кроп внутри рамки — WYSIWYG с Konva/PDF */}
+      <div
+        className="absolute inset-0 overflow-hidden"
+        style={{ borderRadius: clipRadius }}
+      >
+        <div style={groupStyle}>
+          {ready && <img src={url} alt="" draggable={false} style={imgStyle} />}
+        </div>
+      </div>
+
+      {/* Поверхность перетаскивания (pan) + колесо (zoom) */}
+      <div
+        className="absolute inset-0 cursor-move"
+        style={{ touchAction: 'none' }}
+        onPointerDown={startPan}
+        onWheel={onWheel}
+      />
+
+      {/* Сетка третей */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute left-1/3 top-0 bottom-0 w-px bg-white/40" />
+        <div className="absolute left-2/3 top-0 bottom-0 w-px bg-white/40" />
+        <div className="absolute top-1/3 left-0 right-0 h-px bg-white/40" />
+        <div className="absolute top-2/3 left-0 right-0 h-px bg-white/40" />
+      </div>
+
+      {/* Рамка-окно */}
+      <div
+        className="absolute inset-0 pointer-events-none ring-2 ring-white"
+        style={{ borderRadius: clipRadius }}
+      />
+
+      {/* Угловые маркеры — zoom */}
+      {corners.map((c) => (
+        <div
+          key={c.key}
+          onPointerDown={startZoom}
+          className="absolute w-3.5 h-3.5 bg-white border border-neutral-400 rounded-sm shadow"
+          style={{ cursor: c.cur, ...c.pos }}
+        />
+      ))}
+
+      {/* Стержень + ручка поворота */}
+      <div className="absolute left-1/2 -top-4 w-px h-4 -translate-x-1/2 bg-white/70 pointer-events-none" />
+      <div
+        onPointerDown={startRotate}
+        className="absolute left-1/2 -top-9 -translate-x-1/2 w-6 h-6 bg-white border border-neutral-400 rounded-full shadow cursor-grab flex items-center justify-center"
+        title="Повернуть"
+      >
+        <RotateCw size={13} className="text-neutral-600" />
+      </div>
+
+      {/* Тулбар: точная настройка / сброс / готово */}
+      <div
+        className="absolute left-1/2 -bottom-12 -translate-x-1/2 flex items-center gap-1 bg-neutral-900/90 rounded-lg px-1.5 py-1 shadow-lg whitespace-nowrap"
+        onPointerDown={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={openPanel}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs text-white/90 hover:bg-white/15 rounded"
+          title="Точная настройка ползунками"
+        >
+          <SlidersHorizontal size={13} /> Точно
+        </button>
+        <button
+          type="button"
+          onClick={reset}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs text-white/90 hover:bg-white/15 rounded"
+          title="Сбросить кадрирование"
+        >
+          <RefreshCw size={13} /> Сброс
+        </button>
+        <button
+          type="button"
+          onClick={() => handlersRef.current.onClose()}
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-neutral-900 bg-white hover:bg-white/90 rounded"
+          title="Завершить кадрирование"
+        >
+          <Check size={13} /> Готово
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Главный компонент ────────────────────────────────────────────────────
 export default function AlbumSpreadCanvas({
   instance,
@@ -967,6 +1308,8 @@ export default function AlbumSpreadCanvas({
   textStyleOverrides,
   backgroundUrl,
   pageSide = 'spread',
+  croppingLabel,
+  cropHandlers,
 }: Props) {
   const scale = containerWidth / template.width_mm
   const stageWidth = template.width_mm * scale
@@ -1039,8 +1382,10 @@ export default function AlbumSpreadCanvas({
             }
             if (p.type === 'photo') {
               // Скрываем Konva-копию фото на время drag — preview
-              // отрисовывается через DOM-overlay в DropZone (CSS transform)
+              // отрисовывается через DOM-overlay в DropZone (CSS transform).
+              // Блок UX.3 — на время кропа фото рисует PhotoCropOverlay.
               if (draggingLabel === p.label) return null
+              if (croppingLabel === p.label) return null
               // КЭ.2: служебные ключи __scale__<label> / __offset__<label>
               // из instance.data. Default (отсутствие ключей) →
               // scale=1, offset=(0,0) → текущее cover-crop поведение.
@@ -1112,6 +1457,9 @@ export default function AlbumSpreadCanvas({
         <div className="absolute inset-0 pointer-events-none">
           {effectiveTemplate.placeholders.map((p) => {
             if (p.type === 'photo') {
+              // Блок UX.3 — фото в режиме кропа обслуживает PhotoCropOverlay
+              // (рендерится ниже, поверх затемнения), DropZone скрываем.
+              if (croppingLabel === p.label) return null
               // КЭ.6 — детект non-default transform для бейджа.
               // parseScale/parseOffset возвращают (1, 0, 0) если ключи
               // отсутствуют → hasCustomTransform == false.
@@ -1192,6 +1540,35 @@ export default function AlbumSpreadCanvas({
             }
             return null
           })}
+
+          {/* Блок UX.3 — затемнение + интерактивный кроп. Затемнение поверх
+              всех DropZone'ов (блокирует прочие клики на время кропа), клик
+              по нему = «Готово». PhotoCropOverlay — поверх затемнения. */}
+          {croppingLabel && cropHandlers && (() => {
+            const cp = effectiveTemplate.placeholders.find(
+              (pl) => pl.label === croppingLabel && pl.type === 'photo',
+            ) as PhotoPlaceholder | undefined
+            const cu = cp ? (instance.data[cp.label] ?? null) : null
+            if (!cp || !cu) return null
+            const sc = parseScale(instance.data[`__scale__${cp.label}`])
+            const [ox, oy] = parseOffset(instance.data[`__offset__${cp.label}`])
+            const rot = parseRotate(instance.data[`__rotate__${cp.label}`])
+            return (
+              <>
+                <div
+                  className="absolute inset-0 bg-black/55 pointer-events-auto"
+                  onClick={() => cropHandlers.onClose()}
+                />
+                <PhotoCropOverlay
+                  placeholder={cp}
+                  scale={scale}
+                  url={cu}
+                  transform={{ scale: sc, offsetX: ox, offsetY: oy, rotateDeg: rot }}
+                  handlers={cropHandlers}
+                />
+              </>
+            )
+          })()}
         </div>
       )}
     </div>
