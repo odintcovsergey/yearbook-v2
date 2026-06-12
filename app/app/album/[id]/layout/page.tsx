@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, Suspense } from 'react'
+import { useEffect, useState, useRef, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
@@ -56,6 +56,10 @@ import {
   Camera,
   Pencil,
   Save,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 
 // Konva-компонент: SSR-incompatible (использует window.Image).
@@ -303,6 +307,52 @@ function LayoutEditorPageInner({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [viewport, setViewport] = useState({ width: 1440, height: 900 })
+  // Блок UX.1 — сворачивание панелей редактора (правая палитра + нижняя
+  // полоса миниатюр) чтобы высвободить место под вёрстку на ноутбуках.
+  // Состояние запоминается в localStorage. Чисто визуально — на данные
+  // макета не влияет.
+  const [paletteCollapsed, setPaletteCollapsed] = useState(false)
+  const [stripCollapsed, setStripCollapsed] = useState(false)
+  useEffect(() => {
+    try {
+      setPaletteCollapsed(
+        window.localStorage.getItem('yearbook_editor_palette_collapsed') === '1',
+      )
+      setStripCollapsed(
+        window.localStorage.getItem('yearbook_editor_strip_collapsed') === '1',
+      )
+    } catch {
+      // ignore (приватный режим и т.п.)
+    }
+  }, [])
+  const togglePaletteCollapsed = useCallback(() => {
+    setPaletteCollapsed((prev) => {
+      const next = !prev
+      try {
+        window.localStorage.setItem(
+          'yearbook_editor_palette_collapsed',
+          next ? '1' : '0',
+        )
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }, [])
+  const toggleStripCollapsed = useCallback(() => {
+    setStripCollapsed((prev) => {
+      const next = !prev
+      try {
+        window.localStorage.setItem(
+          'yearbook_editor_strip_collapsed',
+          next ? '1' : '0',
+        )
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }, [])
   // Drag-состояние:
   // - mode='palette': drag фото из правой колонки. DragOverlay используется
   //   с дефолтным 120px thumbnail (палитра маленькая, фикс размер уместен).
@@ -1668,8 +1718,12 @@ function LayoutEditorPageInner({
   // страницы (потому что мастер уже двухстраничный, у него width_mm
   // = ширина всего разворота). Для обычного разворота = ширина двух
   // страниц рядом (basePage * 2).
-  const availableWidth = Math.max(400, viewport.width * 0.7 - 80)
-  const availableHeight = Math.max(400, viewport.height * 0.7)
+  // Блок UX.1 — когда правая палитра свёрнута, холст забирает её ~30% ширины.
+  // Когда нижняя полоса миниатюр свёрнута — высвобождается ~12% высоты.
+  const widthFactor = paletteCollapsed ? 0.96 : 0.7
+  const heightFactor = stripCollapsed ? 0.82 : 0.7
+  const availableWidth = Math.max(400, viewport.width * widthFactor - 80)
+  const availableHeight = Math.max(400, viewport.height * heightFactor)
   const basePageTemplate = leftTemplate ?? rightTemplate ?? currentTemplate ?? null
   const isPairSpread = currentPair?.isSpread === true
   const aspectRatio = basePageTemplate
@@ -2118,46 +2172,82 @@ function LayoutEditorPageInner({
           )}
         </main>
 
-        {/* ─── Правая колонка: палитра ─── */}
+        {/* ─── Правая колонка: рейка сворачивания + палитра (Блок UX.1) ─── */}
+        {/* Рейка-шеврон на границе холста и панели сворачивает правую панель,
+            освобождая ~30% ширины под холст. Рейка и панель — прямые соседи
+            в flex-строке (не оборачиваем, чтобы внутренний w-[30%] палитры
+            считался от полной ширины строки). На мобильном (md:) обе скрыты —
+            там панель и так не показывается. */}
+        <button
+          type="button"
+          onClick={togglePaletteCollapsed}
+          className="hidden md:flex w-6 shrink-0 items-center justify-center bg-card border-l border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          title={paletteCollapsed ? 'Развернуть панель фото' : 'Свернуть панель фото'}
+          aria-label={paletteCollapsed ? 'Развернуть панель фото' : 'Свернуть панель фото'}
+        >
+          {paletteCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+        </button>
         {/* Л.4a — палитра видна только в edit-режиме.
             В read-only / mobile отображается компактный баннер. */}
-        {!isReadOnly ? (
-          <PhotoPalette spreads={spreads} photos={photos} />
-        ) : (
-          <aside className="hidden md:flex w-80 bg-muted border-l border-border flex-col items-center justify-center p-6 text-center">
-            <div className="mb-2 flex justify-center text-muted-foreground"><Eye size={40} /></div>
-            <p className="text-sm font-medium text-foreground mb-1">Только просмотр</p>
-            <p className="text-xs text-muted-foreground">
-              {readOnlyReason === 'submitted'
-                ? 'Альбом передан в работу — изменения заблокированы. Обратитесь в OkeyBook если нужны правки.'
-                : readOnlyReason === 'view_as'
-                  ? 'Вы смотрите альбом партнёра. Сохранение от его имени запрещено.'
-                  : readOnlyReason === 'mobile'
-                    ? 'Откройте на компьютере для редактирования макета.'
-                    : 'Редактирование заблокировано'}
-            </p>
-          </aside>
-        )}
+        {!paletteCollapsed &&
+          (!isReadOnly ? (
+            <PhotoPalette spreads={spreads} photos={photos} />
+          ) : (
+            <aside className="hidden md:flex w-80 bg-muted border-l border-border flex-col items-center justify-center p-6 text-center">
+              <div className="mb-2 flex justify-center text-muted-foreground"><Eye size={40} /></div>
+              <p className="text-sm font-medium text-foreground mb-1">Только просмотр</p>
+              <p className="text-xs text-muted-foreground">
+                {readOnlyReason === 'submitted'
+                  ? 'Альбом передан в работу — изменения заблокированы. Обратитесь в OkeyBook если нужны правки.'
+                  : readOnlyReason === 'view_as'
+                    ? 'Вы смотрите альбом партнёра. Сохранение от его имени запрещено.'
+                    : readOnlyReason === 'mobile'
+                      ? 'Откройте на компьютере для редактирования макета.'
+                      : 'Редактирование заблокировано'}
+              </p>
+            </aside>
+          ))}
       </div>
 
       {/* М.1 — strip миниатюр с drag-to-reorder.
           В read-only режиме доступна только клик-навигация.
-          М.2 — кнопки удаления (✕ при hover) и добавления (➕ в конце). */}
-      {layout && (
-        <SpreadOrderStrip
-          spreads={spreads}
-          templates={templates}
-          currentIdx={currentIdx}
-          onSelect={setCurrentIdx}
-          onReorder={handleReorderSpreads}
-          onDelete={isReadOnly ? undefined : handleDeleteSpread}
-          onAddRequest={isReadOnly ? undefined : handleAddRequest}
-          readOnly={isReadOnly}
-          softShift={isSoftAlbum}
-          backgroundUrl={backgroundUrl}
-          pageBackgroundUrl={(idx) => bgUrlByPageIdx.get(idx) ?? null}
-        />
-      )}
+          М.2 — кнопки удаления (✕ при hover) и добавления (➕ в конце).
+          Блок UX.1 — полосу можно свернуть, освобождая высоту под холст. */}
+      {layout &&
+        (stripCollapsed ? (
+          <button
+            type="button"
+            onClick={toggleStripCollapsed}
+            className="w-full flex items-center justify-center gap-2 bg-card border-t border-border py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="Развернуть полосу разворотов"
+          >
+            <ChevronUp size={14} /> Развороты ({visualSpreads.length})
+          </button>
+        ) : (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={toggleStripCollapsed}
+              className="absolute top-2.5 right-3 z-10 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              title="Свернуть полосу разворотов"
+            >
+              Свернуть <ChevronDown size={14} />
+            </button>
+            <SpreadOrderStrip
+              spreads={spreads}
+              templates={templates}
+              currentIdx={currentIdx}
+              onSelect={setCurrentIdx}
+              onReorder={handleReorderSpreads}
+              onDelete={isReadOnly ? undefined : handleDeleteSpread}
+              onAddRequest={isReadOnly ? undefined : handleAddRequest}
+              readOnly={isReadOnly}
+              softShift={isSoftAlbum}
+              backgroundUrl={backgroundUrl}
+              pageBackgroundUrl={(idx) => bgUrlByPageIdx.get(idx) ?? null}
+            />
+          </div>
+        ))}
 
       {/* Этап 6 — модалка выбора ручного фона текущего разворота */}
       {bgPickerOpen && (
