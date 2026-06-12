@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent, type KeyboardEvent as ReactKeyboardEvent, type FocusEvent as ReactFocusEvent } from 'react'
 import { Stage, Layer, Rect, Image as KonvaImage, Text, Group } from 'react-konva'
 import { useDroppable, useDraggable } from '@dnd-kit/core'
-import { RotateCw, SlidersHorizontal, RefreshCw, Check } from 'lucide-react'
+import { RotateCw, RefreshCw, Check } from 'lucide-react'
 import type {
   SpreadInstance,
   SpreadTemplate,
@@ -99,7 +99,7 @@ type Props = {
   // Parent получает label, текущий url, и координаты клика для позиционирования popover.
   onPhotoContextMenu?: (label: string, url: string | null, clientX: number, clientY: number) => void
   // КЭ.5 — одинарный левый клик на photo placeholder. Открывает
-  // PhotoTransformPanel для кадрирования (scale + offset). dnd-kit
+  // интерактивный кроп на холсте (scale + offset). dnd-kit
   // отменяет click при движении мыши, так что drag не триггерит этот
   // handler. Срабатывает только при url != null (нет смысла кадрировать
   // пустой слот).
@@ -897,12 +897,6 @@ function DropZone({
         // если был drag, так что отдельный гард не нужен.
         if (!onClick || !url) return
         e.stopPropagation()
-        // РЭ.52.c: передаём правый верхний угол элемента (а не точку
-        // клика) — это позволяет PhotoTransformPanel позиционировать
-        // себя ВПЛОТНУЮ к ребру placeholder'а, не перекрывая фото.
-        // Если фото у правого края экрана — панель сама подсчитает
-        // что справа места нет и выскочит слева (см. smart-position
-        // в PhotoTransformPanel).
         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
         // instanceKey в DropZone Props — string|number; здесь
         // конвертируем в number (для spread_index всегда number).
@@ -977,8 +971,6 @@ export type CropHandlers = {
   }) => void
   // Завершить кроп (кнопка «Готово», клик по затемнению, Esc).
   onClose: () => void
-  // Открыть старую панель-ползунки как точную настройку (запасной способ).
-  onOpenPanel: (rightEdge: number, topEdge: number, leftEdge: number) => void
   // Обрамляют один непрерывный жест — чтобы он стал ОДНИМ шагом undo.
   onGestureStart: () => void
   onGestureEnd: () => void
@@ -1138,11 +1130,6 @@ function PhotoCropOverlay({
     emit({ s: 1, ox: 0, oy: 0, rot: 0 })
     handlersRef.current.onGestureEnd()
   }
-  const openPanel = () => {
-    const r = containerRef.current?.getBoundingClientRect()
-    if (r) handlersRef.current.onOpenPanel(r.right, r.top, r.left)
-  }
-
   const nW = img?.naturalWidth ?? 0
   const nH = img?.naturalHeight ?? 0
   const ready = nW > 0 && nH > 0
@@ -1256,20 +1243,12 @@ function PhotoCropOverlay({
         <RotateCw size={13} className="text-neutral-600" />
       </div>
 
-      {/* Тулбар: точная настройка / сброс / готово */}
+      {/* Тулбар: сброс / готово */}
       <div
         className="absolute left-1/2 -bottom-12 -translate-x-1/2 flex items-center gap-1 bg-neutral-900/90 rounded-lg px-1.5 py-1 shadow-lg whitespace-nowrap"
         onPointerDown={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()}
       >
-        <button
-          type="button"
-          onClick={openPanel}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs text-white/90 hover:bg-white/15 rounded"
-          title="Точная настройка ползунками"
-        >
-          <SlidersHorizontal size={13} /> Точно
-        </button>
         <button
           type="button"
           onClick={reset}
