@@ -104,7 +104,19 @@ const MAPPING: Record<string, FamilyMapping> = {
     applies_to_configs: [],
   },
 
-  // ─── G: subject-teachers (правая страница при subjects ≥ 9) ──────
+  // ─── G: subject-teachers (правая страница при subjects ≥ 5) ──────
+  // G-Teachers-3x2 (6 предметников без классрука) — компактная правая
+  // сетка для классов с 5-6 предметниками (набор «Аква меч»). При наличии
+  // в template_set движок предпочитает её крупной F-Head-LargeGrid слева
+  // (см. lib/rule-engine/sections/teachers.ts findCompactSubjectRightGrid).
+  'G-Teachers-3x2': {
+    family_id: 'subject-teachers',
+    page_type: 'page-right',
+    params: { parametric: true, grid_modes: [{ slot_count: 6, rows: 3, cols: 2 }] },
+    page_role: 'teacher_right',
+    slot_capacity: { teachers: 6 },
+    applies_to_configs: [],
+  },
   'G-Teachers-3x3': {
     family_id: 'subject-teachers',
     page_type: 'page-right',
@@ -396,12 +408,49 @@ const MAPPING: Record<string, FamilyMapping> = {
     slot_capacity: { photos_quarter: 2 },
     applies_to_configs: [],
   },
+  // Симметричный quarter (одна запись вместо пары Left/Right). При наличии
+  // в template_set движок предпочитает её паре J-Quarter-Left/-Right —
+  // правую сторону отдаёт авто-зеркало page-any (см. common.ts preferAny).
+  'J-Quarter': {
+    family_id: 'common-section',
+    page_type: 'page-any',
+    params: {},
+    page_role: 'common',
+    slot_capacity: { photos_quarter: 2 },
+    applies_to_configs: [],
+  },
+  // Коллажи: автопак выбирает самый крупный, помещающийся в число
+  // collage-фото, из присутствующих в наборе (приоритет 6→5→4→3).
+  'J-Collage-3': {
+    family_id: 'common-section',
+    page_type: 'page-any',
+    params: {},
+    page_role: 'common',
+    slot_capacity: { photos_collage: 3 },
+    applies_to_configs: [],
+  },
   'J-Collage-4': {
     family_id: 'common-section',
     page_type: 'page-any',
     params: {},
     page_role: 'common',
     slot_capacity: { photos_collage: 4 },
+    applies_to_configs: [],
+  },
+  'J-Collage-5': {
+    family_id: 'common-section',
+    page_type: 'page-any',
+    params: {},
+    page_role: 'common',
+    slot_capacity: { photos_collage: 5 },
+    applies_to_configs: [],
+  },
+  'J-Collage-6': {
+    family_id: 'common-section',
+    page_type: 'page-any',
+    params: {},
+    page_role: 'common',
+    slot_capacity: { photos_collage: 6 },
     applies_to_configs: [],
   },
   'J-Sixth-6': {
