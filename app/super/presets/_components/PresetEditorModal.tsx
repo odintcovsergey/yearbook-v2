@@ -448,7 +448,7 @@ export default function PresetEditorModal({
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full border rounded px-3 py-2 text-sm"
+                className="input"
               />
             </div>
 
@@ -496,7 +496,7 @@ export default function PresetEditorModal({
                   onChange={(e) =>
                     setMinPages(e.target.value === '' ? '' : Number(e.target.value))
                   }
-                  className="w-full border rounded px-3 py-2 text-sm"
+                  className="input"
                 />
               </div>
               <div>
@@ -509,7 +509,7 @@ export default function PresetEditorModal({
                   onChange={(e) =>
                     setMaxPages(e.target.value === '' ? '' : Number(e.target.value))
                   }
-                  className="w-full border rounded px-3 py-2 text-sm"
+                  className="input"
                 />
               </div>
             </div>
@@ -535,7 +535,7 @@ export default function PresetEditorModal({
                 onChange={(e) =>
                   setStudentLayoutMode(e.target.value as 'page' | 'spread' | 'grid')
                 }
-                className="w-full border rounded px-3 py-2 text-sm"
+                className="input"
               >
                 <option value="page">1 ученик на страницу</option>
                 <option value="spread">1 ученик на разворот (2 страницы)</option>
@@ -560,7 +560,7 @@ export default function PresetEditorModal({
                         e.target.value === '' ? '' : Number(e.target.value)
                       )
                     }
-                    className="w-full border rounded px-3 py-2 text-sm"
+                    className="input"
                     placeholder="0..10"
                   />
                 </div>
@@ -569,7 +569,7 @@ export default function PresetEditorModal({
                   <select
                     value={String(studentHasQuote)}
                     onChange={(e) => setStudentHasQuote(e.target.value === 'true')}
-                    className="w-full border rounded px-3 py-2 text-sm"
+                    className="input"
                   >
                     <option value="true">да, есть слот</option>
                     <option value="false">нет</option>
@@ -595,7 +595,7 @@ export default function PresetEditorModal({
                           e.target.value === '' ? '' : Number(e.target.value)
                         )
                       }
-                      className="w-full border rounded px-3 py-2 text-sm"
+                      className="input"
                       placeholder="2..12"
                     />
                     <p className="text-xs text-muted-foreground mt-1">
@@ -609,7 +609,7 @@ export default function PresetEditorModal({
                     <select
                       value={String(studentHasQuote)}
                       onChange={(e) => setStudentHasQuote(e.target.value === 'true')}
-                      className="w-full border rounded px-3 py-2 text-sm"
+                      className="input"
                     >
                       <option value="true">да, под каждым учеником</option>
                       <option value="false">нет</option>
@@ -1007,7 +1007,7 @@ function SortableSectionItem({
               onChange={(e) =>
                 onUpdate(idx, { max_spreads: Number(e.target.value) } as Partial<Section>)
               }
-              className="border rounded px-2 py-0.5 text-xs w-20"
+              className="border border-input rounded px-2 py-0.5 text-xs w-20 bg-card text-foreground dark:bg-background"
             />
           </div>
         )}
@@ -1096,7 +1096,7 @@ function SortableSectionItem({
               onChange={(e) =>
                 onUpdate(idx, { max_spreads: Number(e.target.value) } as Partial<Section>)
               }
-              className="border rounded px-2 py-0.5 text-xs w-20"
+              className="border border-input rounded px-2 py-0.5 text-xs w-20 bg-card text-foreground dark:bg-background"
             />
           </div>
         )}
