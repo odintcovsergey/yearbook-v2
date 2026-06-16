@@ -40,6 +40,7 @@ import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform';
 import { parseFontSizeMult, parseColor } from '@/lib/text-style';
 import { applyBalanceFromData } from '@/lib/balance-overrides';
 import { segmentToSpreads } from '@/lib/album-builder/segment-to-spreads';
+import { resolvePlaceholdersForSide } from '@/lib/album-builder/mirror-placeholders';
 import {
   resolveBackgrounds,
   type SpreadBackgroundInput,
@@ -259,8 +260,19 @@ async function renderSpread(
   // orderPlaceholdersForRender, что и канвас, чтобы превью = PDF. Скрытый декор
   // уже отфильтрован applyBalanceFromData. Порядок выставляем ДО split на
   // страницы (split сохраняет относительный порядок).
-  const effectivePlaceholders = orderPlaceholdersForRender(
-    applyBalanceFromData(template.placeholders, instance.data) as RenderPlaceholder[],
+  // Авто-зеркало page-any на правой странице — ФИНАЛЬНАЯ геометрическая
+  // трансформация, ПОСЛЕ балансировки (см. mirror-placeholders.ts о порядке).
+  // Сторона берётся из того же sideByIndex (segmentToSpreads), что и фоны, —
+  // редактор и PDF видят одно и то же. pageWidthMm = template.width_mm (то же
+  // координатное пространство, что у плейсхолдеров мастера).
+  const side = ctx.sideByIndex.get(instance.spread_index) ?? 'single';
+  const effectivePlaceholders = resolvePlaceholdersForSide(
+    orderPlaceholdersForRender(
+      applyBalanceFromData(template.placeholders, instance.data) as RenderPlaceholder[],
+    ),
+    side,
+    template.page_type,
+    template.width_mm,
   ) as Placeholder[];
 
   if (!template.is_spread) {
