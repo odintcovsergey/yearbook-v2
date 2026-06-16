@@ -77,12 +77,12 @@ describe('mirrorPlaceholders', () => {
     expect(out.height_mm).toBe(55);
   });
 
-  it('rotation_deg меняет знак', () => {
+  it('rotation_deg НЕ меняется (блок едет целиком, не отражается)', () => {
     const [out] = mirrorPlaceholders(
       [photo({ label: 'p', rotation_deg: 90 })],
       PAGE_W,
     );
-    expect(out.rotation_deg).toBe(-90);
+    expect(out.rotation_deg).toBe(90);
   });
 
   it('rotation_deg отсутствует → остаётся undefined', () => {
@@ -90,13 +90,13 @@ describe('mirrorPlaceholders', () => {
     expect(out.rotation_deg).toBeUndefined();
   });
 
-  it("align 'left'→'right', 'right'→'left'", () => {
+  it("align НЕ переворачивается (раскладка блока сохраняется)", () => {
     const out = mirrorPlaceholders(
       [text({ label: 'l', align: 'left' }), text({ label: 'r', align: 'right' })],
       PAGE_W,
     ) as TextPlaceholder[];
-    expect(out[0].align).toBe('right');
-    expect(out[1].align).toBe('left');
+    expect(out[0].align).toBe('left');
+    expect(out[1].align).toBe('right');
   });
 
   it("align 'center'/'justify' без изменений", () => {
@@ -106,6 +106,24 @@ describe('mirrorPlaceholders', () => {
     ) as TextPlaceholder[];
     expect(out[0].align).toBe('center');
     expect(out[1].align).toBe('justify');
+  });
+
+  it('порядок чтения 1→N сохраняется: слот №1 остаётся левее слота №2', () => {
+    // Два слота смещены к корешку (правый край): #1 при x=120, #2 при x=160.
+    // После сдвига блок уезжает влево, но #1 ОБЯЗАН остаться левее #2.
+    const out = mirrorPlaceholders(
+      [
+        photo({ label: 'slot_1', x_mm: 120, width_mm: 35 }),
+        photo({ label: 'slot_2', x_mm: 160, width_mm: 35 }),
+      ],
+      PAGE_W,
+    );
+    const s1 = out.find((p) => p.label === 'slot_1')!;
+    const s2 = out.find((p) => p.label === 'slot_2')!;
+    expect(s1.x_mm).toBeLessThan(s2.x_mm); // порядок не перевернулся
+    // bbox [120,195], shift = 208-120-195 = -107
+    expect(s1.x_mm).toBe(13); // 120 - 107
+    expect(s2.x_mm).toBe(53); // 160 - 107
   });
 
   it('vertical_align / шрифт / размер / цвет не трогаются', () => {
@@ -130,9 +148,10 @@ describe('mirrorPlaceholders', () => {
     expect(out.glow_color).toBe('#fff');
   });
 
-  it('привязанный декор __under: offset пересчитан, декор над тем же (зеркальным) слотом', () => {
-    // База слот: x=10,w=40 → mirror x=158. Декор: x=8,w=44 (на 2мм левее и шире
-    // базы) → mirror x = 208-8-44 = 156. Новый offset = 156-158 = -2.
+  it('привязанный декор: едет вместе с базой, offset сохранён', () => {
+    // База слот: x=10,w=40. bbox по слоту [10,50], shift=208-10-50=148.
+    // База → 158, декор x=8 → 156. Оба сдвинулись на 148, поэтому offset
+    // (декор − база = -2) сохраняется автоматически.
     const input: RenderPlaceholder[] = [
       photo({ label: 'studentportrait_1', x_mm: 10, width_mm: 40 }),
       decor({ label: '__under_1', x_mm: 8, width_mm: 44, attached_to: 'studentportrait_1', offset_x_mm: -2, offset_y_mm: 1 }),
@@ -142,7 +161,7 @@ describe('mirrorPlaceholders', () => {
     const d = out.find((p) => p.label === '__under_1') as DecorationPlaceholder;
     expect(base.x_mm).toBe(158);
     expect(d.x_mm).toBe(156);
-    expect(d.offset_x_mm).toBe(d.x_mm - base.x_mm); // -2
+    expect(d.offset_x_mm).toBe(d.x_mm - base.x_mm); // -2 (сохранён)
     expect(d.offset_y_mm).toBe(1); // y-offset не трогаем
   });
 
@@ -223,23 +242,25 @@ describe('integration: page-any сетка слева vs справа', () => {
     expect(left).toBe(master);
   });
 
-  it('правая страница — координаты зеркальны', () => {
+  it('правая страница — блок сдвинут к корешку, порядок и раскладка сохранены', () => {
     const right = resolvePlaceholdersForSide(master, 'right', 'page-any', PAGE_W);
     const p1 = right.find((p) => p.label === 'studentportrait_1')!;
     const p2 = right.find((p) => p.label === 'studentportrait_2')!;
     const name = right.find((p) => p.label === 'studentname_1') as TextPlaceholder;
     const d = right.find((p) => p.label === '__over_1') as DecorationPlaceholder;
-    // x → 208 - x - w
-    expect(p1.x_mm).toBe(208 - 120 - 35); // 53
-    expect(p2.x_mm).toBe(208 - 160 - 35); // 13
+    // bbox слотов [120,195], shift = 208-120-195 = -107. Все x += -107.
+    expect(p1.x_mm).toBe(120 - 107); // 13
+    expect(p2.x_mm).toBe(160 - 107); // 53
+    // порядок чтения сохранён: слот №1 левее слота №2 (НЕ перевёрнут)
+    expect(p1.x_mm).toBeLessThan(p2.x_mm);
     // y/размеры неизменны
     expect(p1.y_mm).toBe(30);
     expect(p1.width_mm).toBe(35);
-    // align подписи перевернулся
-    expect(name.align).toBe('right');
-    // декор остался приклеен к зеркальному слоту
-    expect(d.x_mm).toBe(208 - 118 - 39); // 51
-    expect(d.offset_x_mm).toBe(d.x_mm - p1.x_mm); // 51 - 53 = -2
+    // align подписи НЕ перевернулся — раскладка блока сохраняется
+    expect(name.align).toBe('left');
+    // декор едет вместе со слотом, offset сохранён
+    expect(d.x_mm).toBe(118 - 107); // 11
+    expect(d.offset_x_mm).toBe(d.x_mm - p1.x_mm); // 11 - 13 = -2
     expect(d.offset_y_mm).toBe(-2);
   });
 });

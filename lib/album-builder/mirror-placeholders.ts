@@ -6,21 +6,29 @@
  * корешку (внутреннее поле ≠ внешнее). Левая и правая страницы зеркальны, но
  * движок кладёт один и тот же `page-any` мастер одинаково на обе стороны.
  * Значит смещение к корешку верно только слева, справа уезжает к внешнему краю.
- * Решение: на ПРАВОЙ странице отражаем геометрию мастера по вертикальной оси.
+ * Решение: на ПРАВОЙ странице сдвигаем весь блок контента к корешку (влево),
+ * сохраняя тот же отступ от корешка, что был слева.
+ *
+ * ВАЖНО (доработка 16.06.2026): это НЕ «честное зеркало» по вертикальной оси.
+ * Честное зеркало (x → W − x − w поэлементно) переворачивало бы и порядок
+ * ячеек — слот №1 уезжал бы к корешку, №N к внешнему краю, чтение «задом
+ * наперёд». Нужно другое: блок сдвигается целиком, но порядок чтения 1→N и
+ * внутренняя раскладка (выравнивание текста, поворот) НЕ меняются. Поэтому
+ * применяем ОДИН общий горизонтальный сдвиг ко всем плейсхолдерам так, чтобы
+ * bounding box блока встал зеркально относительно центра страницы.
  *
  * Это чистая трансформация в памяти на этапе рендера — НЕ меняет БД, не
  * зависит от Supabase/storage/миграций. Применяется в ОДНОЙ общей точке
  * (этот модуль), которую дёргают оба рендера: канвас редактора (Konva) и
- * PDF-pipeline — чтобы превью = PDF. Содержимое (текст/шрифт/цвет/картинка)
- * НЕ зеркалится — только ПОЗИЦИЯ + align + rotation + offset привязанного декора.
+ * PDF-pipeline — чтобы превью = PDF. Содержимое (текст/шрифт/цвет/картинка/
+ * align/rotation) НЕ трогается — меняется только горизонтальная позиция (x_mm).
  *
  * Порядок в пайплайне: зеркало — ФИНАЛЬНАЯ геометрическая трансформация,
  * ПОСЛЕ балансировки (applyBalanceFromData). Причина: `__pos__`-центрирование
- * пишет rule engine в ИСХОДНЫХ (не отражённых) координатах мастера и
- * mirror-неосознанно (lib/rule-engine/sections/shared.ts centerLastRowSlots).
- * Поэтому сначала балансируем в исходном пространстве, затем отражаем всё
- * целиком. Партнёрский `__halign__` применяет сам рендер поверх — его НЕ
- * трогаем (он в показанном, уже отражённом, пространстве).
+ * пишет rule engine в ИСХОДНЫХ координатах мастера (lib/rule-engine/sections/
+ * shared.ts centerLastRowSlots). Поэтому сначала балансируем в исходном
+ * пространстве, затем сдвигаем блок целиком. Партнёрский `__halign__`
+ * применяет сам рендер поверх — его НЕ трогаем.
  */
 
 import type { PageType, RenderPlaceholder } from './types';
@@ -29,23 +37,26 @@ import type { PageType, RenderPlaceholder } from './types';
 export type RenderSide = 'left' | 'right' | 'spread' | 'single';
 
 /**
- * Отражает геометрию плейсхолдеров по вертикальной оси страницы.
+ * Сдвигает весь блок плейсхолдеров к корешку для правой страницы, сохраняя
+ * внутреннюю раскладку и порядок чтения 1→N.
  *
- * Все типы:
- *   - x_mm → pageWidthMm − x_mm − width_mm (отражение bounding box)
- *   - y_mm / width_mm / height_mm — без изменений
- *   - rotation_deg → −rotation_deg (если задано)
- * Text:
- *   - align: 'left' ↔ 'right'; 'center'/'justify' — без изменений
- *   - vertical_align / шрифт / размер / цвет / эффекты — без изменений
- * Photo:
- *   - fit / is_circle / corner_radius_mm / glow_* — без изменений
- * Decoration:
- *   - сам декор отражается тем же правилом по x_mm;
- *   - ПОСЛЕ отражения координат всех — offset_x_mm = deco.x_mm − base.x_mm
- *     (base ищется по attached_to); offset_y_mm без изменений;
- *   - foreground-декор (attached_to === '') offset не пересчитываем;
- *   - url / пиксели картинки декора НЕ переворачиваем.
+ * Логика: считаем bounding box блока [minX, maxX] по горизонтали. Зеркальное
+ * положение блока относительно центра страницы → новый левый край = W − maxX.
+ * Значит общий сдвиг = (W − maxX) − minX = W − minX − maxX, и КАЖДЫЙ элемент
+ * получает x += сдвиг. Это чистый горизонтальный перенос:
+ *   - x_mm → x_mm + сдвиг (одинаковый для всех);
+ *   - y_mm / width_mm / height_mm / rotation_deg — без изменений;
+ *   - align / vertical_align / шрифт / размер / цвет / эффекты — без изменений;
+ *   - photo: fit / is_circle / corner_radius_mm / glow_* — без изменений;
+ *   - decoration: тоже сдвигается на ту же величину, поэтому offset_x_mm
+ *     относительно базы СОХРАНЯЕТСЯ автоматически (база и декор едут вместе);
+ *     url / пиксели картинки декора не трогаем.
+ *
+ * Bounding box считаем по НЕ-декоративным слотам (фото/текст) — это «блок
+ * контента». Декор приклеен и едет за блоком. Если слотов нет (только декор) —
+ * fallback на все плейсхолдеры. Пустой вход → сдвиг 0.
+ *
+ * Симметричный мастер (блок по центру) → сдвиг 0 (math no-op), как и должно.
  *
  * Чистая функция: возвращает новый массив, вход не мутирует.
  */
@@ -53,37 +64,28 @@ export function mirrorPlaceholders(
   placeholders: readonly RenderPlaceholder[],
   pageWidthMm: number,
 ): RenderPlaceholder[] {
-  // Проход 1: отражаем x_mm + rotation + align у ВСЕХ плейсхолдеров (включая
-  // декор). Поверхностный клон — оригинал мастера не мутируем.
-  const mirrored: RenderPlaceholder[] = placeholders.map((p) => {
-    const next = { ...p } as RenderPlaceholder;
-    next.x_mm = pageWidthMm - p.x_mm - p.width_mm;
-    if (next.rotation_deg !== undefined && next.rotation_deg !== null) {
-      next.rotation_deg = -next.rotation_deg;
-    }
-    if (next.type === 'text') {
-      if (next.align === 'left') next.align = 'right';
-      else if (next.align === 'right') next.align = 'left';
-      // 'center' / 'justify' — без изменений
-    }
-    return next;
-  });
+  if (placeholders.length === 0) return [];
 
-  // Проход 2: пересчитываем offset привязанного декора от НОВЫХ (отражённых)
-  // позиций — так декор остаётся приклеенным к зеркальному слоту.
-  const byLabel = new Map<string, RenderPlaceholder>();
-  for (const p of mirrored) byLabel.set(p.label, p);
+  // bounding box блока контента: слоты (фото/текст) задают границы; если их
+  // нет — берём все плейсхолдеры (например, мастер из одного декора).
+  const slots = placeholders.filter((p) => p.type !== 'decoration');
+  const bboxSource = slots.length > 0 ? slots : placeholders;
 
-  for (const p of mirrored) {
-    if (p.type !== 'decoration') continue;
-    if (!p.attached_to) continue; // foreground — offset не трогаем
-    const base = byLabel.get(p.attached_to);
-    if (!base) continue; // сирота (база не найдена) — оставляем как есть
-    p.offset_x_mm = p.x_mm - base.x_mm;
-    // offset_y_mm без изменений
+  let minX = Infinity;
+  let maxX = -Infinity;
+  for (const p of bboxSource) {
+    if (p.x_mm < minX) minX = p.x_mm;
+    if (p.x_mm + p.width_mm > maxX) maxX = p.x_mm + p.width_mm;
   }
 
-  return mirrored;
+  // Сдвиг ставит блок зеркально относительно центра страницы: новый левый край
+  // блока = W − maxX, значит дельта = (W − maxX) − minX.
+  const shift = pageWidthMm - minX - maxX;
+
+  // Один общий перенос по x для ВСЕХ (включая декор). Поверхностный клон —
+  // оригинал мастера не мутируем. Всё остальное (align, rotation, offset
+  // декора) сохраняется как есть: блок едет целиком, раскладка неизменна.
+  return placeholders.map((p) => ({ ...p, x_mm: p.x_mm + shift }) as RenderPlaceholder);
 }
 
 /**
