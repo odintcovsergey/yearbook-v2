@@ -313,7 +313,7 @@ function frameToPlaceholder(
   // required = false всегда — обязательность это продуктовая логика album-builder'а.
   if (frame.kind === 'rectangle') {
     // Часть 2 ТЗ: свойства фото-фрейма — скруглённые углы + внешнее свечение.
-    const frameProps = extractFrameProps(frame.node);
+    const frameProps = extractFrameProps(frame.node, resolver);
     return {
       ...common,
       type: 'photo',
@@ -457,8 +457,13 @@ function dedupeLabels(
  */
 function extractFrameProps(
   frameNode: Record<string, unknown>,
-): { corner_radius_mm?: number; glow_size_pt?: number } {
-  const out: { corner_radius_mm?: number; glow_size_pt?: number } = {};
+  resolver: StyleResolver,
+): { corner_radius_mm?: number; glow_size_pt?: number; glow_color?: string | null } {
+  const out: {
+    corner_radius_mm?: number;
+    glow_size_pt?: number;
+    glow_color?: string | null;
+  } = {};
 
   // Скруглённые углы: по наличию ненулевого радиуса. InDesign при экспорте
   // в IDML НЕ пишет CornerOption (атрибут отсутствует), но пишет
@@ -472,13 +477,28 @@ function extractFrameProps(
     if (Number.isFinite(r) && r > 0) out.corner_radius_mm = ptToMm(r);
   }
 
-  // Внешнее свечение: <OuterGlowSetting Size="..."> на любой глубине фрейма.
+  // Внешнее свечение. Два источника:
+  //  1) прямо на фрейме: <OuterGlowSetting Size=... EffectColor=.../>;
+  //  2) через стиль объекта (AppliedObjectStyle) — дизайнерские наборы
+  //     («Аква меч») задают glow рамок именно так, причём Size наследуется от
+  //     документного дефолта, а цвет лежит в EffectColor стиля.
+  // Приоритет — прямой эффект на фрейме (он перекрывает стиль).
   const glow = findFirst(frameNode, 'OuterGlowSetting');
-  if (glow) {
-    const sizeRaw = getAttr(glow, 'Size');
-    if (sizeRaw) {
-      const s = Number(sizeRaw);
-      if (Number.isFinite(s) && s > 0) out.glow_size_pt = s;
+  if (glow && getAttr(glow, 'Applied') !== 'false') {
+    const s = Number(getAttr(glow, 'Size'));
+    out.glow_size_pt =
+      Number.isFinite(s) && s > 0 ? s : resolver.defaultGlowSizePt;
+    const colorRef = getAttr(glow, 'EffectColor');
+    const color = resolver.resolveColorRef(colorRef);
+    if (color) out.glow_color = color;
+  } else {
+    // Нет прямого эффекта — пробуем стиль объекта (с цепочкой BasedOn).
+    const objGlow = resolver.resolveObjectGlow(
+      getAttr(frameNode, 'AppliedObjectStyle'),
+    );
+    if (objGlow) {
+      out.glow_size_pt = objGlow.glow_size_pt;
+      if (objGlow.glow_color) out.glow_color = objGlow.glow_color;
     }
   }
 

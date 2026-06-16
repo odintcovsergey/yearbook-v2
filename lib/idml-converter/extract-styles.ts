@@ -85,6 +85,22 @@ export type StyleResolver = {
    */
   resolveColorRef(ref: string | undefined): string | null;
   /**
+   * Часть 2 ТЗ: внешнее свечение фото-фрейма из СТИЛЯ ОБЪЕКТА
+   * (AppliedObjectStyle), а не с самого фрейма. Дизайнерские наборы (напр.
+   * «Аква меч») задают Outer Glow рамок через ObjectStyle с цепочкой BasedOn,
+   * причём Size часто не указан в стиле — наследуется от документного дефолта
+   * (Preferences, обычно 7pt), а цвет берётся из EffectColor стиля.
+   *
+   * Возвращает { glow_size_pt, glow_color } если свечение включено (Applied),
+   * либо null. Размер всегда > 0 (подставляется дефолт). Цвет может быть null
+   * (тогда upload подставит доминирующий цвет привязанного декора).
+   */
+  resolveObjectGlow(
+    objectStyleId: string | undefined,
+  ): { glow_size_pt: number; glow_color: string | null } | null;
+  /** Документный дефолт размера Outer Glow (pt) — для прямого glow без Size. */
+  readonly defaultGlowSizePt: number;
+  /**
    * РЭ.56: возвращает текстовое содержимое story из IDML, если оно есть.
    * Используется парсером геометрии чтобы записать default_text в
    * TextPlaceholder. Декоративный текст из мастера («Дорогие выпускники!»)
@@ -169,8 +185,36 @@ type ColorEntry = {
 export async function loadStyleResolver(zip: JSZip): Promise<StyleResolver> {
   const colors = await loadColors(zip);
   const styles = await loadParagraphStyles(zip);
+  const objectStyles = await loadObjectStyles(zip);
+  const defaultGlowSizePt = await loadDefaultGlowSize(zip);
   const stories = await loadStories(zip);
   const resolveCache = new Map<string, ResolvedStyle>();
+
+  // Резолв свечения по цепочке BasedOn стиля объекта. applied берётся у самого
+  // близкого стиля, где OuterGlowSetting задан явно; size/colorRef — первое
+  // определённое вниз по цепочке.
+  function resolveObjectGlowRaw(
+    id: string,
+    depth: number,
+  ): { applied: boolean; size?: number; colorRef?: string } {
+    if (depth > MAX_BASED_ON_DEPTH) return { applied: false };
+    const raw = objectStyles.get(id);
+    if (!raw) return { applied: false };
+    const hasOwn = raw.glowApplied !== undefined;
+    let applied = hasOwn ? raw.glowApplied === true : false;
+    let size = raw.glowSize;
+    let colorRef = isRealColorRef(raw.glowColorRef) ? raw.glowColorRef : undefined;
+    if (raw.basedOn) {
+      const pid = normalizeObjectStyleRef(raw.basedOn, objectStyles);
+      if (pid) {
+        const parent = resolveObjectGlowRaw(pid, depth + 1);
+        if (!hasOwn) applied = parent.applied;
+        if (size === undefined) size = parent.size;
+        if (colorRef === undefined) colorRef = parent.colorRef;
+      }
+    }
+    return { applied, size, colorRef };
+  }
 
   function resolveStyle(id: string, depth: number): ResolvedStyle {
     if (depth > MAX_BASED_ON_DEPTH) return {};
@@ -269,6 +313,18 @@ export async function loadStyleResolver(zip: JSZip): Promise<StyleResolver> {
     resolveColorRef(ref): string | null {
       return resolveColorRefOrNull(ref, colors);
     },
+    defaultGlowSizePt,
+    resolveObjectGlow(objectStyleId) {
+      const id = normalizeObjectStyleRef(objectStyleId, objectStyles);
+      if (!id) return null;
+      const g = resolveObjectGlowRaw(id, 0);
+      if (!g.applied) return null;
+      const size = g.size !== undefined && g.size > 0 ? g.size : defaultGlowSizePt;
+      return {
+        glow_size_pt: size,
+        glow_color: resolveColorRefOrNull(g.colorRef, colors),
+      };
+    },
     resolveTextContent(storyId): string | undefined {
       if (!storyId) return undefined;
       const story = stories.get(storyId);
@@ -329,6 +385,74 @@ function normalizeBasedOnRef(
   const candidate = 'ParagraphStyle/' + raw;
   if (styles.has(candidate)) return candidate;
   return null;
+}
+
+// ─── ObjectStyles (свечение фото-фреймов, Часть 2 ТЗ) ──────────────────────
+
+type RawObjectStyle = {
+  id: string;
+  basedOn: string | null;
+  /** undefined = у стиля нет своего OuterGlowSetting (наследуется от BasedOn). */
+  glowApplied?: boolean;
+  glowSize?: number;
+  glowColorRef?: string;
+};
+
+async function loadObjectStyles(
+  zip: JSZip,
+): Promise<Map<string, RawObjectStyle>> {
+  const out = new Map<string, RawObjectStyle>();
+  const file = zip.file('Resources/Styles.xml');
+  if (!file) return out;
+  const root = xmlParser.parse(await file.async('string')) as Record<string, unknown>;
+
+  for (const style of collectAll(root, 'ObjectStyle')) {
+    const id = getAttr(style, 'Self');
+    if (!id) continue;
+    const props = findFirst(style, 'Properties');
+    const glow = findFirst(style, 'OuterGlowSetting');
+    let glowApplied: boolean | undefined;
+    let glowSize: number | undefined;
+    let glowColorRef: string | undefined;
+    if (glow) {
+      glowApplied = getAttr(glow, 'Applied') !== 'false';
+      glowSize = parseNumberAttr(glow, 'Size');
+      glowColorRef = getAttr(glow, 'EffectColor');
+    }
+    out.set(id, {
+      id,
+      basedOn: extractBasedOn(props),
+      glowApplied,
+      glowSize,
+      glowColorRef,
+    });
+  }
+  return out;
+}
+
+function normalizeObjectStyleRef(
+  raw: string | undefined,
+  styles: Map<string, RawObjectStyle>,
+): string | null {
+  if (!raw) return null;
+  if (styles.has(raw)) return raw;
+  const candidate = 'ObjectStyle/' + raw;
+  if (styles.has(candidate)) return candidate;
+  return null;
+}
+
+/**
+ * Документный дефолт размера Outer Glow (pt). InDesign не пишет Size в
+ * ObjectStyle, если он равен дефолтному — берём дефолт из Preferences
+ * (TransparencyDefaultRenderingSetting). Fallback 7pt (стандарт InDesign).
+ */
+async function loadDefaultGlowSize(zip: JSZip): Promise<number> {
+  const file = zip.file('Resources/Preferences.xml');
+  if (!file) return 7;
+  const root = xmlParser.parse(await file.async('string')) as Record<string, unknown>;
+  const glow = findFirst(root, 'OuterGlowSetting');
+  const s = glow ? parseNumberAttr(glow, 'Size') : undefined;
+  return s !== undefined && s > 0 ? s : 7;
 }
 
 function extractTextChild(
