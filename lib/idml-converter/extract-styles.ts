@@ -154,6 +154,14 @@ type StoryEntry = {
   inlinePointSize?: number;
   inlineFontStyle?: string;
   inlineFillColor?: string;
+  /**
+   * Inline-переопределение выключки на ПЕРВОМ ParagraphStyleRange. В IDML
+   * выключка живёт на абзаце (ParagraphStyleRange.Justification), а не на
+   * символьном диапазоне. Дизайнер часто применяет стиль абзаца с justify, но
+   * локально переопределяет на CenterAlign — это переопределение и есть то,
+   * что InDesign рисует. Должно побеждать justification стиля.
+   */
+  inlineJustification?: string;
   // Часть 3 ТЗ (Путь А): обводка текста — inline-оверрайд на первом
   // CharacterStyleRange (StrokeColor — ссылка на цвет, StrokeWeight — pt).
   inlineStrokeColor?: string;
@@ -280,7 +288,8 @@ export async function loadStyleResolver(zip: JSZip): Promise<StyleResolver> {
         font_size_pt: pointSize ?? TEXT_STYLE_DEFAULTS.font_size_pt,
         font_weight: mapFontWeight(fontStyle),
         color: resolveColorToHex(fillColor, colors, masterName, label, warnings),
-        align: mapJustification(resolved.justification),
+        // inline-override выключки на абзаце побеждает стиль (см. StoryEntry).
+        align: mapJustification(story.inlineJustification ?? resolved.justification),
         // TODO фаза 2+: vertical_align читать из TextFramePreference.FirstBaselineOffset.
         vertical_align: 'top',
         auto_fit: false, // override через applyAutoFitRule по правилу label
@@ -524,6 +533,7 @@ async function loadStories(zip: JSZip): Promise<Map<string, StoryEntry>> {
     out.set(id, {
       appliedParagraphStyle:
         getAttr(firstParaRange, 'AppliedParagraphStyle') ?? null,
+      inlineJustification: getAttr(firstParaRange, 'Justification'),
       inlinePointSize: firstCharRange
         ? parseNumberAttr(firstCharRange, 'PointSize')
         : undefined,
