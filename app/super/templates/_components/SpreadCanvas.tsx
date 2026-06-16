@@ -2,7 +2,13 @@
 
 import { Stage, Layer, Rect, Label, Tag, Text } from 'react-konva'
 import type { SpreadTemplate } from './types'
-import { PLACEHOLDER_COLORS } from './colors'
+import { PLACEHOLDER_COLORS, PLACEHOLDER_COLOR_FALLBACK } from './colors'
+
+// Цвет плейсхолдера по типу с фолбэком — неизвестный тип (напр. decoration в
+// дизайнерских наборах) НЕ должен ронять превью-канвас целиком.
+const colorFor = (type: string) =>
+  PLACEHOLDER_COLORS[type as keyof typeof PLACEHOLDER_COLORS] ??
+  PLACEHOLDER_COLOR_FALLBACK
 
 type Props = {
   spread: SpreadTemplate
@@ -52,7 +58,7 @@ export default function SpreadCanvas({ spread, containerWidth, listening, pixelR
         {/* Bbox каждого плейсхолдера. Axis-aligned (rotation_deg игнорируется
             в 0.8.x — см. project_phase0_parser_followups.md). */}
         {spread.placeholders.map((p, i) => {
-          const c = PLACEHOLDER_COLORS[p.type]
+          const c = colorFor(p.type)
           return (
             <Rect
               key={`${p.label}-${i}-r`}
@@ -70,7 +76,7 @@ export default function SpreadCanvas({ spread, containerWidth, listening, pixelR
             labels всегда поверх всех rect'ов (а не только своего). На
             миниатюрах showLabels=false — подписи не рендерятся вовсе. */}
         {showLabels && spread.placeholders.map((p, i) => {
-          const c = PLACEHOLDER_COLORS[p.type]
+          const c = colorFor(p.type)
           return (
             <Label key={`${p.label}-${i}-l`} x={p.x_mm} y={p.y_mm}>
               <Tag fill={c.stroke} cornerRadius={cornerRadiusMm} />
