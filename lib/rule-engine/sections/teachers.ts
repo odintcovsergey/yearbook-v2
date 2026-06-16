@@ -219,6 +219,42 @@ function resolveTeacherMaster(
 }
 
 /**
+ * Компактная правая сетка предметников (G-Teachers-3x2, 6 слотов) для классов
+ * с 5-8 предметниками — набор «Аква меч».
+ *
+ * Идея: некоторые дизайны кладут главного учителя одного на левую, а
+ * предметников — в компактную сетку справа (3x2), вместо того чтобы паковать
+ * всё на левую F-Head-LargeGrid (8 слотов). Включается ТОЛЬКО когда в наборе
+ * есть подходящая правая сетка — иначе старый путь (LargeGrid слева) не
+ * меняется (okeybook-default не ломается).
+ *
+ * Как отличаем «компактную» сетку от крупной (3x3/3x4/4x4): берём min_fit по
+ * числу предметников среди teacher_right и принимаем результат ТОЛЬКО если его
+ * ёмкость < 9. Крупные сетки (cap ≥ 9) принадлежат тиру 9+ — для 5-8
+ * предметников при их наличии остаёмся на LargeGrid слева (как раньше).
+ *
+ * Возвращает мастер или null. Вызывается из pickLeftMaster и pickRightMaster
+ * с тем же subjects → решение согласовано на обеих сторонах.
+ */
+function findCompactSubjectRightGrid(
+  ctx: SectionFillContext,
+  subjects: number,
+): SpreadTemplate | null {
+  const r = findTeacherMaster(ctx.bundle.mastersByName, {
+    presetId: ctx.bundle.preset.id,
+    pageRole: 'teacher_right',
+    teachers: subjects,
+    match: 'min_fit',
+  });
+  if (!r) return null;
+  const cap =
+    typeof r.master.slot_capacity?.teachers === 'number'
+      ? r.master.slot_capacity.teachers
+      : 0;
+  return cap < 9 ? r.master : null;
+}
+
+/**
  * РЭ.22.7.2: выбор мастера левой страницы учительского разворота.
  *
  * Семантика по числу subjects (таблица из docs/album-structure-inventory.md §3):
@@ -267,6 +303,24 @@ function pickLeftMaster(
     };
   }
   if (subjects <= 8) {
+    // Аква-меч: если есть компактная правая сетка (3x2) — главный учитель
+    // один на левую (как 9-16), предметники уходят на правую сетку.
+    if (findCompactSubjectRightGrid(ctx, subjects)) {
+      const r = resolveTeacherMaster(
+        ctx,
+        'teacher_left',
+        { headTeacher: 1, teachers: 0, photosFull: 0, match: 'exact' },
+        'F-Head-WithPhoto',
+      );
+      if (!r) return null;
+      return {
+        master: r.master,
+        masterName: r.master.name,
+        subjectsCount: 0,
+        semantic: r.semantic,
+      };
+    }
+    // Иначе старый путь: предметники на левой (F-Head-LargeGrid).
     const r = resolveTeacherMaster(
       ctx,
       'teacher_left',
@@ -337,6 +391,21 @@ function pickRightMaster(
 ): RightChoice | null {
   // subjects ≤ 8: правая = общее фото
   if (subjects <= 8) {
+    // Аква-меч: компактная правая сетка предметников (3x2), если есть в наборе.
+    // Согласовано с pickLeftMaster (тот же findCompactSubjectRightGrid →
+    // главный учитель один слева). Только при наличии мастера — иначе общее
+    // фото (старый путь okeybook-default).
+    const compact = findCompactSubjectRightGrid(ctx, subjects);
+    if (compact) {
+      return {
+        master: compact,
+        masterName: compact.name,
+        subjectsCount: subjects,
+        subjectsOffset: 0,
+        consumes: {},
+        semantic: true,
+      };
+    }
     if (commonPhotos.half_class.length >= 2) {
       const r = resolveTeacherMaster(
         ctx,

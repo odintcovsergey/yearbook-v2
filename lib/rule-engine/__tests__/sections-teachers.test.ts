@@ -466,3 +466,63 @@ describe('teachers: master_not_found', () => {
     ).toBe(true);
   });
 });
+
+// ─── 5. Компактная правая сетка G-Teachers-3x2 (5-6 предметников) ───────────
+//
+// Набор «Аква меч»: 5-6 предметников кладутся в правую сетку 3x2 (6 слотов),
+// главный учитель один на левой. Включается ТОЛЬКО при наличии 3x2 в наборе —
+// иначе старый путь (LargeGrid слева). См. findCompactSubjectRightGrid.
+describe('teachers: компактная правая сетка G-Teachers-3x2', () => {
+  // G-Teachers-3x2 РАЗМЕЧЕН (page_role + slot_capacity) — компактная сетка
+  // находится семантически (findCompactSubjectRightGrid идёт по slot_capacity,
+  // в отличие от старых тестов, где legacy-fallback ищет по имени).
+  const G_3X2: SpreadTemplate = {
+    ...gTeachers('G-Teachers-3x2', 6),
+    page_role: 'teacher_right',
+    slot_capacity: { teachers: 6 },
+  };
+  // Набор с компактной сеткой (как «Аква меч»): есть и 3x2, и крупные.
+  const WITH_3X2: SpreadTemplate[] = [...ALL_TEACHERS_MASTERS, G_3X2];
+
+  function runWith(masters: SpreadTemplate[], subjects: number) {
+    const bundle = makeBundle({
+      preset: makePreset({ id: 'p', section_structure: [{ type: 'teachers' }] }),
+      masters,
+    });
+    return buildFromSectionStructure(bundle, makeInput({ subjects }));
+  }
+
+  it('6 предметников → F-Head-WithPhoto (слева) + G-Teachers-3x2 (справа)', () => {
+    const result = runWith(WITH_3X2, 6);
+    expect(result.spreads[0].left?.master_id).toBe('id-F-Head-WithPhoto');
+    expect(result.spreads[0].right?.master_id).toBe('id-G-Teachers-3x2');
+    // предметники привязаны к правой сетке
+    const right = result.spreads[0].right!;
+    expect(right.bindings.teacherphoto_1).toBeTruthy();
+    expect(right.bindings.teacherphoto_6).toBeTruthy();
+  });
+
+  it('5 предметников → G-Teachers-3x2 (min_fit, 6 слотов, 1 пустой)', () => {
+    const result = runWith(WITH_3X2, 5);
+    expect(result.spreads[0].left?.master_id).toBe('id-F-Head-WithPhoto');
+    expect(result.spreads[0].right?.master_id).toBe('id-G-Teachers-3x2');
+  });
+
+  it('9 предметников → G-Teachers-3x3 (компактная не подходит, регресс)', () => {
+    const result = runWith(WITH_3X2, 9);
+    expect(result.spreads[0].left?.master_id).toBe('id-F-Head-WithPhoto');
+    expect(result.spreads[0].right?.master_id).toBe('id-G-Teachers-3x3');
+  });
+
+  it('7 предметников → 3x2 не помещает (cap6<7) → LargeGrid слева (регресс)', () => {
+    const result = runWith(WITH_3X2, 7);
+    expect(result.spreads[0].left?.master_id).toBe('id-F-Head-LargeGrid');
+  });
+
+  it('БЕЗ 3x2 в наборе: 6 предметников → старый путь F-Head-LargeGrid слева', () => {
+    // okeybook-default не ломается: только крупные сетки (cap≥9) → отвергнуты,
+    // предметники остаются на левой LargeGrid.
+    const result = runWith(ALL_TEACHERS_MASTERS, 6);
+    expect(result.spreads[0].left?.master_id).toBe('id-F-Head-LargeGrid');
+  });
+});
