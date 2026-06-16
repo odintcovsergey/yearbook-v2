@@ -604,16 +604,38 @@ function collectContentsTexts(node: Record<string, unknown>): string[] {
   return out;
 }
 
+/** Площадь пересечения двух bbox (мм²). 0 если не пересекаются. */
+function bboxOverlap(a: Placeholder, b: Placeholder): number {
+  const dx = Math.max(
+    0,
+    Math.min(a.x_mm + a.width_mm, b.x_mm + b.width_mm) - Math.max(a.x_mm, b.x_mm),
+  );
+  const dy = Math.max(
+    0,
+    Math.min(a.y_mm + a.height_mm, b.y_mm + b.height_mm) - Math.max(a.y_mm, b.y_mm),
+  );
+  return dx * dy;
+}
+
 /**
  * Часть 1 ТЗ (динамика): offset декора = его исходная позиция − позиция
  * базового слота. По нему builder (Этап 3) пересчитает позицию декора, когда
  * базовый слот сдвинут симметризацией (`__pos__`): deco = new_base + offset.
  *
- * Базовый слот ищется по точному совпадению label === attached_to. Если базы
- * нет (опечатка в метке) — warning, offset остаётся 0 (декор останется на
- * исходном месте, но не будет следовать за слотом).
+ * Базовый слот берётся из метки `<base>__under/__over` (attached_to). НО если
+ * названный слот физически НЕ под декором (метки в макете пронумерованы не в
+ * том порядке, что слоты — реальный случай дизайнерского набора «Аква меч»:
+ * ленточки имён нумерованы по строкам, а имена по столбцам), привязываем декор
+ * к слоту, который РЕАЛЬНО под ним (макс. пересечение bbox на той же странице),
+ * и пересчитываем attached_to. Так ленточка следует за своей ячейкой при
+ * центрировании/неполных рядах, а не улетает на ±48–144 мм.
+ *
+ * Для корректно размеченных наборов (okeybook: метка совпадает со слотом под
+ * декором) поведение не меняется — названный слот И есть слот под декором.
+ *
+ * Если базы нет вовсе (опечатка, ничего не пересекается) — warning, offset 0.
  */
-function computeDecorationOffsets(
+export function computeDecorationOffsets(
   placeholders: Array<Placeholder & { _pageIndex: number }>,
   masterName: string,
   warnings: ParserWarning[],
@@ -626,7 +648,47 @@ function computeDecorationOffsets(
     const deco = ph as DecorationPlaceholder & { _pageIndex: number };
     // Передний план (Часть 4) не привязан к слоту — offset не нужен.
     if (deco.layer === 'foreground') continue;
-    const base = byLabel.get(deco.attached_to);
+
+    const labelBase = byLabel.get(deco.attached_to);
+
+    // Слот по метке физически под декором? Если да — доверяем метке (нулевая
+    // смена поведения для корректных наборов). Если нет — ищем слот под
+    // декором геометрически.
+    const labelBaseOverlaps = labelBase
+      ? bboxOverlap(deco, labelBase) > 0
+      : false;
+
+    let base: Placeholder | undefined = labelBaseOverlaps ? labelBase : undefined;
+
+    if (!base) {
+      // Геометрия: слот (не-декор, на той же странице) с макс. пересечением.
+      let best: Placeholder | undefined;
+      let bestArea = 0;
+      for (const cand of placeholders) {
+        if (cand.type === 'decoration') continue;
+        if (cand._pageIndex !== deco._pageIndex) continue;
+        const area = bboxOverlap(deco, cand);
+        if (area > bestArea) {
+          bestArea = area;
+          best = cand;
+        }
+      }
+      if (best && best.label !== deco.attached_to) {
+        // Перепривязка: метка указывала не на тот слот.
+        warnings.push({
+          message:
+            `decoration '${deco.label}' attached_to='${deco.attached_to}' ` +
+            `не под этим слотом — перепривязан к '${best.label}' по геометрии`,
+          master: masterName,
+          label: deco.label,
+        });
+        deco.attached_to = best.label;
+        base = best;
+      } else if (best) {
+        base = best;
+      }
+    }
+
     if (!base) {
       warnings.push({
         message: `decoration attached_to '${deco.attached_to}' has no matching base slot`,
