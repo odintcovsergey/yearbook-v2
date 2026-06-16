@@ -35,6 +35,7 @@ import {
   applyBalanceOverrides,
 } from '@/lib/balance-overrides'
 import { orderPlaceholdersForRender } from '@/lib/decorations/render-order'
+import { resolvePlaceholdersForSide } from '@/lib/album-builder/mirror-placeholders'
 import {
   parseFontSizeMult,
   parseColor,
@@ -1310,6 +1311,19 @@ export default function AlbumSpreadCanvas({
       }
     : template
 
+  // Авто-зеркало page-any на правой странице (mirror-placeholders.ts) —
+  // ФИНАЛЬНАЯ геометрическая трансформация ПОСЛЕ балансировки. Считаем ОДИН
+  // раз и используем у ВСЕХ потребителей координат (Konva-слоты + DOM-оверлеи
+  // DropZone/PhotoCropOverlay) — иначе drag/crop разойдутся со слотами на
+  // правой странице. Та же точка/условие, что в PDF-pipeline → превью = PDF.
+  // Для левой/spread и не-page-any мастеров возвращает список как есть.
+  const renderPlaceholders = resolvePlaceholdersForSide(
+    effectiveTemplate.placeholders as RenderPlaceholder[],
+    pageSide,
+    template.page_type,
+    template.width_mm,
+  )
+
   return (
     <div
       className="relative"
@@ -1351,9 +1365,7 @@ export default function AlbumSpreadCanvas({
               Часть 1 ТЗ: сортируем z-порядок — __under перед базой, __over
               после (orderPlaceholdersForRender). Скрытый декор уже отфильтрован
               в applyBalanceOverrides выше. */}
-          {orderPlaceholdersForRender(
-            effectiveTemplate.placeholders as RenderPlaceholder[],
-          ).map((p: RenderPlaceholder, i) => {
+          {orderPlaceholdersForRender(renderPlaceholders).map((p: RenderPlaceholder, i) => {
             const value = instance.data[p.label] ?? null
             const key = `${p.label}-${i}`
             if (p.type === 'decoration') {
@@ -1434,7 +1446,7 @@ export default function AlbumSpreadCanvas({
       {/* DOM-overlay с drop-target'ами и text-edit overlay'ами (только в edit-режиме) */}
       {mode === 'edit' && (
         <div className="absolute inset-0 pointer-events-none">
-          {effectiveTemplate.placeholders.map((p) => {
+          {renderPlaceholders.map((p) => {
             if (p.type === 'photo') {
               // Блок UX.3 — фото в режиме кропа обслуживает PhotoCropOverlay
               // (рендерится ниже, поверх затемнения), DropZone скрываем.
@@ -1524,7 +1536,7 @@ export default function AlbumSpreadCanvas({
               всех DropZone'ов (блокирует прочие клики на время кропа), клик
               по нему = «Готово». PhotoCropOverlay — поверх затемнения. */}
           {croppingLabel && cropHandlers && (() => {
-            const cp = effectiveTemplate.placeholders.find(
+            const cp = renderPlaceholders.find(
               (pl) => pl.label === croppingLabel && pl.type === 'photo',
             ) as PhotoPlaceholder | undefined
             const cu = cp ? (instance.data[cp.label] ?? null) : null

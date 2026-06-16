@@ -50,7 +50,8 @@ const SPREAD_TEMPLATE_FIELDS =
   'placeholders, rules, sort_order, background_url, created_at, ' +
   // Нужны редактору для категорийных фонов с ротацией: page_role → категория,
   // background_override_url → фон конкретного мастера (приоритет над ротацией).
-  'page_role, background_override_url'
+  // page_type → авто-зеркало page-any на правой странице (mirror-placeholders).
+  'page_role, background_override_url, page_type'
 
 // ============================================================
 // Локальная копия assertAlbumAccess (паттерн из app/api/tenant/route.ts).
