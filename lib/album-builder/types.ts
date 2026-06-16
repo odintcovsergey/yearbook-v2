@@ -345,6 +345,14 @@ export type RenderPlaceholder = Placeholder | DecorationPlaceholder;
 // ─── SpreadTemplate / TemplateSet (проекции таблиц) ───────────────────────
 
 /**
+ * Сторона разворота для мастера (колонка spread_templates.page_type).
+ * 'page-any' — мастер для любой стороны (правую автозеркалит рендер);
+ * 'page-left' / 'page-right' — явная пара от дизайнера (НЕ зеркалится);
+ * 'spread' — двухстраничный мастер.
+ */
+export type PageType = 'page-left' | 'page-right' | 'page-any' | 'spread';
+
+/**
  * Запись из `spread_templates` (миграции 0.1 + 0.8.6.1 + 0.11.1.5).
  *
  * `sort_order` — позиционный индекс из IDML (см. memory
@@ -378,6 +386,14 @@ export type SpreadTemplate = {
   is_fallback: boolean;
   mirror_for_soft: boolean;
   audit_notes: string | null;
+  /**
+   * Сторона разворота, на которую встаёт мастер (spread_templates.page_type,
+   * заполняется из lib/idml-converter/family-mapping.ts). Опционально, т.к. не
+   * все запросы выбирают это поле; undefined трактуется как «не зеркалить».
+   * Используется авто-зеркалом page-any на правой странице
+   * (lib/album-builder/mirror-placeholders.ts).
+   */
+  page_type?: PageType | null;
   /**
    * Категорийные фоны: если задан — фон этого мастера фиксирован (приоритет
    * над ротацией категории). NULL = ротация. Опционально, т.к. не все запросы
