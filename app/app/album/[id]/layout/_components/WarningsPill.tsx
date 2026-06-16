@@ -93,22 +93,22 @@ const LEVEL_STYLES: Record<WarningLevel, {
   panelHeader: string
 }> = {
   blocking: {
-    pill: 'border-red-200 bg-red-50 text-red-900 hover:bg-red-100',
-    badge: 'bg-red-200 text-red-900',
-    panelBorder: 'border-red-200',
-    panelHeader: 'text-red-900',
+    pill: 'border-red-200 bg-red-50 text-red-900 hover:bg-red-100 dark:border-red-500/40 dark:bg-red-500/15 dark:text-red-200 dark:hover:bg-red-500/25',
+    badge: 'bg-red-200 text-red-900 dark:bg-red-500/30 dark:text-red-100',
+    panelBorder: 'border-red-200 dark:border-red-500/40',
+    panelHeader: 'text-red-900 dark:text-red-300',
   },
   degraded: {
-    pill: 'border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100',
-    badge: 'bg-amber-200 text-amber-900',
-    panelBorder: 'border-amber-200',
-    panelHeader: 'text-amber-900',
+    pill: 'border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200 dark:hover:bg-amber-500/25',
+    badge: 'bg-amber-200 text-amber-900 dark:bg-amber-500/30 dark:text-amber-100',
+    panelBorder: 'border-amber-200 dark:border-amber-500/40',
+    panelHeader: 'text-amber-900 dark:text-amber-300',
   },
   info: {
-    pill: 'border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100',
-    badge: 'bg-sky-200 text-sky-900',
-    panelBorder: 'border-sky-200',
-    panelHeader: 'text-sky-900',
+    pill: 'border-sky-200 bg-sky-50 text-sky-900 hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-500/15 dark:text-sky-200 dark:hover:bg-sky-500/25',
+    badge: 'bg-sky-200 text-sky-900 dark:bg-sky-500/30 dark:text-sky-100',
+    panelBorder: 'border-sky-200 dark:border-sky-500/40',
+    panelHeader: 'text-sky-900 dark:text-sky-300',
   },
 }
 

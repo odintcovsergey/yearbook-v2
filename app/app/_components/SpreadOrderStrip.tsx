@@ -77,6 +77,8 @@ type Props = {
    * ротацию в миниатюрах. null из резолвера = у этой страницы фона нет.
    */
   pageBackgroundUrl?: (pageIdx: number) => string | null
+  /** Модель «поля»: отступ контента от корешка (мм). null = legacy зеркало. */
+  spineMarginMm?: number | null
 }
 
 const PAGE_THUMB_WIDTH = 96 // одна страница (~140px высоты для книжной пропорции)
@@ -94,6 +96,7 @@ export default function SpreadOrderStrip({
   softShift = false,
   backgroundUrl = null,
   pageBackgroundUrl,
+  spineMarginMm = null,
 }: Props) {
   const templateMap = useMemo(() => {
     const map = new Map<string, SpreadTemplate>()
@@ -221,6 +224,7 @@ export default function SpreadOrderStrip({
                   disabled={readOnly}
                   backgroundUrl={backgroundUrl}
                   pageBackgroundUrl={pageBackgroundUrl}
+                  spineMarginMm={spineMarginMm}
                 />
               )
             })}
@@ -267,6 +271,7 @@ function SpreadCard({
   disabled,
   backgroundUrl,
   pageBackgroundUrl,
+  spineMarginMm,
 }: {
   pair: VisualSpread
   leftPage: SpreadInstance | null
@@ -282,6 +287,7 @@ function SpreadCard({
   disabled: boolean
   backgroundUrl: string | null
   pageBackgroundUrl?: (pageIdx: number) => string | null
+  spineMarginMm?: number | null
 }) {
   // Является ли разворот двух-страничным мастером (J-Spread)?
   // Тогда обе страницы — это ОДНА запись SpreadInstance с одним
@@ -315,6 +321,7 @@ function SpreadCard({
             disabled={disabled}
             backgroundUrl={resolveBg(pair.leftIdx)}
             pageSide="spread"
+            spineMarginMm={spineMarginMm}
           />
         ) : (
           <>
@@ -331,6 +338,7 @@ function SpreadCard({
                 disabled={disabled}
                 backgroundUrl={resolveBg(pair.leftIdx)}
                 pageSide="left"
+                spineMarginMm={spineMarginMm}
               />
             ) : (
               <EmptySideThumb width={PAGE_THUMB_WIDTH} />
@@ -350,6 +358,7 @@ function SpreadCard({
                 disabled={disabled}
                 backgroundUrl={resolveBg(pair.rightIdx)}
                 pageSide="right"
+                spineMarginMm={spineMarginMm}
               />
             ) : (
               <EmptySideThumb width={PAGE_THUMB_WIDTH} />
@@ -398,6 +407,7 @@ function DraggablePage({
   disabled,
   backgroundUrl,
   pageSide,
+  spineMarginMm,
 }: {
   pageIdx: number
   page: SpreadInstance
@@ -409,6 +419,7 @@ function DraggablePage({
   disabled: boolean
   backgroundUrl: string | null
   pageSide: 'spread' | 'left' | 'right'
+  spineMarginMm?: number | null
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: `page-${page.spread_index}`, disabled })
@@ -445,6 +456,7 @@ function DraggablePage({
           mode="preview"
           backgroundUrl={backgroundUrl}
           pageSide={pageSide}
+          spineMarginMm={spineMarginMm}
         />
       </div>
 

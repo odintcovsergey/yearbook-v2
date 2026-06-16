@@ -38,6 +38,8 @@ type Props = {
   textStyleOverrides?: AlbumTextStyleOverrides
   initialPairIdx: number
   onClose: () => void
+  /** Модель «поля»: отступ контента от корешка (мм). null = legacy зеркало. */
+  spineMarginMm?: number | null
 }
 
 // Простой нейтральный «лист» для пустой страницы висящего разворота или
@@ -74,6 +76,7 @@ export default function LayoutPreviewFullscreen({
   textStyleOverrides,
   initialPairIdx,
   onClose,
+  spineMarginMm = null,
 }: Props) {
   const total = visualSpreads.length
   const clampIdx = useCallback(
@@ -235,6 +238,7 @@ export default function LayoutPreviewFullscreen({
                 textStyleOverrides={textStyleOverrides}
                 backgroundUrl={bgUrl}
                 pageSide="spread"
+                spineMarginMm={spineMarginMm}
               />
             ) : (
               <>
@@ -247,6 +251,7 @@ export default function LayoutPreviewFullscreen({
                     textStyleOverrides={textStyleOverrides}
                     backgroundUrl={bgUrl}
                     pageSide="left"
+                    spineMarginMm={spineMarginMm}
                   />
                 ) : (
                   <BlankPage
@@ -264,6 +269,7 @@ export default function LayoutPreviewFullscreen({
                     textStyleOverrides={textStyleOverrides}
                     backgroundUrl={bgUrl}
                     pageSide="right"
+                    spineMarginMm={spineMarginMm}
                   />
                 ) : (
                   <BlankPage

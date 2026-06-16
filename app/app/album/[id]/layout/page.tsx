@@ -1939,14 +1939,14 @@ function LayoutEditorPageInner({
               {effectivePrintType === 'soft' && (
                 <button
                   type="button"
-                  className="group inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-900 hover:bg-amber-100 cursor-help relative"
+                  className="group inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-900 hover:bg-amber-100 cursor-help relative dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200 dark:hover:bg-amber-500/25"
                   tabIndex={0}
                 >
                   <span><BookOpen size={14} /></span>
                   <span className="font-medium">Мягкий переплёт</span>
-                  <span className="text-amber-700 text-[10px]">подробнее</span>
+                  <span className="text-amber-700 text-[10px] dark:text-amber-300">подробнее</span>
                   <span
-                    className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 transition-opacity absolute left-1/2 top-full mt-1 -translate-x-1/2 z-20 w-80 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-lg"
+                    className="invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 transition-opacity absolute left-1/2 top-full mt-1 -translate-x-1/2 z-20 w-80 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-lg dark:border-amber-500/40 dark:bg-amber-900 dark:text-amber-100"
                     role="tooltip"
                   >
                     На первом и последнем разворотах одна страница — это физический
@@ -2384,6 +2384,7 @@ function LayoutEditorPageInner({
                   softShift={isSoftAlbum}
                   backgroundUrl={backgroundUrl}
                   pageBackgroundUrl={(idx) => bgUrlByPageIdx.get(idx) ?? null}
+                  spineMarginMm={spineMarginMm}
                 />
               </div>
             </div>
@@ -2547,6 +2548,7 @@ function LayoutEditorPageInner({
           textStyleOverrides={textStyleOverrides}
           initialPairIdx={currentPairIdx >= 0 ? currentPairIdx : 0}
           onClose={() => setFullscreenOpen(false)}
+          spineMarginMm={spineMarginMm}
         />
       )}
 

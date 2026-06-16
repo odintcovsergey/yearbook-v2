@@ -47,6 +47,8 @@ type TemplateDetailResponse = {
     spread_width_mm: number
     spread_height_mm: number
     default_background_url: string | null
+    /** Модель «поля»: отступ контента от корешка (мм). null = legacy зеркало. */
+    spine_margin_mm: number | null
   }
   spread_templates: SpreadTemplate[]
   /** Пул категорийных фонов набора (для ротации). */
@@ -218,6 +220,8 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
   // fallback на album.print_type (legacy layout'ы сохранённые до РЭ.43.B
   // в которых summary.sheet_type не было).
   const sheetType = layout.summary?.sheet_type ?? albumPrintType ?? null
+  // Модель «поля»: отступ от корешка набора (для AlbumSpreadCanvas).
+  const spineMarginMm = detail?.template_set.spine_margin_mm ?? null
   const visualSpreads = useMemo(
     () => (detail ? groupIntoVisualSpreads(spreads, templateById, sheetType) : []),
     [spreads, templateById, detail, sheetType],
@@ -301,6 +305,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       mode="preview"
                       backgroundUrl={bgUrls[idx] ?? null}
                       pageSide="spread"
+                      spineMarginMm={spineMarginMm}
                     />
                   </div>
                   <div className="text-[10px] text-center text-muted-foreground mt-1">
@@ -332,6 +337,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       mode="preview"
                       backgroundUrl={bgUrls[idx] ?? null}
                       pageSide="left"
+                      spineMarginMm={spineMarginMm}
                     />
                   ) : (
                     <ForzacOrEmptySlot
@@ -352,6 +358,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       mode="preview"
                       backgroundUrl={bgUrls[idx] ?? null}
                       pageSide="right"
+                      spineMarginMm={spineMarginMm}
                     />
                   ) : (
                     <ForzacOrEmptySlot
