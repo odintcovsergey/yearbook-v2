@@ -4078,6 +4078,23 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Удаляем сохранённые раскладки этого дизайна. album_layouts.template_set_id
+    // — NOT NULL без ON DELETE (создана в Studio, не в миграциях), поэтому
+    // отвязать NULL'ом нельзя — строки удаляем. При не-force здесь обычно пусто
+    // (раскладки есть только у альбомов, использующих дизайн). При force альбомы
+    // уже отвязаны на дефолт — их прежняя раскладка ссылалась на удаляемые
+    // мастера, пересоберётся при следующей сборке.
+    const { error: delLayoutsErr } = await supabaseAdmin
+      .from('album_layouts')
+      .delete()
+      .eq('template_set_id', tsId)
+    if (delLayoutsErr) {
+      return NextResponse.json(
+        { error: 'Не удалось удалить раскладки дизайна: ' + delLayoutsErr.message },
+        { status: 500 },
+      )
+    }
+
     // Удаляем мастера (нет ON DELETE CASCADE).
     const { error: delMastersErr } = await supabaseAdmin
       .from('spread_templates')
@@ -4096,7 +4113,14 @@ export async function POST(req: NextRequest) {
       .delete()
       .eq('id', tsId)
     if (delTsErr) {
-      return serverError(delTsErr, 'tenant')
+      // Информативный текст (а не generic 500): если осталась незамеченная
+      // FK-ссылка из таблицы, созданной вне миграций, в сообщении будет видно
+      // конкретное ограничение.
+      console.error('[template_set_delete] delete failed:', delTsErr)
+      return NextResponse.json(
+        { error: 'Не удалось удалить дизайн: ' + delTsErr.message },
+        { status: 500 },
+      )
     }
 
     // Audit log.
