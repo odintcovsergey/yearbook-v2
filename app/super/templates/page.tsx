@@ -92,8 +92,14 @@ export default function TemplatesPage() {
       setBusyId(id)
       try {
         const r = await tenantAction(body)
-        const d = await r.json().catch(() => ({}))
-        if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
+        const d = await r.json().catch(() => ({} as Record<string, unknown>))
+        if (!r.ok) {
+          return {
+            ok: false as const,
+            error: (d.error as string) ?? `HTTP ${r.status}`,
+            data: d as Record<string, unknown>,
+          }
+        }
         await loadTemplates()
         return { ok: true as const }
       } catch (e) {
@@ -233,10 +239,11 @@ export default function TemplatesPage() {
           <DeleteModal
             template={deleteFor}
             onClose={() => setDeleteFor(null)}
-            onConfirm={async () => {
+            onConfirm={async (force) => {
               const res = await runAction(deleteFor.id, {
                 action: 'template_set_delete',
                 template_set_id: deleteFor.id,
+                force,
               })
               if (res.ok) setDeleteFor(null)
               return res
@@ -312,21 +319,48 @@ function DeleteModal({
 }: {
   template: TemplateSet
   onClose: () => void
-  onConfirm: () => Promise<{ ok: boolean; error?: string }>
+  onConfirm: (force: boolean) => Promise<{
+    ok: boolean
+    error?: string
+    data?: Record<string, unknown>
+  }>
 }) {
   const [confirm, setConfirm] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // Когда сервер ответил «используется» (409 + can_force) — показываем
+  // предупреждение с числами и кнопку форсированного удаления.
+  const [inUse, setInUse] = useState<{ albums: number; presets: number } | null>(
+    null,
+  )
   const matches = confirm.trim() === template.name.trim()
 
-  const run = async () => {
+  const run = async (force: boolean) => {
     if (!matches) return
     setDeleting(true)
     setErr(null)
-    const res = await onConfirm()
+    const res = await onConfirm(force)
     setDeleting(false)
-    if (!res.ok) setErr(res.error ?? 'Ошибка')
+    if (res.ok) return
+    // Заблокировано использованием и можно форсировать — показываем шаг force.
+    if (!force && res.data?.can_force) {
+      setInUse({
+        albums: Number(res.data.albums_count ?? 0),
+        presets: Number(res.data.presets_count ?? 0),
+      })
+      return
+    }
+    setErr(res.error ?? 'Ошибка')
   }
+
+  const usageText = inUse
+    ? [
+        inUse.albums > 0 ? `${inUse.albums} альбом(ах)` : null,
+        inUse.presets > 0 ? `${inUse.presets} пресет(ах)` : null,
+      ]
+        .filter(Boolean)
+        .join(' и ')
+    : ''
 
   return (
     <ModalShell onClose={onClose} title="Удалить дизайн">
@@ -335,7 +369,8 @@ function DeleteModal({
         мастерами и фонами. Действие необратимо.
       </p>
       <p className="text-sm text-muted-foreground mb-2">
-        Если на дизайне есть альбомы или пресеты — сервер не даст его удалить.
+        Если дизайн где-то используется, сначала будет показано предупреждение —
+        удалить можно будет с отвязкой по подтверждению.
       </p>
       <p className="text-sm text-foreground mb-1">
         Для подтверждения введите название дизайна:
@@ -347,18 +382,43 @@ function DeleteModal({
         className="w-full border rounded px-3 py-2 text-sm mb-3"
         placeholder={template.name}
       />
+
+      {inUse && (
+        <div className="text-sm rounded border border-red-500/40 bg-red-500/10 p-3 mb-3">
+          <div className="text-red-400 font-medium mb-1">
+            Дизайн используется в {usageText}.
+          </div>
+          <div className="text-muted-foreground">
+            Если удалить с отвязкой: эти альбомы и пресеты переключатся на
+            дизайн по умолчанию. Их сохранённая вёрстка ссылается на удаляемые
+            мастера — её придётся пересобрать. Действие необратимо.
+          </div>
+        </div>
+      )}
+
       {err && <div className="text-sm text-red-600 mb-3">{err}</div>}
+
       <div className="flex justify-end gap-2">
         <button onClick={onClose} disabled={deleting} className="btn-secondary">
           Отмена
         </button>
-        <button
-          onClick={run}
-          disabled={!matches || deleting}
-          className="px-4 py-2 text-sm rounded bg-red-600 hover:bg-red-700 disabled:bg-muted text-white"
-        >
-          {deleting ? 'Удаление…' : 'Удалить навсегда'}
-        </button>
+        {inUse ? (
+          <button
+            onClick={() => run(true)}
+            disabled={!matches || deleting}
+            className="px-4 py-2 text-sm rounded bg-red-600 hover:bg-red-700 disabled:bg-muted text-white"
+          >
+            {deleting ? 'Удаление…' : 'Удалить с отвязкой'}
+          </button>
+        ) : (
+          <button
+            onClick={() => run(false)}
+            disabled={!matches || deleting}
+            className="px-4 py-2 text-sm rounded bg-red-600 hover:bg-red-700 disabled:bg-muted text-white"
+          >
+            {deleting ? 'Удаление…' : 'Удалить навсегда'}
+          </button>
+        )}
       </div>
     </ModalShell>
   )

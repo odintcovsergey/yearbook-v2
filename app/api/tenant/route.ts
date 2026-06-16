@@ -3995,18 +3995,56 @@ export async function POST(req: NextRequest) {
 
     const ac = albumsCount ?? 0
     const pc = presetsCount ?? 0
-    if (ac > 0 || pc > 0) {
+    const force = body.force === true
+    if ((ac > 0 || pc > 0) && !force) {
+      // Без force — блокируем (409), но сообщаем UI, что удаление можно
+      // форсировать (can_force) с отвязкой ссылок.
       const parts: string[] = []
       if (ac > 0) parts.push(`${ac} альбомах`)
       if (pc > 0) parts.push(`${pc} пресетах`)
       return NextResponse.json(
         {
-          error: `Дизайн используется в ${parts.join(' и ')}. Сначала переключите их на другой дизайн.`,
+          error: `Дизайн используется в ${parts.join(' и ')}. Переключите их на другой дизайн или подтвердите удаление с отвязкой.`,
           albums_count: ac,
           presets_count: pc,
+          can_force: true,
         },
         { status: 409 },
       )
+    }
+
+    // force=true: отвязываем ссылки ПЕРЕД удалением. albums.template_set_id —
+    // FK без ON DELETE (RESTRICT) → без отвязки БД не даст удалить набор.
+    // Отвязанные альбомы падают на дефолтный дизайн (template_set_id=NULL).
+    // presets.template_set_id — FK ON DELETE SET NULL (отцепится сам), но
+    // обнуляем явно для предсказуемости и аудита. ВАЖНО: сохранённая вёрстка
+    // отвязанных альбомов (album_layouts) ссылается на удаляемые мастера —
+    // её надо будет пересобрать. Это осознанный force.
+    if (force && (ac > 0 || pc > 0)) {
+      if (ac > 0) {
+        const { error: detachAlbumsErr } = await supabaseAdmin
+          .from('albums')
+          .update({ template_set_id: null })
+          .eq('template_set_id', tsId)
+        if (detachAlbumsErr) {
+          return NextResponse.json(
+            { error: 'Не удалось отвязать альбомы: ' + detachAlbumsErr.message },
+            { status: 500 },
+          )
+        }
+      }
+      if (pc > 0) {
+        const { error: detachPresetsErr } = await supabaseAdmin
+          .from('presets')
+          .update({ template_set_id: null })
+          .eq('template_set_id', tsId)
+        if (detachPresetsErr) {
+          return NextResponse.json(
+            { error: 'Не удалось отвязать пресеты: ' + detachPresetsErr.message },
+            { status: 500 },
+          )
+        }
+      }
     }
 
     // Удаляем категорийные фоны: сначала файлы из storage, затем строки.
@@ -4065,6 +4103,9 @@ export async function POST(req: NextRequest) {
     try {
       await logAction(auth, 'template_set.delete', 'template_set', tsId, {
         name: (ts as { name: string }).name,
+        force,
+        detached_albums: force ? ac : 0,
+        detached_presets: force ? pc : 0,
       })
     } catch (e) {
       console.warn('[template_set_delete] audit log failed:', e)

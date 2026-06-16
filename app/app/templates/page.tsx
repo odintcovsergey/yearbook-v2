@@ -128,19 +128,36 @@ export default function DesignsListPage() {
       setActionTsId(design.id)
       setError(null)
       try {
-        const r = await api('/api/tenant', {
-          method: 'POST',
-          body: JSON.stringify({
-            action: 'template_set_delete',
-            template_set_id: design.id,
-          }),
-        })
-        if (!r.ok) {
+        const del = (force: boolean) =>
+          api('/api/tenant', {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'template_set_delete',
+              template_set_id: design.id,
+              force,
+            }),
+          })
+
+        let r = await del(false)
+        if (r.status === 409) {
+          // Дизайн используется, но удаление можно форсировать с отвязкой.
           const d = await r.json().catch(() => ({}))
-          // 409: дизайн используется. Показываем сообщение из API.
-          if (r.status === 409) {
+          if (d.can_force) {
+            // eslint-disable-next-line no-alert
+            const forceOk = window.confirm(
+              `${d.error ?? 'Дизайн используется.'}\n\n` +
+                `Удалить с отвязкой? Связанные альбомы и пресеты переключатся ` +
+                `на дизайн по умолчанию, их вёрстку придётся пересобрать. ` +
+                `Действие необратимо.`,
+            )
+            if (!forceOk) return
+            r = await del(true)
+          } else {
             throw new Error(d.error ?? 'Дизайн используется')
           }
+        }
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}))
           throw new Error(d.error ?? `HTTP ${r.status}`)
         }
         await loadDesigns()
