@@ -90,6 +90,9 @@ export {
 } from './print-type-resolver';
 export type { SheetType } from './print-type-resolver';
 
+export { resolveAlbumEffectivePrintType } from './album-print-type';
+export type { AlbumPrintTypeFields } from './album-print-type';
+
 export { getEndpaperRules } from './endpaper-rules';
 export type { EndpaperPosition, EndpaperSpec } from './endpaper-rules';
 

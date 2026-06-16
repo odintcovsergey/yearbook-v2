@@ -16,7 +16,7 @@ import type {
   TemplateSet,
 } from '@/lib/album-builder'
 import { loadBundle } from '@/lib/album-builder'
-import { resolvePrintType, printTypeToSheetType } from '@/lib/album-builder'
+import { resolvePrintType, printTypeToSheetType, resolveAlbumEffectivePrintType } from '@/lib/album-builder'
 import { buildFromSectionStructure } from '@/lib/rule-engine/build-from-section-structure'
 import type {
   RulesAlbumInput,
@@ -1901,7 +1901,9 @@ async function handleExportPdf(
   // ВАЖНО: в schema.sql колонка названия — `title`, не `name`.
   const { data: album, error: albumErr } = await supabaseAdmin
     .from('albums')
-    .select('id, title, tenant_id')
+    .select(
+      'id, title, tenant_id, print_type, section_structure_preset_id, config_preset_id',
+    )
     .eq('id', albumId)
     .single()
 
@@ -2124,6 +2126,19 @@ async function handleExportPdf(
     .order('category', { ascending: true })
     .order('sort_order', { ascending: true })
 
+  // 5f. Тип переплёта — тот же резолв, что у редактора/viewer'а (РЭ.27.4).
+  // Нужен пайплайну для softShift в segmentToSpreads: без него сторона
+  // страницы (left/right) на soft-альбоме разойдётся между превью и PDF →
+  // зеркало page-any и фоны сядут не на ту сторону.
+  const effectivePrintType = await resolveAlbumEffectivePrintType(
+    supabaseAdmin,
+    album as {
+      print_type?: string | null
+      section_structure_preset_id?: string | null
+      config_preset_id?: string | null
+    },
+  )
+
   // 6. exportAlbumPdf
   const exportInput: AlbumExportInput = {
     album: {
@@ -2144,6 +2159,7 @@ async function handleExportPdf(
     urlToFilename,
     profile,
     backgrounds: bgPool ?? [],
+    effectivePrintType,
   }
 
   let pdfResult: Awaited<ReturnType<typeof exportAlbumPdf>>

@@ -4,6 +4,7 @@ import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, type AuthContext } from '@/lib/auth'
 import { ycUpload, ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
 import { renderPreviewSvg } from '@/lib/album-builder/render-preview-svg'
+import { resolveAlbumEffectivePrintType } from '@/lib/album-builder'
 import { buildAlbumCoverPreviews } from '@/lib/cover/preview-album'
 import { validatePreset } from '@/lib/presets/validate'
 import { buildPresetPreviewBundle } from '@/lib/presets/preview-bundle'
@@ -765,48 +766,18 @@ export async function GET(req: NextRequest) {
       .single()
 
     // РЭ.27.4: добавляем вычисленный effective_print_type для UI.
-    // Логика та же что в layout API: album.print_type приоритетнее,
-    // fallback на preset.print_type, дефолт 'layflat'. Это позволяет
-    // layout viewer'у показывать визуальные форзацы для soft без
-    // дублирования логики resolve на клиенте.
-    let effectivePrintType: 'layflat' | 'soft' = 'layflat'
-    if (album) {
-      const albumPt = (album as { print_type?: string | null }).print_type
-      if (albumPt === 'layflat' || albumPt === 'soft') {
-        effectivePrintType = albumPt
-      } else {
-        // Fallback: посмотреть в связанном пресете.
-        // - section_structure_preset_id → 'presets' таблица (РЭ.21+,
-        //   связь по uuid, БЕЗ slug-колонки).
-        // - config_preset_id → 'config_presets' таблица (legacy,
-        //   связь по slug-string).
-        // ⚠️ Это РАЗНЫЕ ТАБЛИЦЫ (открыто 21.05.2026 при работе над 27.7).
-        //   Раньше в этом блоке ошибочно стояло '.from(presets).eq(slug, ...)' —
-        //   запрос падал т.к. в 'presets' нет slug, и effectivePrintType
-        //   оставался 'layflat' независимо от реального значения.
-        const ssId = (album as { section_structure_preset_id?: string | null })
-          .section_structure_preset_id
-        const cfgId = (album as { config_preset_id?: string | null })
-          .config_preset_id
-        if (ssId) {
-          const { data: ps } = await supabaseAdmin
-            .from('presets')
-            .select('print_type')
-            .eq('id', ssId)
-            .maybeSingle()
-          const psPt = (ps as { print_type?: string | null } | null)?.print_type
-          if (psPt === 'layflat' || psPt === 'soft') effectivePrintType = psPt
-        } else if (cfgId) {
-          const { data: ps } = await supabaseAdmin
-            .from('config_presets')
-            .select('print_type')
-            .eq('slug', cfgId)
-            .maybeSingle()
-          const psPt = (ps as { print_type?: string | null } | null)?.print_type
-          if (psPt === 'layflat' || psPt === 'soft') effectivePrintType = psPt
-        }
-      }
-    }
+    // Единый резолв в lib/album-builder/album-print-type.ts (тот же helper,
+    // что использует PDF-экспорт) — album.print_type приоритетнее, fallback
+    // на preset.print_type, дефолт 'layflat'. Это позволяет layout viewer'у
+    // показывать визуальные форзацы для soft без дублирования логики.
+    const effectivePrintType = await resolveAlbumEffectivePrintType(
+      supabaseAdmin,
+      album as {
+        print_type?: string | null
+        section_structure_preset_id?: string | null
+        config_preset_id?: string | null
+      },
+    )
 
     return NextResponse.json({
       ...album,

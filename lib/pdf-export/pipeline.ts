@@ -150,7 +150,13 @@ export async function renderAllSpreads(
   const spreadAspect =
     (pageBoxes.trim_width_mm * 2) / pageBoxes.trim_height_mm;
 
-  const visualSpreads = segmentToSpreads(layout.spreads, templateById);
+  // softShift для soft-альбомов — ТА ЖЕ сегментация, что в редакторе
+  // (page.tsx передаёт softShift: isSoftAlbum). Иначе сторона страницы
+  // (left/right) разойдётся между превью и PDF → зеркало page-any и фоны
+  // сядут на разные стороны. Дефолт 'layflat' (старое поведение).
+  const visualSpreads = segmentToSpreads(layout.spreads, templateById, {
+    softShift: input.effectivePrintType === 'soft',
+  });
 
   // Вход резолвера на каждый визуальный разворот: категория по ведущей странице.
   const bgInputs: SpreadBackgroundInput[] = visualSpreads.map((vs) => {
