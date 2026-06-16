@@ -110,9 +110,9 @@ export function fillCommonSection(
  * Порядок попыток (жадно по крупности):
  *   1. J-Full (1 full_class)
  *   2. J-Half (2 half_class)
- *   3. J-Quarter-Left/-Right (2 quarter)
+ *   3. J-Quarter (page-any) или пара J-Quarter-Left/-Right (2 quarter)
  *   4. J-Sixth-6 (6 sixth) — «1/6 класса»
- *   5. J-Collage-4 (4 collage) — «Коллаж»
+ *   5. J-Collage-6/5/4/3 (6→3 collage) — «Коллаж», самый крупный из набора
  *
  * Логика: для каждой позиции (left/right) пробуем шаги по очереди,
  * берём первый где хватает фото. Если ни один не подошёл — страница
@@ -124,8 +124,19 @@ interface AutopackStep {
   masterName: string;
   /** Для зеркальных пар (J-Quarter-Left/Right): имя мастера на правой стороне. */
   rightVariant?: string;
+  /**
+   * Имя симметричного page-any мастера. Если он есть в template_set —
+   * предпочитаем его паре masterName/rightVariant: правую сторону отдаёт
+   * авто-зеркало (mirror-placeholders.ts), отдельный -Right не нужен.
+   * Фолбэк на пару — для старых наборов (okeybook-default) без page-any.
+   */
+  preferAny?: string;
 }
 
+// Коллажи (J-Collage-6→5→4→3) перечислены от крупного к мелкому: автопак
+// берёт первый шаг, где хватает collage-фото И мастер есть в наборе. Так
+// «самый крупный помещающийся из присутствующих» выходит автоматически —
+// без отдельной логики выбора (по аналогии с лестницей grid у учеников).
 const AUTOPACK_STEPS: AutopackStep[] = [
   { category: 'full_class', count: 1, masterName: 'J-Full' },
   { category: 'half_class', count: 2, masterName: 'J-Half' },
@@ -134,9 +145,13 @@ const AUTOPACK_STEPS: AutopackStep[] = [
     count: 2,
     masterName: 'J-Quarter-Left',
     rightVariant: 'J-Quarter-Right',
+    preferAny: 'J-Quarter',
   },
   { category: 'sixth', count: 6, masterName: 'J-Sixth-6' },
+  { category: 'collage', count: 6, masterName: 'J-Collage-6' },
+  { category: 'collage', count: 5, masterName: 'J-Collage-5' },
   { category: 'collage', count: 4, masterName: 'J-Collage-4' },
+  { category: 'collage', count: 3, masterName: 'J-Collage-3' },
 ];
 
 interface AutopackPagePick {
@@ -164,10 +179,16 @@ function pickAutopackPage(
   for (let i = 0; i < AUTOPACK_STEPS.length; i++) {
     const step = AUTOPACK_STEPS[i];
     if (available[step.category] < step.count) continue;
-    const effectiveName =
-      position === 'right' && step.rightVariant
-        ? step.rightVariant
-        : step.masterName;
+    // Приоритет: симметричный page-any (preferAny) если он в наборе →
+    // иначе правый вариант для правой стороны → иначе базовое имя.
+    let effectiveName: string;
+    if (step.preferAny && mastersByName.has(step.preferAny)) {
+      effectiveName = step.preferAny;
+    } else if (position === 'right' && step.rightVariant) {
+      effectiveName = step.rightVariant;
+    } else {
+      effectiveName = step.masterName;
+    }
     const master = mastersByName.get(effectiveName);
     if (!master) continue; // мастер не загружен в template_set — пробуем
                            // следующий шаг
@@ -265,6 +286,7 @@ export function fillCommonAutoSection(
       ctx.available.half_class = snapshot.half_class;
       ctx.available.quarter = snapshot.quarter;
       ctx.available.sixth = snapshot.sixth;
+      ctx.available.collage = snapshot.collage;
       break;
     }
 
@@ -309,7 +331,8 @@ export function fillCommonAutoSection(
       ctx.available.full_class +
       ctx.available.half_class +
       ctx.available.quarter +
-      ctx.available.sixth;
+      ctx.available.sixth +
+      ctx.available.collage;
     ctx.warnings.push(
       `common_autopack_underflow: запрошено ${maxSpreads} разворотов, ` +
         `создано ${createdSpreads} (фото осталось в пуле: ${remainingPool}, ` +

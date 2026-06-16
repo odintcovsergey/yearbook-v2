@@ -490,3 +490,107 @@ describe('common auto: bindings заполняются реальными фот
     );
   });
 });
+
+// ─── 4. J-Quarter (page-any) предпочитается паре Left/Right ──────────────────
+describe('common auto: J-Quarter page-any vs пара Left/Right', () => {
+  const J_QUARTER_ANY = makeMaster('J-Quarter', [
+    photoSlot('quarterphoto_1'),
+    photoSlot('quarterphoto_2'),
+  ]);
+
+  it('есть J-Quarter → обе страницы используют его (правую зеркалит рендер)', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        section_structure: [{ type: 'common', mode: 'auto', max_spreads: 1 }],
+      }),
+      masters: [J_FULL, J_HALF, J_QUARTER_ANY, J_SIXTH_6, J_COLLAGE_4],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ quarter: 4 }));
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Quarter');
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Quarter');
+  });
+
+  it('только пара Left/Right (без J-Quarter) → старый путь (регресс)', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        section_structure: [{ type: 'common', mode: 'auto', max_spreads: 1 }],
+      }),
+      // ALL_MASTERS содержит J-Quarter-Left/Right, но НЕ J-Quarter
+    });
+    const result = buildFromSectionStructure(bundle, makeInput({ quarter: 4 }));
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Quarter-Left');
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Quarter-Right');
+  });
+});
+
+// ─── 5. Коллаж: count-aware выбор крупнейшего помещающегося мастера ──────────
+describe('common auto: J-Collage-6/5/4/3 по числу collage-фото', () => {
+  const J_COLLAGE_3 = makeMaster(
+    'J-Collage-3',
+    Array.from({ length: 3 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
+  );
+  const J_COLLAGE_5 = makeMaster(
+    'J-Collage-5',
+    Array.from({ length: 5 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
+  );
+  const J_COLLAGE_6 = makeMaster(
+    'J-Collage-6',
+    Array.from({ length: 6 }, (_, i) => photoSlot(`collagephoto_${i + 1}`)),
+  );
+  const FULL_COLLAGE_SET = [
+    J_FULL, J_HALF, J_SIXTH_6,
+    J_COLLAGE_3, J_COLLAGE_4, J_COLLAGE_5, J_COLLAGE_6,
+  ];
+
+  function runCollage(masters: SpreadTemplate[], collage: number, maxSpreads = 1) {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        section_structure: [{ type: 'common', mode: 'auto', max_spreads: maxSpreads }],
+      }),
+      masters,
+    });
+    return buildFromSectionStructure(bundle, makeInput({ collage }));
+  }
+
+  it('12 collage → обе страницы J-Collage-6 (крупнейший)', () => {
+    const result = runCollage(FULL_COLLAGE_SET, 12);
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Collage-6');
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Collage-6');
+  });
+
+  it('6 collage на странице → J-Collage-6 (а не 5/4/3)', () => {
+    // 1 разворот: левая 6 (J-Collage-6, 6 осталось), правая 6 (J-Collage-6).
+    const result = runCollage(FULL_COLLAGE_SET, 12, 1);
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Collage-6');
+  });
+
+  it('только J-Collage-3 в наборе: 6 collage → обе страницы J-Collage-3', () => {
+    const result = runCollage([J_FULL, J_HALF, J_SIXTH_6, J_COLLAGE_3], 6);
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Collage-3');
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Collage-3');
+  });
+
+  it('только J-Collage-4: 8 collage → обе J-Collage-4', () => {
+    const result = runCollage([J_FULL, J_HALF, J_SIXTH_6, J_COLLAGE_4], 8);
+    expect(result.spreads).toHaveLength(1);
+    expect(result.spreads[0].left?.master_id).toBe('id-J-Collage-4');
+    expect(result.spreads[0].right?.master_id).toBe('id-J-Collage-4');
+  });
+
+  it('деградация: только J-Collage-4 + 6 collage → не падает, underflow-warning', () => {
+    // Левая берёт J-Collage-4 (4), на правую остаётся 2 (< 3) → откат пары,
+    // 0 разворотов, collage не теряются (восстановлены), warning есть.
+    const result = runCollage([J_FULL, J_HALF, J_SIXTH_6, J_COLLAGE_4], 6);
+    expect(result.spreads).toHaveLength(0);
+    expect(
+      result.warnings.some((w) => w.startsWith('common_autopack_underflow')),
+    ).toBe(true);
+  });
+});
