@@ -3744,6 +3744,23 @@ export async function POST(req: NextRequest) {
       patch.is_published = body.is_published === true
     }
 
+    // spine_margin_mm (модель «поля»): число 0..60 мм или null (= legacy зеркало).
+    if (body.spine_margin_mm !== undefined) {
+      const raw = body.spine_margin_mm
+      if (raw === null || raw === '') {
+        patch.spine_margin_mm = null
+      } else {
+        const n = Number(raw)
+        if (!Number.isFinite(n) || n < 0 || n > 60) {
+          return NextResponse.json(
+            { error: 'spine_margin_mm должен быть числом 0..60 или пустым' },
+            { status: 400 },
+          )
+        }
+        patch.spine_margin_mm = n
+      }
+    }
+
     // make_global (смена tenant_id) — только superadmin
     if (body.make_global !== undefined) {
       if (auth.role !== 'superadmin') {

@@ -16,6 +16,8 @@ export type TemplateSet = {
   description: string | null
   cover_preview_url: string | null
   default_background_url: string | null
+  /** Модель «поля»: отступ контента от корешка (мм). null = legacy зеркало. */
+  spine_margin_mm: number | null
   created_at: string
   updated_at: string
   spread_count: number

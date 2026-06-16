@@ -427,6 +427,12 @@ export type TemplateSet = {
    * данных из loadTemplateSet поле всегда присутствует (string или null).
    */
   default_background_url?: string | null;
+  /**
+   * Модель «поля» (16.06.2026): отступ контента от корешка в мм. NULL = legacy
+   * авто-зеркало page-any. Задан = система ставит блок контента с этим полем у
+   * корешка на каждой стороне (заменяет зеркало). См. resolvePlaceholdersForSide.
+   */
+  spine_margin_mm?: number | null;
   spreads: SpreadTemplate[];
 };
 

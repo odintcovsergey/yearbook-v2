@@ -43,7 +43,7 @@ const TEMPLATE_SET_FIELDS =
   'id, name, slug, print_type, is_global, is_published, tenant_id, ' +
   'page_width_mm, page_height_mm, spread_width_mm, spread_height_mm, bleed_mm, ' +
   'facing_pages, page_binding, description, cover_preview_url, ' +
-  'default_background_url, created_at, updated_at'
+  'default_background_url, spine_margin_mm, created_at, updated_at'
 
 const SPREAD_TEMPLATE_FIELDS =
   'id, name, type, is_spread, width_mm, height_mm, ' +

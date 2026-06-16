@@ -89,22 +89,80 @@ export function mirrorPlaceholders(
 }
 
 /**
- * Применяет зеркало ТОЛЬКО когда страница правая и мастер `page-any`.
+ * Позиционирует блок контента по полю от корешка (модель «поля», заменяет
+ * зеркало для дизайнов, где задан `spine_margin_mm`).
  *
- * Реализует приоритет ТЗ §3: явный правый мастер (page_type='page-right' —
- * E-*-Right, J-Quarter-Right и т.п.) > авто-зеркало (page-any) > левый как есть.
- * Явные `-Right` приходят с page_type !== 'page-any', поэтому под условие не
- * попадают и НЕ зеркалятся. Левые страницы и spread-мастера — тоже как есть.
+ * Идея (ТЗ п.5, 16.06.2026): не доверять абсолютным координатам дизайнера, а
+ * ставить блок системой. Дизайнер рисует контент как угодно — система сдвигает
+ * блок целиком так, чтобы у КОРЕШКА было ровно `spineMarginMm` мм:
+ *   - левая страница (корешок справа): правый край блока = W − spineMargin;
+ *   - правая страница (корешок слева): левый край блока = spineMargin.
+ * Внешний край получает остаток. Внутренняя раскладка/порядок/выравнивание не
+ * меняются (чистый горизонтальный перенос → offset привязанного декора
+ * сохраняется сам). Клампим, чтобы блок не уехал за пределы страницы.
  *
- * Для не-зеркального случая возвращает исходную ссылку (вызывающий код не
- * мутирует список).
+ * bbox считаем по слотам (фото/текст); если их нет — по всем плейсхолдерам.
+ */
+function positionBlockBySpine(
+  placeholders: readonly RenderPlaceholder[],
+  side: 'left' | 'right',
+  pageWidthMm: number,
+  spineMarginMm: number,
+): RenderPlaceholder[] {
+  if (placeholders.length === 0) return [];
+  const slots = placeholders.filter((p) => p.type !== 'decoration');
+  const src = slots.length > 0 ? slots : placeholders;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  for (const p of src) {
+    if (p.x_mm < minX) minX = p.x_mm;
+    if (p.x_mm + p.width_mm > maxX) maxX = p.x_mm + p.width_mm;
+  }
+
+  let shift =
+    side === 'left'
+      ? pageWidthMm - spineMarginMm - maxX // правый край блока к корешку справа
+      : spineMarginMm - minX; // левый край блока к корешку слева
+
+  // Кламп: блок не должен выходить за пределы страницы [0, W].
+  const newMin = minX + shift;
+  const newMax = maxX + shift;
+  if (newMin < 0) shift -= newMin;
+  else if (newMax > pageWidthMm) shift -= newMax - pageWidthMm;
+
+  return placeholders.map((p) => ({ ...p, x_mm: p.x_mm + shift }) as RenderPlaceholder);
+}
+
+/**
+ * Выбирает горизонтальное позиционирование плейсхолдеров под сторону страницы.
+ *
+ * Две модели:
+ *  1. **Поля** (`spineMarginMm` задан у дизайна) — система ставит блок с этим
+ *     полем у корешка на ЛЮБОЙ стороне (left/right), для всех не-spread
+ *     мастеров. Игнорирует абсолютный сдвиг дизайнера. Заменяет зеркало.
+ *  2. **Авто-зеркало** (`spineMarginMm` == null, legacy) — отражает блок
+ *     page-any мастера на правой странице (см. mirrorPlaceholders). Явные
+ *     `-Left/-Right` и spread — как есть.
+ *
+ * Для не-применимых случаев возвращает исходную ссылку (вызывающий не мутирует).
  */
 export function resolvePlaceholdersForSide(
   placeholders: readonly RenderPlaceholder[],
   side: RenderSide,
   pageType: PageType | null | undefined,
   pageWidthMm: number,
+  spineMarginMm?: number | null,
 ): RenderPlaceholder[] {
+  // Модель «поля»: применяется на левой/правой стороне ко всем не-spread
+  // мастерам, если у дизайна задан отступ от корешка.
+  if (
+    spineMarginMm != null &&
+    (side === 'left' || side === 'right') &&
+    pageType !== 'spread'
+  ) {
+    return positionBlockBySpine(placeholders, side, pageWidthMm, spineMarginMm);
+  }
+  // Legacy авто-зеркало page-any на правой.
   if (side === 'right' && pageType === 'page-any') {
     return mirrorPlaceholders(placeholders, pageWidthMm);
   }

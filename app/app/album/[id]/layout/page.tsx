@@ -285,6 +285,9 @@ function LayoutEditorPageInner({
   const [backgroundUrl, setBackgroundUrl] = useState<string | null>(null)
   // Путь default-фона (НЕ public URL) — отдаём в resolveBackgrounds как fallback.
   const [defaultBgPath, setDefaultBgPath] = useState<string | null>(null)
+  // Модель «поля» (template_sets.spine_margin_mm): отступ контента от корешка
+  // в мм. null = legacy авто-зеркало. Прокидывается в AlbumSpreadCanvas.
+  const [spineMarginMm, setSpineMarginMm] = useState<number | null>(null)
   // Пул категорийных фонов набора (template_set_backgrounds) для ротации.
   const [categoryBackgrounds, setCategoryBackgrounds] = useState<BackgroundPoolRow[]>([])
   // Открыта ли модалка «Сменить фон» текущего разворота (Этап 6).
@@ -603,6 +606,9 @@ function LayoutEditorPageInner({
         setTemplates(templateJson.spread_templates ?? [])
         const bgPath = templateJson.template_set?.default_background_url ?? null
         setDefaultBgPath(bgPath)
+        setSpineMarginMm(
+          (templateJson.template_set?.spine_margin_mm ?? null) as number | null,
+        )
         setBackgroundUrl(
           bgPath
             ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${bgPath}`
@@ -2019,6 +2025,7 @@ function LayoutEditorPageInner({
                           textStyleOverrides={textStyleOverrides}
                           backgroundUrl={currentSpreadBgUrl}
                           pageSide="spread"
+                          spineMarginMm={spineMarginMm}
                           croppingLabel={
                             leftPage && cropEditor?.spreadIndex === leftPage.spread_index
                               ? cropEditor.label
@@ -2064,6 +2071,7 @@ function LayoutEditorPageInner({
                           textStyleOverrides={textStyleOverrides}
                           backgroundUrl={currentSpreadBgUrl}
                           pageSide="left"
+                          spineMarginMm={spineMarginMm}
                           croppingLabel={
                             leftPage && cropEditor?.spreadIndex === leftPage.spread_index
                               ? cropEditor.label
@@ -2143,6 +2151,7 @@ function LayoutEditorPageInner({
                           textStyleOverrides={textStyleOverrides}
                           backgroundUrl={currentSpreadBgUrl}
                           pageSide="right"
+                          spineMarginMm={spineMarginMm}
                           croppingLabel={
                             rightPage && cropEditor?.spreadIndex === rightPage.spread_index
                               ? cropEditor.label

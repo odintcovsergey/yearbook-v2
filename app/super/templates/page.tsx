@@ -43,6 +43,7 @@ export default function TemplatesPage() {
   // Модалки.
   const [renameFor, setRenameFor] = useState<TemplateSet | null>(null)
   const [deleteFor, setDeleteFor] = useState<TemplateSet | null>(null)
+  const [spineMarginFor, setSpineMarginFor] = useState<TemplateSet | null>(null)
 
   useEffect(() => {
     api('/api/auth')
@@ -117,6 +118,9 @@ export default function TemplatesPage() {
     switch (action) {
       case 'rename':
         setRenameFor(t)
+        break
+      case 'spine_margin':
+        setSpineMarginFor(t)
         break
       case 'delete':
         setDeleteFor(t)
@@ -230,6 +234,22 @@ export default function TemplatesPage() {
                 name,
               })
               if (res.ok) setRenameFor(null)
+              return res
+            }}
+          />
+        )}
+
+        {spineMarginFor && (
+          <SpineMarginModal
+            template={spineMarginFor}
+            onClose={() => setSpineMarginFor(null)}
+            onSubmit={async (value) => {
+              const res = await runAction(spineMarginFor.id, {
+                action: 'template_set_update',
+                template_set_id: spineMarginFor.id,
+                spine_margin_mm: value,
+              })
+              if (res.ok) setSpineMarginFor(null)
               return res
             }}
           />
@@ -419,6 +439,81 @@ function DeleteModal({
             {deleting ? 'Удаление…' : 'Удалить навсегда'}
           </button>
         )}
+      </div>
+    </ModalShell>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Модалка «Отступ от корешка» (модель полей)
+// ──────────────────────────────────────────────────────────────────────────
+function SpineMarginModal({
+  template,
+  onClose,
+  onSubmit,
+}: {
+  template: TemplateSet
+  onClose: () => void
+  onSubmit: (value: number | null) => Promise<{ ok: boolean; error?: string }>
+}) {
+  // Пустая строка = выключено (legacy авто-зеркало). Число = поле у корешка.
+  const [value, setValue] = useState<string>(
+    template.spine_margin_mm != null ? String(template.spine_margin_mm) : '',
+  )
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const submit = async () => {
+    const trimmed = value.trim()
+    let payload: number | null
+    if (trimmed === '') {
+      payload = null
+    } else {
+      const n = Number(trimmed.replace(',', '.'))
+      if (!Number.isFinite(n) || n < 0 || n > 60) {
+        setErr('Введите число от 0 до 60 мм или оставьте пустым')
+        return
+      }
+      payload = n
+    }
+    setSaving(true)
+    setErr(null)
+    const res = await onSubmit(payload)
+    setSaving(false)
+    if (!res.ok) setErr(res.error ?? 'Ошибка')
+  }
+
+  return (
+    <ModalShell onClose={onClose} title="Отступ от корешка">
+      <p className="text-sm text-muted-foreground mb-3">
+        Система ставит блок контента так, чтобы у корешка было это поле (мм).
+        Внешний край получает остаток. Работает на обеих страницах разворота и
+        заменяет авто-зеркало. Применяется ко всему дизайну.
+      </p>
+      <p className="text-sm text-muted-foreground mb-3">
+        Оставьте пустым, чтобы вернуть прежнее поведение (авто-зеркало).
+      </p>
+      <label className="text-sm text-foreground block mb-1">Поле у корешка, мм</label>
+      <input
+        autoFocus
+        type="number"
+        min={0}
+        max={60}
+        step={0.5}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
+        className="input"
+        placeholder="напр. 10 (пусто = выключено)"
+      />
+      {err && <div className="text-sm text-red-600 mt-3">{err}</div>}
+      <div className="flex justify-end gap-2 mt-4">
+        <button onClick={onClose} disabled={saving} className="btn-secondary">
+          Отмена
+        </button>
+        <button onClick={submit} disabled={saving} className="btn-primary">
+          {saving ? 'Сохранение…' : 'Сохранить'}
+        </button>
       </div>
     </ModalShell>
   )

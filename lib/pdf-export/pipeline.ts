@@ -99,6 +99,12 @@ type RenderContext = {
    * split на 'left'/'right' в renderSpread уже несёт нужную семантику).
    */
   sideByIndex: ReadonlyMap<number, 'left' | 'right'>;
+  /**
+   * Модель «поля»: отступ контента от корешка (мм) у набора. null = legacy
+   * авто-зеркало. Прокидывается в resolvePlaceholdersForSide (см.
+   * mirror-placeholders.ts). Один на весь набор.
+   */
+  spineMarginMm: number | null;
 };
 
 /**
@@ -222,6 +228,7 @@ export async function renderAllSpreads(
     photoCtx,
     bgByPageIndex,
     sideByIndex,
+    spineMarginMm: templateSet.spine_margin_mm ?? null,
   };
 
   let pageCount = 0;
@@ -279,6 +286,7 @@ async function renderSpread(
     side,
     template.page_type,
     template.width_mm,
+    ctx.spineMarginMm,
   ) as Placeholder[];
 
   if (!template.is_spread) {

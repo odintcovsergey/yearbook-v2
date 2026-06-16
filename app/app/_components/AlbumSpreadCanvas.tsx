@@ -130,6 +130,10 @@ type Props = {
   // cropHandlers пишут тот же формат трансформа. Только в mode==='edit'.
   croppingLabel?: string | null
   cropHandlers?: CropHandlers
+  // Модель «поля» (template_sets.spine_margin_mm): отступ контента от корешка
+  // в мм. null/undefined = legacy авто-зеркало page-any. Задан = система ставит
+  // блок с этим полем у корешка (см. resolvePlaceholdersForSide). Один на набор.
+  spineMarginMm?: number | null
 }
 
 // ─── Хелпер: загрузка HTMLImageElement из URL ────────────────────────────
@@ -1290,6 +1294,7 @@ export default function AlbumSpreadCanvas({
   pageSide = 'spread',
   croppingLabel,
   cropHandlers,
+  spineMarginMm,
 }: Props) {
   const scale = containerWidth / template.width_mm
   const stageWidth = template.width_mm * scale
@@ -1322,6 +1327,7 @@ export default function AlbumSpreadCanvas({
     pageSide,
     template.page_type,
     template.width_mm,
+    spineMarginMm ?? null,
   )
 
   return (

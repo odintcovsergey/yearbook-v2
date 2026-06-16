@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Pencil, Copy, Lock, Globe, Download, Upload, Trash2 } from 'lucide-react'
+import { Pencil, Copy, Lock, Globe, Download, Upload, Trash2, Ruler } from 'lucide-react'
 import type { TemplateSet } from './types'
 
 function formatDate(iso: string): string {
@@ -21,6 +21,7 @@ export type CardAction =
   | 'duplicate'
   | 'toggle_global'
   | 'toggle_published'
+  | 'spine_margin'
   | 'delete'
 
 export default function TemplateSetCard({
@@ -92,6 +93,12 @@ export default function TemplateSetCard({
               className="w-full text-left px-3 py-2 hover:bg-muted"
             >
               {template.is_published ? <><Download size={14} /> В черновик</> : <><Upload size={14} /> Опубликовать</>}
+            </button>
+            <button
+              onClick={() => pick('spine_margin')}
+              className="w-full text-left px-3 py-2 hover:bg-muted"
+            >
+              <Ruler size={14} /> Отступ от корешка
             </button>
             <div className="border-t my-1" />
             <button

@@ -224,6 +224,74 @@ describe('resolvePlaceholdersForSide', () => {
   });
 });
 
+describe('resolvePlaceholdersForSide — модель «поля» (spineMarginMm)', () => {
+  // Блок: один слот x=120,w=40 → minX=120, maxX=160. PAGE_W=208.
+  const block: RenderPlaceholder[] = [photo({ label: 'p', x_mm: 120, width_mm: 40 })];
+
+  it('левая страница: правый край блока = W − spineMargin', () => {
+    const out = resolvePlaceholdersForSide(block, 'left', 'page-any', PAGE_W, 10);
+    // shift = 208 - 10 - 160 = 38 → x=158, правый край 198 = 208-10
+    expect(out[0].x_mm).toBe(158);
+    expect(out[0].x_mm + out[0].width_mm).toBe(PAGE_W - 10);
+  });
+
+  it('правая страница: левый край блока = spineMargin', () => {
+    const out = resolvePlaceholdersForSide(block, 'right', 'page-any', PAGE_W, 10);
+    expect(out[0].x_mm).toBe(10); // shift = 10 - 120
+  });
+
+  it('применяется и к page-left/page-right (не только page-any)', () => {
+    const l = resolvePlaceholdersForSide(block, 'left', 'page-right', PAGE_W, 12);
+    expect(l[0].x_mm + l[0].width_mm).toBe(PAGE_W - 12);
+    const r = resolvePlaceholdersForSide(block, 'right', 'page-left', PAGE_W, 12);
+    expect(r[0].x_mm).toBe(12);
+  });
+
+  it('spread-мастер НЕ трогается даже при заданном spineMargin', () => {
+    const out = resolvePlaceholdersForSide(block, 'left', 'spread', PAGE_W, 10);
+    expect(out).toBe(block);
+  });
+
+  it('кламп: широкий блок не уезжает за внешний край', () => {
+    // Блок шириной 200 (x=4..204) при W=208, S=20: правый край хотим 188,
+    // тогда левый = -12 → кламп возвращает левый к 0.
+    const wide: RenderPlaceholder[] = [photo({ label: 'w', x_mm: 4, width_mm: 200 })];
+    const out = resolvePlaceholdersForSide(wide, 'left', 'page-any', PAGE_W, 20);
+    expect(out[0].x_mm).toBe(0); // прижат к внешнему краю, не за него
+  });
+
+  it('порядок ячеек 1→N сохраняется (чистый перенос)', () => {
+    const two: RenderPlaceholder[] = [
+      photo({ label: 's1', x_mm: 120, width_mm: 35 }),
+      photo({ label: 's2', x_mm: 160, width_mm: 35 }),
+    ];
+    const out = resolvePlaceholdersForSide(two, 'right', 'page-any', PAGE_W, 8);
+    const s1 = out.find((p) => p.label === 's1')!;
+    const s2 = out.find((p) => p.label === 's2')!;
+    expect(s1.x_mm).toBeLessThan(s2.x_mm);
+    expect(s1.x_mm).toBe(8); // левый край блока = spineMargin
+  });
+
+  it('привязанный декор едет вместе с блоком (offset сохранён)', () => {
+    const input: RenderPlaceholder[] = [
+      photo({ label: 'studentname_1', x_mm: 120, width_mm: 40 }),
+      decor({ label: '__under_1', x_mm: 120, width_mm: 44, attached_to: 'studentname_1', offset_x_mm: 0, offset_y_mm: 1 }),
+    ];
+    const out = resolvePlaceholdersForSide(input, 'right', 'page-any', PAGE_W, 10);
+    const base = out.find((p) => p.label === 'studentname_1')!;
+    const d = out.find((p) => p.label === '__under_1') as DecorationPlaceholder;
+    expect(base.x_mm).toBe(10);
+    expect(d.x_mm).toBe(10); // тот же сдвиг
+    expect(d.offset_x_mm).toBe(0); // offset не сломан
+  });
+
+  it('spineMargin не задан → legacy зеркало (right+page-any)', () => {
+    const out = resolvePlaceholdersForSide(block, 'right', 'page-any', PAGE_W, null);
+    // mirror block-shift: shift = 208-120-160 = -72 → x=48
+    expect(out[0].x_mm).toBe(48);
+  });
+});
+
 describe('integration: page-any сетка слева vs справа', () => {
   // Реалистичный page-any мастер: 2 фото-слота смещены к корешку (внутреннему
   // краю), подпись и привязанный декор. На левой странице корешок справа
