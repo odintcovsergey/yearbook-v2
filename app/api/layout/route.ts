@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
-import { ycUpload, getPhotoSignedUrl, stripYcPrefix } from '@/lib/storage'
+import { ycUpload, getPhotoSignedUrl, stripYcPrefix, ycGetObjectBuffer, ycDelete } from '@/lib/storage'
 import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
 import { parseIdml } from '@/lib/idml-converter/parse'
 import { uploadTemplateSetToSupabase, type UploadResult } from '@/lib/idml-converter/upload'
@@ -369,27 +369,73 @@ async function handleImportIdml(
   req: NextRequest,
   auth: AuthContext,
 ): Promise<NextResponse> {
-  // ─── Parse multipart ────────────────────────────────────────────
-  let formData: FormData
-  try {
-    formData = await req.formData()
-  } catch {
-    return NextResponse.json({ error: 'invalid multipart body' }, { status: 400 })
+  // ─── Источник файла: JSON со storage_key (большие IDML, в обход лимита
+  //     Vercel 4.5 МБ — клиент залил в хранилище по presigned URL) ИЛИ
+  //     multipart (мелкие файлы / curl onboarding-скрипты, backward-compat) ──
+  const reqContentType = req.headers.get('content-type') ?? ''
+  let nameRaw: unknown
+  let slugRaw: unknown
+  let printType: unknown
+  let tenantIdRaw: unknown
+  let descriptionRaw: unknown
+  let forceRaw: unknown
+  let buffer: Buffer
+  let cleanupKey: string | null = null
+
+  if (reqContentType.includes('application/json')) {
+    let body: Record<string, unknown>
+    try {
+      body = (await req.json()) as Record<string, unknown>
+    } catch {
+      return NextResponse.json({ error: 'invalid json body' }, { status: 400 })
+    }
+    const storageKey = typeof body.storage_key === 'string' ? body.storage_key : ''
+    // Защита: ключ только из нашего префикса template-imports/ (не дать
+    // скачать произвольный объект бакета через этот эндпоинт).
+    const normalizedKey = storageKey.replace(/^yc:/, '')
+    if (!normalizedKey.startsWith('template-imports/')) {
+      return NextResponse.json({ error: 'invalid storage_key' }, { status: 400 })
+    }
+    nameRaw = body.name
+    slugRaw = body.slug
+    printType = body.print_type
+    tenantIdRaw = body.tenant_id
+    descriptionRaw = body.description
+    forceRaw = body.force === true || body.force === 'true' ? 'true' : ''
+    try {
+      buffer = await ycGetObjectBuffer(normalizedKey)
+    } catch {
+      return NextResponse.json(
+        { error: 'Не удалось прочитать загруженный файл из хранилища' },
+        { status: 400 },
+      )
+    }
+    cleanupKey = normalizedKey
+  } else {
+    let formData: FormData
+    try {
+      formData = await req.formData()
+    } catch {
+      return NextResponse.json({ error: 'invalid multipart body' }, { status: 400 })
+    }
+    const file = formData.get('file')
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: 'file is required' }, { status: 400 })
+    }
+    nameRaw = formData.get('name')
+    slugRaw = formData.get('slug')
+    printType = formData.get('print_type')
+    tenantIdRaw = formData.get('tenant_id')
+    descriptionRaw = formData.get('description')
+    forceRaw = formData.get('force')
+    buffer = Buffer.from(await file.arrayBuffer())
   }
 
-  const file = formData.get('file')
-  const name = formData.get('name')
-  const slug = formData.get('slug')
-  const printType = formData.get('print_type')
-  const tenantIdRaw = formData.get('tenant_id')
-  const descriptionRaw = formData.get('description')
-  const forceRaw = formData.get('force')
+  const name = nameRaw
+  const slug = slugRaw
 
   // ─── Минимальная валидация (regex slug, UUID tenantId, name non-empty,
   //     duplicate master spread names, printType — это всё ловит upload.ts) ──
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: 'file is required' }, { status: 400 })
-  }
   if (typeof name !== 'string' || name.trim() === '') {
     return NextResponse.json({ error: 'name is required' }, { status: 400 })
   }
@@ -404,7 +450,7 @@ async function handleImportIdml(
   }
 
   let tenantId: string | null
-  if (tenantIdRaw === null || tenantIdRaw === '' || tenantIdRaw === 'global') {
+  if (tenantIdRaw === null || tenantIdRaw === undefined || tenantIdRaw === '' || tenantIdRaw === 'global') {
     tenantId = null
   } else if (typeof tenantIdRaw === 'string' && UUID_REGEX.test(tenantIdRaw)) {
     tenantId = tenantIdRaw
@@ -418,8 +464,13 @@ async function handleImportIdml(
       ? descriptionRaw
       : null
 
+  // Временный загруженный IDML больше не нужен после чтения в память —
+  // удаляем из хранилища (best-effort, не блокирует импорт).
+  if (cleanupKey) {
+    ycDelete(cleanupKey).catch(() => {})
+  }
+
   // ─── Парсинг IDML (битый IDML = клиентская проблема → 400) ──────
-  const buffer = Buffer.from(await file.arrayBuffer())
   let parsed: ParsedTemplateSet
   try {
     parsed = await parseIdml(buffer)

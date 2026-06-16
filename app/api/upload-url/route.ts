@@ -23,6 +23,43 @@ export async function POST(req: NextRequest) {
 
   const { album_id, filename, content_type, upload_type } = await req.json()
 
+  // ─── IDML-импорт шаблонов: без album_id, только superadmin ─────────────
+  // Большие IDML (с встроенной графикой/фонами) не пролезают в тело
+  // serverless-функции (лимит Vercel ~4.5 МБ) → клиент заливает напрямую в
+  // хранилище по presigned URL, затем /api/layout?action=import_idml скачивает
+  // и парсит по storage_key. Кладём во временный префикс template-imports/.
+  if (upload_type === 'idml') {
+    if (auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+    }
+    if (!filename || !content_type) {
+      return NextResponse.json(
+        { error: 'filename, content_type required' },
+        { status: 400 },
+      )
+    }
+    // IDML = zip-пакет; браузер обычно отдаёт octet-stream. Подписываем строго
+    // под тот же content_type, что клиент пришлёт в PUT.
+    const ct = String(content_type).toLowerCase()
+    if (
+      ct !== 'application/octet-stream' &&
+      ct !== 'application/zip' &&
+      ct !== 'application/x-zip-compressed' &&
+      ct !== 'application/vnd.adobe.indesign-idml-package'
+    ) {
+      return NextResponse.json(
+        { error: 'Недопустимый тип файла для IDML' },
+        { status: 400 },
+      )
+    }
+    const lastDot = String(filename).lastIndexOf('.')
+    const baseName = lastDot > 0 ? String(filename).slice(0, lastDot) : String(filename)
+    const cleanBase = baseName.replace(/[^\w\-]/g, '_').slice(0, 80) || 'master'
+    const key = `template-imports/${Date.now()}_${cleanBase}.idml`
+    const uploadUrl = await getYcUploadUrl(key, content_type)
+    return NextResponse.json({ upload_url: uploadUrl, key, storage_path: `yc:${key}` })
+  }
+
   if (!album_id || !filename || !content_type || !upload_type) {
     return NextResponse.json({ error: 'album_id, filename, content_type, upload_type required' }, { status: 400 })
   }

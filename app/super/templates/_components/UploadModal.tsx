@@ -36,29 +36,60 @@ export default function UploadModal({
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm(prev => ({ ...prev, [k]: v }))
 
-  const buildFormData = (force: boolean): FormData => {
-    const fd = new FormData()
-    fd.append('file', form.file as File)
-    fd.append('name', form.name.trim())
-    fd.append('slug', form.slug.trim())
-    fd.append('print_type', form.print_type)
-    fd.append('tenant_id', 'global')
-    if (form.description.trim()) fd.append('description', form.description.trim())
-    if (force) fd.append('force', 'true')
-    return fd
-  }
+  // IDML заливается НЕ в тело функции (лимит Vercel ~4.5 МБ → HTTP 413), а
+  // напрямую в хранилище по presigned URL. Затем импорт зовётся с storage_key,
+  // сервер скачивает файл из хранилища и парсит.
+  const IDML_CONTENT_TYPE = 'application/octet-stream'
 
-  // Прямой fetch без api()-helper из page.tsx: для multipart Content-Type
-  // (с boundary) должен выставлять браузер автоматически, а api() ставит
-  // application/json и сломал бы границы.
   const doSubmit = async (force: boolean) => {
+    const file = form.file as File
     setSubmitting(true)
     setError(null)
     try {
+      // 1) presigned URL для прямой загрузки IDML в хранилище.
+      const presignRes = await fetch('/api/upload-url', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          upload_type: 'idml',
+          filename: file.name,
+          content_type: IDML_CONTENT_TYPE,
+        }),
+      })
+      const presign = await presignRes.json().catch(() => ({}))
+      if (!presignRes.ok || !presign.upload_url) {
+        setError(presign.error || `Не удалось получить ссылку загрузки (HTTP ${presignRes.status})`)
+        setSubmitting(false)
+        return
+      }
+
+      // 2) PUT файла в хранилище. Content-Type строго тот же, что подписан.
+      const putRes = await fetch(presign.upload_url, {
+        method: 'PUT',
+        headers: { 'Content-Type': IDML_CONTENT_TYPE },
+        body: file,
+      })
+      if (!putRes.ok) {
+        setError(`Не удалось загрузить файл в хранилище (HTTP ${putRes.status})`)
+        setSubmitting(false)
+        return
+      }
+
+      // 3) Импорт по storage_key (маленькое JSON-тело, под лимит проходит).
       const r = await fetch('/api/layout?action=import_idml', {
         method: 'POST',
         credentials: 'include',
-        body: buildFormData(force),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storage_key: presign.key,
+          name: form.name.trim(),
+          slug: form.slug.trim(),
+          print_type: form.print_type,
+          tenant_id: 'global',
+          description: form.description.trim() || undefined,
+          force,
+        }),
       })
       const data = await r.json().catch(() => ({}))
 
