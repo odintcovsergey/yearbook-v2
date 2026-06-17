@@ -160,7 +160,11 @@ export function buildFromSectionStructure(
         fillTeachersSection(ctx);
         break;
       case 'students':
-        fillStudentsSection(ctx);
+        // ТЗ 17.06.2026: настройки личного раздела привязаны к секции
+        // (section.config). Несколько students-секций → каждая раскладывает
+        // весь класс в своём режиме. config отсутствует → legacy-фолбэк на
+        // глобальные поля пресета (внутри fillStudentsSection).
+        fillStudentsSection(ctx, section.config);
         break;
       case 'soft_intro':
         fillSoftIntroSection(ctx, section);

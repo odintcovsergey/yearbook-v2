@@ -37,7 +37,7 @@
 
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import { findStudentMaster, findStudentGridMaster } from '../master-finder';
-import type { RulesStudentInput } from '../types';
+import type { RulesStudentInput, StudentsSectionConfig } from '../types';
 import { centerLastRowSlots, type SectionFillContext } from './shared';
 import {
   decideDistribution,
@@ -45,23 +45,100 @@ import {
   type DistributionPage,
 } from './distribution';
 
-export function fillStudentsSection(ctx: SectionFillContext): void {
-  const preset = ctx.bundle.preset;
+/** Нормализованный режим личного раздела (после сворачивания config/глобалок). */
+type ResolvedStudents =
+  | { mode: 'page'; friends: number; quote: boolean }
+  | { mode: 'spread'; friendsMin: number; friendsMax: number; quote: boolean }
+  | { mode: 'grid'; perPage: number | null | undefined; quote: boolean }
+  | { mode: 'multi_spread'; spreadsPerStudent: number; quote: boolean }
+  | { mode: 'legacy' };
 
-  // РЭ.22.4-22.6: приоритетные ветки для двух-осевой модели (см. spec §6.1).
-  // Если у пресета задан `student_layout_mode` — engine идёт по
-  // семантическому пути через findStudentMaster / findStudentGridMaster.
-  // Когда поле NULL — fallback на legacy выбор по density / preset.id (ниже).
+/**
+ * Сворачивает настройки личного раздела в единый вид. Приоритет:
+ *  1. `config` секции (ТЗ 17.06.2026) — per-section настройки.
+ *  2. Глобальные поля пресета `student_layout_mode` (legacy-фолбэк РЭ.22.1):
+ *     spread сворачивается в диапазон min=max=student_friend_photos.
+ *  3. Иначе `legacy` — выбор по density / preset.id (ниже в fillStudentsSection).
+ *
+ * Цитата для grid читается из глобального поля пресета (в config grid её нет —
+ * см. StudentsSectionConfig), чтобы не регрессировать существующие grid-пресеты.
+ */
+function resolveStudentsConfig(
+  preset: SectionFillContext['bundle']['preset'],
+  config: StudentsSectionConfig | undefined,
+): ResolvedStudents {
+  if (config) {
+    switch (config.mode) {
+      case 'page':
+        return { mode: 'page', friends: config.friends, quote: config.quote };
+      case 'spread':
+        return {
+          mode: 'spread',
+          friendsMin: config.friends_min,
+          friendsMax: config.friends_max,
+          quote: config.quote,
+        };
+      case 'grid':
+        return {
+          mode: 'grid',
+          perPage: config.per_page,
+          quote: preset.student_has_quote ?? false,
+        };
+      case 'multi_spread':
+        return {
+          mode: 'multi_spread',
+          spreadsPerStudent: config.spreads_per_student,
+          quote: config.quote,
+        };
+    }
+  }
+
+  // Legacy-фолбэк на глобальные поля пресета (РЭ.22.1).
+  const friends = preset.student_friend_photos ?? 0;
+  const quote = preset.student_has_quote ?? false;
   if (preset.student_layout_mode === 'page') {
-    buildPageSemantic(ctx);
-    return;
+    return { mode: 'page', friends, quote };
   }
   if (preset.student_layout_mode === 'spread') {
-    buildSpreadSemantic(ctx);
-    return;
+    return { mode: 'spread', friendsMin: friends, friendsMax: friends, quote };
   }
   if (preset.student_layout_mode === 'grid') {
-    buildGridSemantic(ctx);
+    return { mode: 'grid', perPage: preset.student_grid_size, quote };
+  }
+  return { mode: 'legacy' };
+}
+
+export function fillStudentsSection(
+  ctx: SectionFillContext,
+  config?: StudentsSectionConfig,
+): void {
+  const preset = ctx.bundle.preset;
+
+  // ТЗ 17.06.2026: настройки личного раздела привязаны к секции (config).
+  // resolveStudentsConfig сворачивает config или (фолбэк) глобальные поля
+  // пресета. mode='legacy' → старый путь по density / preset.id (ниже).
+  const resolved = resolveStudentsConfig(preset, config);
+  if (resolved.mode === 'page') {
+    buildPageSemantic(ctx, { friends: resolved.friends, hasQuote: resolved.quote });
+    return;
+  }
+  if (resolved.mode === 'spread') {
+    buildSpreadSemantic(ctx, {
+      friendsMin: resolved.friendsMin,
+      friendsMax: resolved.friendsMax,
+      hasQuote: resolved.quote,
+    });
+    return;
+  }
+  if (resolved.mode === 'grid') {
+    buildGridSemantic(ctx, { perPage: resolved.perPage, hasQuote: resolved.quote });
+    return;
+  }
+  if (resolved.mode === 'multi_spread') {
+    buildMultiSpreadSemantic(ctx, {
+      spreadsPerStudent: resolved.spreadsPerStudent,
+      hasQuote: resolved.quote,
+    });
     return;
   }
 
@@ -251,10 +328,13 @@ function buildAlternatingLR(
  * placeholder-driven, поддерживает studentportrait/name/quote +
  * studentphoto_N / friendphoto_N для фото с друзьями.
  */
-function buildPageSemantic(ctx: SectionFillContext): void {
+function buildPageSemantic(
+  ctx: SectionFillContext,
+  params: { friends: number; hasQuote: boolean },
+): void {
   const preset = ctx.bundle.preset;
-  const photosFriend = preset.student_friend_photos ?? 0;
-  const hasQuote = preset.student_has_quote ?? false;
+  const photosFriend = params.friends;
+  const hasQuote = params.hasQuote;
   const students = ctx.input.students;
 
   for (let i = 0; i < students.length; i++) {
@@ -352,14 +432,26 @@ function buildPageSemantic(ctx: SectionFillContext): void {
  *  4. Если правый найден ближайший меньший по photos_friend — warning
  *     students_lost_photos.
  */
-function buildSpreadSemantic(ctx: SectionFillContext): void {
+function buildSpreadSemantic(
+  ctx: SectionFillContext,
+  params: { friendsMin: number; friendsMax: number; hasQuote: boolean },
+): void {
   const preset = ctx.bundle.preset;
-  const photosFriendRequired = preset.student_friend_photos ?? 0;
-  const hasQuote = preset.student_has_quote ?? false;
+  const hasQuote = params.hasQuote;
   const students = ctx.input.students;
 
   for (let i = 0; i < students.length; i++) {
     const student = students[i];
+
+    // ТЗ 17.06.2026: число фото с друзьями — ДИАПАЗОНОМ. На каждого ученика
+    // берём мастер под ЕГО фактическое число фото, ограниченное диапазоном.
+    // Для legacy-пресета friendsMin=friendsMax → photosFriendRequired фиксирован
+    // (старое поведение, регресс-безопасно).
+    const actualFriendPhotos = student.friend_photos?.length ?? 0;
+    const photosFriendRequired = Math.max(
+      params.friendsMin,
+      Math.min(params.friendsMax, actualFriendPhotos),
+    );
 
     // Левая страница: портрет ученика, без фото и без quote.
     const leftResult = findStudentMaster(ctx.bundle.mastersByName, {
@@ -669,6 +761,191 @@ function bindSingleStudent(
   return bindings;
 }
 
+// ─── Multi-spread semantic (ТЗ 17.06.2026) ─────────────────────────────────
+
+/** Сколько слотов фото-с-друзьями (studentphoto_N / friendphoto_N) в мастере. */
+function countFriendPhotoSlots(master: SpreadTemplate): number {
+  let n = 0;
+  for (const ph of master.placeholders) {
+    if (/^(?:studentphoto|friendphoto)_?\d+$/.test(ph.label.toLowerCase())) n++;
+  }
+  return n;
+}
+
+/**
+ * Bindings для галерейной страницы (только фото, без портрета/имени/цитаты).
+ * Привязывает studentphoto_N/friendphoto_N → friends[offset + N - 1], чтобы
+ * галерейные развороты показывали ДРУГИЕ фото, а не дублировали парадные.
+ */
+function bindGalleryPhotos(
+  master: SpreadTemplate,
+  student: RulesStudentInput,
+  offset: number,
+): Record<string, unknown> {
+  const bindings: Record<string, unknown> = {};
+  const friends = student.friend_photos ?? [];
+  for (const ph of master.placeholders) {
+    const m = ph.label.toLowerCase().match(/^(?:studentphoto|friendphoto)_?(\d+)$/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      bindings[ph.label] = friends[offset + n - 1] ?? null;
+    }
+  }
+  return bindings;
+}
+
+/**
+ * Галерейный мастер для multi_spread: страница только с фото (page_role
+ * student_left/right, есть фото-слоты, БЕЗ портрета). Выбираем с наибольшей
+ * ёмкостью (жадно заполняем), tie-break по имени. null — если в наборе таких
+ * нет (тогда multi_spread деградирует до парадного разворота с warning).
+ */
+function findGalleryMaster(
+  ctx: SectionFillContext,
+  presetId: string,
+  pageRole: 'student_left' | 'student_right',
+): SpreadTemplate | null {
+  let best: SpreadTemplate | null = null;
+  let bestCap = -1;
+  for (const m of Array.from(ctx.bundle.mastersByName.values())) {
+    const applies = m.applies_to_configs;
+    const matchesPreset =
+      !applies || applies.length === 0 || (applies as readonly string[]).includes(presetId);
+    if (!matchesPreset) continue;
+    if (m.page_role !== pageRole) continue;
+    // Галерея = ЧИСТО фото: без портрета, без имени, без цитаты (иначе под
+    // фильтр попал бы парадный student_right с цитатой).
+    if (m.slot_capacity?.has_portrait === true) continue;
+    if (m.slot_capacity?.has_name === true) continue;
+    if (m.slot_capacity?.has_quote === true) continue;
+    const cap = countFriendPhotoSlots(m);
+    if (cap < 1) continue;
+    if (cap > bestCap || (cap === bestCap && best !== null && m.name < best.name)) {
+      best = m;
+      bestCap = cap;
+    }
+  }
+  return best;
+}
+
+/**
+ * multi_spread (ТЗ 17.06.2026): один ученик на `spreads_per_student` разворотов
+ * (2..4). Первый разворот — ПАРАДНЫЙ (портрет/имя слева, фото+цитата справа,
+ * как spread), остальные — ГАЛЕРЕЯ фото ученика (без портрета). Фото
+ * распределяются: сколько влезло на парадную страницу — остальные на галереи.
+ *
+ * Подбор мастеров — семантический. Если галерейных мастеров в наборе нет —
+ * degrade: строим только парадный разворот + warning (не падаем).
+ */
+function buildMultiSpreadSemantic(
+  ctx: SectionFillContext,
+  params: { spreadsPerStudent: number; hasQuote: boolean },
+): void {
+  const preset = ctx.bundle.preset;
+  const students = ctx.input.students;
+  const totalSpreads = Math.max(2, Math.min(4, params.spreadsPerStudent));
+
+  for (let i = 0; i < students.length; i++) {
+    const student = students[i];
+    const friends = student.friend_photos ?? [];
+    const startPages = ctx.pageInstances.length;
+
+    // 1. Парадный разворот: портрет/имя слева, фото с друзьями + цитата справа.
+    const leftResult = findStudentMaster(ctx.bundle.mastersByName, {
+      presetId: preset.id,
+      pageRole: 'student_left',
+      photosFriend: 0,
+      hasPortrait: true,
+    });
+    const rightResult = findStudentMaster(ctx.bundle.mastersByName, {
+      presetId: preset.id,
+      pageRole: 'student_right',
+      photosFriend: friends.length,
+      hasQuote: params.hasQuote,
+    });
+
+    if (!leftResult || !rightResult) {
+      ctx.warnings.push(
+        `students_master_not_found: для пресета '${preset.id}' (mode=multi_spread) ` +
+          `для ученика '${student.full_name}' не найден парадный мастер ` +
+          `(student_left портрет / student_right фото+цитата). Закажите мастер у дизайнера.`,
+      );
+      continue;
+    }
+
+    ctx.pageInstances.push({
+      master_id: leftResult.master.id,
+      bindings: bindSingleStudent(leftResult.master, student),
+    });
+    ctx.pageInstances.push({
+      master_id: rightResult.master.id,
+      bindings: bindSingleStudent(rightResult.master, student),
+    });
+
+    // Сколько фото размещено на парадной правой странице (её фото-слоты).
+    let photoOffset = countFriendPhotoSlots(rightResult.master);
+
+    // 2. Галерейные развороты 2..N — остаток фото.
+    let galleriesBuilt = 0;
+    if (photoOffset < friends.length) {
+      const galleryLeft = findGalleryMaster(ctx, preset.id, 'student_left');
+      const galleryRight = findGalleryMaster(ctx, preset.id, 'student_right');
+      if (galleryLeft && galleryRight) {
+        for (let s = 1; s < totalSpreads && photoOffset < friends.length; s++) {
+          ctx.pageInstances.push({
+            master_id: galleryLeft.id,
+            bindings: bindGalleryPhotos(galleryLeft, student, photoOffset),
+          });
+          photoOffset += countFriendPhotoSlots(galleryLeft);
+          if (photoOffset < friends.length) {
+            ctx.pageInstances.push({
+              master_id: galleryRight.id,
+              bindings: bindGalleryPhotos(galleryRight, student, photoOffset),
+            });
+            photoOffset += countFriendPhotoSlots(galleryRight);
+          }
+          galleriesBuilt++;
+        }
+      } else {
+        ctx.warnings.push(
+          `students_multi_spread_no_gallery_master: у ученика '${student.full_name}' ` +
+            `осталось ${friends.length - photoOffset} фото для галерейных разворотов, ` +
+            `но в наборе нет галерейных мастеров (student_left/right без портрета с фото-слотами). ` +
+            `Построен только парадный разворот. Закажите галерейные мастера у дизайнера.`,
+        );
+      }
+    }
+
+    // Фото, не вместившиеся даже после всех галерей.
+    if (photoOffset < friends.length) {
+      ctx.warnings.push(
+        `students_lost_photos: у ученика '${student.full_name}' (mode=multi_spread) ` +
+          `${friends.length - photoOffset} фото не размещены в layout ` +
+          `(не хватило разворотов/слотов; фото сохранены в пуле партнёра)`,
+      );
+    }
+
+    ctx.decisionTrace.push({
+      spread_index: Math.floor(startPages / 2),
+      section_index: ctx.sectionIndex,
+      family_id: 'student-section',
+      rule_id: `multi_spread_semantic:${leftResult.master.name}+${rightResult.master.name}`,
+      inputs: {
+        mode: 'multi_spread',
+        student_index: i,
+        student_name: student.full_name,
+        spreads_per_student: totalSpreads,
+        galleries_built: galleriesBuilt,
+        friend_photos_total: friends.length,
+        friend_photos_placed: Math.min(photoOffset, friends.length),
+        has_quote_required: params.hasQuote,
+        parade_left: leftResult.master.name,
+        parade_right: rightResult.master.name,
+      },
+    });
+  }
+}
+
 // ─── Grid semantic (РЭ.22.6) ─────────────────────────────────────────────
 
 /**
@@ -697,10 +974,13 @@ function bindSingleStudent(
  * Если base-мастер не найден — warning + секция не строится.
  * Если grid_size не задан в пресете — warning + секция не строится.
  */
-function buildGridSemantic(ctx: SectionFillContext): void {
+function buildGridSemantic(
+  ctx: SectionFillContext,
+  params: { perPage: number | null | undefined; hasQuote: boolean },
+): void {
   const preset = ctx.bundle.preset;
-  const gridSize = preset.student_grid_size;
-  const hasQuote = preset.student_has_quote ?? false;
+  const gridSize = params.perPage;
+  const hasQuote = params.hasQuote;
 
   if (gridSize === null || gridSize === undefined) {
     ctx.warnings.push(
