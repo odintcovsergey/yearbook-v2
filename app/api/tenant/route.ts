@@ -664,6 +664,25 @@ async function getDefaultTemplateSetId(): Promise<string | null> {
 }
 
 // ============================================================
+// Хелпер: проверка, что дизайн (template_set) доступен партнёру —
+// глобальный (tenant_id IS NULL) ИЛИ принадлежит его tenant'у.
+// Нужен для независимого выбора дизайна в заказе (развязка шаблон↔дизайн):
+// дизайн больше не подтягивается из шаблона, партнёр выбирает любой.
+// ============================================================
+async function assertTemplateSetAccess(auth: AuthContext, templateSetId: string): Promise<boolean> {
+  if (auth.role === 'superadmin') return true
+
+  const { data } = await supabaseAdmin
+    .from('template_sets')
+    .select('tenant_id')
+    .eq('id', templateSetId)
+    .maybeSingle()
+
+  if (!data) return false
+  return data.tenant_id === null || data.tenant_id === auth.tenantId
+}
+
+// ============================================================
 // Хелпер: ID внутреннего tenant'а Сергея (okeybook). Нужен переключателю
 // глобальности дизайна: когда «Глобальный» ВЫКЛючается, tenant_id набора
 // перестаёт быть NULL и становится id этого tenant'а.
@@ -4364,15 +4383,29 @@ export async function POST(req: NextRequest) {
         )
       }
       sectionStructurePresetId = ps.id
+      // preset.template_set_id теперь лишь ПОДСКАЗКА (дизайн по умолчанию),
+      // а не жёсткая привязка — см. развязку шаблон↔дизайн ниже.
       resolvedTemplateSetId = ps.template_set_id ?? null
       presetPrintType = ps.print_type ?? presetPrintType
       // Когда выбран новый шаблон — legacy config_preset_id очищаем.
       configPresetId = null
     }
 
-    // template_set_id: приоритет — из section_structure preset'а;
-    // fallback — единственный okeybook-default (для legacy/безпресетных).
-    const templateSetId = resolvedTemplateSetId ?? (await getDefaultTemplateSetId())
+    // Дизайн (template_set) — НЕЗАВИСИМЫЙ выбор партнёра в заказе (развязка
+    // шаблон↔дизайн). Шаблон описывает только структуру; дизайн партнёр
+    // выбирает отдельно и может комбинировать с любым шаблоном. Приоритет:
+    //   1. body.template_set_id — явный выбор партнёра в заказе
+    //   2. preset.template_set_id — дизайн-подсказка по умолчанию у шаблона
+    //   3. okeybook-default — общий фолбэк
+    let chosenDesignId: string | null = null
+    if (typeof body.template_set_id === 'string' && body.template_set_id.length > 0) {
+      if (!(await assertTemplateSetAccess(auth, body.template_set_id))) {
+        return NextResponse.json({ error: 'Дизайн недоступен' }, { status: 403 })
+      }
+      chosenDesignId = body.template_set_id
+    }
+    const templateSetId =
+      chosenDesignId ?? resolvedTemplateSetId ?? (await getDefaultTemplateSetId())
 
     // РЭ.27.2: print_type определяется в порядке приоритета:
     //   1. body.print_type явно передан и валиден → используем его (партнёр
@@ -5065,6 +5098,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
 
+    // Развязка шаблон↔дизайн: партнёр выбирает дизайн (template_set)
+    // НЕЗАВИСИМО от шаблона. Если дизайн передан явно — фиксируем это и
+    // валидируем доступность; такой явный выбор перебивает дизайн-подсказку
+    // шаблона (см. блок section_structure_preset_id ниже).
+    const designExplicitlyProvided =
+      typeof body.template_set_id === 'string' && body.template_set_id.length > 0
+    if (designExplicitlyProvided) {
+      if (!(await assertTemplateSetAccess(auth, body.template_set_id))) {
+        return NextResponse.json({ error: 'Дизайн недоступен' }, { status: 403 })
+      }
+    }
+
     // Резолв preset_slug → config_preset_id + print_type (фаза 0.5.6.1)
     if (typeof body.preset_slug === 'string' && body.preset_slug.length > 0) {
       const preset = await resolvePresetBySlug(body.preset_slug)
@@ -5120,8 +5165,11 @@ export async function POST(req: NextRequest) {
         if (!accessible) {
           return NextResponse.json({ error: 'Шаблон недоступен' }, { status: 403 })
         }
-        // Подтягиваем из шаблона если в body не передано явно
-        if (ps.template_set_id) body.template_set_id = ps.template_set_id
+        // Дизайн-подсказка шаблона подтягивается ТОЛЬКО если партнёр не выбрал
+        // дизайн явно (развязка шаблон↔дизайн): явный выбор всегда приоритетнее.
+        if (ps.template_set_id && !designExplicitlyProvided) {
+          body.template_set_id = ps.template_set_id
+        }
         // РЭ.27.2: print_type подтягиваем из пресета ТОЛЬКО если в body
         // не передан явно. Партнёр может через update_album поменять тип
         // листов независимо от пресета (это и есть цель РЭ.27).

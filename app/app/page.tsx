@@ -12,6 +12,7 @@ import {
   Settings,
   Gift,
   Ruler,
+  Palette,
   Upload,
   Loader2,
   AlertTriangle,
@@ -512,9 +513,16 @@ export default function AppPage() {
             <button
               onClick={() => router.push('/app/templates')}
               className="btn-secondary"
-              title="Готовые шаблоны и моя библиотека"
+              title="Структуры альбома (секции, страницы, размещение)"
             >
               <Ruler size={16} /> Шаблоны
+            </button>
+            <button
+              onClick={() => router.push('/app/designs')}
+              className="btn-secondary"
+              title="Дизайны: визуальное оформление альбома"
+            >
+              <Palette size={16} /> Дизайны
             </button>
             <button
               onClick={() => router.push('/app/referral-programs')}
@@ -3242,8 +3250,16 @@ type FormData = {
   section_structure_preset_id: string | null
   /** Для отображения в кнопке — название выбранного шаблона. */
   section_structure_preset_name: string | null
-  /** Для отображения в кнопке — название дизайна выбранного шаблона. */
+  /** Для отображения — название выбранного дизайна (см. template_set_id). */
   section_structure_design_name: string | null
+  /**
+   * Развязка шаблон↔дизайн: ВЫБРАННЫЙ дизайн (template_set), независимый от
+   * шаблона. Партнёр выбирает структуру (section_structure_preset_id) и дизайн
+   * (template_set_id) двумя отдельными контролами и может комбинировать любые.
+   * NULL → дизайн не выбран явно (бэкенд возьмёт дизайн-подсказку шаблона
+   * или okeybook-default).
+   */
+  template_set_id: string | null
   // ── Обложка (НОВАЯ система, Этап 7 ТЗ обложки). Не путать с cover_mode. ──
   cover_portrait_charge: string      // 'none'|'different_photo'|'any_portrait' — доплата за портрет на обложке
   cover_layout_mode: string | null   // 'fixed'|'default_editable'|'parent_choice'|null
@@ -3316,6 +3332,7 @@ function emptyForm(): FormData {
     section_structure_preset_id: null,
     section_structure_preset_name: null,
     section_structure_design_name: null,
+    template_set_id: null,
     cover_portrait_charge: 'different_photo',
     cover_layout_mode: null,
     cover_default_type: null,
@@ -3444,6 +3461,8 @@ function AlbumFormModal({
         section_structure_preset_id: (album as any).section_structure_preset_id ?? null,
         section_structure_preset_name: null,
         section_structure_design_name: null,
+        // Развязка: дизайн альбома хранится отдельным полем albums.template_set_id.
+        template_set_id: (album as any).template_set_id ?? null,
         // cover_portrait_charge: если в БД пусто (старый альбом) — выводим из cover_mode.
         cover_portrait_charge: (album as any).cover_portrait_charge ?? coverModeToCharge(album.cover_mode),
         cover_layout_mode: (album as any).cover_layout_mode ?? null,
@@ -3457,6 +3476,9 @@ function AlbumFormModal({
   })
 
   const [templates, setTemplates] = useState<Template[]>([])
+  // Развязка шаблон↔дизайн: список доступных дизайнов (глобальные + свои)
+  // для независимого дропдауна «Дизайн» в форме заказа.
+  const [designs, setDesigns] = useState<Array<{ id: string; name: string }>>([])
   // РЭ.30.6: state `presets` удалён — он питал dropdown'ы «Комплектация»
   // и «Тип печати» в блоке «Пресет вёрстки», которого больше нет в форме.
   const [loading, setLoading] = useState(false)
@@ -3470,7 +3492,9 @@ function AlbumFormModal({
   const [pendingTemplateChange, setPendingTemplateChange] = useState<{
     newId: string | null
     newName: string | null
-    newDesignName: string | null
+    // Дизайн-подсказка выбранного шаблона (для дефолта дизайна, если не выбран).
+    hintDesignId: string | null
+    hintDesignName: string | null
   } | null>(null)
   // Обложка (Этап 7): библиотека обложек + пресеты печати для блока «Обложка».
   const [coverLibrary, setCoverLibrary] = useState<Array<{
@@ -3544,36 +3568,46 @@ function AlbumFormModal({
   // РЭ.30.6: useEffect для загрузки presets_list удалён —
   // он питал dropdown'ы блока «Пресет вёрстки», которого больше нет.
 
-  // РЭ.24.6: если форма открыта в режиме редактирования и у альбома
-  // уже задан section_structure_preset_id — подгружаем его название
-  // и название дизайна для отображения на кнопке-бейдже.
-  // Делаем один запрос (rule_presets_list возвращает все доступные)
-  // и сразу второй на designs_list для названия дизайна.
+  // Развязка шаблон↔дизайн: один раз грузим список дизайнов (глобальные +
+  // свои) для дропдауна «Дизайн» и резолва названий.
+  useEffect(() => {
+    let cancelled = false
+    api('/api/tenant?action=designs_list')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (cancelled) return
+        setDesigns((d?.designs ?? []).map((x: any) => ({ id: x.id, name: x.name })))
+      })
+      .catch(() => { /* молча — дропдаун будет пуст */ })
+    return () => { cancelled = true }
+  }, [])
+
+  // Если у альбома задан шаблон — подгружаем его название для бейджа.
   useEffect(() => {
     const psId = form.section_structure_preset_id
-    if (!psId) return
-    if (form.section_structure_preset_name && form.section_structure_design_name) {
-      return // уже подгружено
-    }
+    if (!psId || form.section_structure_preset_name) return
     let cancelled = false
-    Promise.all([
-      api('/api/tenant?action=rule_presets_list').then(r => r.ok ? r.json() : null),
-      api('/api/tenant?action=designs_list').then(r => r.ok ? r.json() : null),
-    ]).then(([presetsData, designsData]) => {
-      if (cancelled) return
-      const preset = (presetsData?.presets ?? []).find((p: any) => p.id === psId)
-      if (!preset) return
-      const design = (designsData?.designs ?? []).find(
-        (d: any) => d.id === preset.template_set_id,
-      )
-      setForm(f => ({
-        ...f,
-        section_structure_preset_name: preset.display_name ?? '?',
-        section_structure_design_name: design?.name ?? null,
-      }))
-    }).catch(() => { /* молча — кнопка покажет id */ })
+    api('/api/tenant?action=rule_presets_list')
+      .then(r => (r.ok ? r.json() : null))
+      .then(presetsData => {
+        if (cancelled) return
+        const preset = (presetsData?.presets ?? []).find((p: any) => p.id === psId)
+        if (preset) {
+          setForm(f => ({ ...f, section_structure_preset_name: preset.display_name ?? '?' }))
+        }
+      })
+      .catch(() => { /* молча — бейдж покажет id */ })
     return () => { cancelled = true }
-  }, [form.section_structure_preset_id])
+  }, [form.section_structure_preset_id, form.section_structure_preset_name])
+
+  // Синхронизируем отображаемое название выбранного дизайна с template_set_id.
+  useEffect(() => {
+    if (!form.template_set_id) return
+    const d = designs.find(x => x.id === form.template_set_id)
+    if (d && d.name !== form.section_structure_design_name) {
+      setForm(f => ({ ...f, section_structure_design_name: d.name }))
+    }
+  }, [form.template_set_id, designs, form.section_structure_design_name])
 
   const applyTemplate = (t: Template) => {
     setForm(f => ({
@@ -3601,46 +3635,66 @@ function AlbumFormModal({
   // Если у альбома уже был шаблон — показываем диалог подтверждения
   // (есть риск потерять drafts из редактора, см. spec §6 пункт 4).
   // Иначе — применяем сразу.
+  // Применяет выбор шаблона к форме. Дизайн НЕ перетираем, если партнёр уже
+  // выбрал его сам (развязка). Если дизайн ещё не выбран — подставляем
+  // дизайн-подсказку шаблона как удобный дефолт (партнёр может сменить).
+  const applyTemplatePick = (
+    newId: string | null,
+    newName: string | null,
+    hintDesignId: string | null,
+    hintDesignName: string | null,
+  ) => {
+    setForm(f => {
+      const keepDesign = f.template_set_id != null
+      return {
+        ...f,
+        section_structure_preset_id: newId,
+        section_structure_preset_name: newName,
+        template_set_id: keepDesign ? f.template_set_id : hintDesignId,
+        section_structure_design_name: keepDesign
+          ? f.section_structure_design_name
+          : hintDesignName,
+      }
+    })
+  }
+
   const handleTemplatePicked = (
     newId: string | null,
     newName: string | null,
-    newDesignName: string | null,
+    hintDesignId: string | null,
+    hintDesignName: string | null,
   ) => {
     setTemplatePickerOpen(false)
     const currentId = form.section_structure_preset_id
     if (currentId && currentId !== newId) {
-      // Смена/снятие существующего — нужен confirm
-      setPendingTemplateChange({ newId, newName, newDesignName })
+      // Смена/снятие существующего шаблона — нужен confirm
+      setPendingTemplateChange({ newId, newName, hintDesignId, hintDesignName })
     } else {
-      // Нет существующего шаблона или тот же самый — применяем сразу
-      setForm(f => ({
-        ...f,
-        section_structure_preset_id: newId,
-        section_structure_preset_name: newName,
-        section_structure_design_name: newDesignName,
-      }))
+      applyTemplatePick(newId, newName, hintDesignId, hintDesignName)
     }
   }
 
   const handleTemplateClear = () => {
-    // Снятие шаблона — тоже через confirm если шаблон уже был
+    // Снятие шаблона — тоже через confirm если шаблон уже был. Дизайн при этом
+    // НЕ снимаем (это независимый выбор).
     if (form.section_structure_preset_id) {
       setPendingTemplateChange({
         newId: null,
         newName: null,
-        newDesignName: null,
+        hintDesignId: null,
+        hintDesignName: null,
       })
     }
   }
 
   const confirmTemplateChange = () => {
     if (!pendingTemplateChange) return
-    setForm(f => ({
-      ...f,
-      section_structure_preset_id: pendingTemplateChange.newId,
-      section_structure_preset_name: pendingTemplateChange.newName,
-      section_structure_design_name: pendingTemplateChange.newDesignName,
-    }))
+    applyTemplatePick(
+      pendingTemplateChange.newId,
+      pendingTemplateChange.newName,
+      pendingTemplateChange.hintDesignId,
+      pendingTemplateChange.hintDesignName,
+    )
     setPendingTemplateChange(null)
   }
   const cancelTemplateChange = () => setPendingTemplateChange(null)
@@ -3707,6 +3761,13 @@ function AlbumFormModal({
           ? { section_structure_preset_id: form.section_structure_preset_id }
           : {}
         : { section_structure_preset_id: form.section_structure_preset_id }),
+      // Развязка шаблон↔дизайн: дизайн (template_set_id) — независимый выбор.
+      // Отправляем когда выбран явно; бэкенд приоритезирует его над
+      // дизайн-подсказкой шаблона. Если не выбран — не шлём (бэкенд возьмёт
+      // подсказку шаблона или okeybook-default).
+      ...(form.template_set_id
+        ? { template_set_id: form.template_set_id }
+        : {}),
     }
 
     if (mode === 'create') {
@@ -4025,18 +4086,13 @@ function AlbumFormModal({
               и добавить позже когда согласует дизайн с школой. */}
           <div className="border-t-2 border-border pt-5 mt-1">
             <p className="text-sm font-semibold text-blue-700 mb-2">
-              Шаблон <span className="font-normal text-muted-foreground text-xs">(опционально — можно выбрать позже)</span>
+              Шаблон (структура) <span className="font-normal text-muted-foreground text-xs">(опционально — можно выбрать позже)</span>
             </p>
             {form.section_structure_preset_id ? (
               <div className="inline-flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-sm">
                 <span className="text-blue-700 font-medium">
                   {form.section_structure_preset_name ?? form.section_structure_preset_id}
                 </span>
-                {form.section_structure_design_name && (
-                  <span className="text-blue-500 text-xs">
-                    · {form.section_structure_design_name}
-                  </span>
-                )}
                 <button
                   type="button"
                   onClick={() => setTemplatePickerOpen(true)}
@@ -4066,9 +4122,52 @@ function AlbumFormModal({
               </button>
             )}
             <p className="text-xs text-muted-foreground mt-2">
-              Шаблон из каталога задаёт структуру альбома (дизайн +
-              секции + тип листов). Без шаблона автосборка не сработает —
-              выберите шаблон, чтобы запустить «Собрать автоматически».
+              Шаблон задаёт <strong>структуру</strong> альбома: секции, число
+              страниц, размещение. Дизайн выбирается отдельно (ниже) — один
+              шаблон можно использовать с любым дизайном. Без шаблона автосборка
+              не сработает.
+            </p>
+          </div>
+
+          {/* Развязка шаблон↔дизайн: независимый выбор ДИЗАЙНА (template_set).
+              Партнёр комбинирует любой шаблон с любым дизайном. */}
+          <div className="border-t border-border pt-5 mt-1">
+            <p className="text-sm font-semibold text-blue-700 mb-2">
+              Дизайн <span className="font-normal text-muted-foreground text-xs">(визуальное оформление)</span>
+            </p>
+            <select
+              value={form.template_set_id ?? ''}
+              onChange={(e) => {
+                const id = e.target.value || null
+                const name = id
+                  ? designs.find((d) => d.id === id)?.name ?? null
+                  : null
+                setForm((f) => ({
+                  ...f,
+                  template_set_id: id,
+                  section_structure_design_name: name,
+                }))
+              }}
+              className="input"
+              disabled={loading || designs.length === 0}
+            >
+              <option value="">
+                {form.section_structure_preset_id
+                  ? '— как у шаблона (по умолчанию) —'
+                  : '— дизайн по умолчанию —'}
+              </option>
+              {designs.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground mt-2">
+              Можно взять любой дизайн независимо от шаблона. Если оставить
+              «по умолчанию» — возьмётся дизайн-подсказка шаблона (или общий
+              базовый). Если в дизайне не окажется мастера под какую-то часть
+              структуры — эти страницы не соберутся, в редакторе появится
+              предупреждение.
             </p>
           </div>
 
@@ -4744,47 +4843,20 @@ function TemplatePickerModal({
   onPick: (
     newId: string | null,
     newName: string | null,
-    newDesignName: string | null,
+    // Дизайн-подсказка шаблона (для дефолта дизайна в форме, если не выбран).
+    hintDesignId: string | null,
+    hintDesignName: string | null,
   ) => void
   onClose: () => void
 }) {
+  // Развязка шаблон↔дизайн: модалка выбирает ТОЛЬКО структуру (шаблон).
+  // Дизайн партнёр выбирает отдельным дропдауном в форме заказа. Список
+  // дизайнов нужен только чтобы показать на карточке «дизайн-подсказку».
   const [designs, setDesigns] = useState<PickerDesign[]>([])
   const [globals, setGlobals] = useState<PickerTemplate[]>([])
   const [mine, setMine] = useState<PickerTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [designFilter, setDesignFilter] = useState<string>('') // '' = все
-  // РЭ.48: двухуровневая навигация. Шаг 1 — выбор дизайна
-  // (если дизайнов > 1). Шаг 2 — шаблоны выбранного дизайна.
-  // Если только один дизайн (или не выбран) — сразу идём в 'templates'
-  // (как раньше: все шаблоны / по фильтру).
-  type Step = 'design' | 'templates'
-  const [step, setStep] = useState<Step>('design')
-
-  // Когда данные загрузились — решаем стартовый step.
-  // Если у партнёра только один дизайн, нет смысла показывать выбор дизайна.
-  // Если currentPresetId уже задан — открываемся сразу в templates с
-  // дизайном выбранного пресета (чтобы он мог быстро поменять).
-  useEffect(() => {
-    if (loading) return
-    if (designs.length <= 1) {
-      setStep('templates')
-      if (designs.length === 1) setDesignFilter(designs[0].id)
-      return
-    }
-    if (currentPresetId) {
-      const cur =
-        globals.find((t) => t.id === currentPresetId) ??
-        mine.find((t) => t.id === currentPresetId)
-      if (cur && cur.template_set_id) {
-        setDesignFilter(cur.template_set_id)
-        setStep('templates')
-        return
-      }
-    }
-    // Иначе стартуем с выбора дизайна.
-    setStep('design')
-  }, [loading, designs, currentPresetId, globals, mine])
 
   useEffect(() => {
     let cancelled = false
@@ -4847,20 +4919,14 @@ function TemplatePickerModal({
 
   const pick = (t: PickerTemplate) => {
     if (!t.valid) return
-    onPick(t.id, t.display_name, designNameById(t.template_set_id))
+    // Передаём дизайн-подсказку шаблона — форма подставит её как дефолт
+    // дизайна, если партнёр ещё не выбрал дизайн сам.
+    onPick(t.id, t.display_name, t.template_set_id, designNameById(t.template_set_id))
   }
 
-  // Фильтрация по дизайну (если выбран)
-  const filteredGlobals = designFilter
-    ? globals.filter((t) => t.template_set_id === designFilter)
-    : globals
-  const filteredMine = designFilter
-    ? mine.filter((t) => t.template_set_id === designFilter)
-    : mine
-
-  // РЭ.48: после введения двухуровневой навигации (шаг design → templates)
-  // глобальные шаблоны просто фильтруем по designFilter, группировка
-  // по дизайнам уже не нужна — внутри шага 2 всегда один дизайн.
+  // Развязка: показываем ВСЕ шаблоны (структуры), без фильтра по дизайну.
+  const filteredGlobals = globals
+  const filteredMine = mine
 
   return (
     <div
@@ -4873,36 +4939,12 @@ function TemplatePickerModal({
       >
         {/* Шапка */}
         <div className="flex items-center justify-between p-4 border-b">
-          <div className="flex items-center gap-3 min-w-0">
-            {/* РЭ.48: кнопка ← на шаге templates, чтобы вернуться к выбору
-                дизайна. Показываем только если дизайнов > 1. */}
-            {step === 'templates' && designs.length > 1 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setStep('design')
-                  setDesignFilter('')
-                }}
-                className="text-muted-foreground hover:text-foreground text-sm whitespace-nowrap"
-                title="Назад к выбору дизайна"
-              >
-                ← К дизайнам
-              </button>
-            )}
-            <div className="min-w-0">
-              <h3 className="text-lg font-semibold truncate">
-                {step === 'design'
-                  ? 'Выберите дизайн'
-                  : designFilter
-                    ? `Шаблоны: ${designNameById(designFilter) ?? ''}`
-                    : 'Выбрать шаблон'}
-              </h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {step === 'design'
-                  ? 'Сначала выберите дизайн альбома, затем шаблон внутри него.'
-                  : 'Шаблон описывает структуру альбома: дизайн + секции + тип листов.'}
-              </p>
-            </div>
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold truncate">Выбрать шаблон (структуру)</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Шаблон задаёт структуру альбома: секции, число страниц,
+              размещение. Дизайн выбирается отдельно в форме заказа.
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -4924,57 +4966,8 @@ function TemplatePickerModal({
             </div>
           )}
 
-          {/* РЭ.48: ШАГ 1 — Выбор дизайна */}
-          {!loading && !error && step === 'design' && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-              {designs.map((d) => {
-                const count =
-                  globals.filter((t) => t.template_set_id === d.id).length +
-                  mine.filter((t) => t.template_set_id === d.id).length
-                // Превью дизайна — берём первое доступное превью из любого
-                // шаблона этого дизайна (предпочитаем глобальные).
-                const preview =
-                  globals.find((t) => t.template_set_id === d.id)?.previews
-                    .students ??
-                  mine.find((t) => t.template_set_id === d.id)?.previews
-                    .students ??
-                  null
-                return (
-                  <button
-                    key={d.id}
-                    type="button"
-                    onClick={() => {
-                      setDesignFilter(d.id)
-                      setStep('templates')
-                    }}
-                    className="text-left p-3 rounded-lg border bg-card border-border hover:border-brand-300 hover:shadow-sm transition-all flex flex-col gap-2 cursor-pointer"
-                  >
-                    <div
-                      className="w-full bg-muted border border-border rounded overflow-hidden flex items-center justify-center"
-                      style={{ aspectRatio: '1 / 1.4', minHeight: '90px' }}
-                      dangerouslySetInnerHTML={{
-                        __html:
-                          preview ??
-                          '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9ca3af;font-size:10px;">нет превью</div>',
-                      }}
-                    />
-                    <div
-                      className="text-sm font-medium text-foreground truncate"
-                      title={d.name}
-                    >
-                      {d.name}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {count > 0 ? `${count} шаблон${count === 1 ? '' : count < 5 ? 'а' : 'ов'}` : 'нет шаблонов'}
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-
-          {/* ШАГ 2 — Шаблоны выбранного дизайна */}
-          {!loading && !error && step === 'templates' && (
+          {/* Список шаблонов (структур) — все доступные, без фильтра по дизайну */}
+          {!loading && !error && (
             <>
               {/* Мои шаблоны */}
               <section>
@@ -4983,7 +4976,7 @@ function TemplatePickerModal({
                 </h4>
                 {filteredMine.length === 0 ? (
                   <div className="text-xs text-muted-foreground italic">
-                    У вас пока нет своих шаблонов в этом дизайне.
+                    У вас пока нет своих шаблонов.
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
@@ -5000,15 +4993,14 @@ function TemplatePickerModal({
                 )}
               </section>
 
-              {/* Готовые от OkeyBook — простой грид (уже отфильтровано
-                  по выбранному дизайну в шаге 1, группировка не нужна). */}
+              {/* Готовые от OkeyBook — все доступные структуры */}
               <section>
                 <h4 className="text-sm font-semibold text-foreground mb-2">
                   Готовые от OkeyBook ({filteredGlobals.length})
                 </h4>
                 {filteredGlobals.length === 0 ? (
                   <div className="text-xs text-muted-foreground italic">
-                    Нет рекомендованных шаблонов от OkeyBook в этом дизайне.
+                    Нет рекомендованных шаблонов от OkeyBook.
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
@@ -5032,7 +5024,7 @@ function TemplatePickerModal({
         <div className="border-t p-4 flex items-center justify-between gap-2 bg-muted">
           <button
             type="button"
-            onClick={() => onPick(null, null, null)}
+            onClick={() => onPick(null, null, null, null)}
             className="px-4 py-2 bg-card border border-border hover:bg-muted text-foreground rounded text-sm"
           >
             Создать без шаблона
