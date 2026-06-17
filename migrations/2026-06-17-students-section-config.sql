@@ -1,0 +1,49 @@
+-- 2026-06-17 — per-section конфиг личного раздела (ТЗ 17.06.2026)
+--
+-- СХЕМА НЕ МЕНЯЕТСЯ. Настройки личного раздела теперь хранятся ВНУТРИ записей
+-- type='students' массива presets.section_structure (jsonb) как поле `config`:
+--   { "type": "students", "config": { "mode": "spread", "friends_min": 0,
+--                                     "friends_max": 4, "quote": true } }
+-- Никаких ALTER TABLE не требуется — section_structure уже jsonb.
+--
+-- ОБРАТНАЯ СОВМЕСТИМОСТЬ (ленивый upgrade при чтении):
+-- Если у записи students нет `config`, движок (lib/rule-engine/sections/
+-- students.ts → resolveStudentsConfig) берёт глобальные поля пресета
+-- (student_layout_mode / student_grid_size / student_friend_photos /
+-- student_has_quote). Глобальные поля НЕ удаляются — нужны для отката Vercel
+-- и как фолбэк. Поэтому старые пресеты продолжают работать БЕЗ этой миграции.
+--
+-- ПОЭТОМУ ПРИМЕНЯТЬ ЭТОТ ФАЙЛ НЕ ОБЯЗАТЕЛЬНО. Он оставлен как запись решения.
+--
+-- ─────────────────────────────────────────────────────────────────────────
+-- ОПЦИОНАЛЬНЫЙ бэкфилл (только если хочется «материализовать» config у старых
+-- пресетов вместо ленивого фолбэка). Сворачивает глобальные поля в config
+-- ПЕРВОЙ записи students у пресетов, где она есть и config ещё не задан.
+-- Идемпотентно: повторный запуск ничего не меняет (условие config IS NULL).
+-- Закомментировано — раскомментировать осознанно и прогнать на копии.
+--
+-- WITH first_students AS (
+--   SELECT p.id,
+--          MIN(idx) AS si
+--   FROM presets p,
+--        LATERAL jsonb_array_elements(p.section_structure) WITH ORDINALITY AS e(elem, idx)
+--   WHERE p.section_structure IS NOT NULL
+--     AND e.elem->>'type' = 'students'
+--     AND NOT (e.elem ? 'config')
+--     AND p.student_layout_mode IS NOT NULL
+--   GROUP BY p.id
+-- )
+-- UPDATE presets p
+-- SET section_structure = jsonb_set(
+--   p.section_structure,
+--   ARRAY[(fs.si - 1)::text, 'config'],
+--   CASE p.student_layout_mode
+--     WHEN 'grid' THEN jsonb_build_object('mode','grid','per_page', COALESCE(p.student_grid_size, 6))
+--     WHEN 'page' THEN jsonb_build_object('mode','page','friends', COALESCE(p.student_friend_photos, 0),'quote', COALESCE(p.student_has_quote, false))
+--     WHEN 'spread' THEN jsonb_build_object('mode','spread','friends_min', COALESCE(p.student_friend_photos, 0),'friends_max', COALESCE(p.student_friend_photos, 0),'quote', COALESCE(p.student_has_quote, false))
+--     ELSE jsonb_build_object('mode','page','friends', COALESCE(p.student_friend_photos, 0),'quote', COALESCE(p.student_has_quote, false))
+--   END,
+--   true
+-- )
+-- FROM first_students fs
+-- WHERE p.id = fs.id;
