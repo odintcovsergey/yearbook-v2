@@ -290,6 +290,32 @@ describe('per-section config личного раздела (ТЗ 17.06.2026)', (
     expect(pages[3]!.bindings.studentphoto_1).toBe('https://cdn/p0_f8.jpg');
   });
 
+  it('multi_spread Авто: РАВНОМЕРНОЕ распределение (13 фото → 5+4+4, без почти-пустой)', () => {
+    // Полная лесенка коллажей 2..6 (как в «Аква меч»).
+    const collages = [2, 3, 4, 5, 6].map((n) =>
+      galleryMaster(`E-Collage-${n}`, 'student_right', n),
+    );
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        section_structure: [
+          { type: 'students', config: { mode: 'multi_spread', spreads_per_student: 3, quote: true } },
+        ],
+      }),
+      masters: [E_LEFT, ...collages],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput([13]));
+    const pages = result.spreads.flatMap((s) => [s.left, s.right].filter(Boolean));
+    const names = pages.map((p) => masterNameById(bundle, p!.master_id));
+    // Парад + 5+4+4 = 13 (а не жадно 6+6+1 с почти-пустой страницей).
+    expect(names).toEqual(['E-Left', 'E-Collage-5', 'E-Collage-4', 'E-Collage-4']);
+    // Ни на одной коллажной странице нет скрытых (пустых) слотов.
+    const anyHidden = pages
+      .slice(1)
+      .some((p) => Object.keys(p!.bindings).some((k) => k.startsWith('__hidden__')));
+    expect(anyHidden).toBe(false);
+  });
+
   it('multi_spread: коллаж распознаётся по РЕАЛЬНЫМ слотам, даже если метаданные врут', () => {
     // Мастер с фото-слотами и БЕЗ портрета/имени в плейсхолдерах, но slot_capacity
     // ЛЖЁТ (has_portrait=true). Так в «Аква меч» устроен E-Standard-Right.

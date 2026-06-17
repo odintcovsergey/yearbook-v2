@@ -192,6 +192,25 @@ function humanStudentsConfigLabel(cfg: StudentsSectionConfig | undefined): strin
   }
 }
 
+// ─── Классификация мастеров личного раздела (по реальным плейсхолдерам) ────
+// Те же правила, что в движке (lib/rule-engine/sections/students.ts): парадная
+// = есть портрет; коллаж = есть фото-слоты, нет портрета/имени/цитаты.
+function masterHasPlaceholder(t: SpreadTemplate, re: RegExp): boolean {
+  return (t.placeholders ?? []).some((p) => re.test((p.label ?? '').toLowerCase()))
+}
+function isParadeMaster(t: SpreadTemplate): boolean {
+  return masterHasPlaceholder(t, /^studentportrait(_\d+)?$/)
+}
+function isCollageMaster(t: SpreadTemplate): boolean {
+  const hasPhoto = masterHasPlaceholder(t, /^(?:studentphoto|friendphoto)_?\d+$/)
+  return (
+    hasPhoto &&
+    !masterHasPlaceholder(t, /^studentportrait(_\d+)?$/) &&
+    !masterHasPlaceholder(t, /^studentname(_\d+)?$/) &&
+    !masterHasPlaceholder(t, /^studentquote(_\d+)?$/)
+  )
+}
+
 // ─── Modal ───────────────────────────────────────────────────────────────
 
 export default function PresetEditorModal({
@@ -1106,14 +1125,16 @@ function StudentsConfigEditor({
                 value={cfg.manual_pages && cfg.manual_pages.length > 0 ? 'manual' : 'auto'}
                 onChange={(e) => {
                   if (e.target.value === 'manual') {
-                    // Включаем ручной: дефолт — один разворот (2 страницы) из
-                    // первых доступных E-мастеров. Если мастеров нет — пусто.
+                    // Включаем ручной: дефолт — один разворот, ЛЕВАЯ парадная
+                    // (портрет), ПРАВАЯ коллаж. Если таких нет — первые из E-*.
                     const ePool = templates.filter((t) => t.name.startsWith('E-'))
-                    const first = ePool[0]?.name
-                    const second = ePool[1]?.name ?? ePool[0]?.name
+                    const parade = ePool.find(isParadeMaster) ?? ePool[0]
+                    const collage =
+                      ePool.find(isCollageMaster) ?? ePool[1] ?? ePool[0]
                     onChange({
                       ...cfg,
-                      manual_pages: first && second ? [first, second] : [],
+                      manual_pages:
+                        parade && collage ? [parade.name, collage.name] : [],
                     })
                   } else {
                     onChange({ ...cfg, manual_pages: null })
@@ -1202,8 +1223,12 @@ function MultiSpreadManualEditor({
     next[pageIdx] = name
     onChange(next)
   }
+  // Новый разворот — по умолчанию обе страницы коллажные (парад только на 1-м).
+  const collagePool = ePool.filter(isCollageMaster)
   const addSpread = () => {
-    onChange([...safe, ePool[0].name, ePool[1]?.name ?? ePool[0].name])
+    const c1 = collagePool[0]?.name ?? ePool[0].name
+    const c2 = collagePool[1]?.name ?? c1
+    onChange([...safe, c1, c2])
   }
   const removeSpread = (spreadIdx: number) => {
     const next = safe.filter((_, i) => i < spreadIdx * 2 || i >= spreadIdx * 2 + 2)

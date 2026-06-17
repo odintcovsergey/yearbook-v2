@@ -870,16 +870,25 @@ function findPersonalCollageMasters(
 }
 
 /**
- * Выбрать коллажный мастер под остаток фото: самый крупный, помещающийся в
- * `remaining` (жадно). Если ни один не помещается (остаток меньше самого
- * мелкого) — берём самый мелкий (лишние слоты скроются). Список ОБЯЗАН быть
- * непустым и отсортирован по убыванию ёмкости.
+ * Выбрать коллажный мастер под ЦЕЛЕВОЕ число фото на странице `target`:
+ * предпочитаем точное совпадение ёмкости (страница заполнится без пустых
+ * слотов), иначе — ближайший по ёмкости (tie → крупнее). Список ОБЯЗАН быть
+ * непустым. Используется равномерным распределением (см. distributeCollagePages).
  */
-function pickCollageMaster(collageMasters: CollageMaster[], remaining: number): CollageMaster {
+function pickCollageByTarget(collageMasters: CollageMaster[], target: number): CollageMaster {
   for (const cm of collageMasters) {
-    if (cm.capacity <= remaining) return cm;
+    if (cm.capacity === target) return cm;
   }
-  return collageMasters[collageMasters.length - 1];
+  let best = collageMasters[0];
+  let bestDist = Math.abs(best.capacity - target);
+  for (const cm of collageMasters) {
+    const d = Math.abs(cm.capacity - target);
+    if (d < bestDist || (d === bestDist && cm.capacity > best.capacity)) {
+      best = cm;
+      bestDist = d;
+    }
+  }
+  return best;
 }
 
 /**
@@ -979,40 +988,34 @@ function buildMultiSpreadSemantic(
       continue;
     }
 
-    // Разворот 1: правая — коллаж под остаток фото.
-    let spreadsBuilt = 1;
-    {
+    // РАВНОМЕРНОЕ распределение коллажей (правка 17.06: было жадно «6+6+остаток»,
+    // последняя страница выходила почти пустой — стало «5+4+4» на 13 фото).
+    //
+    // 1. Сколько коллажных страниц нужно: минимум, чтобы вместить все фото
+    //    (по самому крупному коллажу), НО блок ученика занимает целые развороты —
+    //    парад (1 стр.) + P коллажей → (1+P) чётно → P нечётно. Округляем вверх
+    //    до нечётного. Ограничиваем бюджетом разворотов (maxSpreads*2 − 1, тоже нечёт).
+    const maxCap = collageMasters[0].capacity; // отсортированы по убыванию
+    const maxCollagePages = maxSpreads * 2 - 1;
+    let collagePages = Math.max(1, Math.ceil((friends.length - cursor) / maxCap));
+    if (collagePages % 2 === 0) collagePages += 1; // нечётное → целые развороты
+    if (collagePages > maxCollagePages) collagePages = maxCollagePages;
+
+    // 2. Раскидываем оставшиеся фото поровну: на каждой странице
+    //    ceil(остаток / страниц_осталось) — даёт равные пачки (13/3=5, 8/2=4, 4/1=4).
+    //    Берём мастер ровно под это число (точное совпадение ёмкости = без пустот).
+    for (let k = 0; k < collagePages; k++) {
       const remaining = friends.length - cursor;
-      const pick = pickCollageMaster(collageMasters, remaining);
+      const pagesLeft = collagePages - k;
+      const target = remaining > 0 ? Math.ceil(remaining / pagesLeft) : 1;
+      const pick = pickCollageByTarget(collageMasters, target);
       ctx.pageInstances.push({
         master_id: pick.master.id,
         bindings: bindCollagePhotos(pick.master, student, cursor),
       });
-      cursor += Math.min(pick.capacity, Math.max(0, remaining));
+      cursor += pick.capacity; // смещение на ёмкость страницы (лишние слоты скрыты)
     }
-
-    // Развороты 2..N — только пока остались фото. Каждый разворот целый
-    // (2 страницы): левая коллаж, правая коллаж (или пустой коллаж, если фото
-    // кончились ровно после левой — чтобы разворот остался целым).
-    for (let s = 2; s <= maxSpreads && cursor < friends.length; s++) {
-      const leftRemaining = friends.length - cursor;
-      const leftPick = pickCollageMaster(collageMasters, leftRemaining);
-      ctx.pageInstances.push({
-        master_id: leftPick.master.id,
-        bindings: bindCollagePhotos(leftPick.master, student, cursor),
-      });
-      cursor += Math.min(leftPick.capacity, leftRemaining);
-
-      const rightRemaining = friends.length - cursor;
-      const rightPick = pickCollageMaster(collageMasters, rightRemaining);
-      ctx.pageInstances.push({
-        master_id: rightPick.master.id,
-        bindings: bindCollagePhotos(rightPick.master, student, cursor),
-      });
-      cursor += Math.min(rightPick.capacity, Math.max(0, rightRemaining));
-
-      spreadsBuilt++;
-    }
+    const spreadsBuilt = (1 + collagePages) / 2;
 
     // Фото, не вместившиеся в cap разворотов — остаются в пуле партнёра.
     if (cursor < friends.length) {
