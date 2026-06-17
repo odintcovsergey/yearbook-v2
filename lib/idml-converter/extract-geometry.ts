@@ -514,29 +514,47 @@ function extractFrameProps(
     if (Number.isFinite(r) && r > 0) out.corner_radius_mm = ptToMm(r);
   }
 
-  // Внешнее свечение. Два источника:
-  //  1) прямо на фрейме: <OuterGlowSetting Size=... EffectColor=.../>;
-  //  2) через стиль объекта (AppliedObjectStyle) — дизайнерские наборы
-  //     («Аква меч») задают glow рамок именно так, причём Size наследуется от
-  //     документного дефолта, а цвет лежит в EffectColor стиля.
-  // Приоритет — прямой эффект на фрейме (он перекрывает стиль).
+  // Внешнее свечение. Два источника, ОБЪЕДИНЯЕМ:
+  //  1) стиль объекта (AppliedObjectStyle) — база. Дизайнерские наборы («Аква
+  //     меч») задают glow рамок именно так: Size наследуется от документного
+  //     дефолта, цвет лежит в EffectColor стиля (CMYK).
+  //  2) прямой эффект на фрейме — ПЕРЕКРЫВАЕТ стиль, НО только если он реально
+  //     включён (Applied="true"). Грабли «Аква меч»: InDesign у КАЖДОГО фрейма
+  //     пишет дефолтный <OuterGlowSetting Size="7.21"/> БЕЗ Applied и без цвета.
+  //     Раньше проверка `!== 'false'` считала его включённым → серый размер по
+  //     умолчанию, пустой цвет, и движок не доходил до стиля → свечения нет.
+  //     Теперь дефолтный (не Applied) glow игнорируем и берём цвет из стиля.
+  const styleGlow = resolver.resolveObjectGlow(
+    getAttr(frameNode, 'AppliedObjectStyle'),
+  );
   const glow = findFirst(frameNode, 'OuterGlowSetting');
-  if (glow && getAttr(glow, 'Applied') !== 'false') {
+  const directOn = !!glow && getAttr(glow, 'Applied') !== 'false';
+
+  let glowSize: number | undefined;
+  let glowColor: string | null = null;
+  let hasGlow = false;
+
+  // База — объектный стиль (там лежит ЦВЕТ, в «Аква меч» — CMYK).
+  if (styleGlow) {
+    hasGlow = true;
+    glowSize = styleGlow.glow_size_pt;
+    glowColor = styleGlow.glow_color;
+  }
+  // Прямой glow на фрейме несёт РАЗМЕР (InDesign пишет его у каждой рамки), а
+  // цвет/Applied обычно отсутствуют. Берём отсюда размер; цвет — только если
+  // явно задан (иначе сохраняем цвет из стиля). Так склеиваются оба источника:
+  // размер с фрейма + цвет со стиля (грабли «Аква меч» — раньше цвет терялся).
+  if (directOn) {
+    hasGlow = true;
     const s = Number(getAttr(glow, 'Size'));
+    if (Number.isFinite(s) && s > 0) glowSize = s;
+    const directColor = resolver.resolveColorRef(getAttr(glow, 'EffectColor'));
+    if (directColor) glowColor = directColor;
+  }
+  if (hasGlow) {
     out.glow_size_pt =
-      Number.isFinite(s) && s > 0 ? s : resolver.defaultGlowSizePt;
-    const colorRef = getAttr(glow, 'EffectColor');
-    const color = resolver.resolveColorRef(colorRef);
-    if (color) out.glow_color = color;
-  } else {
-    // Нет прямого эффекта — пробуем стиль объекта (с цепочкой BasedOn).
-    const objGlow = resolver.resolveObjectGlow(
-      getAttr(frameNode, 'AppliedObjectStyle'),
-    );
-    if (objGlow) {
-      out.glow_size_pt = objGlow.glow_size_pt;
-      if (objGlow.glow_color) out.glow_color = objGlow.glow_color;
-    }
+      glowSize !== undefined && glowSize > 0 ? glowSize : resolver.defaultGlowSizePt;
+    if (glowColor) out.glow_color = glowColor;
   }
 
   return out;
