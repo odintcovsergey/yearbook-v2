@@ -27,6 +27,7 @@ const AlbumSpreadCanvas = dynamic(() => import('./AlbumSpreadCanvas'), {
 // instance (data={}) — это показывает структуру placeholder'ов.
 
 import { isMasterAllowedForPrintType } from '@/lib/album-builder'
+import { humanMasterLabel } from '@/lib/album-builder/master-label'
 
 type Props = {
   templates: SpreadTemplate[]
@@ -227,8 +228,13 @@ export default function TemplatePickerModal({
                       </div>
                       <div className="px-2 py-1.5">
                         <p className="text-xs font-medium text-foreground truncate">
-                          {t.name}
+                          {humanMasterLabel(t)}
                         </p>
+                        {humanMasterLabel(t) !== t.name && (
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {t.name}
+                          </p>
+                        )}
                         {t.is_fallback && (
                           <p className="text-[10px] text-amber-600 mt-0.5">fallback</p>
                         )}

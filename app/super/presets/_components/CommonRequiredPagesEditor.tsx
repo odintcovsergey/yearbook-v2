@@ -18,6 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { AlertTriangle } from 'lucide-react'
 import type { SpreadTemplate } from '@/lib/album-builder/types'
+import { humanMasterLabel } from '@/lib/album-builder/master-label'
 import JMasterPicker from './JMasterPicker'
 
 // ─── CommonRequiredPagesEditor ────────────────────────────────────────────
@@ -276,32 +277,12 @@ function SortablePageRow({ id, position, side, page, template, onDelete, disable
     opacity: isDragging ? 0.4 : 1,
   }
 
-  // Описание содержимого мастера (по placeholders) — короткий ярлык.
-  const summary = useMemo(() => {
-    if (!template) return 'мастер не найден в текущем дизайне'
-    let halfCount = 0
-    let quarterCount = 0
-    let sixthCount = 0
-    let collageCount = 0
-    let hasFull = false
-    let hasSpread = false
-    for (const ph of template.placeholders ?? []) {
-      const l = ph.label.toLowerCase()
-      if (l === 'classphotoframe') hasFull = true
-      else if (l.match(/^halfphoto_\d+$/)) halfCount++
-      else if (l.match(/^quarterphoto_\d+$/)) quarterCount++
-      else if (l.match(/^sixthphoto_\d+$/)) sixthCount++
-      else if (l.match(/^collagephoto_\d+$/)) collageCount++
-      else if (l === 'spreadphoto') hasSpread = true
-    }
-    if (hasSpread) return 'на разворот'
-    if (sixthCount > 0) return `${sixthCount} × 1/6`
-    if (collageCount > 0) return `${collageCount} коллаж`
-    if (quarterCount > 0) return `${quarterCount} × 1/4`
-    if (halfCount > 0) return `${halfCount} × 1/2`
-    if (hasFull) return '1 общая'
-    return 'прочее'
-  }, [template])
+  // Человекочитаемая подпись мастера (по placeholders). Техимя оставляем
+  // мелким подзаголовком — см. lib/album-builder/master-label.ts.
+  const human = useMemo(
+    () => (template ? humanMasterLabel(template) : 'мастер не найден в текущем дизайне'),
+    [template],
+  )
 
   return (
     <li
@@ -342,16 +323,18 @@ function SortablePageRow({ id, position, side, page, template, onDelete, disable
         {side === 'spread' ? 'разворот' : side === 'left' ? 'левая' : 'правая'}
       </span>
 
-      {/* Master name + summary */}
+      {/* Человекочитаемая подпись + техимя подзаголовком */}
       <div className="flex-1 min-w-0">
-        <div className="text-sm text-foreground truncate">{page.master_name}</div>
         <div
-          className={`text-xs truncate ${
-            template === null ? 'text-amber-700' : 'text-muted-foreground'
+          className={`text-sm truncate ${
+            template === null ? 'text-amber-700' : 'text-foreground'
           }`}
         >
-          {summary}
+          {human}
         </div>
+        {human !== page.master_name && (
+          <div className="text-xs text-muted-foreground truncate">{page.master_name}</div>
+        )}
       </div>
 
       {/* Delete */}

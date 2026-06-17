@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { X } from 'lucide-react'
 import type { SpreadTemplate } from '@/lib/album-builder/types'
+import { humanMasterLabel } from '@/lib/album-builder/master-label'
 
 const AlbumSpreadCanvas = dynamic(
   () => import('@/app/app/_components/AlbumSpreadCanvas'),
@@ -290,8 +291,13 @@ export default function JMasterPicker({ templates, onSelect, onClose }: Props) {
                       </div>
                       <div className="px-2 py-1.5">
                         <p className="text-xs font-medium text-foreground truncate">
-                          {t.name}
+                          {humanMasterLabel(t)}
                         </p>
+                        {humanMasterLabel(t) !== t.name && (
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {t.name}
+                          </p>
+                        )}
                       </div>
                     </button>
                   ))}
