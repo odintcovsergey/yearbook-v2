@@ -542,7 +542,7 @@ function pickRightMaster(
  *  - `subjectname_N` / `teachername_N` → subjects[N-1].name
  *  - `subjectrole_N` / `teacherrole_N` → subjects[N-1].role
  */
-function bindLeftPage(
+export function bindLeftPage(
   master: SpreadTemplate,
   headTeacher: RulesHeadTeacherInput,
   subjects: RulesSubjectInput[],
@@ -552,23 +552,35 @@ function bindLeftPage(
     const ph = master.placeholders[i];
     const label = ph.label.toLowerCase();
 
-    // ─ Главный учитель ─
-    if (label === 'headteacherphoto') {
-      if (headTeacher.photo) {
+    // ─ Главный учитель / воспитатель ─
+    // Поддерживаем номер: headteacherphoto_N / headteachername_N / headteacherrole_N
+    // (мастера детсада «Аква меч» именуют слоты с номером — два воспитателя).
+    // Часть 1 (17.06): в данных пока ОДИН главный → слот _1 (или без номера)
+    // заполняем, слоты _2+ скрываем (__hidden__). Часть 2 добавит массив из 2.
+    const hpMatch = label.match(/^headteacherphoto(?:_(\d+))?$/);
+    if (hpMatch) {
+      const n = hpMatch[1] ? parseInt(hpMatch[1], 10) : 1;
+      if (n === 1 && headTeacher.photo) {
         bindings[ph.label] = headTeacher.photo;
       } else {
-        // РЭ.21.8.13: главное фото учителя отсутствует → скрываем рамку,
+        // Нет фото / второй воспитатель (пока не поддержан) → скрываем рамку,
         // чтобы Canvas/PDF не рисовал пустой прямоугольник.
         bindings[`__hidden__${ph.label}`] = '1';
       }
       continue;
     }
-    if (label === 'headteachername') {
-      bindings[ph.label] = headTeacher.name;
+    const hnMatch = label.match(/^headteachername(?:_(\d+))?$/);
+    if (hnMatch) {
+      const n = hnMatch[1] ? parseInt(hnMatch[1], 10) : 1;
+      if (n === 1) bindings[ph.label] = headTeacher.name;
+      else bindings[`__hidden__${ph.label}`] = '1';
       continue;
     }
-    if (label === 'headteacherrole') {
-      bindings[ph.label] = headTeacher.role;
+    const hrMatch = label.match(/^headteacherrole(?:_(\d+))?$/);
+    if (hrMatch) {
+      const n = hrMatch[1] ? parseInt(hrMatch[1], 10) : 1;
+      if (n === 1) bindings[ph.label] = headTeacher.role;
+      else bindings[`__hidden__${ph.label}`] = '1';
       continue;
     }
     if (label === 'headteachertext' || label === 'headteacherquote' || label === 'headtextframe') {
