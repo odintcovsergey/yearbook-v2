@@ -861,6 +861,9 @@ async function tryBuildViaSectionStructure(
   sectionStructurePresetId: string,
   tenantId: string,
   auth: AuthContext,
+  // Развязка шаблон↔дизайн: дизайн, выбранный в заказе (albums.template_set_id).
+  // Перебивает дизайн-подсказку пресета — одна структура на любом дизайне.
+  albumTemplateSetId: string | null,
 ): Promise<RulesBuildOk | RulesBuildSkip> {
   // 1. Smart-fill — та же функция что у legacy/rules.
   let smartFillResult: { input: AlbumInput; warnings: SmartFillWarning[] }
@@ -878,7 +881,12 @@ async function tryBuildViaSectionStructure(
   // bundle.preset.section_structure (заполняется в loaders.ts на РЭ.21.8.1).
   let bundle
   try {
-    bundle = await loadBundle(supabase, sectionStructurePresetId, tenantId)
+    bundle = await loadBundle(
+      supabase,
+      sectionStructurePresetId,
+      tenantId,
+      albumTemplateSetId,
+    )
   } catch (e) {
     return {
       ok: false,
@@ -1100,6 +1108,7 @@ async function handleBuildAlbum(
       album.section_structure_preset_id,
       tid,
       auth,
+      (album as { template_set_id?: string | null }).template_set_id ?? null,
     )
     if (ssResult.ok) return ssResult.response
     // fallthrough на legacy при сбое нового engine

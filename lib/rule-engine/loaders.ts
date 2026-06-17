@@ -35,15 +35,21 @@ export interface RuleEngineBundle {
  * @param presetId — id пресета (из таблицы `presets`, не `config_presets`)
  * @param tenantId — id арендатора (для tenant-aware rules) или null для только-глобальных
  *
- * РЭ.21.6.2: template_set теперь берётся ИЗ ПРЕСЕТА (preset.template_set_id).
- * Если в пресете NULL → фолбэк на глобальный 'okeybook-default'. 4-й
- * аргумент templateSetSlug удалён намеренно: иначе template_set_id из
- * пресета молча игнорировался бы.
+ * РЭ.21.6.2: template_set по умолчанию берётся ИЗ ПРЕСЕТА (preset.template_set_id);
+ * если в пресете NULL → фолбэк на глобальный 'okeybook-default'.
+ *
+ * Развязка шаблон↔дизайн (17.06.2026): необязательный `templateSetIdOverride`
+ * — это ДИЗАЙН, выбранный в заказе (albums.template_set_id). Когда он задан,
+ * он ПЕРЕБИВАЕТ дизайн-подсказку пресета: одна структура (preset) собирается
+ * на любом дизайне. Боевая сборка альбома всегда передаёт его (дизайн заказа —
+ * источник правды). Превью шаблонов в каталоге override не передают — там
+ * структура показывается на своём дизайне-подсказке.
  */
 export async function loadBundle(
   supabase: SupabaseClient,
   presetId: string,
   tenantId: string | null,
+  templateSetIdOverride?: string | null,
 ): Promise<RuleEngineBundle> {
   // 1) Preset
   const { data: presetRow, error: presetErr } = await supabase
@@ -87,12 +93,14 @@ export async function loadBundle(
   // РЭ.21.6.2: один дополнительный SELECT для разрешения uuid → slug.
   // Стоимость незначительна (1 строка по PK), зато slug остаётся
   // человеко-читаемым identifier-ом в loadTemplateSet.
+  // Развязка: дизайн заказа (override) приоритетнее дизайн-подсказки пресета.
   let templateSetSlug = 'okeybook-default';
-  if (preset.template_set_id) {
+  const effectiveTemplateSetId = templateSetIdOverride ?? preset.template_set_id;
+  if (effectiveTemplateSetId) {
     const { data: tsRow, error: tsErr } = await supabase
       .from('template_sets')
       .select('slug')
-      .eq('id', preset.template_set_id)
+      .eq('id', effectiveTemplateSetId)
       .single();
     if (tsErr || !tsRow?.slug) {
       // Не падаем — fallback на okeybook-default. Это может произойти если
@@ -100,8 +108,8 @@ export async function loadBundle(
       // отложенного коммита) или если slug у него NULL (фаза 0 артефакт).
       // Логируем для диагностики.
       console.warn(
-        `[loadBundle] preset '${presetId}' references template_set_id=` +
-        `${preset.template_set_id} but slug not resolved (${tsErr?.message ?? 'no slug'}); ` +
+        `[loadBundle] preset '${presetId}' / override template_set_id=` +
+        `${effectiveTemplateSetId} but slug not resolved (${tsErr?.message ?? 'no slug'}); ` +
         `falling back to 'okeybook-default'`
       );
     } else {
