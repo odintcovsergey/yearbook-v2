@@ -354,14 +354,51 @@ function frameToPlaceholder(
   // Часть 3 ТЗ (Путь А): свечение текста — штатный Outer Glow InDesign,
   // живёт на фрейме (как у фото), а не в story. Обводка приходит из textStyle.
   const textGlow = extractTextGlow(frame.node, resolver);
+  // Вертикальная выключка текста во фрейме (InDesign VerticalJustification).
+  // Живёт на <TextFramePreference> фрейма, не в story — поэтому читаем здесь,
+  // а не в resolveTextStyle. Перекрывает дефолтный 'top' из textStyle.
+  const vertical_align = extractVerticalAlign(frame.node);
   return {
     ...common,
     type: 'text',
     ...textStyle,
     ...textGlow,
+    vertical_align,
     ...(defaultText !== undefined ? { default_text: defaultText } : {}),
     _pageIndex: pageIndex,
   };
+}
+
+// ─── Вертикальная выключка текстового фрейма ──────────────────────────────
+
+/**
+ * Читает вертикальную выключку текста из <TextFramePreference VerticalJustification>.
+ * Дизайнер в InDesign ставит текст по верху / центру / низу / в разгон —
+ * раньше парсер хардкодил 'top', из-за чего центрированные цитаты (облако
+ * «Аква меч») прижимались к верхней границе фрейма.
+ *
+ * Маппинг IDML → наш тип:
+ *   TopAlign     → 'top'
+ *   CenterAlign  → 'middle'
+ *   BottomAlign  → 'bottom'
+ *   JustifyAlign → 'middle' (разгон по высоте не поддерживаем; центр ближе всего)
+ *   нет атрибута → 'top' (дефолт InDesign)
+ */
+export function extractVerticalAlign(
+  frameNode: Record<string, unknown>,
+): 'top' | 'middle' | 'bottom' {
+  const pref = findFirst(frameNode, 'TextFramePreference');
+  const vj = pref ? getAttr(pref, 'VerticalJustification') : undefined;
+  switch (vj) {
+    case 'CenterAlign':
+      return 'middle';
+    case 'BottomAlign':
+      return 'bottom';
+    case 'JustifyAlign':
+      return 'middle';
+    default:
+      return 'top';
+  }
 }
 
 // ─── Текстовые эффекты: свечение (Часть 3 ТЗ, Путь А) ──────────────────────

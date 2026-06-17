@@ -290,7 +290,8 @@ export async function loadStyleResolver(zip: JSZip): Promise<StyleResolver> {
         color: resolveColorToHex(fillColor, colors, masterName, label, warnings),
         // inline-override выключки на абзаце побеждает стиль (см. StoryEntry).
         align: mapJustification(story.inlineJustification ?? resolved.justification),
-        // TODO фаза 2+: vertical_align читать из TextFramePreference.FirstBaselineOffset.
+        // vertical_align перекрывается в extract-geometry (extractVerticalAlign
+        // читает VerticalJustification фрейма); здесь — дефолт.
         vertical_align: 'top',
         auto_fit: false, // override через applyAutoFitRule по правилу label
       };

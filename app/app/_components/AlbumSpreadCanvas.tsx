@@ -480,9 +480,11 @@ function TextSlot({
     ? '#000000'
     : placeholder.color || '#000000'
   const finalColor = colorOverride ?? baseColor
-  // РЭ.54: align — override побеждает; иначе placeholder.align (для H) и 'top' (для V).
+  // РЭ.54: align — override побеждает; иначе placeholder.align (для H).
+  // Для вертикали: override → vertical_align из IDML (VerticalJustification) → 'top'.
+  // Раньше хардкодили 'top' — центрированные цитаты прижимались к верху фрейма.
   const finalHAlign = hAlignOverride ?? placeholder.align
-  const finalVAlign = vAlignOverride ?? 'top'
+  const finalVAlign = vAlignOverride ?? placeholder.vertical_align ?? 'top'
   // РЭ.55: шрифт — override побеждает; иначе placeholder.font_family.
   const finalFontFamily = fontFamilyOverride ?? placeholder.font_family
   // РЭ.55: rotation_deg из IDML (±90° или 0). Канва игнорировала это
