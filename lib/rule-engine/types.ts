@@ -798,6 +798,19 @@ export interface RulesAlbumInput {
   students: RulesStudentInput[];
   subjects: RulesSubjectInput[];
   head_teacher: RulesHeadTeacherInput;
+  /**
+   * Все главные (классные руководители / воспитатели) — 0..2. ТЗ 17.06.2026:
+   * поддержка ДВУХ равных главных (детсад/школа). `head_teacher` остаётся для
+   * обратной совместимости и = head_teachers[0] (либо пустой stub, если 0).
+   * Биндер teachers.ts читает массив: head_teachers[N-1] → слот headteacher*_N,
+   * лишние слоты скрываются (__hidden__, привязанный декор уходит автоматически
+   * через applyBalanceOverrides). Текст-письмо общий — head_teachers[0].text.
+   *
+   * Опционален: старые вызовы (тесты, preview-bundle, legacy-движок) задают
+   * только head_teacher — движок тогда трактует это как один главный
+   * (`head_teachers ?? [head_teacher]`).
+   */
+  head_teachers?: RulesHeadTeacherInput[];
   common_photos: RulesCommonPhotosInput;
   /**
    * Лимит разворотов в общем разделе. РЭ.18.

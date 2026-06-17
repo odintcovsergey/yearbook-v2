@@ -239,7 +239,14 @@ export function bindOverrideMasterPlaceholders(
   let consumedSixth = 0;
   let consumedCollage = 0;
 
-  const headTeacher = input.head_teacher;
+  // ТЗ 17.06.2026: до двух равных главных. Массив — источник правды; старые
+  // входы без него деривируем из одиночного head_teacher (один главный).
+  const headTeachers = input.head_teachers ?? [input.head_teacher];
+  // Общий текст-письмо: первый НЕПУСТОЙ среди главных, иначе первого.
+  const sharedHeadText =
+    headTeachers.find((h) => h && h.text && h.text.trim() !== '')?.text ??
+    headTeachers[0]?.text ??
+    '';
   const subjects = input.subjects;
 
   for (let i = 0; i < placeholders.length; i++) {
@@ -342,29 +349,52 @@ export function bindOverrideMasterPlaceholders(
       continue;
     }
 
-    // ─ Главный учитель / классный руководитель ──────────────────────
-    if (label === 'headteacherphoto') {
-      if (headTeacher.photo) {
-        bindings[ph.label] = headTeacher.photo;
+    // ─ Главные учителя / классные руководители (до двух равных) ──────
+    // Слот headteacher*_N → head_teachers[N-1] (без номера трактуется как _1).
+    // Лишние слоты скрываются (__hidden__) — привязанный декор уходит сам.
+    const hpMatch = label.match(/^headteacherphoto(?:_(\d+))?$/);
+    if (hpMatch) {
+      const n = hpMatch[1] ? parseInt(hpMatch[1], 10) : 1;
+      const head = headTeachers[n - 1];
+      if (head && head.photo) {
+        bindings[ph.label] = head.photo;
       } else {
         bindings[`__hidden__${ph.label}`] = '1';
       }
       continue;
     }
-    if (label === 'headteachername') {
-      bindings[ph.label] = headTeacher.name;
+    const hnMatch = label.match(/^headteachername(?:_(\d+))?$/);
+    if (hnMatch) {
+      const n = hnMatch[1] ? parseInt(hnMatch[1], 10) : 1;
+      const head = headTeachers[n - 1];
+      if (head) bindings[ph.label] = head.name;
+      else bindings[`__hidden__${ph.label}`] = '1';
       continue;
     }
-    if (label === 'headteacherrole') {
-      bindings[ph.label] = headTeacher.role;
+    const hrMatch = label.match(/^headteacherrole(?:_(\d+))?$/);
+    if (hrMatch) {
+      const n = hrMatch[1] ? parseInt(hrMatch[1], 10) : 1;
+      const head = headTeachers[n - 1];
+      if (head) bindings[ph.label] = head.role;
+      else bindings[`__hidden__${ph.label}`] = '1';
       continue;
     }
+    // Нумерованный текст-письмо (раздельные письма у каждого главного).
+    const htMatch = label.match(/^(?:headteachertext|headteacherquote)_(\d+)$/);
+    if (htMatch) {
+      const n = parseInt(htMatch[1], 10);
+      const head = headTeachers[n - 1];
+      if (head) bindings[ph.label] = head.text;
+      else bindings[`__hidden__${ph.label}`] = '1';
+      continue;
+    }
+    // Ненумерованный текст-письмо — ОБЩИЙ на обоих.
     if (
       label === 'headteachertext' ||
       label === 'headteacherquote' ||
       label === 'headtextframe'
     ) {
-      bindings[ph.label] = headTeacher.text;
+      bindings[ph.label] = sharedHeadText;
       continue;
     }
 

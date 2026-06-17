@@ -5408,7 +5408,16 @@ function TeachersTab({
         </div>
       ) : (
         <div className="space-y-3">
-          {teachers.map((t) => (
+          {teachers.map((t) => {
+            // ТЗ 17.06.2026: до двух равных главных. Письмо-обращение общее —
+            // поле текста показываем только у ПЕРВОГО отмеченного главного
+            // (порядок списка = created_at, совпадает с head_teachers[0] в
+            // сборке альбома); второму — пометку, что текст общий.
+            const headList = teachers.filter((x) => x.is_head_teacher)
+            const primaryHead = headList[0] ?? null
+            const isPrimaryHead =
+              editForm.is_head_teacher && (!primaryHead || primaryHead.id === t.id)
+            return (
             <div key={t.id} className="border border-border rounded-xl p-4">
               {editingId === t.id ? (
                 <div className="space-y-3">
@@ -5443,13 +5452,13 @@ function TeachersTab({
                         disabled={busy}
                         className="w-4 h-4"
                       />
-                      <span>Классный руководитель</span>
+                      <span>Классный руководитель / воспитатель</span>
                     </label>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">
-                      На альбом отмечается один. При установке этого флага у других учителей альбома он автоматически снимется.
+                      Можно отметить до двух (например, два воспитателя в детском саду). Текст-письмо общий — его задаёт первый отмеченный.
                     </p>
                   </div>
-                  {editForm.is_head_teacher && (
+                  {isPrimaryHead && (
                     <div>
                       <label className="block text-xs text-muted-foreground mb-1">
                         Текст от классного руководителя
@@ -5463,8 +5472,14 @@ function TeachersTab({
                         disabled={busy}
                       />
                       <p className="text-xs text-muted-foreground mt-1">
-                        Отображается только у классного руководителя
+                        Общее письмо на развороте (одно на обоих главных)
                       </p>
+                    </div>
+                  )}
+                  {editForm.is_head_teacher && !isPrimaryHead && primaryHead && (
+                    <div className="text-xs text-muted-foreground bg-muted rounded-lg p-3">
+                      Текст-письмо общий — задаётся у первого классного руководителя
+                      {primaryHead.full_name ? ` (${primaryHead.full_name})` : ''}.
                     </div>
                   )}
                   <div className="flex gap-2">
@@ -5567,7 +5582,8 @@ function TeachersTab({
                 </div>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

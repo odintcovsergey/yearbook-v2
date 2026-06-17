@@ -35,14 +35,22 @@ import type {
 import type { AlbumInput } from '@/lib/album-builder/types';
 
 export function adaptLegacyAlbumInput(legacy: AlbumInput): RulesAlbumInput {
-  const head_teacher: RulesHeadTeacherInput = legacy.head_teacher
-    ? {
-        name: legacy.head_teacher.name,
-        role: legacy.head_teacher.role,
-        text: legacy.head_teacher.text,
-        photo: legacy.head_teacher.photo,
-      }
-    : { name: '', role: '', text: '', photo: null };
+  // ТЗ 17.06.2026: до двух равных главных. Источник — legacy.head_teachers
+  // (массив 0..2); если его нет (старые вызовы) — деривируем из одиночного
+  // legacy.head_teacher.
+  const head_teachers: RulesHeadTeacherInput[] = (
+    legacy.head_teachers && legacy.head_teachers.length > 0
+      ? legacy.head_teachers
+      : legacy.head_teacher
+        ? [legacy.head_teacher]
+        : []
+  ).map((h) => ({ name: h.name, role: h.role, text: h.text, photo: h.photo }));
+
+  // head_teacher (одиночный) сохранён для обратной совместимости = первый,
+  // либо пустой stub (правила head-teacher тогда не сматчат и секция
+  // корректно пропустится).
+  const head_teacher: RulesHeadTeacherInput =
+    head_teachers[0] ?? { name: '', role: '', text: '', photo: null };
 
   const subjects: RulesSubjectInput[] = legacy.subjects.map((s) => ({
     name: s.name,
@@ -70,6 +78,7 @@ export function adaptLegacyAlbumInput(legacy: AlbumInput): RulesAlbumInput {
     students,
     subjects,
     head_teacher,
+    head_teachers,
     common_photos,
     common_section_max_spreads: legacy.common_section_max_spreads,
     student_distribution: legacy.student_distribution,

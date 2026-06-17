@@ -86,7 +86,14 @@ export function fillTeachersSection(ctx: SectionFillContext): void {
   const subjects = ctx.input.subjects;
   const subjectsCount = subjects.length;
 
-  const left = pickLeftMaster(subjectsCount, ctx);
+  // ТЗ 17.06.2026: до двух равных главных. head_teachers — источник правды
+  // (массив 0..2); старые входы без массива деривируем из одиночного
+  // head_teacher (один главный, поведение Части 1). headCount задаёт по
+  // какому числу главных подбирать мастер (head_teacher capacity).
+  const heads = ctx.input.head_teachers ?? [ctx.input.head_teacher];
+  const headCount = Math.min(2, Math.max(1, heads.length));
+
+  const left = pickLeftMaster(subjectsCount, headCount, ctx);
   const right = pickRightMaster(subjectsCount, ctx.input.common_photos, ctx);
 
   // ─── Левая страница: F-Head-* ─────────────────────────────────────────────
@@ -94,9 +101,22 @@ export function fillTeachersSection(ctx: SectionFillContext): void {
   // не нашёл. Здесь просто прерываемся.
   if (left === null) return;
 
+  // Если главных отмечено больше, чем вмещает выбранный мастер — лишние
+  // не покажутся (bindLeftPage заполнит только существующие слоты).
+  const leftHeadCap =
+    typeof left.master.slot_capacity?.head_teacher === 'number'
+      ? left.master.slot_capacity.head_teacher
+      : 1;
+  if (heads.length > leftHeadCap) {
+    ctx.warnings.push(
+      `head_teachers_overflow: отмечено ${heads.length} главных, но мастер ` +
+        `'${left.masterName}' вмещает ${leftHeadCap}. Лишние не показаны.`,
+    );
+  }
+
   const leftBindings = bindLeftPage(
     left.master,
-    ctx.input.head_teacher,
+    heads,
     subjects.slice(0, left.subjectsCount),
   );
 
@@ -184,14 +204,25 @@ function resolveTeacherMaster(
   },
   legacyName: string,
 ): { master: SpreadTemplate; semantic: boolean } | null {
-  // 1) Семантический путь
-  const semanticResult = findTeacherMaster(ctx.bundle.mastersByName, {
-    presetId: ctx.bundle.preset.id,
-    pageRole,
-    ...semanticReq,
-  });
-  if (semanticResult) {
-    return { master: semanticResult.master, semantic: true };
+  // 1) Семантический путь. Для head-мастеров (headTeacher задан) пробуем
+  // запрошенное число главных, затем комплементарное (1↔2): набор может
+  // содержать мастер, рассчитанный на другое число главных (детсад с
+  // head_teacher:2 при одном отмеченном главном, и наоборот). Лишние/
+  // недостающие слоты главного скрывает/заполняет bindLeftPage.
+  const headCandidates =
+    semanticReq.headTeacher === undefined
+      ? [undefined]
+      : [semanticReq.headTeacher, semanticReq.headTeacher === 2 ? 1 : 2];
+  for (const ht of headCandidates) {
+    const semanticResult = findTeacherMaster(ctx.bundle.mastersByName, {
+      presetId: ctx.bundle.preset.id,
+      pageRole,
+      ...semanticReq,
+      headTeacher: ht,
+    });
+    if (semanticResult) {
+      return { master: semanticResult.master, semantic: true };
+    }
   }
   // 2) Legacy fallback по жёсткому имени
   const legacy = ctx.bundle.mastersByName.get(legacyName);
@@ -270,13 +301,14 @@ function findCompactSubjectRightGrid(
  */
 function pickLeftMaster(
   subjects: number,
+  headCount: number,
   ctx: SectionFillContext,
 ): LeftChoice | null {
   if (subjects === 0) {
     const r = resolveTeacherMaster(
       ctx,
       'teacher_left',
-      { headTeacher: 1, teachers: 0, photosFull: 0, match: 'exact' },
+      { headTeacher: headCount, teachers: 0, photosFull: 0, match: 'exact' },
       'F-Head-WithPhoto',
     );
     if (!r) return null;
@@ -291,7 +323,7 @@ function pickLeftMaster(
     const r = resolveTeacherMaster(
       ctx,
       'teacher_left',
-      { headTeacher: 1, teachers: subjects, photosFull: 0, match: 'min_fit' },
+      { headTeacher: headCount, teachers: subjects, photosFull: 0, match: 'min_fit' },
       'F-Head-SmallGrid',
     );
     if (!r) return null;
@@ -309,7 +341,7 @@ function pickLeftMaster(
       const r = resolveTeacherMaster(
         ctx,
         'teacher_left',
-        { headTeacher: 1, teachers: 0, photosFull: 0, match: 'exact' },
+        { headTeacher: headCount, teachers: 0, photosFull: 0, match: 'exact' },
         'F-Head-WithPhoto',
       );
       if (!r) return null;
@@ -324,7 +356,7 @@ function pickLeftMaster(
     const r = resolveTeacherMaster(
       ctx,
       'teacher_left',
-      { headTeacher: 1, teachers: subjects, photosFull: 0, match: 'min_fit' },
+      { headTeacher: headCount, teachers: subjects, photosFull: 0, match: 'min_fit' },
       'F-Head-LargeGrid',
     );
     if (!r) return null;
@@ -340,7 +372,7 @@ function pickLeftMaster(
     const r = resolveTeacherMaster(
       ctx,
       'teacher_left',
-      { headTeacher: 1, teachers: 0, photosFull: 0, match: 'exact' },
+      { headTeacher: headCount, teachers: 0, photosFull: 0, match: 'exact' },
       'F-Head-WithPhoto',
     );
     if (!r) return null;
@@ -355,7 +387,7 @@ function pickLeftMaster(
   const r = resolveTeacherMaster(
     ctx,
     'teacher_left',
-    { headTeacher: 1, teachers: 8, photosFull: 0, match: 'min_fit' },
+    { headTeacher: headCount, teachers: 8, photosFull: 0, match: 'min_fit' },
     'F-Head-LargeGrid',
   );
   if (!r) return null;
@@ -534,37 +566,49 @@ function pickRightMaster(
  * не попадают в bindings — Konva canvas покажет placeholder из IDML.
  *
  * Поддерживаемые labels (case-insensitive, регекс-матч):
- *  - `headteacherphoto`            → photo
- *  - `headteachername`             → name
- *  - `headteacherrole`             → role
- *  - `headteachertext` / `…quote` / `headtextframe`  → text
+ *  - `headteacherphoto_N`          → head_teachers[N-1].photo  (без номера → _1)
+ *  - `headteachername_N`           → head_teachers[N-1].name
+ *  - `headteacherrole_N`           → head_teachers[N-1].role
+ *  - `headteachertext_N` / `…quote_N` → head_teachers[N-1].text (раздельные письма)
+ *  - `headteachertext` / `…quote` / `headtextframe` → ОБЩИЙ текст = head_teachers[0].text
  *  - `subjectphoto_N` / `subject_N` / `teacherphoto_N` → subjects[N-1].photo
  *  - `subjectname_N` / `teachername_N` → subjects[N-1].name
  *  - `subjectrole_N` / `teacherrole_N` → subjects[N-1].role
+ *
+ * ТЗ 17.06.2026: до ДВУХ равных главных. `headTeachers` — массив 0..2.
+ * Слот headteacher*_N заполняется head_teachers[N-1]; если такого главного
+ * нет (массив короче) — слот скрывается (__hidden__). Привязанный декор
+ * скрытого слота уходит автоматически через applyBalanceOverrides
+ * (декор следует за своим attached_to). Текст-письмо общий — один на обоих.
  */
 export function bindLeftPage(
   master: SpreadTemplate,
-  headTeacher: RulesHeadTeacherInput,
+  headTeachers: RulesHeadTeacherInput[],
   subjects: RulesSubjectInput[],
 ): Record<string, unknown> {
   const bindings: Record<string, unknown> = {};
+  // Общий текст-письмо: первый НЕПУСТОЙ среди главных (письмо могли вписать
+  // не первому по порядку), иначе текст первого (даже пустой).
+  const sharedHeadText =
+    headTeachers.find((h) => h && h.text && h.text.trim() !== '')?.text ??
+    headTeachers[0]?.text ??
+    '';
   for (let i = 0; i < master.placeholders.length; i++) {
     const ph = master.placeholders[i];
     const label = ph.label.toLowerCase();
 
-    // ─ Главный учитель / воспитатель ─
-    // Поддерживаем номер: headteacherphoto_N / headteachername_N / headteacherrole_N
-    // (мастера детсада «Аква меч» именуют слоты с номером — два воспитателя).
-    // Часть 1 (17.06): в данных пока ОДИН главный → слот _1 (или без номера)
-    // заполняем, слоты _2+ скрываем (__hidden__). Часть 2 добавит массив из 2.
+    // ─ Главные учителя / воспитатели (до двух равных) ─
+    // Слот headteacher*_N → head_teachers[N-1] (без номера трактуется как _1).
+    // Если главного с таким номером нет (массив короче) или нет фото — слот
+    // скрываем (__hidden__); привязанный к слоту декор (ленточки …__over/__under)
+    // уйдёт автоматически — applyBalanceOverrides исключает декор скрытой базы.
     const hpMatch = label.match(/^headteacherphoto(?:_(\d+))?$/);
     if (hpMatch) {
       const n = hpMatch[1] ? parseInt(hpMatch[1], 10) : 1;
-      if (n === 1 && headTeacher.photo) {
-        bindings[ph.label] = headTeacher.photo;
+      const head = headTeachers[n - 1];
+      if (head && head.photo) {
+        bindings[ph.label] = head.photo;
       } else {
-        // Нет фото / второй воспитатель (пока не поддержан) → скрываем рамку,
-        // чтобы Canvas/PDF не рисовал пустой прямоугольник.
         bindings[`__hidden__${ph.label}`] = '1';
       }
       continue;
@@ -572,19 +616,32 @@ export function bindLeftPage(
     const hnMatch = label.match(/^headteachername(?:_(\d+))?$/);
     if (hnMatch) {
       const n = hnMatch[1] ? parseInt(hnMatch[1], 10) : 1;
-      if (n === 1) bindings[ph.label] = headTeacher.name;
+      const head = headTeachers[n - 1];
+      if (head) bindings[ph.label] = head.name;
       else bindings[`__hidden__${ph.label}`] = '1';
       continue;
     }
     const hrMatch = label.match(/^headteacherrole(?:_(\d+))?$/);
     if (hrMatch) {
       const n = hrMatch[1] ? parseInt(hrMatch[1], 10) : 1;
-      if (n === 1) bindings[ph.label] = headTeacher.role;
+      const head = headTeachers[n - 1];
+      if (head) bindings[ph.label] = head.role;
       else bindings[`__hidden__${ph.label}`] = '1';
       continue;
     }
+    // Нумерованный текст-письмо (раздельные письма у каждого главного).
+    const htMatch = label.match(/^(?:headteachertext|headteacherquote)_(\d+)$/);
+    if (htMatch) {
+      const n = parseInt(htMatch[1], 10);
+      const head = headTeachers[n - 1];
+      if (head) bindings[ph.label] = head.text;
+      else bindings[`__hidden__${ph.label}`] = '1';
+      continue;
+    }
+    // Ненумерованный текст-письмо — ОБЩИЙ на обоих главных (ТЗ 17.06.2026:
+    // одно общее поле). Берём текст первого главного.
     if (label === 'headteachertext' || label === 'headteacherquote' || label === 'headtextframe') {
-      bindings[ph.label] = headTeacher.text;
+      bindings[ph.label] = sharedHeadText;
       continue;
     }
 

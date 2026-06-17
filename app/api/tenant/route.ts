@@ -5766,9 +5766,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Нет полей для обновления' }, { status: 400 })
     }
 
-    // Radio-pattern: если выставляем is_head_teacher=true — сначала
-    // сбросить флаг у остальных учителей того же альбома (partial unique
-    // index не разрешит двух head на альбом).
+    // ТЗ 17.06.2026: до ДВУХ равных главных (классруков / воспитателей) на
+    // альбом. Раньше был radio-pattern (один) под unique index
+    // teachers_one_head_per_album; индекс снят миграцией
+    // 2026-06-17-teachers-two-heads.sql, лимит «≤2» теперь enforced здесь.
+    // При попытке отметить третьего — понятная ошибка.
     if (headFlagProvided && wantHead) {
       const { data: teacherRow, error: fetchErr } = await supabaseAdmin
         .from('teachers')
@@ -5780,14 +5782,26 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Учитель не найден' }, { status: 404 })
       }
 
-      const { error: resetErr } = await supabaseAdmin
+      // Считаем уже отмеченных главных в этом альбоме, КРОМЕ текущего.
+      const { count: otherHeads, error: countErr } = await supabaseAdmin
         .from('teachers')
-        .update({ is_head_teacher: false })
+        .select('id', { count: 'exact', head: true })
         .eq('album_id', teacherRow.album_id)
+        .eq('is_head_teacher', true)
         .neq('id', teacher_id)
 
-      if (resetErr) {
-        return serverError(resetErr, 'tenant')
+      if (countErr) {
+        return serverError(countErr, 'tenant')
+      }
+
+      if ((otherHeads ?? 0) >= 2) {
+        return NextResponse.json(
+          {
+            error:
+              'Можно отметить не более двух классных руководителей (воспитателей) на альбом. Снимите отметку у одного из уже отмеченных.',
+          },
+          { status: 400 },
+        )
       }
     }
 

@@ -105,6 +105,15 @@ export type CommonPhotos = {
 export type AlbumInput = {
   template_set_id: string;
   head_teacher: HeadTeacher | null;
+  /**
+   * Все главные (классные руководители / воспитатели) альбома — 0..2.
+   * ТЗ 17.06.2026: детсад/школа могут иметь ДВУХ равных главных.
+   * `head_teacher` сохранён для обратной совместимости = head_teachers[0].
+   * Порядок стабильный (created_at) → head_teachers[0] заполняет слот _1,
+   * head_teachers[1] — слот _2. Текст-письмо общий (одно поле) — берётся
+   * из head_teachers[0].text.
+   */
+  head_teachers?: HeadTeacher[];
   subjects: Subject[];
   students: Student[];
   common_photos: CommonPhotos;

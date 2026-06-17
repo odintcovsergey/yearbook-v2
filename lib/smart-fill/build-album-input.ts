@@ -241,17 +241,23 @@ export async function buildAlbumInput(
     textByChild[t.child_id] = t.text ?? '';
   }
 
-  const headTeacherRow = teachers.find((t: any) => t.is_head_teacher);
-  const head_teacher: HeadTeacher | null = headTeacherRow
-    ? {
-        name: headTeacherRow.full_name ?? '',
-        role: headTeacherRow.position ?? '',
-        text: headTeacherRow.description ?? '',
-        photo: photoByTeacher[headTeacherRow.id]
-          ? await getPhotoUrl(photoByTeacher[headTeacherRow.id].storage_path)
-          : null,
-      }
-    : null;
+  // ТЗ 17.06.2026: до ДВУХ равных главных (классруков / воспитателей).
+  // Берём всех с is_head_teacher (порядок created_at из запроса — стабильный),
+  // ограничиваем двумя. head_teachers[0] заполнит слот _1, [1] — слот _2.
+  // Текст-письмо общий: его несёт первый главный (head_teachers[0].text);
+  // в UI поле текста показывается один раз (см. TeachersTab).
+  const headTeacherRows = teachers.filter((t: any) => t.is_head_teacher).slice(0, 2);
+  const head_teachers: HeadTeacher[] = await Promise.all(
+    headTeacherRows.map(async (row: any) => ({
+      name: row.full_name ?? '',
+      role: row.position ?? '',
+      text: row.description ?? '',
+      photo: photoByTeacher[row.id]
+        ? await getPhotoUrl(photoByTeacher[row.id].storage_path)
+        : null,
+    })),
+  );
+  const head_teacher: HeadTeacher | null = head_teachers[0] ?? null;
 
   const subjects: Subject[] = await Promise.all(teachers
     .filter((t: any) => !t.is_head_teacher)
@@ -311,6 +317,7 @@ export async function buildAlbumInput(
   const input: AlbumInput = {
     template_set_id: templateSetId,
     head_teacher,
+    head_teachers,
     subjects,
     students,
     common_photos,
