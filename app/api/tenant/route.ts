@@ -2999,9 +2999,11 @@ export async function POST(req: NextRequest) {
         patch.student_friend_photos = null
       } else {
         const n = Number(body.student_friend_photos)
-        if (!Number.isInteger(n) || n < 0 || n > 10) {
+        // Потолок 30 — согласован с lib/smart-fill MAX_FRIEND_PHOTOS и
+        // lib/rule-engine/types.ts friend_photos_max (нужен для multi_spread).
+        if (!Number.isInteger(n) || n < 0 || n > 30) {
           return NextResponse.json(
-            { error: 'student_friend_photos должен быть целым 0..10 (или null)' },
+            { error: 'student_friend_photos должен быть целым 0..30 (или null)' },
             { status: 400 }
           )
         }

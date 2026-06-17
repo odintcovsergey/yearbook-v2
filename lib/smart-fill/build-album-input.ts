@@ -225,9 +225,14 @@ export async function buildAlbumInput(
     }
   }
 
+  // Потолок числа фото с друзьями на входе в билдер. СОГЛАСОВАН в трёх местах
+  // (см. также app/api/tenant/route.ts валидация student_friend_photos и
+  // lib/rule-engine/types.ts friend_photos_max): общий лимит 30. Нужен для
+  // режима multi_spread (несколько разворотов на ученика → до 30 фото).
+  const MAX_FRIEND_PHOTOS = 30;
   for (const k of Object.keys(friendsByChild)) {
-    if (friendsByChild[k].length > 10) {
-      friendsByChild[k] = friendsByChild[k].slice(0, 10);
+    if (friendsByChild[k].length > MAX_FRIEND_PHOTOS) {
+      friendsByChild[k] = friendsByChild[k].slice(0, MAX_FRIEND_PHOTOS);
     }
   }
 

@@ -269,7 +269,12 @@ export interface SectionParams {
   has_quote?: boolean;
   /** Допустимо для max/universal (см. §4.4). */
   has_friend_photos?: boolean;
-  friend_photos_max?: 2 | 3 | 4;
+  /**
+   * Потолок фото с друзьями. Расширен с 2|3|4 до number (общий лимит 30,
+   * согласован с lib/smart-fill MAX_FRIEND_PHOTOS и валидацией
+   * student_friend_photos 0..30 в app/api/tenant) — для режима multi_spread.
+   */
+  friend_photos_max?: number;
   /** Источник портрета. В MVP всегда 'default'. */
   portrait_source?: string;
 }
@@ -629,7 +634,7 @@ export interface Preset {
    * семантическое описание макета личного раздела через 3 независимых поля.
    *
    *  - `student_pages_per_student` — 1 (одностраничный) или 2 (разворот)
-   *  - `student_friend_photos` — сколько фото с друзьями (0..10)
+   *  - `student_friend_photos` — сколько фото с друзьями (0..30)
    *  - `student_has_quote` — есть ли слот для текста-цитаты
    *
    * Engine `sections/students.ts` ищет в template_set мастер с подходящим
