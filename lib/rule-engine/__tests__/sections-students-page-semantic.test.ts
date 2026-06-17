@@ -520,3 +520,66 @@ describe("mode='page' семантический поиск (РЭ.22.4)", () => 
     expect(trace?.inputs.lost_photos).toBe(0);
   });
 });
+
+// ─── ФИКС 1: метки портрета/имени/цитаты с номером ───────────────────────────
+//
+// Баг «Аква меч»: мастер E-Universal/E-Standard именует портрет/имя/цитату
+// с номером (studentportrait_1 / studentname_1 / studentquote_1), а биндер
+// одиночного ученика матчил только без номера → портрет и имя не привязывались.
+
+describe('ФИКС 1: привязка портрета/имени/цитаты по номеру (одиночный ученик)', () => {
+  it('метки с номером (studentportrait_1 / studentname_1 / studentquote_1) → привязались', () => {
+    const numberedLeft = makeMaster(
+      'E-Numbered-Left',
+      [
+        photoSlot('studentportrait_1'),
+        textSlot('studentname_1'),
+        textSlot('studentquote_1'),
+      ],
+      'student_left',
+      { students: 1, photos_friend: 0, has_quote: true, has_portrait: true, has_name: true },
+    );
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'standard',
+        student_layout_mode: 'page',
+        student_friend_photos: 0,
+        student_has_quote: true,
+        section_structure: [{ type: 'students' }],
+      }),
+      masters: [numberedLeft],
+    });
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 1 }),
+    );
+
+    const page = result.spreads[0].left;
+    expect(page?.master_id).toBe('id-E-Numbered-Left');
+    expect(page?.bindings.studentportrait_1).toBe('https://cdn/p0.jpg');
+    expect(page?.bindings.studentname_1).toBe('Student 0');
+    expect(page?.bindings.studentquote_1).toBe('Quote 0');
+  });
+
+  it('метки без номера (регресс) → по-прежнему привязываются', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'standard',
+        student_layout_mode: 'page',
+        student_friend_photos: 0,
+        student_has_quote: true,
+        section_structure: [{ type: 'students' }],
+      }),
+      masters: [E_STANDARD_LEFT, E_STANDARD_RIGHT],
+    });
+    const result = buildFromSectionStructure(
+      bundle,
+      makeInput({ students_count: 1 }),
+    );
+
+    const page = result.spreads[0].left;
+    expect(page?.bindings.studentportrait).toBe('https://cdn/p0.jpg');
+    expect(page?.bindings.studentname).toBe('Student 0');
+    expect(page?.bindings.studentquote).toBe('Quote 0');
+  });
+});

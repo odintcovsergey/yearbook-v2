@@ -624,10 +624,16 @@ function buildOnePerSpreadAdaptive(ctx: SectionFillContext): void {
  * Bindings для одностраничного мастера ученика (E-Standard-* / E-Universal-*).
  *
  * Поддерживаемые labels:
- *   studentportrait        → student.portrait
- *   studentname            → student.full_name
- *   studentquote           → student.quote
+ *   studentportrait / studentportrait_N → student.portrait
+ *   studentname / studentname_N         → student.full_name
+ *   studentquote / studentquote_N       → student.quote
  *   studentphoto_N / studentphotoN / friendphoto_N → student.friend_photos[N-1]
+ *
+ * Метки портрета/имени/цитаты принимаются как без номера (studentportrait),
+ * так и с номером (studentportrait_1) — мастера E-Universal/E-Standard
+ * именуют их с номером. Номер здесь — это НЕ индекс ученика (на одностраничном
+ * мастере всегда один ученик), просто часть имени слота. Это отличает биндер
+ * одиночного ученика от grid-биндера, где номер = индекс ученика.
  */
 function bindSingleStudent(
   master: SpreadTemplate,
@@ -640,15 +646,15 @@ function bindSingleStudent(
     const ph = master.placeholders[i];
     const label = ph.label.toLowerCase();
 
-    if (label === 'studentportrait') {
+    if (/^studentportrait(_\d+)?$/.test(label)) {
       bindings[ph.label] = student.portrait;
       continue;
     }
-    if (label === 'studentname') {
+    if (/^studentname(_\d+)?$/.test(label)) {
       bindings[ph.label] = student.full_name;
       continue;
     }
-    if (label === 'studentquote') {
+    if (/^studentquote(_\d+)?$/.test(label)) {
       bindings[ph.label] = student.quote ?? null;
       continue;
     }
