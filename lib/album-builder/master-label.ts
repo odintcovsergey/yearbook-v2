@@ -59,6 +59,31 @@ export function humanMasterLabel(master: MasterLabelCandidate): string {
   if (halfCount >= 2) return `Половина класса (${halfCount} фото на страницу)`;
   if (hasFull) return 'Общее фото класса (1 фото на страницу)';
 
+  // Личный раздел: портрет / имя / цитата / фото с друзьями.
+  let hasPortrait = false;
+  let hasName = false;
+  let hasQuote = false;
+  let studentPhotoCount = 0;
+  for (const ph of master.placeholders ?? []) {
+    const l = ph.label.toLowerCase();
+    if (/^studentportrait(_\d+)?$/.test(l)) hasPortrait = true;
+    else if (/^studentname(_\d+)?$/.test(l)) hasName = true;
+    else if (/^studentquote(_\d+)?$/.test(l)) hasQuote = true;
+    else if (/^(?:studentphoto|friendphoto)_?\d+$/.test(l)) studentPhotoCount++;
+  }
+  if (hasPortrait) {
+    // Парадная страница ученика.
+    const parts = ['портрет'];
+    if (hasName) parts.push('ФИО');
+    if (hasQuote) parts.push('цитата');
+    if (studentPhotoCount > 0) parts.push(`${studentPhotoCount} фото`);
+    return `Личная: ${parts.join(' + ')}`;
+  }
+  if (studentPhotoCount > 0) {
+    // Коллажная страница ученика (без портрета).
+    return `Коллаж ученика — ${studentPhotoCount} фото`;
+  }
+
   // Нераспознанный / мастер другого раздела — техимя как fallback.
   return master.name;
 }

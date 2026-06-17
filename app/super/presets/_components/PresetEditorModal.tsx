@@ -17,6 +17,8 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { SpreadTemplate } from '@/lib/album-builder/types'
+import { humanMasterLabel } from '@/lib/album-builder/master-label'
+import { MasterSchematic } from './MasterSchematic'
 import CommonRequiredPagesEditor from './CommonRequiredPagesEditor'
 
 // ─── Типы ────────────────────────────────────────────────────────────────
@@ -1218,6 +1220,9 @@ function MultiSpreadManualEditor({
   const safe = pages.length % 2 === 0 ? pages : [...pages, ePool[0].name]
   const spreadCount = safe.length / 2
 
+  // Какая страница сейчас выбирается (индекс в safe) — для модалки-пикера.
+  const [pickFor, setPickFor] = useState<number | null>(null)
+
   const setPage = (pageIdx: number, name: string) => {
     const next = [...safe]
     next[pageIdx] = name
@@ -1235,24 +1240,29 @@ function MultiSpreadManualEditor({
     onChange(next)
   }
 
-  const pageSelect = (pageIdx: number) => {
+  // Визуальная карточка страницы: мини-эскиз раскладки + человекочитаемая подпись.
+  const pageCard = (pageIdx: number, sideLabel: string) => {
     const value = safe[pageIdx]
-    const exists = ePool.some((t) => t.name === value)
+    const master = ePool.find((t) => t.name === value)
     return (
-      <div className="flex-1">
-        <select
-          value={exists ? value : ''}
-          onChange={(e) => e.target.value && setPage(pageIdx, e.target.value)}
-          className="w-full border border-input rounded px-2 py-1 text-xs bg-card text-foreground dark:bg-background"
-        >
-          {!exists && <option value="">{value ? `${value} (нет в дизайне)` : '— выбрать —'}</option>}
-          {ePool.map((t) => (
-            <option key={t.id} value={t.name}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      <button
+        type="button"
+        onClick={() => setPickFor(pageIdx)}
+        className="flex-1 flex flex-col items-center gap-1 border border-input rounded p-1.5 bg-card hover:border-purple-400 transition-colors"
+        title="Выбрать раскладку страницы"
+      >
+        <span className="text-[10px] text-muted-foreground">{sideLabel}</span>
+        {master ? (
+          <MasterSchematic master={master} />
+        ) : (
+          <div className="w-[56px] h-[78px] rounded border border-dashed border-border flex items-center justify-center text-muted-foreground text-lg">
+            ?
+          </div>
+        )}
+        <span className="text-[11px] text-center leading-tight text-foreground">
+          {master ? humanMasterLabel(master) : value ? `${value} (нет в дизайне)` : '— выбрать —'}
+        </span>
+      </button>
     )
   }
 
@@ -1260,18 +1270,21 @@ function MultiSpreadManualEditor({
     <div className="space-y-2 border border-border rounded p-2 bg-muted/30">
       <p className="text-xs text-muted-foreground">
         Постройте блок одного ученика по разворотам. Первая страница обычно
-        парадная (портрет+ФИО+цитата), остальные — коллажи. Раскладка применится
-        ко всем ученикам; фото распределятся слева направо.
+        парадная (портрет+ФИО+цитата), остальные — коллажи. Нажмите на страницу,
+        чтобы выбрать раскладку. Применится ко всем ученикам; фото распределятся
+        слева направо.
       </p>
       {Array.from({ length: spreadCount }, (_, s) => (
-        <div key={s} className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground w-20 shrink-0">Разворот {s + 1}</span>
-          {pageSelect(s * 2)}
-          {pageSelect(s * 2 + 1)}
+        <div key={s} className="flex items-stretch gap-2">
+          <span className="text-xs text-muted-foreground w-20 shrink-0 self-center">
+            Разворот {s + 1}
+          </span>
+          {pageCard(s * 2, 'левая')}
+          {pageCard(s * 2 + 1, 'правая')}
           <button
             onClick={() => removeSpread(s)}
             disabled={spreadCount <= 1}
-            className="text-xs text-red-500 hover:text-red-700 px-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-xs text-red-500 hover:text-red-700 px-1 self-center disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Удалить разворот"
             title={spreadCount <= 1 ? 'Нужен хотя бы один разворот' : 'Удалить разворот'}
           >
@@ -1285,6 +1298,53 @@ function MultiSpreadManualEditor({
       >
         + Добавить разворот
       </button>
+
+      {/* Модалка-пикер: сетка мастеров личного раздела с эскизами. */}
+      {pickFor !== null && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4"
+          onClick={() => setPickFor(null)}
+        >
+          <div
+            className="bg-card text-foreground border border-border rounded-lg p-4 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-medium">Выберите раскладку страницы</h4>
+              <button
+                onClick={() => setPickFor(null)}
+                className="text-muted-foreground hover:text-foreground text-lg leading-none"
+                aria-label="Закрыть"
+              >
+                ×
+              </button>
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {ePool.map((t) => {
+                const selected = safe[pickFor] === t.name
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setPage(pickFor, t.name)
+                      setPickFor(null)
+                    }}
+                    className={`flex flex-col items-center gap-1 border rounded p-2 bg-card hover:border-purple-400 transition-colors ${
+                      selected ? 'border-purple-500 ring-1 ring-purple-500' : 'border-border'
+                    }`}
+                  >
+                    <MasterSchematic master={t} />
+                    <span className="text-[11px] text-center leading-tight">
+                      {humanMasterLabel(t)}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-mono">{t.name}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

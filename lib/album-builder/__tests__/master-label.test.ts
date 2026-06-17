@@ -51,10 +51,23 @@ describe('humanMasterLabel', () => {
     );
   });
 
+  it('личный раздел: парадная (портрет + ФИО + цитата)', () => {
+    expect(
+      humanMasterLabel(
+        master('E-Standard-Left', ['studentportrait_1', 'studentname_1', 'studentquote_1']),
+      ),
+    ).toBe('Личная: портрет + ФИО + цитата');
+  });
+
+  it('личный раздел: коллаж ученика (только фото)', () => {
+    expect(
+      humanMasterLabel(master('E-Collage-4', ['studentphoto_1', 'studentphoto_2', 'studentphoto_3', 'studentphoto_4'])),
+    ).toBe('Коллаж ученика — 4 фото');
+  });
+
   it('нераспознанный мастер → техимя (fallback)', () => {
-    expect(humanMasterLabel(master('E-Universal-Left', ['studentportrait_1']))).toBe(
-      'E-Universal-Left',
-    );
+    // Учительский мастер не распознаётся подписями студ/общих разделов.
+    expect(humanMasterLabel(master('F-Head', ['headteacherphoto_1']))).toBe('F-Head');
     expect(humanMasterLabel({ name: 'X', placeholders: null })).toBe('X');
   });
 
