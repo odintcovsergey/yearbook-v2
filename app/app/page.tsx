@@ -12,6 +12,7 @@ import {
   Settings,
   Gift,
   Ruler,
+  Palette,
   Upload,
   Loader2,
   AlertTriangle,
@@ -512,9 +513,16 @@ export default function AppPage() {
             <button
               onClick={() => router.push('/app/templates')}
               className="btn-secondary"
-              title="Готовые шаблоны и моя библиотека"
+              title="Структуры альбома (секции, страницы, размещение)"
             >
               <Ruler size={16} /> Шаблоны
+            </button>
+            <button
+              onClick={() => router.push('/app/designs')}
+              className="btn-secondary"
+              title="Дизайны: визуальное оформление альбома"
+            >
+              <Palette size={16} /> Дизайны
             </button>
             <button
               onClick={() => router.push('/app/referral-programs')}
