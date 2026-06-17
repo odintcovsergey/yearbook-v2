@@ -9,6 +9,7 @@ import { buildAlbumCoverPreviews } from '@/lib/cover/preview-album'
 import { validatePreset } from '@/lib/presets/validate'
 import { buildPresetPreviewBundle } from '@/lib/presets/preview-bundle'
 import { loadBundle } from '@/lib/rule-engine/loaders'
+import type { StudentsSectionConfig } from '@/lib/rule-engine/types'
 import { prepareTemplateSetClone } from '@/lib/template-set-clone'
 
 export const dynamic = 'force-dynamic'
@@ -148,7 +149,8 @@ type ValidatedTransitionCustom = {
 }
 
 type ValidatedSection =
-  | { type: 'teachers' | 'students' | 'vignette' }
+  | { type: 'teachers' | 'vignette' }
+  | { type: 'students'; config?: StudentsSectionConfig }  // ТЗ 17.06.2026: per-section config
   | { type: 'soft_intro'; master_name?: string | null }   // РЭ.42
   | { type: 'soft_final'; master_name?: string | null }   // РЭ.42
   | { type: 'common'; slots: string[] }
@@ -231,6 +233,75 @@ function validateTransitionMasterRef(
     }
   }
   return { ok: true, value: { master_name: r.master_name } }
+}
+
+/**
+ * ТЗ 17.06.2026: валидация config личного раздела (привязан к секции students).
+ * undefined/null → секция без config (legacy-фолбэк на глобальные поля пресета).
+ */
+function validateStudentsConfig(
+  raw: unknown,
+  idx: number,
+): { ok: true; value: StudentsSectionConfig | undefined } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, value: undefined }
+  if (typeof raw !== 'object') {
+    return { ok: false, error: `Секция #${idx + 1} (students): config должен быть объектом` }
+  }
+  const intIn = (v: unknown, lo: number, hi: number) =>
+    typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi
+  const mode = (raw as { mode?: unknown }).mode
+  const quote = (raw as { quote?: unknown }).quote
+  if (mode === 'grid') {
+    const perPage = (raw as { per_page?: unknown }).per_page
+    if (!intIn(perPage, 2, 16)) {
+      return { ok: false, error: `Секция #${idx + 1} (students/grid): per_page — целое 2..16` }
+    }
+    return { ok: true, value: { mode: 'grid', per_page: perPage as number } }
+  }
+  if (mode === 'page') {
+    const friends = (raw as { friends?: unknown }).friends
+    if (!intIn(friends, 0, 50)) {
+      return { ok: false, error: `Секция #${idx + 1} (students/page): friends — целое 0..50` }
+    }
+    if (typeof quote !== 'boolean') {
+      return { ok: false, error: `Секция #${idx + 1} (students/page): quote — boolean` }
+    }
+    return { ok: true, value: { mode: 'page', friends: friends as number, quote } }
+  }
+  if (mode === 'spread') {
+    const fmin = (raw as { friends_min?: unknown }).friends_min
+    const fmax = (raw as { friends_max?: unknown }).friends_max
+    if (!intIn(fmin, 0, 50) || !intIn(fmax, 0, 50)) {
+      return { ok: false, error: `Секция #${idx + 1} (students/spread): friends_min/max — целые 0..50` }
+    }
+    if ((fmin as number) > (fmax as number)) {
+      return { ok: false, error: `Секция #${idx + 1} (students/spread): friends_min ≤ friends_max` }
+    }
+    if (typeof quote !== 'boolean') {
+      return { ok: false, error: `Секция #${idx + 1} (students/spread): quote — boolean` }
+    }
+    return {
+      ok: true,
+      value: { mode: 'spread', friends_min: fmin as number, friends_max: fmax as number, quote },
+    }
+  }
+  if (mode === 'multi_spread') {
+    const sps = (raw as { spreads_per_student?: unknown }).spreads_per_student
+    if (!intIn(sps, 2, 4)) {
+      return {
+        ok: false,
+        error: `Секция #${idx + 1} (students/multi_spread): spreads_per_student — целое 2..4`,
+      }
+    }
+    if (typeof quote !== 'boolean') {
+      return { ok: false, error: `Секция #${idx + 1} (students/multi_spread): quote — boolean` }
+    }
+    return { ok: true, value: { mode: 'multi_spread', spreads_per_student: sps as number, quote } }
+  }
+  return {
+    ok: false,
+    error: `Секция #${idx + 1} (students): недопустимый config.mode '${String(mode)}'`,
+  }
 }
 
 function validateSectionStructure(
@@ -441,9 +512,16 @@ function validateSectionStructure(
           error: `Секция #${i + 1} (${type}): master_name должен быть непустой строкой (≤200 символов) или null`,
         }
       }
+    } else if (type === 'students') {
+      // ТЗ 17.06.2026: students может нести config (per-section настройки).
+      const cfgRes = validateStudentsConfig((s as { config?: unknown }).config, i)
+      if (!cfgRes.ok) return cfgRes
+      result.push(
+        cfgRes.value ? { type: 'students', config: cfgRes.value } : { type: 'students' },
+      )
     } else {
       result.push({
-        type: type as 'teachers' | 'students' | 'vignette',
+        type: type as 'teachers' | 'vignette',
       })
     }
   }
