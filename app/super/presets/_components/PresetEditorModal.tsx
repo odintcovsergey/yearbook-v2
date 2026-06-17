@@ -82,8 +82,20 @@ export interface Preset {
   is_recommended: boolean
 }
 
+/**
+ * ТЗ 17.06.2026: per-section конфиг личного раздела. Зеркало
+ * StudentsSectionConfig из lib/rule-engine/types.ts — дублируется здесь, чтобы
+ * не тянуть rule-engine в client-bundle (как TransitionScenario выше).
+ */
+export type StudentsSectionConfig =
+  | { mode: 'grid'; per_page: number }
+  | { mode: 'page'; friends: number; quote: boolean }
+  | { mode: 'spread'; friends_min: number; friends_max: number; quote: boolean }
+  | { mode: 'multi_spread'; spreads_per_student: number; quote: boolean }
+
 export type Section =
-  | { type: 'teachers' | 'students' | 'vignette' }
+  | { type: 'teachers' | 'vignette' }
+  | { type: 'students'; config?: StudentsSectionConfig }
   | { type: 'soft_intro'; master_name?: string | null }   // РЭ.42
   | { type: 'soft_final'; master_name?: string | null }   // РЭ.42
   | { type: 'common'; slots: string[] }
@@ -136,28 +148,39 @@ const api = (path: string, opts?: RequestInit) =>
     headers: { 'Content-Type': 'application/json', ...opts?.headers },
   })
 
-// ─── Initial state для нового пресета (РЭ.30.5) ──────────────────────────
-//
-// До РЭ.30 эти хелперы fallback'или по `density / preset.id`, чтобы
-// зашевелить UI у legacy-пресетов где `student_layout_mode` ещё NULL.
-// После РЭ.30 все 7 глобальных пресетов мигрированы (есть layout_mode +
-// grid_size), а новые пресеты создаются сразу в семантической модели —
-// необходимость в density-fallback'ах отпала. Оставлен минимальный
-// дефолт: page + grid_size=4 (стартовая точка для пустых партнёрских
-// записей).
+// ─── Конфиг личного раздела (ТЗ 17.06.2026) ──────────────────────────────
 
-function computeInitialLayoutMode(preset: Preset): 'page' | 'spread' | 'grid' {
-  return preset.student_layout_mode ?? 'page'
+/** Дефолтный config при создании новой секции students / переключении режима. */
+function defaultStudentsConfig(mode: StudentsSectionConfig['mode']): StudentsSectionConfig {
+  switch (mode) {
+    case 'grid':
+      return { mode: 'grid', per_page: 6 }
+    case 'page':
+      return { mode: 'page', friends: 0, quote: false }
+    case 'spread':
+      return { mode: 'spread', friends_min: 0, friends_max: 4, quote: true }
+    case 'multi_spread':
+      return { mode: 'multi_spread', spreads_per_student: 2, quote: true }
+  }
 }
 
-function computeInitialGridSize(
-  preset: Preset,
-  mode: 'page' | 'spread' | 'grid',
-): number | null {
-  // Если режим — не grid, размер сетки не нужен.
-  if (mode !== 'grid') return null
-  // Если в БД уже есть — используем; иначе дефолт 4.
-  return preset.student_grid_size ?? 4
+const clampInt = (v: number, lo: number, hi: number) =>
+  Math.max(lo, Math.min(hi, Number.isFinite(v) ? Math.round(v) : lo))
+
+/** Человекочитаемая подпись режима личного раздела (для карточки секции). */
+function humanStudentsConfigLabel(cfg: StudentsSectionConfig | undefined): string {
+  if (!cfg) return 'Настройки берутся из шаблона (старый формат) — задайте режим'
+  const q = (b: boolean) => (b ? 'с цитатой' : 'без цитаты')
+  switch (cfg.mode) {
+    case 'grid':
+      return `Сетка: ${cfg.per_page} учеников на страницу`
+    case 'page':
+      return `1 ученик на страницу · фото с друзьями: ${cfg.friends} · ${q(cfg.quote)}`
+    case 'spread':
+      return `1 ученик на разворот · фото с друзьями: ${cfg.friends_min}–${cfg.friends_max} · ${q(cfg.quote)}`
+    case 'multi_spread':
+      return `1 ученик на ${cfg.spreads_per_student} разворота · ${q(cfg.quote)}`
+  }
 }
 
 // ─── Modal ───────────────────────────────────────────────────────────────
@@ -183,27 +206,13 @@ export default function PresetEditorModal({
     Array.isArray(preset.section_structure) ? preset.section_structure : []
   )
 
-  // РЭ.22.3 + РЭ.30.5: двух-осевая модель «режим × параметры».
-  // См. docs/phase-Р22-spec.md §5 и docs/phase-Р30-spec.md.
-  //
-  // Если у пресета `student_layout_mode` уже задан (после Б.1 — у всех
-  // глобальных) — UI открывается на этом значении. Если NULL (новые
-  // пустые партнёрские пресеты) — дефолтит на 'page'.
-  const initialMode = computeInitialLayoutMode(preset)
-  const initialGridSize = computeInitialGridSize(preset, initialMode)
+  // ТЗ 17.06.2026: настройки личного раздела перенесены из глобальной шапки
+  // ВНУТРЬ каждой записи students в структуре альбома (см. SortableSectionItem
+  // → StudentsConfigEditor). Глобальные поля пресета (student_layout_mode и
+  // т.п.) больше не редактируются здесь; в БД остаются как есть (legacy-фолбэк
+  // движка для секций без config + откат Vercel). PATCH без этих ключей их
+  // не трогает.
 
-  const [studentLayoutMode, setStudentLayoutMode] = useState<
-    'page' | 'spread' | 'grid'
-  >(initialMode)
-  const [studentGridSize, setStudentGridSize] = useState<number | ''>(
-    initialGridSize ?? ''
-  )
-  const [studentFriendPhotos, setStudentFriendPhotos] = useState<number | ''>(
-    preset.student_friend_photos ?? ''
-  )
-  const [studentHasQuote, setStudentHasQuote] = useState<boolean>(
-    preset.student_has_quote ?? false
-  )
   // РЭ.49: state симметризации удалён из шаблона. Настройка перенесена
   // на уровень альбома (РЭ.46 — SymmetrizeTailControl на 'Обзоре').
   // Поле preset.symmetrize_students_tail в БД остаётся для обратной
@@ -272,34 +281,10 @@ export default function PresetEditorModal({
     setSaving(true)
     setError(null)
     try {
-      // РЭ.22.3: пишем в новые поля + дублируем в legacy для отката Vercel
-      // (см. spec §3). Маппинг режима в legacy student_pages_per_student:
-      //   page  → 1 страница на ученика
-      //   spread → 2 страницы (разворот)
-      //   grid  → null (legacy не знает про сетку, для grid Section Structure
-      //           engine использует buildGrid с density)
-      const legacyPagesPerStudent: 1 | 2 | null =
-        studentLayoutMode === 'page'
-          ? 1
-          : studentLayoutMode === 'spread'
-            ? 2
-            : null
-
-      // friend_photos и grid_size актуальны только для своих режимов —
-      // для остальных пишем null чтобы в БД не оставался мусор.
-      const effectiveFriendPhotos =
-        studentLayoutMode === 'page' || studentLayoutMode === 'spread'
-          ? studentFriendPhotos === ''
-            ? null
-            : studentFriendPhotos
-          : null
-      const effectiveGridSize =
-        studentLayoutMode === 'grid'
-          ? studentGridSize === ''
-            ? null
-            : studentGridSize
-          : null
-
+      // ТЗ 17.06.2026: настройки личного раздела теперь живут в section_structure
+      // (config записи students). Глобальные поля student_* больше НЕ
+      // отправляем — API делает partial update, существующие значения в БД
+      // остаются (legacy-фолбэк движка + откат Vercel).
       const body: Record<string, unknown> = {
         action: 'rule_preset_update',
         preset_id: preset.id,
@@ -314,9 +299,6 @@ export default function PresetEditorModal({
         // UI селекты «Плотность портретов» и «Тип листов» ещё остаются —
         // будут удалены в В.2 (этой же фазы).
         section_structure: sections,
-        // Новые поля (РЭ.22.2).
-        student_layout_mode: studentLayoutMode,
-        student_grid_size: effectiveGridSize,
         // РЭ.49: symmetrize_students_tail убран из формы шаблона.
         // Настройка перенесена на уровень альбома (РЭ.46).
         // Существующее значение в БД сохраняется как есть (PATCH без поля
@@ -335,10 +317,6 @@ export default function PresetEditorModal({
                 tail_right_master_id: transitionTailRightId,
                 closing_master_id: null,
               },
-        // Legacy (дублирование для отката).
-        student_pages_per_student: legacyPagesPerStudent,
-        student_friend_photos: effectiveFriendPhotos,
-        student_has_quote: studentHasQuote,
         // РЭ.24.7: рекомендованность в каталоге (только для глобальных).
         is_recommended: isRecommended,
       }
@@ -377,6 +355,10 @@ export default function PresetEditorModal({
       newSection = { type, max_spreads: 2 }
     } else if (type === 'common') {
       newSection = { type, slots: [] }
+    } else if (type === 'students') {
+      // ТЗ 17.06.2026: новая секция личного раздела создаётся с дефолтным
+      // config (можно добавить несколько с разными режимами).
+      newSection = { type: 'students', config: defaultStudentsConfig('page') }
     } else {
       newSection = { type } as Section
     }
@@ -515,118 +497,9 @@ export default function PresetEditorModal({
             </div>
           </section>
 
-          {/* ─── Личный раздел (РЭ.22.3 — двух-осевая модель) ─── */}
-          <section className="space-y-3 border-t pt-6">
-            <div>
-              <h3 className="font-semibold text-sm text-foreground uppercase tracking-wide">
-                Личный раздел
-              </h3>
-              <p className="text-xs text-muted-foreground mt-1">
-                Выберите режим: одна страница на ученика, разворот на ученика
-                или сетка из нескольких. Engine ищет в template_set мастер
-                с подходящим slot_capacity по этим параметрам.
-              </p>
-            </div>
-
-            <div>
-              <label className="text-sm text-muted-foreground block mb-1">Режим</label>
-              <select
-                value={studentLayoutMode}
-                onChange={(e) =>
-                  setStudentLayoutMode(e.target.value as 'page' | 'spread' | 'grid')
-                }
-                className="input"
-              >
-                <option value="page">1 ученик на страницу</option>
-                <option value="spread">1 ученик на разворот (2 страницы)</option>
-                <option value="grid">Сетка из N учеников на страницу</option>
-              </select>
-            </div>
-
-            {/* Параметры зависят от режима */}
-            {(studentLayoutMode === 'page' || studentLayoutMode === 'spread') && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm text-muted-foreground block mb-1">
-                    Фото с друзьями
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={10}
-                    value={studentFriendPhotos}
-                    onChange={(e) =>
-                      setStudentFriendPhotos(
-                        e.target.value === '' ? '' : Number(e.target.value)
-                      )
-                    }
-                    className="input"
-                    placeholder="0..10"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-muted-foreground block mb-1">Цитата</label>
-                  <select
-                    value={String(studentHasQuote)}
-                    onChange={(e) => setStudentHasQuote(e.target.value === 'true')}
-                    className="input"
-                  >
-                    <option value="true">да, есть слот</option>
-                    <option value="false">нет</option>
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {studentLayoutMode === 'grid' && (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm text-muted-foreground block mb-1">
-                      Учеников на страницу
-                    </label>
-                    <input
-                      type="number"
-                      min={2}
-                      max={12}
-                      value={studentGridSize}
-                      onChange={(e) =>
-                        setStudentGridSize(
-                          e.target.value === '' ? '' : Number(e.target.value)
-                        )
-                      }
-                      className="input"
-                      placeholder="2..12"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Базовый размер сетки. Адаптивный хвост (последняя
-                      неполная страница) подбирается engine'ом автоматически
-                      из доступных мастеров template_set.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="text-sm text-muted-foreground block mb-1">Цитата</label>
-                    <select
-                      value={String(studentHasQuote)}
-                      onChange={(e) => setStudentHasQuote(e.target.value === 'true')}
-                      className="input"
-                    >
-                      <option value="true">да, под каждым учеником</option>
-                      <option value="false">нет</option>
-                    </select>
-                  </div>
-                </div>
-
-              </>
-            )}
-
-            {preset.student_layout_mode === null && (
-              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                Режим личного раздела ещё не задан в БД (дефолт «page»).
-                Проверьте параметры и нажмите «Сохранить», чтобы зафиксировать.
-              </p>
-            )}
-          </section>
+          {/* ТЗ 17.06.2026: настройки личного раздела перенесены в каждую
+              запись «Личный раздел» списка «Структура альбома» ниже (можно
+              добавить несколько личных разделов с разными режимами). */}
 
           {/* ─── РЭ.37.6: ручной сценарий transition-разворота ─── */}
           <section className="space-y-3 border-t pt-6">
@@ -995,6 +868,13 @@ function SortableSectionItem({
             {SECTION_DESCRIPTIONS[s.type]}
           </div>
         )}
+        {/* ТЗ 17.06.2026 — students: per-section настройки личного раздела */}
+        {s.type === 'students' && (
+          <StudentsConfigEditor
+            config={s.config}
+            onChange={(cfg) => onUpdate(idx, { config: cfg } as Partial<Section>)}
+          />
+        )}
         {/* common_additional: max_spreads */}
         {s.type === 'common_additional' && (
           <div className="mt-2 flex items-center gap-2">
@@ -1112,6 +992,109 @@ function SortableSectionItem({
   )
 }
 
+// ─── StudentsConfigEditor (ТЗ 17.06.2026) ─────────────────────────────────
+// Настройки личного раздела внутри записи students списка структуры альбома.
+// Перенесены сюда из глобальной шапки — у каждого личного раздела свои.
+function StudentsConfigEditor({
+  config,
+  onChange,
+}: {
+  config: StudentsSectionConfig | undefined
+  onChange: (cfg: StudentsSectionConfig) => void
+}) {
+  const cfg: StudentsSectionConfig = config ?? defaultStudentsConfig('page')
+
+  const numField = (
+    label: string,
+    value: number,
+    min: number,
+    max: number,
+    apply: (v: number) => void,
+  ) => (
+    <div>
+      <label className="text-xs text-muted-foreground block mb-0.5">{label}</label>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => apply(clampInt(Number(e.target.value), min, max))}
+        className="border border-input rounded px-2 py-0.5 text-xs w-28 bg-card text-foreground dark:bg-background"
+      />
+    </div>
+  )
+
+  const quoteField = (value: boolean, apply: (v: boolean) => void) => (
+    <div>
+      <label className="text-xs text-muted-foreground block mb-0.5">Цитата</label>
+      <select
+        value={String(value)}
+        onChange={(e) => apply(e.target.value === 'true')}
+        className="border border-input rounded px-2 py-0.5 text-xs bg-card text-foreground dark:bg-background"
+      >
+        <option value="true">есть</option>
+        <option value="false">нет</option>
+      </select>
+    </div>
+  )
+
+  return (
+    <div className="mt-2 space-y-2">
+      <div>
+        <label className="text-xs text-muted-foreground block mb-0.5">Режим</label>
+        <select
+          value={cfg.mode}
+          onChange={(e) =>
+            onChange(defaultStudentsConfig(e.target.value as StudentsSectionConfig['mode']))
+          }
+          className="border border-input rounded px-2 py-0.5 text-xs bg-card text-foreground dark:bg-background"
+        >
+          <option value="page">1 ученик на страницу</option>
+          <option value="spread">1 ученик на разворот</option>
+          <option value="multi_spread">1 ученик на несколько разворотов</option>
+          <option value="grid">Сетка из N учеников</option>
+        </select>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3">
+        {cfg.mode === 'grid' &&
+          numField('Человек на странице', cfg.per_page, 2, 16, (v) =>
+            onChange({ mode: 'grid', per_page: v }),
+          )}
+        {cfg.mode === 'page' && (
+          <>
+            {numField('Фото с друзьями', cfg.friends, 0, 50, (v) =>
+              onChange({ ...cfg, friends: v }),
+            )}
+            {quoteField(cfg.quote, (q) => onChange({ ...cfg, quote: q }))}
+          </>
+        )}
+        {cfg.mode === 'spread' && (
+          <>
+            {numField('Фото с друзьями: мин', cfg.friends_min, 0, 50, (v) =>
+              onChange({ ...cfg, friends_min: Math.min(v, cfg.friends_max) }),
+            )}
+            {numField('макс', cfg.friends_max, 0, 50, (v) =>
+              onChange({ ...cfg, friends_max: Math.max(v, cfg.friends_min) }),
+            )}
+            {quoteField(cfg.quote, (q) => onChange({ ...cfg, quote: q }))}
+          </>
+        )}
+        {cfg.mode === 'multi_spread' && (
+          <>
+            {numField('Разворотов на ученика', cfg.spreads_per_student, 2, 4, (v) =>
+              onChange({ ...cfg, spreads_per_student: v }),
+            )}
+            {quoteField(cfg.quote, (q) => onChange({ ...cfg, quote: q }))}
+          </>
+        )}
+      </div>
+
+      <p className="text-xs text-muted-foreground italic">{humanStudentsConfigLabel(cfg)}</p>
+    </div>
+  )
+}
+
 // ─── AddSection picker ───────────────────────────────────────────────────
 
 function AddSectionPicker({
@@ -1122,7 +1105,12 @@ function AddSectionPicker({
   existingTypes: Set<Section['type']>
 }) {
   // Секции которые можно добавить несколько раз: common, common_additional
-  const MULTIPLE_ALLOWED = new Set<Section['type']>(['common', 'common_additional'])
+  // ТЗ 17.06.2026: несколько личных разделов (students) с разными режимами.
+  const MULTIPLE_ALLOWED = new Set<Section['type']>([
+    'common',
+    'common_additional',
+    'students',
+  ])
 
   return (
     <div className="flex flex-wrap gap-2 pt-2">
