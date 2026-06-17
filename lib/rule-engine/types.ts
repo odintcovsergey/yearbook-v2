@@ -448,8 +448,39 @@ export interface TransitionCustomScenario {
  *        пресеты до РЭ.37.6 будут в этой форме. Валидатор API запрещает
  *        одновременное наличие `mode` и `master_name`.
  */
+/**
+ * Конфиг личного раздела, привязанный к КОНКРЕТНОЙ записи `students` в
+ * структуре альбома (ТЗ 17.06.2026). Несколько записей `students` могут
+ * иметь разные `config` — каждая раскладывает ВЕСЬ список учеников в своём
+ * режиме (например: разворотный личный раздел на всех + компактная
+ * сетка-указатель на всех).
+ *
+ * Режимы:
+ *  - `grid`         — сетка `per_page` учеников/страницу (2..16); хвост
+ *                     (неполная страница) подбирается семантически.
+ *  - `page`         — 1 ученик/страницу; `friends` фото с друзьями (0..N),
+ *                     `quote` — слот цитаты.
+ *  - `spread`       — 1 ученик/разворот; число фото с друзьями ДИАПАЗОНОМ
+ *                     `friends_min..friends_max` — на каждого ученика берётся
+ *                     мастер под ЕГО фактическое число фото (clamp в диапазон).
+ *  - `multi_spread` — 1 ученик/`spreads_per_student` разворотов (2..4):
+ *                     первый разворот парадный (портрет/имя/цитата + часть
+ *                     фото), остальные — галерея фото.
+ *
+ * Если у записи `students` нет `config` (старый формат) — движок берёт
+ * глобальные поля пресета (`student_layout_mode`/`student_grid_size`/
+ * `student_friend_photos`/`student_has_quote`) как legacy-фолбэк. Глобальные
+ * поля НЕ удаляем сразу — нужны для отката (зачистка отдельной сессией).
+ */
+export type StudentsSectionConfig =
+  | { mode: 'grid'; per_page: number }
+  | { mode: 'page'; friends: number; quote: boolean }
+  | { mode: 'spread'; friends_min: number; friends_max: number; quote: boolean }
+  | { mode: 'multi_spread'; spreads_per_student: number; quote: boolean };
+
 export type SectionStructureEntry =
-  | { type: 'teachers' | 'students' | 'vignette' }
+  | { type: 'teachers' | 'vignette' }
+  | { type: 'students'; config?: StudentsSectionConfig }
   /**
    * РЭ.42: soft_intro поддерживает опциональный master_name override.
    * Если задан — engine кладёт именно этот мастер (партнёр выбрал из
