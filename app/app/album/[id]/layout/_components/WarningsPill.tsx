@@ -61,6 +61,19 @@ const CODE_TITLES: Record<string, string> = {
 
   // builder — students/teachers
   master_not_found: 'Мастер не найден в дизайне',
+  // Покрытие структуры выбранным дизайном (развязка шаблон↔дизайн, 17.06.2026):
+  // эти коды появляются, когда в выбранном дизайне нет мастера под часть
+  // структуры. Решение — выбрать другой дизайн или шаблон в настройках заказа.
+  students_master_not_found: 'Мастер личного раздела не найден в дизайне',
+  teachers_master_not_found: 'Мастер учительской страницы не найден в дизайне',
+  teachers_right_empty: 'Нет общего фото для правой учительской страницы',
+  soft_intro_master_not_found: 'Мастер первой страницы не найден в дизайне',
+  soft_intro_master_override_not_found: 'Выбранный мастер первой страницы не найден в дизайне',
+  soft_final_master_not_found: 'Мастер последней страницы не найден в дизайне',
+  soft_final_master_override_not_found: 'Выбранный мастер последней страницы не найден в дизайне',
+  transition_custom_master_not_found: 'Выбранный мастер переходной страницы не найден в дизайне',
+  head_teachers_overflow: 'Главных учителей больше, чем мест в мастере дизайна',
+  pages_overflow: 'Страниц больше лимита — лишние обрезаны',
   students_empty: 'Нет учеников для размещения',
   students_overflow: 'Учеников больше чем мест в сетке',
   subjects_overflow: 'Преподавателей больше чем мест',
@@ -143,6 +156,20 @@ function titleForCode(code: string): string {
   return CODE_TITLES[code] ?? code
 }
 
+/**
+ * Развязка шаблон↔дизайн: коды, означающие «в выбранном дизайне нет мастера
+ * под часть структуры». Если такие есть — показываем подсказку сменить дизайн.
+ */
+function hasCoverageGap(warnings: EnrichedWarning[]): boolean {
+  return warnings.some(
+    (w) =>
+      w.code.includes('master_not_found') ||
+      w.code.includes('master_missing') ||
+      w.code === 'teachers_right_empty' ||
+      w.code === 'head_teachers_overflow',
+  )
+}
+
 // ─── Компонент ─────────────────────────────────────────────────────────────
 
 type Props = {
@@ -171,6 +198,7 @@ export default function WarningsPill({ warnings }: Props) {
   const level = maxLevel(warnings)
   const styles = LEVEL_STYLES[level]
   const grouped = groupByLevel(warnings)
+  const coverageGap = hasCoverageGap(warnings)
 
   return (
     <div ref={containerRef} className="relative inline-block">
@@ -241,6 +269,14 @@ export default function WarningsPill({ warnings }: Props) {
               )
             })}
           </div>
+          {coverageGap && (
+            <div className="border-t border-amber-200 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-200 leading-snug">
+              В выбранном <strong>дизайне</strong> нет мастера под часть этой
+              структуры — такие страницы не собрались. Выберите другой дизайн
+              (или шаблон) в настройках заказа, либо закажите недостающий мастер
+              у дизайнера.
+            </div>
+          )}
           <div className="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
             Предупреждения не блокируют сборку — это подсказки автосборщика.
             Можно докрутить вручную в редакторе.
