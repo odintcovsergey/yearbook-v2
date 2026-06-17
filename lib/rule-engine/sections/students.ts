@@ -773,11 +773,17 @@ function countFriendPhotoSlots(master: SpreadTemplate): number {
 }
 
 /**
- * Bindings для галерейной страницы (только фото, без портрета/имени/цитаты).
+ * Bindings для коллажной страницы (только фото, без портрета/имени/цитаты).
  * Привязывает studentphoto_N/friendphoto_N → friends[offset + N - 1], чтобы
- * галерейные развороты показывали ДРУГИЕ фото, а не дублировали парадные.
+ * коллажные развороты показывали ДРУГИЕ фото, а не дублировали парадные.
+ *
+ * Пустые слоты (фото не хватило — последняя страница коллажа) скрываются
+ * через `__hidden__<label>='1'` по аналогии с grid-биндером (РЭ.31.3), чтобы
+ * на странице не висели пустые рамки. Жадный автопак минимизирует такие
+ * случаи (страница подбирается под остаток фото), но последняя коллажная
+ * страница может быть не до конца заполнена.
  */
-function bindGalleryPhotos(
+function bindCollagePhotos(
   master: SpreadTemplate,
   student: RulesStudentInput,
   offset: number,
@@ -788,54 +794,102 @@ function bindGalleryPhotos(
     const m = ph.label.toLowerCase().match(/^(?:studentphoto|friendphoto)_?(\d+)$/);
     if (m) {
       const n = parseInt(m[1], 10);
-      bindings[ph.label] = friends[offset + n - 1] ?? null;
+      const photo = friends[offset + n - 1];
+      if (photo) {
+        bindings[ph.label] = photo;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
     }
   }
   return bindings;
 }
 
+/** Есть ли в мастере плейсхолдер, чьё имя матчит регекс. */
+function hasPlaceholderMatching(master: SpreadTemplate, re: RegExp): boolean {
+  for (const ph of master.placeholders) {
+    if (re.test(ph.label.toLowerCase())) return true;
+  }
+  return false;
+}
+
+/** Коллажный мастер личного раздела + его ёмкость (число фото-слотов). */
+interface CollageMaster {
+  master: SpreadTemplate;
+  capacity: number;
+}
+
 /**
- * Галерейный мастер для multi_spread: страница только с фото (page_role
- * student_left/right, есть фото-слоты, БЕЗ портрета). Выбираем с наибольшей
- * ёмкостью (жадно заполняем), tie-break по имени. null — если в наборе таких
- * нет (тогда multi_spread деградирует до парадного разворота с warning).
+ * Коллажные мастера личного раздела для multi_spread — отсортированы по
+ * ёмкости (число фото-слотов) убыванию, tie-break по имени.
+ *
+ * РАСПОЗНАЁМ ПО РЕАЛЬНЫМ СЛОТАМ, а не по slot_capacity/имени. Причина: одно
+ * и то же имя (E-Standard-Right) в разных наборах значит разное (в «Аква меч»
+ * это 3 фото без портрета — готовый коллаж; в «Белом» — портрет+имя). Поэтому
+ * метаданные family-mapping ненадёжны. Коллаж = страница, где есть фото-слоты
+ * (studentphoto_N / friendphoto_N) И НЕТ портрета, имени, цитаты.
+ *
+ * Так `E-Standard-Right` из «Аква меч» подхватывается уже сейчас, а будущие
+ * `E-Collage-2/4/6` от дизайнера — автоматически, без правки кода.
  */
-function findGalleryMaster(
+function findPersonalCollageMasters(
   ctx: SectionFillContext,
   presetId: string,
-  pageRole: 'student_left' | 'student_right',
-): SpreadTemplate | null {
-  let best: SpreadTemplate | null = null;
-  let bestCap = -1;
+): CollageMaster[] {
+  const out: CollageMaster[] = [];
   for (const m of Array.from(ctx.bundle.mastersByName.values())) {
     const applies = m.applies_to_configs;
     const matchesPreset =
       !applies || applies.length === 0 || (applies as readonly string[]).includes(presetId);
     if (!matchesPreset) continue;
-    if (m.page_role !== pageRole) continue;
-    // Галерея = ЧИСТО фото: без портрета, без имени, без цитаты (иначе под
-    // фильтр попал бы парадный student_right с цитатой).
-    if (m.slot_capacity?.has_portrait === true) continue;
-    if (m.slot_capacity?.has_name === true) continue;
-    if (m.slot_capacity?.has_quote === true) continue;
-    const cap = countFriendPhotoSlots(m);
-    if (cap < 1) continue;
-    if (cap > bestCap || (cap === bestCap && best !== null && m.name < best.name)) {
-      best = m;
-      bestCap = cap;
-    }
+
+    const capacity = countFriendPhotoSlots(m);
+    if (capacity < 1) continue;
+    // Чистый коллаж: нет портрета / имени / цитаты (по реальным плейсхолдерам).
+    if (hasPlaceholderMatching(m, /^studentportrait(_\d+)?$/)) continue;
+    if (hasPlaceholderMatching(m, /^studentname(_\d+)?$/)) continue;
+    if (hasPlaceholderMatching(m, /^studentquote(_\d+)?$/)) continue;
+
+    out.push({ master: m, capacity });
   }
-  return best;
+  out.sort((a, b) => b.capacity - a.capacity || a.master.name.localeCompare(b.master.name));
+  return out;
 }
 
 /**
- * multi_spread (ТЗ 17.06.2026): один ученик на `spreads_per_student` разворотов
- * (2..4). Первый разворот — ПАРАДНЫЙ (портрет/имя слева, фото+цитата справа,
- * как spread), остальные — ГАЛЕРЕЯ фото ученика (без портрета). Фото
- * распределяются: сколько влезло на парадную страницу — остальные на галереи.
+ * Выбрать коллажный мастер под остаток фото: самый крупный, помещающийся в
+ * `remaining` (жадно). Если ни один не помещается (остаток меньше самого
+ * мелкого) — берём самый мелкий (лишние слоты скроются). Список ОБЯЗАН быть
+ * непустым и отсортирован по убыванию ёмкости.
+ */
+function pickCollageMaster(collageMasters: CollageMaster[], remaining: number): CollageMaster {
+  for (const cm of collageMasters) {
+    if (cm.capacity <= remaining) return cm;
+  }
+  return collageMasters[collageMasters.length - 1];
+}
+
+/**
+ * multi_spread «Авто» (ТЗ 17.06.2026, переписано под видение Сергея):
+ * один ученик на 1..`spreads_per_student` разворотов (cap 2..4).
  *
- * Подбор мастеров — семантический. Если галерейных мастеров в наборе нет —
- * degrade: строим только парадный разворот + warning (не падаем).
+ * Модель блока ученика:
+ *   Разворот 1: ЛЕВАЯ — парадная (портрет + ФИО + цитата), ПРАВАЯ — коллаж фото.
+ *   Развороты 2..N: обе страницы — коллаж фото ученика.
+ * Так парад — это ОДНА страница, дубль портрета на правой исчезает структурно.
+ *
+ * Коллаж подбирается автоматически под число фото ученика (как автопак общего
+ * раздела): на каждую страницу берём самый крупный помещающийся коллаж из
+ * присутствующих в наборе, остаток — мельче. У кого 8 фото, у кого 15 — система
+ * сама решает сколько коллажных страниц.
+ *
+ * Парность: блок ученика ВСЕГДА занимает целое число разворотов (чётное число
+ * страниц), чтобы у следующего ученика парад снова попал на левую страницу.
+ * Поэтому коллажные страницы добавляются целыми разворотами; последняя правая
+ * страница может быть не до конца заполнена (пустые слоты скрыты).
+ *
+ * Если в наборе НЕТ коллажных мастеров — degrade: строим парадный разворот
+ * по старой схеме (left портрет + right через findStudentMaster) + warning.
  */
 function buildMultiSpreadSemantic(
   ctx: SectionFillContext,
@@ -843,32 +897,28 @@ function buildMultiSpreadSemantic(
 ): void {
   const preset = ctx.bundle.preset;
   const students = ctx.input.students;
-  const totalSpreads = Math.max(2, Math.min(4, params.spreadsPerStudent));
+  const maxSpreads = Math.max(2, Math.min(4, params.spreadsPerStudent));
+
+  // Коллажные мастера набора — один раз на секцию (по реальным слотам).
+  const collageMasters = findPersonalCollageMasters(ctx, preset.id);
 
   for (let i = 0; i < students.length; i++) {
     const student = students[i];
     const friends = student.friend_photos ?? [];
     const startPages = ctx.pageInstances.length;
 
-    // 1. Парадный разворот: портрет/имя слева, фото с друзьями + цитата справа.
+    // Парадная ЛЕВАЯ страница: портрет + ФИО + цитата.
     const leftResult = findStudentMaster(ctx.bundle.mastersByName, {
       presetId: preset.id,
       pageRole: 'student_left',
       photosFriend: 0,
       hasPortrait: true,
     });
-    const rightResult = findStudentMaster(ctx.bundle.mastersByName, {
-      presetId: preset.id,
-      pageRole: 'student_right',
-      photosFriend: friends.length,
-      hasQuote: params.hasQuote,
-    });
-
-    if (!leftResult || !rightResult) {
+    if (!leftResult) {
       ctx.warnings.push(
         `students_master_not_found: для пресета '${preset.id}' (mode=multi_spread) ` +
           `для ученика '${student.full_name}' не найден парадный мастер ` +
-          `(student_left портрет / student_right фото+цитата). Закажите мастер у дизайнера.`,
+          `(student_left с портретом). Закажите мастер у дизайнера.`,
       );
       continue;
     }
@@ -877,73 +927,133 @@ function buildMultiSpreadSemantic(
       master_id: leftResult.master.id,
       bindings: bindSingleStudent(leftResult.master, student),
     });
-    ctx.pageInstances.push({
-      master_id: rightResult.master.id,
-      bindings: bindSingleStudent(rightResult.master, student),
-    });
+    // Парадный мастер может сам содержать фото-слоты (например E-Universal-Left) —
+    // тогда часть фото уже легла на парад, коллажи стартуют с этого смещения.
+    let cursor = countFriendPhotoSlots(leftResult.master);
 
-    // Сколько фото размещено на парадной правой странице (её фото-слоты).
-    let photoOffset = countFriendPhotoSlots(rightResult.master);
-
-    // 2. Галерейные развороты 2..N — остаток фото.
-    let galleriesBuilt = 0;
-    if (photoOffset < friends.length) {
-      const galleryLeft = findGalleryMaster(ctx, preset.id, 'student_left');
-      const galleryRight = findGalleryMaster(ctx, preset.id, 'student_right');
-      if (galleryLeft && galleryRight) {
-        for (let s = 1; s < totalSpreads && photoOffset < friends.length; s++) {
-          ctx.pageInstances.push({
-            master_id: galleryLeft.id,
-            bindings: bindGalleryPhotos(galleryLeft, student, photoOffset),
-          });
-          photoOffset += countFriendPhotoSlots(galleryLeft);
-          if (photoOffset < friends.length) {
-            ctx.pageInstances.push({
-              master_id: galleryRight.id,
-              bindings: bindGalleryPhotos(galleryRight, student, photoOffset),
-            });
-            photoOffset += countFriendPhotoSlots(galleryRight);
-          }
-          galleriesBuilt++;
-        }
-      } else {
-        ctx.warnings.push(
-          `students_multi_spread_no_gallery_master: у ученика '${student.full_name}' ` +
-            `осталось ${friends.length - photoOffset} фото для галерейных разворотов, ` +
-            `но в наборе нет галерейных мастеров (student_left/right без портрета с фото-слотами). ` +
-            `Построен только парадный разворот. Закажите галерейные мастера у дизайнера.`,
-        );
+    // Degrade: коллажных мастеров нет — достраиваем правую парадную по старой
+    // схеме (фото с друзьями + цитата), чтобы разворот был целым, + warning.
+    if (collageMasters.length === 0) {
+      const rightResult = findStudentMaster(ctx.bundle.mastersByName, {
+        presetId: preset.id,
+        pageRole: 'student_right',
+        photosFriend: friends.length - cursor,
+        hasQuote: params.hasQuote,
+      });
+      if (rightResult) {
+        ctx.pageInstances.push({
+          master_id: rightResult.master.id,
+          bindings: bindCollagePhotos(rightResult.master, student, cursor),
+        });
       }
+      ctx.warnings.push(
+        `students_multi_spread_no_collage_master: у ученика '${student.full_name}' ` +
+          `в наборе нет коллажных мастеров личного раздела (страниц только с фото, ` +
+          `без портрета/имени/цитаты). Построен только парадный разворот. ` +
+          `Закажите коллажные мастера (E-Collage-*) у дизайнера.`,
+      );
+      pushMultiSpreadTrace(ctx, {
+        startPages,
+        studentIndex: i,
+        studentName: student.full_name,
+        maxSpreads,
+        spreadsBuilt: 1,
+        friendsTotal: friends.length,
+        friendsPlaced: Math.min(cursor, friends.length),
+        paradeLeft: leftResult.master.name,
+        degraded: true,
+      });
+      continue;
     }
 
-    // Фото, не вместившиеся даже после всех галерей.
-    if (photoOffset < friends.length) {
+    // Разворот 1: правая — коллаж под остаток фото.
+    let spreadsBuilt = 1;
+    {
+      const remaining = friends.length - cursor;
+      const pick = pickCollageMaster(collageMasters, remaining);
+      ctx.pageInstances.push({
+        master_id: pick.master.id,
+        bindings: bindCollagePhotos(pick.master, student, cursor),
+      });
+      cursor += Math.min(pick.capacity, Math.max(0, remaining));
+    }
+
+    // Развороты 2..N — только пока остались фото. Каждый разворот целый
+    // (2 страницы): левая коллаж, правая коллаж (или пустой коллаж, если фото
+    // кончились ровно после левой — чтобы разворот остался целым).
+    for (let s = 2; s <= maxSpreads && cursor < friends.length; s++) {
+      const leftRemaining = friends.length - cursor;
+      const leftPick = pickCollageMaster(collageMasters, leftRemaining);
+      ctx.pageInstances.push({
+        master_id: leftPick.master.id,
+        bindings: bindCollagePhotos(leftPick.master, student, cursor),
+      });
+      cursor += Math.min(leftPick.capacity, leftRemaining);
+
+      const rightRemaining = friends.length - cursor;
+      const rightPick = pickCollageMaster(collageMasters, rightRemaining);
+      ctx.pageInstances.push({
+        master_id: rightPick.master.id,
+        bindings: bindCollagePhotos(rightPick.master, student, cursor),
+      });
+      cursor += Math.min(rightPick.capacity, Math.max(0, rightRemaining));
+
+      spreadsBuilt++;
+    }
+
+    // Фото, не вместившиеся в cap разворотов — остаются в пуле партнёра.
+    if (cursor < friends.length) {
       ctx.warnings.push(
         `students_lost_photos: у ученика '${student.full_name}' (mode=multi_spread) ` +
-          `${friends.length - photoOffset} фото не размещены в layout ` +
-          `(не хватило разворотов/слотов; фото сохранены в пуле партнёра)`,
+          `${friends.length - cursor} фото не размещены в layout ` +
+          `(не хватило разворотов ${maxSpreads}; фото сохранены в пуле партнёра)`,
       );
     }
 
-    ctx.decisionTrace.push({
-      spread_index: Math.floor(startPages / 2),
-      section_index: ctx.sectionIndex,
-      family_id: 'student-section',
-      rule_id: `multi_spread_semantic:${leftResult.master.name}+${rightResult.master.name}`,
-      inputs: {
-        mode: 'multi_spread',
-        student_index: i,
-        student_name: student.full_name,
-        spreads_per_student: totalSpreads,
-        galleries_built: galleriesBuilt,
-        friend_photos_total: friends.length,
-        friend_photos_placed: Math.min(photoOffset, friends.length),
-        has_quote_required: params.hasQuote,
-        parade_left: leftResult.master.name,
-        parade_right: rightResult.master.name,
-      },
+    pushMultiSpreadTrace(ctx, {
+      startPages,
+      studentIndex: i,
+      studentName: student.full_name,
+      maxSpreads,
+      spreadsBuilt,
+      friendsTotal: friends.length,
+      friendsPlaced: Math.min(cursor, friends.length),
+      paradeLeft: leftResult.master.name,
+      degraded: false,
     });
   }
+}
+
+function pushMultiSpreadTrace(
+  ctx: SectionFillContext,
+  t: {
+    startPages: number;
+    studentIndex: number;
+    studentName: string;
+    maxSpreads: number;
+    spreadsBuilt: number;
+    friendsTotal: number;
+    friendsPlaced: number;
+    paradeLeft: string;
+    degraded: boolean;
+  },
+): void {
+  ctx.decisionTrace.push({
+    spread_index: Math.floor(t.startPages / 2),
+    section_index: ctx.sectionIndex,
+    family_id: 'student-section',
+    rule_id: `multi_spread_auto:${t.paradeLeft}${t.degraded ? ':degraded' : ''}`,
+    inputs: {
+      mode: 'multi_spread',
+      student_index: t.studentIndex,
+      student_name: t.studentName,
+      spreads_per_student_cap: t.maxSpreads,
+      spreads_built: t.spreadsBuilt,
+      friend_photos_total: t.friendsTotal,
+      friend_photos_placed: t.friendsPlaced,
+      parade_left: t.paradeLeft,
+    },
+  });
 }
 
 // ─── Grid semantic (РЭ.22.6) ─────────────────────────────────────────────

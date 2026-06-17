@@ -257,6 +257,54 @@ const MAPPING: Record<string, FamilyMapping> = {
     applies_to_configs: [],
   },
 
+  // ─── E-Collage-N: коллажные страницы личного раздела (ТЗ 17.06.2026) ──
+  // Страница ТОЛЬКО с фото ученика (studentphoto_N), без портрета/имени/цитаты.
+  // Используются в режиме «1 ученик на несколько разворотов» (multi_spread):
+  // после парадной левой страницы остаток фото раскладывается по коллажам,
+  // подбираемым под число фото. page-any (сторона ставится моделью отступа
+  // от корешка). students=0 — НЕ student-страница в смысле findStudentMaster
+  // (тот требует students=1), движок находит коллажи по реальным слотам.
+  'E-Collage-2': {
+    family_id: 'student-section',
+    page_type: 'page-any',
+    params: {},
+    page_role: 'student_right',
+    slot_capacity: { students: 0, photos_friend: 2, has_portrait: false, has_name: false, has_quote: false },
+    applies_to_configs: [],
+  },
+  'E-Collage-3': {
+    family_id: 'student-section',
+    page_type: 'page-any',
+    params: {},
+    page_role: 'student_right',
+    slot_capacity: { students: 0, photos_friend: 3, has_portrait: false, has_name: false, has_quote: false },
+    applies_to_configs: [],
+  },
+  'E-Collage-4': {
+    family_id: 'student-section',
+    page_type: 'page-any',
+    params: {},
+    page_role: 'student_right',
+    slot_capacity: { students: 0, photos_friend: 4, has_portrait: false, has_name: false, has_quote: false },
+    applies_to_configs: [],
+  },
+  'E-Collage-5': {
+    family_id: 'student-section',
+    page_type: 'page-any',
+    params: {},
+    page_role: 'student_right',
+    slot_capacity: { students: 0, photos_friend: 5, has_portrait: false, has_name: false, has_quote: false },
+    applies_to_configs: [],
+  },
+  'E-Collage-6': {
+    family_id: 'student-section',
+    page_type: 'page-any',
+    params: {},
+    page_role: 'student_right',
+    slot_capacity: { students: 0, photos_friend: 6, has_portrait: false, has_name: false, has_quote: false },
+    applies_to_configs: [],
+  },
+
   // ─── M/L/N: student-section сетки (параметрические) ──────────────
   // students = максимум что мастер вмещает. Движок ищет с match='exact'
   // для базы сетки и 'min_fit' для адаптивного хвоста.

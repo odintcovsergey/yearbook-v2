@@ -260,7 +260,7 @@ describe('per-section config личного раздела (ТЗ 17.06.2026)', (
     expect(rights).toEqual(['E-Right-3', 'E-Right-4', 'E-Right-2']);
   });
 
-  it('multi_spread 2 разворота: распределяет фото по парадному + галерейному', () => {
+  it('multi_spread «Авто»: парад слева, дальше коллажи под число фото', () => {
     const bundle = makeBundle({
       preset: makePreset({
         id: 'p',
@@ -268,21 +268,58 @@ describe('per-section config личного раздела (ТЗ 17.06.2026)', (
           { type: 'students', config: { mode: 'multi_spread', spreads_per_student: 2, quote: true } },
         ],
       }),
+      // E_RIGHT_4 содержит цитату → НЕ коллаж; коллажи = GALLERY_* (4 фото, чистые).
       masters: [E_LEFT, E_RIGHT_4, GALLERY_LEFT, GALLERY_RIGHT],
     });
-    // ученик с 12 фото: парад (E-Right-4 = 4 фото) + галерея (4+4) = 12, 2 разворота.
+    // ученик с 12 фото, cap 2 разворота: парад(0 фото) + 3 коллажа × 4 = 12.
     const result = buildFromSectionStructure(bundle, makeInput([12]));
     const pages = result.spreads.flatMap((s) => [s.left, s.right].filter(Boolean));
     expect(pages).toHaveLength(4); // 2 разворота × 2 страницы
-    const names = pages.map((p) => masterNameById(bundle, p!.master_id));
-    expect(names).toEqual(['E-Left', 'E-Right-4', 'Gallery-Left', 'Gallery-Right']);
 
-    // Галерея показывает ДРУГИЕ фото (offset), не дублирует парадные.
-    const gLeft = pages.find((p) => p!.master_id === 'id-Gallery-Left')!;
-    expect(gLeft.bindings.studentphoto_1).toBe('https://cdn/p0_f4.jpg'); // 5-е фото (offset 4)
+    // Левая 1-й страницы — парад (портрет). Дубля портрета на правой НЕТ.
+    expect(masterNameById(bundle, pages[0]!.master_id)).toBe('E-Left');
+    // Остальные три — коллажные мастера (без портрета).
+    for (const p of pages.slice(1)) {
+      expect(masterNameById(bundle, p!.master_id)!.startsWith('Gallery-')).toBe(true);
+    }
+
+    // Фото идут подряд без дублей: правая 1-го разворота с offset 0,
+    // левая 2-го — с offset 4, правая 2-го — с offset 8.
+    expect(pages[1]!.bindings.studentphoto_1).toBe('https://cdn/p0_f0.jpg');
+    expect(pages[2]!.bindings.studentphoto_1).toBe('https://cdn/p0_f4.jpg');
+    expect(pages[3]!.bindings.studentphoto_1).toBe('https://cdn/p0_f8.jpg');
   });
 
-  it('multi_spread без галерейных мастеров → degrade + warning, без падения', () => {
+  it('multi_spread: коллаж распознаётся по РЕАЛЬНЫМ слотам, даже если метаданные врут', () => {
+    // Мастер с фото-слотами и БЕЗ портрета/имени в плейсхолдерах, но slot_capacity
+    // ЛЖЁТ (has_portrait=true). Так в «Аква меч» устроен E-Standard-Right.
+    // Движок обязан распознать его как коллаж по реальным слотам.
+    const liar = makeMaster(
+      'Liar-Right',
+      [photoSlot('studentphoto_1'), photoSlot('studentphoto_2'), photoSlot('studentphoto_3')],
+      'student_right',
+      { students: 1, photos_friend: 3, has_quote: true, has_portrait: true, has_name: true },
+    );
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        section_structure: [
+          { type: 'students', config: { mode: 'multi_spread', spreads_per_student: 2, quote: true } },
+        ],
+      }),
+      masters: [E_LEFT, liar],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput([6]));
+    const pages = result.spreads.flatMap((s) => [s.left, s.right].filter(Boolean));
+    // Парад слева + коллажи (Liar) — НЕ degrade.
+    expect(masterNameById(bundle, pages[0]!.master_id)).toBe('E-Left');
+    expect(masterNameById(bundle, pages[1]!.master_id)).toBe('Liar-Right');
+    expect(
+      result.warnings.some((w) => w.includes('students_multi_spread_no_collage_master')),
+    ).toBe(false);
+  });
+
+  it('multi_spread без коллажных мастеров → degrade + warning, без падения', () => {
     const bundle = makeBundle({
       preset: makePreset({
         id: 'p',
@@ -290,14 +327,14 @@ describe('per-section config личного раздела (ТЗ 17.06.2026)', (
           { type: 'students', config: { mode: 'multi_spread', spreads_per_student: 3, quote: true } },
         ],
       }),
-      masters: [E_LEFT, E_RIGHT_4], // галерейных нет
+      masters: [E_LEFT, E_RIGHT_4], // E_RIGHT_4 с цитатой → не коллаж; коллажей нет
     });
     const result = buildFromSectionStructure(bundle, makeInput([12]));
     const pages = result.spreads.flatMap((s) => [s.left, s.right].filter(Boolean));
-    expect(pages).toHaveLength(2); // только парад
-    expect(result.warnings.some((w) => w.includes('students_multi_spread_no_gallery_master'))).toBe(
-      true,
-    );
+    expect(pages).toHaveLength(2); // парад слева + достроенная правая (degrade)
+    expect(
+      result.warnings.some((w) => w.includes('students_multi_spread_no_collage_master')),
+    ).toBe(true);
   });
 
   it('grid per_page=16 → сетка на 16', () => {
