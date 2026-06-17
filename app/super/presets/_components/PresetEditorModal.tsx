@@ -91,7 +91,13 @@ export type StudentsSectionConfig =
   | { mode: 'grid'; per_page: number }
   | { mode: 'page'; friends: number; quote: boolean }
   | { mode: 'spread'; friends_min: number; friends_max: number; quote: boolean }
-  | { mode: 'multi_spread'; spreads_per_student: number; quote: boolean }
+  | {
+      mode: 'multi_spread'
+      spreads_per_student: number
+      quote: boolean
+      /** Ручной сценарий: имена мастеров по страницам (чётная длина). null = авто. */
+      manual_pages?: string[] | null
+    }
 
 export type Section =
   | { type: 'teachers' | 'vignette' }
@@ -179,7 +185,10 @@ function humanStudentsConfigLabel(cfg: StudentsSectionConfig | undefined): strin
     case 'spread':
       return `1 ученик на разворот · фото с друзьями: ${cfg.friends_min}–${cfg.friends_max} · ${q(cfg.quote)}`
     case 'multi_spread':
-      return `1 ученик на ${cfg.spreads_per_student} разворота · ${q(cfg.quote)}`
+      if (cfg.manual_pages && cfg.manual_pages.length > 0) {
+        return `1 ученик на несколько разворотов · вручную (${cfg.manual_pages.length / 2} разворота) · ${q(cfg.quote)}`
+      }
+      return `1 ученик на ${cfg.spreads_per_student} разворота · авто · ${q(cfg.quote)}`
   }
 }
 
@@ -872,6 +881,9 @@ function SortableSectionItem({
         {s.type === 'students' && (
           <StudentsConfigEditor
             config={s.config}
+            templates={templates}
+            hasTemplateSet={hasTemplateSet}
+            templatesLoading={templatesLoading}
             onChange={(cfg) => onUpdate(idx, { config: cfg } as Partial<Section>)}
           />
         )}
@@ -997,9 +1009,15 @@ function SortableSectionItem({
 // Перенесены сюда из глобальной шапки — у каждого личного раздела свои.
 function StudentsConfigEditor({
   config,
+  templates,
+  hasTemplateSet,
+  templatesLoading,
   onChange,
 }: {
   config: StudentsSectionConfig | undefined
+  templates: SpreadTemplate[]
+  hasTemplateSet: boolean
+  templatesLoading: boolean
   onChange: (cfg: StudentsSectionConfig) => void
 }) {
   const cfg: StudentsSectionConfig = config ?? defaultStudentsConfig('page')
@@ -1082,15 +1100,166 @@ function StudentsConfigEditor({
         )}
         {cfg.mode === 'multi_spread' && (
           <>
-            {numField('Разворотов на ученика', cfg.spreads_per_student, 2, 4, (v) =>
-              onChange({ ...cfg, spreads_per_student: v }),
-            )}
+            <div>
+              <label className="text-xs text-muted-foreground block mb-0.5">Раскладка</label>
+              <select
+                value={cfg.manual_pages && cfg.manual_pages.length > 0 ? 'manual' : 'auto'}
+                onChange={(e) => {
+                  if (e.target.value === 'manual') {
+                    // Включаем ручной: дефолт — один разворот (2 страницы) из
+                    // первых доступных E-мастеров. Если мастеров нет — пусто.
+                    const ePool = templates.filter((t) => t.name.startsWith('E-'))
+                    const first = ePool[0]?.name
+                    const second = ePool[1]?.name ?? ePool[0]?.name
+                    onChange({
+                      ...cfg,
+                      manual_pages: first && second ? [first, second] : [],
+                    })
+                  } else {
+                    onChange({ ...cfg, manual_pages: null })
+                  }
+                }}
+                className="border border-input rounded px-2 py-0.5 text-xs bg-card text-foreground dark:bg-background"
+              >
+                <option value="auto">Авто (система сама)</option>
+                <option value="manual">Вручную — мои раскладки</option>
+              </select>
+            </div>
+            {!(cfg.manual_pages && cfg.manual_pages.length > 0) &&
+              numField('Разворотов на ученика (макс)', cfg.spreads_per_student, 2, 4, (v) =>
+                onChange({ ...cfg, spreads_per_student: v }),
+              )}
             {quoteField(cfg.quote, (q) => onChange({ ...cfg, quote: q }))}
           </>
         )}
       </div>
 
+      {cfg.mode === 'multi_spread' && cfg.manual_pages && cfg.manual_pages.length > 0 && (
+        <div className="mt-2">
+          {!hasTemplateSet ? (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+              Выберите дизайн (template_set) у шаблона, чтобы выбирать раскладки личного раздела.
+            </p>
+          ) : templatesLoading ? (
+            <p className="text-xs text-muted-foreground italic">Загрузка мастеров…</p>
+          ) : (
+            <MultiSpreadManualEditor
+              pages={cfg.manual_pages}
+              templates={templates}
+              onChange={(pages) => onChange({ ...cfg, manual_pages: pages })}
+            />
+          )}
+        </div>
+      )}
+
       <p className="text-xs text-muted-foreground italic">{humanStudentsConfigLabel(cfg)}</p>
+    </div>
+  )
+}
+
+// ─── MultiSpreadManualEditor (ТЗ 17.06.2026) ──────────────────────────────
+//
+// Ручной сценарий личного раздела «несколько разворотов»: партнёр сам строит
+// шаблон блока ученика разворот за разворотом, выбирая мастер левой и правой
+// страницы из доступных мастеров личного раздела (имена E-*). Этот шаблон
+// применяется к КАЖДОМУ ученику; фото текут по страницам слева направо.
+//
+// pages — плоский список имён мастеров чётной длины [s1L, s1R, s2L, s2R, ...].
+// Показываем разворотами (пары), чтобы гарантировать целые развороты.
+//
+// Список мастеров не фильтруем по -Right (в отличие от Soft/Common picker):
+// у личного раздела коллажная страница может называться …-Right
+// (например E-Standard-Right «Аква меч» = коллаж на 3 фото).
+function MultiSpreadManualEditor({
+  pages,
+  templates,
+  onChange,
+}: {
+  pages: string[]
+  templates: SpreadTemplate[]
+  onChange: (pages: string[]) => void
+}) {
+  // Доступные мастера личного раздела (по конвенции имени E-*).
+  const ePool = templates
+    .filter((t) => t.name.startsWith('E-'))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  if (ePool.length === 0) {
+    return (
+      <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+        В выбранном дизайне нет мастеров личного раздела (E-*). Заказать страницы
+        у дизайнера или выбрать другой дизайн.
+      </p>
+    )
+  }
+
+  // Гарантируем чётную длину для отображения парами.
+  const safe = pages.length % 2 === 0 ? pages : [...pages, ePool[0].name]
+  const spreadCount = safe.length / 2
+
+  const setPage = (pageIdx: number, name: string) => {
+    const next = [...safe]
+    next[pageIdx] = name
+    onChange(next)
+  }
+  const addSpread = () => {
+    onChange([...safe, ePool[0].name, ePool[1]?.name ?? ePool[0].name])
+  }
+  const removeSpread = (spreadIdx: number) => {
+    const next = safe.filter((_, i) => i < spreadIdx * 2 || i >= spreadIdx * 2 + 2)
+    onChange(next)
+  }
+
+  const pageSelect = (pageIdx: number) => {
+    const value = safe[pageIdx]
+    const exists = ePool.some((t) => t.name === value)
+    return (
+      <div className="flex-1">
+        <select
+          value={exists ? value : ''}
+          onChange={(e) => e.target.value && setPage(pageIdx, e.target.value)}
+          className="w-full border border-input rounded px-2 py-1 text-xs bg-card text-foreground dark:bg-background"
+        >
+          {!exists && <option value="">{value ? `${value} (нет в дизайне)` : '— выбрать —'}</option>}
+          {ePool.map((t) => (
+            <option key={t.id} value={t.name}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2 border border-border rounded p-2 bg-muted/30">
+      <p className="text-xs text-muted-foreground">
+        Постройте блок одного ученика по разворотам. Первая страница обычно
+        парадная (портрет+ФИО+цитата), остальные — коллажи. Раскладка применится
+        ко всем ученикам; фото распределятся слева направо.
+      </p>
+      {Array.from({ length: spreadCount }, (_, s) => (
+        <div key={s} className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground w-20 shrink-0">Разворот {s + 1}</span>
+          {pageSelect(s * 2)}
+          {pageSelect(s * 2 + 1)}
+          <button
+            onClick={() => removeSpread(s)}
+            disabled={spreadCount <= 1}
+            className="text-xs text-red-500 hover:text-red-700 px-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="Удалить разворот"
+            title={spreadCount <= 1 ? 'Нужен хотя бы один разворот' : 'Удалить разворот'}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={addSpread}
+        className="text-xs px-3 py-1 rounded border border-purple-300 text-purple-700 hover:bg-purple-50"
+      >
+        + Добавить разворот
+      </button>
     </div>
   )
 }

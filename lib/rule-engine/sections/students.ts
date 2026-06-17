@@ -50,7 +50,12 @@ type ResolvedStudents =
   | { mode: 'page'; friends: number; quote: boolean }
   | { mode: 'spread'; friendsMin: number; friendsMax: number; quote: boolean }
   | { mode: 'grid'; perPage: number | null | undefined; quote: boolean }
-  | { mode: 'multi_spread'; spreadsPerStudent: number; quote: boolean }
+  | {
+      mode: 'multi_spread';
+      spreadsPerStudent: number;
+      quote: boolean;
+      manualPages: string[] | null;
+    }
   | { mode: 'legacy' };
 
 /**
@@ -89,6 +94,10 @@ function resolveStudentsConfig(
           mode: 'multi_spread',
           spreadsPerStudent: config.spreads_per_student,
           quote: config.quote,
+          manualPages:
+            config.manual_pages && config.manual_pages.length > 0
+              ? config.manual_pages
+              : null,
         };
     }
   }
@@ -135,10 +144,14 @@ export function fillStudentsSection(
     return;
   }
   if (resolved.mode === 'multi_spread') {
-    buildMultiSpreadSemantic(ctx, {
-      spreadsPerStudent: resolved.spreadsPerStudent,
-      hasQuote: resolved.quote,
-    });
+    if (resolved.manualPages) {
+      buildMultiSpreadManual(ctx, { pages: resolved.manualPages, hasQuote: resolved.quote });
+    } else {
+      buildMultiSpreadSemantic(ctx, {
+        spreadsPerStudent: resolved.spreadsPerStudent,
+        hasQuote: resolved.quote,
+      });
+    }
     return;
   }
 
@@ -1054,6 +1067,119 @@ function pushMultiSpreadTrace(
       parade_left: t.paradeLeft,
     },
   });
+}
+
+/**
+ * Bindings страницы личного блока для РУЧНОГО multi_spread. Универсально:
+ * привязывает портрет/имя/цитату (если такие слоты есть в мастере) И фото
+ * со смещением `photoOffset` (studentphoto_N/friendphoto_N → friends[offset+N-1],
+ * пустые скрываются __hidden__). Так одна функция обслуживает любой мастер,
+ * который партнёр поставил в последовательность — парадный (с портретом) или
+ * чисто коллажный (только фото).
+ */
+function bindStudentPageWithOffset(
+  master: SpreadTemplate,
+  student: RulesStudentInput,
+  photoOffset: number,
+  hasQuote: boolean,
+): Record<string, unknown> {
+  const bindings: Record<string, unknown> = {};
+  const friends = student.friend_photos ?? [];
+  for (const ph of master.placeholders) {
+    const label = ph.label.toLowerCase();
+
+    if (/^studentportrait(_\d+)?$/.test(label)) {
+      bindings[ph.label] = student.portrait;
+      continue;
+    }
+    if (/^studentname(_\d+)?$/.test(label)) {
+      bindings[ph.label] = student.full_name;
+      continue;
+    }
+    if (/^studentquote(_\d+)?$/.test(label)) {
+      bindings[ph.label] = hasQuote ? student.quote ?? null : null;
+      continue;
+    }
+    const m = label.match(/^(?:studentphoto|friendphoto)_?(\d+)$/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      const photo = friends[photoOffset + n - 1];
+      if (photo) {
+        bindings[ph.label] = photo;
+      } else {
+        bindings[`__hidden__${ph.label}`] = '1';
+      }
+    }
+  }
+  return bindings;
+}
+
+/**
+ * multi_spread РУЧНОЙ (ТЗ 17.06.2026): партнёр сам перечислил мастера страниц
+ * личного блока. Применяем эту последовательность к КАЖДОМУ ученику; фото
+ * текут слева направо (cursor по числу фото-слотов каждой страницы).
+ *
+ * Каждая страница биндится универсально (портрет/имя/цитата если есть + фото
+ * со смещением). Неизвестное имя мастера → warning + страница пропускается.
+ * Длина `pages` чётная (целые развороты) — гарантируется валидатором API.
+ */
+function buildMultiSpreadManual(
+  ctx: SectionFillContext,
+  params: { pages: string[]; hasQuote: boolean },
+): void {
+  const students = ctx.input.students;
+
+  for (let i = 0; i < students.length; i++) {
+    const student = students[i];
+    const friends = student.friend_photos ?? [];
+    const startPages = ctx.pageInstances.length;
+    let cursor = 0;
+    let pagesBuilt = 0;
+
+    for (const masterName of params.pages) {
+      const master = ctx.bundle.mastersByName.get(masterName);
+      if (!master) {
+        // Предупреждаем один раз на ученика хватило бы, но порядок страниц
+        // важен — сообщаем по каждому отсутствующему мастеру.
+        ctx.warnings.push(
+          `students_master_not_found: для ученика '${student.full_name}' (mode=multi_spread/ручной) ` +
+            `мастер '${masterName}' отсутствует в template_set дизайна. Страница пропущена.`,
+        );
+        continue;
+      }
+      ctx.pageInstances.push({
+        master_id: master.id,
+        bindings: bindStudentPageWithOffset(master, student, cursor, params.hasQuote),
+      });
+      cursor += countFriendPhotoSlots(master);
+      pagesBuilt++;
+    }
+
+    if (cursor < friends.length) {
+      ctx.warnings.push(
+        `students_lost_photos: у ученика '${student.full_name}' (mode=multi_spread/ручной) ` +
+          `${friends.length - cursor} фото не размещены в layout ` +
+          `(в выбранной раскладке не хватило фото-слотов; фото сохранены в пуле партнёра)`,
+      );
+    }
+
+    ctx.decisionTrace.push({
+      spread_index: Math.floor(startPages / 2),
+      section_index: ctx.sectionIndex,
+      family_id: 'student-section',
+      rule_id: `multi_spread_manual:${params.pages.join('+')}`,
+      inputs: {
+        mode: 'multi_spread',
+        layout: 'manual',
+        student_index: i,
+        student_name: student.full_name,
+        pages_requested: params.pages.length,
+        pages_built: pagesBuilt,
+        friend_photos_total: friends.length,
+        friend_photos_placed: Math.min(cursor, friends.length),
+      },
+    });
+  }
 }
 
 // ─── Grid semantic (РЭ.22.6) ─────────────────────────────────────────────

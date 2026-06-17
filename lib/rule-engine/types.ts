@@ -463,9 +463,15 @@ export interface TransitionCustomScenario {
  *  - `spread`       — 1 ученик/разворот; число фото с друзьями ДИАПАЗОНОМ
  *                     `friends_min..friends_max` — на каждого ученика берётся
  *                     мастер под ЕГО фактическое число фото (clamp в диапазон).
- *  - `multi_spread` — 1 ученик/`spreads_per_student` разворотов (2..4):
- *                     первый разворот парадный (портрет/имя/цитата + часть
- *                     фото), остальные — галерея фото.
+ *  - `multi_spread` — 1 ученик на несколько разворотов. Два под-режима:
+ *      • АВТО (по умолчанию): парад = ОДНА левая страница (портрет/имя/цитата),
+ *        правая и дальше — коллажи фото, подбираемые автопаком под число фото.
+ *        Лимит разворотов — `spreads_per_student` (2..4).
+ *      • ВРУЧНУЮ (`manual_pages` задан): партнёр сам перечисляет мастера каждой
+ *        страницы личного блока (по именам мастеров, стабильным при перезаливке).
+ *        Применяется к КАЖДОМУ ученику; фото текут по страницам слева направо.
+ *        Длина `manual_pages` чётная (целые развороты), `spreads_per_student`
+ *        в этом под-режиме игнорируется.
  *
  * Если у записи `students` нет `config` (старый формат) — движок берёт
  * глобальные поля пресета (`student_layout_mode`/`student_grid_size`/
@@ -476,7 +482,16 @@ export type StudentsSectionConfig =
   | { mode: 'grid'; per_page: number }
   | { mode: 'page'; friends: number; quote: boolean }
   | { mode: 'spread'; friends_min: number; friends_max: number; quote: boolean }
-  | { mode: 'multi_spread'; spreads_per_student: number; quote: boolean };
+  | {
+      mode: 'multi_spread';
+      spreads_per_student: number;
+      quote: boolean;
+      /**
+       * Ручной сценарий: имена мастеров по страницам личного блока (по порядку).
+       * null/отсутствует → авто-режим. Чётная длина (целые развороты).
+       */
+      manual_pages?: string[] | null;
+    };
 
 export type SectionStructureEntry =
   | { type: 'teachers' | 'vignette' }

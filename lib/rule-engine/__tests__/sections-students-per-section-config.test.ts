@@ -337,6 +337,60 @@ describe('per-section config личного раздела (ТЗ 17.06.2026)', (
     ).toBe(true);
   });
 
+  it('multi_spread ВРУЧНУЮ: строит ровно заданную последовательность мастеров', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        section_structure: [
+          {
+            type: 'students',
+            config: {
+              mode: 'multi_spread',
+              spreads_per_student: 2, // игнорируется в ручном
+              quote: true,
+              manual_pages: ['E-Left', 'Gallery-Right', 'Gallery-Left', 'Gallery-Right'],
+            },
+          },
+        ],
+      }),
+      masters: [E_LEFT, GALLERY_LEFT, GALLERY_RIGHT],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput([12]));
+    const pages = result.spreads.flatMap((s) => [s.left, s.right].filter(Boolean));
+    expect(pages).toHaveLength(4);
+    const names = pages.map((p) => masterNameById(bundle, p!.master_id));
+    expect(names).toEqual(['E-Left', 'Gallery-Right', 'Gallery-Left', 'Gallery-Right']);
+
+    // Парад: портрет привязан. Фото текут со смещением по страницам.
+    expect(pages[0]!.bindings.studentportrait_1).toBe('https://cdn/p0.jpg');
+    expect(pages[1]!.bindings.studentphoto_1).toBe('https://cdn/p0_f0.jpg'); // offset 0
+    expect(pages[2]!.bindings.studentphoto_1).toBe('https://cdn/p0_f4.jpg'); // offset 4
+  });
+
+  it('multi_spread ВРУЧНУЮ: неизвестный мастер → warning + страница пропущена', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        section_structure: [
+          {
+            type: 'students',
+            config: {
+              mode: 'multi_spread',
+              spreads_per_student: 2,
+              quote: true,
+              manual_pages: ['E-Left', 'Nonexistent-Master'],
+            },
+          },
+        ],
+      }),
+      masters: [E_LEFT, GALLERY_LEFT, GALLERY_RIGHT],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput([4]));
+    const pages = result.spreads.flatMap((s) => [s.left, s.right].filter(Boolean));
+    expect(pages).toHaveLength(1); // только E-Left, отсутствующий пропущен
+    expect(result.warnings.some((w) => w.includes('students_master_not_found'))).toBe(true);
+  });
+
   it('grid per_page=16 → сетка на 16', () => {
     const bundle = makeBundle({
       preset: makePreset({

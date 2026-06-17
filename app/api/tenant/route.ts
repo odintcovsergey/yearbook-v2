@@ -296,7 +296,44 @@ function validateStudentsConfig(
     if (typeof quote !== 'boolean') {
       return { ok: false, error: `Секция #${idx + 1} (students/multi_spread): quote — boolean` }
     }
-    return { ok: true, value: { mode: 'multi_spread', spreads_per_student: sps as number, quote } }
+    // Ручной сценарий (опционально): список имён мастеров по страницам.
+    const rawPages = (raw as { manual_pages?: unknown }).manual_pages
+    let manualPages: string[] | null = null
+    if (rawPages !== undefined && rawPages !== null) {
+      if (
+        !Array.isArray(rawPages) ||
+        rawPages.some((p) => typeof p !== 'string' || p.trim().length === 0)
+      ) {
+        return {
+          ok: false,
+          error: `Секция #${idx + 1} (students/multi_spread): manual_pages — массив непустых строк`,
+        }
+      }
+      if (rawPages.length > 0) {
+        if (rawPages.length % 2 !== 0) {
+          return {
+            ok: false,
+            error: `Секция #${idx + 1} (students/multi_spread): manual_pages — чётное число страниц (целые развороты)`,
+          }
+        }
+        if (rawPages.length > 16) {
+          return {
+            ok: false,
+            error: `Секция #${idx + 1} (students/multi_spread): manual_pages — не более 16 страниц (8 разворотов)`,
+          }
+        }
+        manualPages = rawPages as string[]
+      }
+    }
+    return {
+      ok: true,
+      value: {
+        mode: 'multi_spread',
+        spreads_per_student: sps as number,
+        quote,
+        ...(manualPages ? { manual_pages: manualPages } : {}),
+      },
+    }
   }
   return {
     ok: false,
