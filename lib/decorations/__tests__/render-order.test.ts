@@ -26,20 +26,37 @@ describe('orderPlaceholdersForRender (Этап 4)', () => {
     ]);
   });
 
-  it('несколько слотов сохраняют исходный порядок баз', () => {
+  it('слоевая модель: __under уходит в самый низ, базы — в исходном порядке', () => {
     const phs: P[] = [
       { label: 'teacherphoto_1', type: 'photo' },
       { label: 'teachername_1', type: 'text' },
       { label: 'teachername_1__under', type: 'decoration', attached_to: 'teachername_1', layer: 'under' },
       { label: 'teacherphoto_2', type: 'photo' },
     ];
-    // teachername_1__under встаёт ПЕРЕД teachername_1, базы — в исходном порядке
+    // __under-подложка — в самый низ (под все слоты), базы сохраняют порядок.
     expect(labels(orderPlaceholdersForRender(phs))).toEqual([
-      'teacherphoto_1',
       'teachername_1__under',
+      'teacherphoto_1',
       'teachername_1',
       'teacherphoto_2',
     ]);
+  });
+
+  it('фикс «Аква меч»: __under-подложка цитаты НЕ перекрывает портрет другого слота', () => {
+    // Облако-подложка studentquote_1__under и портрет — разные слоты. В списке
+    // подложка идёт ПОЗЖЕ портрета, но как __under должна оказаться ПОД ним.
+    const phs: P[] = [
+      { label: 'studentportrait_1', type: 'photo' },
+      { label: 'studentquote_1__under', type: 'decoration', attached_to: 'studentquote_1', layer: 'under' },
+      { label: 'studentquote_1', type: 'text' },
+    ];
+    const out = labels(orderPlaceholdersForRender(phs));
+    expect(out).toEqual([
+      'studentquote_1__under',
+      'studentportrait_1',
+      'studentquote_1',
+    ]);
+    expect(out.indexOf('studentquote_1__under')).toBeLessThan(out.indexOf('studentportrait_1'));
   });
 
   it('orphan-декор (базы нет в списке) дорисовывается в конце, не теряется', () => {
