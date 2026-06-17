@@ -224,50 +224,41 @@ describe('resolvePlaceholdersForSide', () => {
   });
 });
 
-describe('resolvePlaceholdersForSide — модель «поля» (spineMarginMm, МИНИМУМ-зазор)', () => {
-  // Правка 17.06: spineMargin — МИНИМАЛЬНЫЙ зазор у корешка. Блок двигаем только
-  // если он БЛИЖЕ к корешку, чем отступ. PAGE_W=208.
+describe('resolvePlaceholdersForSide — модель «поля» (spineMarginMm, ЦЕНТРИРОВАНИЕ)', () => {
+  // Правка 17.06 (v2): блок ЦЕНТРИРУЕТСЯ по странице; spineMargin — гарантированный
+  // минимум у корешка (бьётся только для очень широких блоков). PAGE_W=208.
 
-  it('левая: блок ДАЛЬШЕ отступа от корешка → НЕ двигаем (парадная страница)', () => {
-    // x=120..160, зазор справа = 208-160 = 48 > 10 → не трогаем.
+  it('левая: блок центрируется по странице', () => {
+    // x=120..160 (ширина 40) → центр: (208-40)/2 = 84.
     const block: RenderPlaceholder[] = [photo({ label: 'p', x_mm: 120, width_mm: 40 })];
     const out = resolvePlaceholdersForSide(block, 'left', 'page-any', PAGE_W, 10);
-    expect(out[0].x_mm).toBe(120);
+    expect(out[0].x_mm).toBe(84);
   });
 
-  it('левая: блок ВПРИТЫК к корешку → отодвигаем до отступа', () => {
-    // x=160..200, зазор справа = 208-200 = 8 < 10 → сдвиг влево на 2 → x=158.
-    const block: RenderPlaceholder[] = [photo({ label: 'p', x_mm: 160, width_mm: 40 })];
-    const out = resolvePlaceholdersForSide(block, 'left', 'page-any', PAGE_W, 10);
-    expect(out[0].x_mm).toBe(158);
-    expect(out[0].x_mm + out[0].width_mm).toBe(PAGE_W - 10);
-  });
-
-  it('правая: блок ДАЛЬШЕ отступа → НЕ двигаем', () => {
-    // x=120, зазор слева (от 0) = 120 > 10 → не трогаем.
+  it('правая: блок центрируется по странице', () => {
     const block: RenderPlaceholder[] = [photo({ label: 'p', x_mm: 120, width_mm: 40 })];
     const out = resolvePlaceholdersForSide(block, 'right', 'page-any', PAGE_W, 10);
-    expect(out[0].x_mm).toBe(120);
+    expect(out[0].x_mm).toBe(84);
   });
 
-  it('правая: блок ВПРИТЫК к корешку → отодвигаем до отступа', () => {
-    // x=4, зазор слева = 4 < 10 → сдвиг вправо на 6 → x=10.
-    const block: RenderPlaceholder[] = [photo({ label: 'p', x_mm: 4, width_mm: 40 })];
-    const out = resolvePlaceholdersForSide(block, 'right', 'page-any', PAGE_W, 10);
-    expect(out[0].x_mm).toBe(10);
+  it('коллаж, нарисованный у корешка, на правой странице центрируется (не жмётся к внешнему краю)', () => {
+    // Реальный кейс «Аква меч»: блок x=24..202 (ширина 178), нарисован у правого
+    // края. На правой странице центрируется: (208-178)/2 = 15 → x=15, не у края.
+    const collage: RenderPlaceholder[] = [photo({ label: 'c', x_mm: 24, width_mm: 178 })];
+    const out = resolvePlaceholdersForSide(collage, 'right', 'page-any', PAGE_W, 10);
+    expect(out[0].x_mm).toBe(15);
+    expect(out[0].x_mm + out[0].width_mm).toBe(193); // не прижат к 208
   });
 
   it('применяется и к page-left/page-right (не только page-any)', () => {
-    // Левая, блок впритык (x=160..200, зазор 8<12) → правый край = 208-12=196.
     const l = resolvePlaceholdersForSide(
-      [photo({ label: 'p', x_mm: 160, width_mm: 40 })], 'left', 'page-right', PAGE_W, 12,
+      [photo({ label: 'p', x_mm: 120, width_mm: 40 })], 'left', 'page-right', PAGE_W, 12,
     );
-    expect(l[0].x_mm + l[0].width_mm).toBe(PAGE_W - 12);
-    // Правая, блок впритык (x=4, зазор 4<12) → левый край = 12.
+    expect(l[0].x_mm).toBe(84); // центр
     const r = resolvePlaceholdersForSide(
       [photo({ label: 'p', x_mm: 4, width_mm: 40 })], 'right', 'page-left', PAGE_W, 12,
     );
-    expect(r[0].x_mm).toBe(12);
+    expect(r[0].x_mm).toBe(84); // центр
   });
 
   it('spread-мастер НЕ трогается даже при заданном spineMargin', () => {
@@ -276,38 +267,39 @@ describe('resolvePlaceholdersForSide — модель «поля» (spineMarginM
     expect(out).toBe(block);
   });
 
-  it('кламп: широкий блок впритык не уезжает за внешний край', () => {
-    // Блок шириной 200 (x=4..204) при W=208, S=20: зазор справа 4<20 → сдвиг
-    // влево на 16 → левый = -12 → кламп возвращает левый к 0.
+  it('очень широкий блок: гарантирован минимум у корешка + кламп по внешнему краю', () => {
+    // Ширина 200 при W=208, S=20: центр дал бы зазор 4<20 у корешка. Слева
+    // (корешок справа) сдвигаем к внешнему: правый край = 208-20=188 → левый −12
+    // → кламп к 0.
     const wide: RenderPlaceholder[] = [photo({ label: 'w', x_mm: 4, width_mm: 200 })];
     const out = resolvePlaceholdersForSide(wide, 'left', 'page-any', PAGE_W, 20);
     expect(out[0].x_mm).toBe(0); // прижат к внешнему краю, не за него
   });
 
-  it('порядок ячеек 1→N сохраняется (чистый перенос) при сдвиге', () => {
-    // Блок впритык слева (x=4..79) → сдвиг вправо до отступа 8.
+  it('порядок ячеек 1→N сохраняется при центрировании', () => {
+    // Блок x=120..204 (ширина 84) → центр: (208-84)/2 = 62, сдвиг −58.
     const two: RenderPlaceholder[] = [
-      photo({ label: 's1', x_mm: 4, width_mm: 35 }),
-      photo({ label: 's2', x_mm: 44, width_mm: 35 }),
+      photo({ label: 's1', x_mm: 120, width_mm: 40 }),
+      photo({ label: 's2', x_mm: 164, width_mm: 40 }),
     ];
     const out = resolvePlaceholdersForSide(two, 'right', 'page-any', PAGE_W, 8);
     const s1 = out.find((p) => p.label === 's1')!;
     const s2 = out.find((p) => p.label === 's2')!;
     expect(s1.x_mm).toBeLessThan(s2.x_mm);
-    expect(s1.x_mm).toBe(8); // левый край блока сдвинут до отступа
+    expect(s1.x_mm).toBe(62); // левый край блока в центре
   });
 
-  it('привязанный декор едет вместе с блоком (offset сохранён) при сдвиге', () => {
-    // Блок впритык слева (slot x=4) → сдвиг вправо на 6.
+  it('привязанный декор едет вместе с блоком (offset сохранён) при центрировании', () => {
+    // Слот x=120..160 (ширина 40) → центр 84, сдвиг −36.
     const input: RenderPlaceholder[] = [
-      photo({ label: 'studentname_1', x_mm: 4, width_mm: 40 }),
-      decor({ label: '__under_1', x_mm: 4, width_mm: 44, attached_to: 'studentname_1', offset_x_mm: 0, offset_y_mm: 1 }),
+      photo({ label: 'studentname_1', x_mm: 120, width_mm: 40 }),
+      decor({ label: '__under_1', x_mm: 120, width_mm: 44, attached_to: 'studentname_1', offset_x_mm: 0, offset_y_mm: 1 }),
     ];
     const out = resolvePlaceholdersForSide(input, 'right', 'page-any', PAGE_W, 10);
     const base = out.find((p) => p.label === 'studentname_1')!;
     const d = out.find((p) => p.label === '__under_1') as DecorationPlaceholder;
-    expect(base.x_mm).toBe(10);
-    expect(d.x_mm).toBe(10); // тот же сдвиг
+    expect(base.x_mm).toBe(84);
+    expect(d.x_mm).toBe(84); // тот же сдвиг
     expect(d.offset_x_mm).toBe(0); // offset не сломан
   });
 
