@@ -41,6 +41,7 @@ import {
   type AlbumTextStyleOverrides,
 } from '@/lib/text-style'
 import { remapData } from '@/lib/template-replace'
+import { confirmDestructive } from '@/lib/impersonation-client'
 import WarningsPill, {
   type EnrichedWarning,
 } from './_components/WarningsPill'
@@ -1289,7 +1290,7 @@ function LayoutEditorPageInner({
     )
     const label = template?.name ?? `Разворот`
     if (
-      !confirm(
+      !confirmDestructive(
         `Удалить разворот «${label}»?\n\nЕго содержимое (фото и текст) будет потеряно — это действие можно отменить через Ctrl+Z.`,
       )
     ) {
@@ -1400,7 +1401,7 @@ function LayoutEditorPageInner({
         stats.lostLabels.length > 0
           ? ` (${stats.lostLabels.slice(0, 5).join(', ')}${stats.lostLabels.length > 5 ? '…' : ''})`
           : ''
-      const ok = confirm(
+      const ok = confirmDestructive(
         `При смене мастера ${stats.lost} ${word} в новый шаблон${labelsHint}.\n\n` +
           `Это можно отменить через Ctrl+Z. Заменить?`,
       )

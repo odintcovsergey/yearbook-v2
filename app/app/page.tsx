@@ -37,6 +37,7 @@ import {
 import CRMModal from './CRMModal'
 import IdeasModal from './_components/IdeasModal'
 import { ThemeToggle } from './_components/ThemeToggle'
+import { confirmDestructive } from '@/lib/impersonation-client'
 // РЭ.21.7.3: drag-and-drop секций в редакторе пресета.
 import {
   DndContext,
@@ -2142,7 +2143,7 @@ function AlbumDetailModal({
     // после save_album_layout (2.5) и сбрасывается в false после
     // build_album (2.1).
     if (layout?.has_user_edits) {
-      const ok = window.confirm(
+      const ok = confirmDestructive(
         'У вас есть ручные правки в редакторе. Пересборка их сотрёт. Продолжить?'
       )
       if (!ok) return
@@ -2230,7 +2231,7 @@ function AlbumDetailModal({
   }
 
   const handleReset = async (child: Child) => {
-    if (!confirm(`Сбросить выбор у «${child.full_name}»? Все выбранные фото и контакты будут удалены.`)) return
+    if (!confirmDestructive(`Сбросить выбор у «${child.full_name}»? Все выбранные фото и контакты будут удалены.`)) return
     setBusy(true)
     const r = await api('/api/tenant', {
       method: 'POST',
@@ -2248,7 +2249,7 @@ function AlbumDetailModal({
   }
 
   const handleDelete = async (child: Child) => {
-    if (!confirm(`Полностью удалить «${child.full_name}»? Это действие необратимо.`)) return
+    if (!confirmDestructive(`Полностью удалить «${child.full_name}»? Это действие необратимо.`)) return
     setBusy(true)
     const r = await api('/api/tenant', {
       method: 'POST',
@@ -5341,7 +5342,7 @@ function TeachersTab({
 
   const handleDelete = async (t: Teacher) => {
     const name = t.full_name || 'учителя без имени'
-    if (!confirm(`Удалить «${name}»?`)) return
+    if (!confirmDestructive(`Удалить «${name}»?`)) return
     setBusy(true)
     const r = await api('/api/tenant', {
       method: 'POST',
@@ -5673,7 +5674,7 @@ function ResponsibleTab({
 
   const handleDelete = async () => {
     if (!responsible) return
-    if (!confirm('Удалить ответственного родителя? Его ссылка перестанет работать. Данные учителей сохранятся.')) return
+    if (!confirmDestructive('Удалить ответственного родителя? Его ссылка перестанет работать. Данные учителей сохранятся.')) return
     setBusy(true)
     const r = await api('/api/tenant', {
       method: 'POST',
@@ -6271,7 +6272,7 @@ function PhotosTab({
   }
 
   const deletePhoto = async (photo: Photo) => {
-    if (!confirm(`Удалить фото «${photo.filename}»?\n\nБудет удалено из всех выборов учеников. Если его уже выбрали — таких учеников вернут в статус «В процессе».`)) return
+    if (!confirmDestructive(`Удалить фото «${photo.filename}»?\n\nБудет удалено из всех выборов учеников. Если его уже выбрали — таких учеников вернут в статус «В процессе».`)) return
     const r = await api('/api/tenant', {
       method: 'POST',
       body: JSON.stringify({ action: 'delete_photo', photo_id: photo.id }),
@@ -6417,7 +6418,7 @@ function PhotosTab({
       if (unmatched.length > 0) {
         const preview = unmatched.slice(0, 5).join(', ')
         const more = unmatched.length > 5 ? `, и ещё ${unmatched.length - 5}` : ''
-        if (!confirm(
+        if (!confirmDestructive(
           `Найдено ${matched.length} совпадений из ${files.length} файлов.\n\n` +
           `Не совпали (будут пропущены): ${preview}${more}\n\n` +
           `Продолжить?`,
@@ -7193,7 +7194,7 @@ function LeadsModal({
   }
 
   const deleteLead = async (lead: Lead) => {
-    if (!confirm(`Удалить заявку от ${lead.name}?\n\nЭто действие нельзя отменить.`)) return
+    if (!confirmDestructive(`Удалить заявку от ${lead.name}?\n\nЭто действие нельзя отменить.`)) return
     const r = await api('/api/tenant', {
       method: 'POST',
       body: JSON.stringify({ action: 'delete_lead', id: lead.id }),
@@ -7470,7 +7471,7 @@ function QuotesModal({
   const deleteQuote = async (q: Quote, force = false) => {
     if (!force) {
       const txt = q.text.length > 60 ? q.text.slice(0, 60) + '...' : q.text
-      if (!confirm(`Удалить цитату «${txt}»?`)) return
+      if (!confirmDestructive(`Удалить цитату «${txt}»?`)) return
     }
 
     const r = await api('/api/tenant', {
@@ -7489,7 +7490,7 @@ function QuotesModal({
     } else {
       const d = await r.json().catch(() => ({}))
       if (d.requires_force) {
-        if (confirm(`${d.error}\n\nПродолжить?`)) {
+        if (confirmDestructive(`${d.error}\n\nПродолжить?`)) {
           await deleteQuote(q, true)
         }
       } else {
@@ -8142,7 +8143,7 @@ function TeamModal({
   }
 
   const revokeInvitation = async (inv: Invitation) => {
-    if (!confirm(`Отозвать приглашение для ${inv.email}?`)) return
+    if (!confirmDestructive(`Отозвать приглашение для ${inv.email}?`)) return
     const r = await api('/api/tenant', {
       method: 'POST',
       body: JSON.stringify({ action: 'revoke_invitation', id: inv.id }),
@@ -8175,7 +8176,7 @@ function TeamModal({
   }
 
   const removeUser = async (u: TeamUser) => {
-    if (!confirm(`Удалить ${u.full_name || u.email} из команды?\n\nДоступ будет отозван немедленно. Это действие нельзя отменить.`)) return
+    if (!confirmDestructive(`Удалить ${u.full_name || u.email} из команды?\n\nДоступ будет отозван немедленно. Это действие нельзя отменить.`)) return
     const r = await api('/api/tenant', {
       method: 'POST',
       body: JSON.stringify({ action: 'remove_user', user_id: u.id }),
@@ -8729,7 +8730,7 @@ function SettingsModal({
   }
 
   const deleteLogo = async () => {
-    if (!confirm('Удалить логотип?')) return
+    if (!confirmDestructive('Удалить логотип?')) return
     const r = await api('/api/tenant', {
       method: 'POST',
       body: JSON.stringify({ action: 'update_branding', logo_url: null }),
@@ -9453,7 +9454,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
   }
 
   const handleSubmit = async () => {
-    if (!confirm('Передать альбом в OkeyBook на вёрстку? После этого отбор будет завершён.')) return
+    if (!confirmDestructive('Передать альбом в OkeyBook на вёрстку? После этого отбор будет завершён.')) return
     setSubmitting(true)
     const res = await post({ action: 'submit', album_id: (album as any).id })
     if (res.album) {
@@ -9478,7 +9479,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
     const confirmText = isFromInProduction
       ? 'Снять альбом с работы и вернуть в статус "Передан"?\n\nВНИМАНИЕ: вёрстка уже могла начаться. Действие изменит статус, но не отменит проделанную работу.'
       : 'Отменить передачу альбома в OkeyBook и вернуть в работу?\n\nЭтого делать обычно не нужно — но если передали по ошибке или нашли неточность в данных, можно вернуть.'
-    if (!confirm(confirmText)) return
+    if (!confirmDestructive(confirmText)) return
 
     const res = await post({ action: 'unsubmit', album_id: (album as any).id })
     if (res.album) {
@@ -9519,7 +9520,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
   }
 
   const handleDeleteOriginal = async (fileId: string) => {
-    if (!confirm('Удалить файл?')) return
+    if (!confirmDestructive('Удалить файл?')) return
     await post({ action: 'delete_original', album_id: (album as any).id, file_id: fileId })
     onOriginalsUpdate(originals.filter(o => o.id !== fileId))
   }
@@ -9829,7 +9830,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
   }
 
   const handleDiscardRetouched = async (storage_path: string) => {
-    if (!confirm('Удалить этот файл из системы?')) return
+    if (!confirmDestructive('Удалить этот файл из системы?')) return
     setRebindingPaths((prev) => new Set(prev).add(storage_path))
     try {
       const res = await fetch('/api/workflow', {

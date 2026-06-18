@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useState, useCallback } from 'react'
+import { setImpersonationPartner } from '@/lib/impersonation-client'
 
 interface ImpState {
   impersonating: boolean
@@ -35,19 +36,24 @@ export function ImpersonationBanner() {
         })
         res = await fetch('/api/auth', { credentials: 'include' })
       }
-      if (!res.ok) { setState(null); return }
+      if (!res.ok) { setState(null); setImpersonationPartner(null); return }
       const d = await res.json()
       if (d?.impersonating) {
+        const partnerName = d.tenant?.name ?? 'партнёр'
         setState({
           impersonating: true,
-          partnerName: d.tenant?.name ?? 'партнёр',
+          partnerName,
           managerName: d.actingUser?.full_name ?? 'менеджер',
         })
+        // делимся состоянием с confirmDestructive (доп-стоп на удаление)
+        setImpersonationPartner(partnerName)
       } else {
         setState(null)
+        setImpersonationPartner(null)
       }
     } catch {
       setState(null)
+      setImpersonationPartner(null)
     }
   }, [])
 
