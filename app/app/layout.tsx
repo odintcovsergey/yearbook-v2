@@ -8,6 +8,7 @@
  */
 
 import { ThemeProvider } from './_components/ThemeProvider'
+import { ImpersonationBanner } from './_components/ImpersonationBanner'
 
 const themeInitScript = `
 (function(){try{
@@ -21,7 +22,10 @@ export default function CabinetLayout({ children }: { children: React.ReactNode 
   return (
     <>
       <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-      <ThemeProvider>{children}</ThemeProvider>
+      <ThemeProvider>
+        <ImpersonationBanner />
+        {children}
+      </ThemeProvider>
     </>
   )
 }

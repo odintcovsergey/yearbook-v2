@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { serverError } from '@/lib/api-error'
 import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
-import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, type AuthContext } from '@/lib/auth'
+import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, createImpersonationToken, setImpersonationCookie, clearImpersonationCookie, type AuthContext } from '@/lib/auth'
 import { ycUpload, ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
 import { renderPreviewSvg } from '@/lib/album-builder/render-preview-svg'
 import { resolveAlbumEffectivePrintType } from '@/lib/album-builder'
@@ -18,6 +18,13 @@ export const revalidate = 0
 // view_as из URL попадает в строковые фильтры PostgREST (.or(`tenant_id.eq.${tid}`)),
 // поэтому значение обязано быть валидным UUID — иначе фильтр-инъекция (G1).
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// IP клиента для аудита (impersonation-события).
+function clientIp(req: NextRequest): string {
+  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || req.headers.get('x-real-ip')
+    || 'unknown'
+}
 
 // ============================================================
 // Хелпер: проверка, что альбом принадлежит tenant'у
@@ -2629,6 +2636,100 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
+
+  // ----------------------------------------------------------
+  // impersonate_start — «вход в кабинет партнёра как партнёр».
+  // Только сотрудник OkeyBook (owner/manager тенанта slug='main' или
+  // superadmin) и только по партнёру из своего partners_list. Выдаёт imp_token
+  // (отдельный cookie) с партнёрским контекстом; auth_token менеджера не трогаем.
+  // ----------------------------------------------------------
+  if (body.action === 'impersonate_start') {
+    // Нельзя начинать imp из режима партнёра (вложенная импесонизация).
+    if (auth.impersonating) {
+      return NextResponse.json({ error: 'Вы уже в кабинете партнёра' }, { status: 403 })
+    }
+    if (auth.role !== 'owner' && auth.role !== 'manager' && auth.role !== 'superadmin') {
+      return NextResponse.json({ error: 'Недостаточно прав' }, { status: 403 })
+    }
+
+    // Проверяем, что менеджер принадлежит главному тенанту OkeyBook (slug='main').
+    const { data: myTenant } = await supabaseAdmin
+      .from('tenants').select('slug').eq('id', auth.tenantId).single()
+    const isStaff = myTenant?.slug === 'main' || auth.role === 'superadmin'
+    if (!isStaff) {
+      return NextResponse.json({ error: 'Только сотрудники OkeyBook могут входить в кабинет партнёра' }, { status: 403 })
+    }
+
+    const partnerTenantId = String(body.partner_tenant_id ?? '')
+    if (!UUID_REGEX.test(partnerTenantId)) {
+      return NextResponse.json({ error: 'Неверный partner_tenant_id' }, { status: 400 })
+    }
+
+    // Партнёр должен быть активен, не главный тенант, и (для не-superadmin)
+    // назначен этому менеджеру — ровно как в partners_list.
+    const { data: partner } = await supabaseAdmin
+      .from('tenants')
+      .select('id, name, slug, is_active, assigned_manager_id')
+      .eq('id', partnerTenantId)
+      .single()
+    if (!partner || !partner.is_active || partner.slug === 'main') {
+      return NextResponse.json({ error: 'Партнёр недоступен' }, { status: 403 })
+    }
+    if (auth.role !== 'superadmin' && partner.assigned_manager_id !== auth.userId) {
+      return NextResponse.json({ error: 'Этот партнёр не закреплён за вами' }, { status: 403 })
+    }
+
+    // Ищем владельца партнёрского тенанта (его uid кладём в imp-токен).
+    // Приоритет — активный owner; фолбэк — любой активный пользователь тенанта.
+    let { data: ownerUser } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('tenant_id', partnerTenantId)
+      .eq('role', 'owner')
+      .eq('is_active', true)
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (!ownerUser) {
+      const { data: anyUser } = await supabaseAdmin
+        .from('users')
+        .select('id')
+        .eq('tenant_id', partnerTenantId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      ownerUser = anyUser
+    }
+    if (!ownerUser) {
+      return NextResponse.json({ error: 'У партнёра нет активных пользователей' }, { status: 409 })
+    }
+
+    const impToken = await createImpersonationToken(auth.userId!, partnerTenantId, (ownerUser as { id: string }).id)
+
+    // Лог входа: actor=менеджер (текущий auth — менеджерский), target=партнёр.
+    await logAction(auth, 'impersonate_start', 'tenant', partnerTenantId, {
+      partner_name: partner.name,
+      partner_owner_id: (ownerUser as { id: string }).id,
+    }, clientIp(req))
+
+    const response = NextResponse.json({ ok: true, partner: { id: partner.id, name: partner.name } })
+    return setImpersonationCookie(response, impToken)
+  }
+
+  // ----------------------------------------------------------
+  // impersonate_stop — выйти из кабинета партнёра. Удаляет imp_token →
+  // getAuth снова берёт менеджерский auth_token.
+  // ----------------------------------------------------------
+  if (body.action === 'impersonate_stop') {
+    if (auth.impersonating) {
+      // auth здесь — партнёрский контекст: user_id=владелец партнёра,
+      // acting_user_id=менеджер, tenant_id=партнёр (logAction проставит сам).
+      await logAction(auth, 'impersonate_stop', 'tenant', auth.tenantId, {}, clientIp(req))
+    }
+    const response = NextResponse.json({ ok: true })
+    return clearImpersonationCookie(response)
+  }
 
   // ----------------------------------------------------------
   // rule_preset_create (РЭ.21.4) — создание нового пресета rule engine.
