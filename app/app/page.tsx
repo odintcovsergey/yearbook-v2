@@ -3135,8 +3135,9 @@ type FormData = {
   cover_layout_mode: string | null   // 'fixed'|'default_editable'|'parent_choice'|null
   cover_default_type: string | null  // 'portrait_photo'|'common_photo'|'design_only'|null
   cover_available_ids: string[]      // какие обложки показывать родителю
-  print_preset_id: string | null     // пресет печати (расчёт корешка)
-  sheet_type_id: string | null       // тип листа внутри пресета
+  print_preset_id: string | null     // legacy пресет печати (не используется для корешка)
+  printer_id: string | null          // типография (расчёт корешка по диапазонам)
+  sheet_type_id: string | null       // тип листа внутри типографии
 }
 
 const textTypeOptions = [
@@ -3208,6 +3209,7 @@ function emptyForm(): FormData {
     cover_default_type: null,
     cover_available_ids: [],
     print_preset_id: null,
+    printer_id: null,
     sheet_type_id: null,
   }
 }
@@ -3339,6 +3341,7 @@ function AlbumFormModal({
         cover_default_type: (album as any).cover_default_type ?? null,
         cover_available_ids: (album as any).cover_available_ids ?? [],
         print_preset_id: (album as any).print_preset_id ?? null,
+        printer_id: (album as any).printer_id ?? null,
         sheet_type_id: (album as any).sheet_type_id ?? null,
       }
     }
@@ -3375,9 +3378,10 @@ function AlbumFormModal({
   // Показывать ли дизайнерские (глобальные) обложки в выборе, помимо родных
   // обложек дизайна заказа. По умолчанию только родные.
   const [showDesignerCovers, setShowDesignerCovers] = useState(false)
-  const [printPresets, setPrintPresets] = useState<Array<{
+  // Типографии (расчёт корешка по диапазонам): id, name, config.sheet_types.
+  const [printers, setPrinters] = useState<Array<{
     id: string; name: string
-    print_spec: { sheet_types?: Array<{ id: string; label: string }> } | null
+    config: { sheet_types?: Array<{ id: string; name: string }> } | null
   }>>([])
   // Превью собранной обложки на альбом (edit mode).
   const [coverPreviewOpen, setCoverPreviewOpen] = useState(false)
@@ -3421,12 +3425,12 @@ function AlbumFormModal({
       .catch(() => setCoverLibrary([]))
   }, [form.template_set_id, showDesignerCovers])
 
-  // Пресеты печати (для расчёта корешка) — один раз.
+  // Типографии (для расчёта корешка) — один раз.
   useEffect(() => {
-    api('/api/tenant?action=print_presets_list')
-      .then(r => r.ok ? r.json() : { presets: [] })
-      .then(d => setPrintPresets(d.presets ?? []))
-      .catch(() => setPrintPresets([]))
+    api('/api/tenant?action=printers_list')
+      .then(r => r.ok ? r.json() : { printers: [] })
+      .then(d => setPrinters(d.printers ?? []))
+      .catch(() => setPrinters([]))
   }, [])
 
   // Загрузить превью собранной обложки на текущий альбом (edit).
@@ -3436,6 +3440,21 @@ function AlbumFormModal({
     setCoverPreviewLoading(true)
     setCoverPreviewData(null)
     try {
+      // Превью читает СОХРАНЁННЫЙ заказ. Сначала сохраняем текущие настройки
+      // обложки/типографии, чтобы свежий выбор был виден в превью.
+      await api('/api/tenant', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'update_album',
+          album_id: album.id,
+          cover_portrait_charge: form.cover_portrait_charge,
+          cover_layout_mode: form.cover_layout_mode,
+          cover_default_type: form.cover_default_type,
+          cover_available_ids: form.cover_available_ids,
+          printer_id: form.printer_id,
+          sheet_type_id: form.sheet_type_id,
+        }),
+      })
       const r = await api(`/api/tenant?action=cover_album_preview&album_id=${album.id}`)
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
@@ -3606,6 +3625,7 @@ function AlbumFormModal({
       cover_default_type: form.cover_default_type,
       cover_available_ids: form.cover_available_ids,
       print_preset_id: form.print_preset_id,
+      printer_id: form.printer_id,
       sheet_type_id: form.sheet_type_id,
       group_enabled: form.group_enabled,
       group_min: parseInt(form.group_min) || 0,
@@ -3777,7 +3797,7 @@ function AlbumFormModal({
                 <div className="text-sm text-muted-foreground mb-3">
                   Корешок: {coverPreviewData.spine_width_mm != null
                     ? `${coverPreviewData.spine_width_mm.toFixed(1)} мм`
-                    : 'не посчитан (нет пресета печати или сохранённого макета альбома)'}
+                    : 'не посчитан (нет типографии, диапазона или сохранённого макета альбома)'}
                 </div>
                 {coverPreviewData.warnings.length > 0 && (
                   <div className="card p-3 bg-amber-50 border-amber-200 text-xs text-amber-800 mb-3">
@@ -4179,31 +4199,31 @@ function AlbumFormModal({
                   </div>
                 )}
 
-                <label className="block text-xs text-muted-foreground mb-1">Пресет печати (для расчёта корешка)</label>
+                <label className="block text-xs text-muted-foreground mb-1">Типография (для расчёта корешка)</label>
                 <select
-                  value={form.print_preset_id ?? ''}
+                  value={form.printer_id ?? ''}
                   disabled={loading}
                   onChange={(e) => {
-                    set('print_preset_id', e.target.value || null)
+                    set('printer_id', e.target.value || null)
                     set('sheet_type_id', null)
                   }}
                   className="input mb-2"
                 >
-                  <option value="">Не выбран</option>
-                  {printPresets.map((p) => (
+                  <option value="">Не выбрана</option>
+                  {printers.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
-                {printPresets.length === 0 && (
+                {printers.length === 0 && (
                   <div className="text-xs text-muted-foreground mb-2">
-                    Пресетов печати пока нет (нужны параметры корешка в пресете).
+                    Типографий пока нет — добавь в супер-админке (раздел «Печать»).
                   </div>
                 )}
 
                 {(() => {
-                  const preset = printPresets.find((p) => p.id === form.print_preset_id)
-                  const sheets = preset?.print_spec?.sheet_types ?? []
-                  if (!form.print_preset_id || sheets.length === 0) return null
+                  const printer = printers.find((p) => p.id === form.printer_id)
+                  const sheets = printer?.config?.sheet_types ?? []
+                  if (!form.printer_id || sheets.length === 0) return null
                   return (
                     <select
                       value={form.sheet_type_id ?? ''}
@@ -4213,7 +4233,7 @@ function AlbumFormModal({
                     >
                       <option value="">Тип листа по умолчанию</option>
                       {sheets.map((s) => (
-                        <option key={s.id} value={s.id}>{s.label}</option>
+                        <option key={s.id} value={s.id}>{s.name}</option>
                       ))}
                     </select>
                   )
@@ -4230,7 +4250,7 @@ function AlbumFormModal({
                       <Eye size={16} /> Превью обложки
                     </button>
                     <div className="text-xs text-muted-foreground mt-1">
-                      Соберёт обложку с реальными ФИО/городом/годом и посчитанным корешком.
+                      Сохранит настройки обложки и соберёт превью с реальными ФИО/городом/годом и корешком.
                     </div>
                   </div>
                 )}

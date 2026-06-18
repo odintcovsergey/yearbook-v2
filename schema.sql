@@ -144,6 +144,23 @@ alter table cover_selections enable row level security;
 alter table photo_locks enable row level security;
 
 -- ============================================================
+-- ТИПОГРАФИИ (printers) — типы листов + диапазоны корешка.
+-- (ТЗ tz-printer-entity). config расширяется параметрами печати при экспорте.
+-- ============================================================
+create table if not exists printers (
+  id         uuid primary key default gen_random_uuid(),
+  tenant_id  uuid references tenants(id) on delete cascade,  -- NULL = глобальная
+  is_global  boolean not null default true,
+  name       text not null,
+  config     jsonb not null default '{"sheet_types":[]}'::jsonb,
+  created_at timestamptz default now()
+);
+create index if not exists idx_printers_tenant on printers(tenant_id);
+
+alter table albums
+  add column if not exists printer_id uuid references printers(id) on delete set null;
+
+-- ============================================================
 -- STORAGE — создайте bucket "photos" вручную в Supabase UI
 -- Storage → New bucket → name: photos → Public: YES
 -- ============================================================

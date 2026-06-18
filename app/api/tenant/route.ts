@@ -1210,6 +1210,21 @@ export async function GET(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
+  // printers_list — типографии (глобальные + свои) для блока «Печать» в заказе.
+  // Отдаёт config (типы листов + диапазоны корешка), чтобы UI показал выбор
+  // типа листа и посчитал корешок. (ТЗ tz-printer-entity).
+  // ----------------------------------------------------------
+  if (action === 'printers_list') {
+    let q = supabaseAdmin.from('printers').select('id, name, config, tenant_id, is_global')
+    q = tid ? q.or(`tenant_id.is.null,tenant_id.eq.${tid}`) : q.is('tenant_id', null)
+    const { data, error } = await q.order('name')
+    if (error) {
+      return serverError(error, 'tenant')
+    }
+    return NextResponse.json({ printers: data ?? [] })
+  }
+
+  // ----------------------------------------------------------
   // rule_presets_list (РЭ.21.3) — список пресетов из таблицы `presets`.
   // Раньше использовалось только rule engine'ом (движок 2, удалён в
   // РЭ.21.8.чистка-1). Теперь это общая таблица для section_structure
@@ -4557,6 +4572,7 @@ export async function POST(req: NextRequest) {
         cover_default_type: body.cover_default_type ?? null,
         cover_available_ids: Array.isArray(body.cover_available_ids) ? body.cover_available_ids : [],
         print_preset_id: body.print_preset_id ?? null,
+        printer_id: body.printer_id ?? null,
         sheet_type_id: body.sheet_type_id ?? null,
         deadline: body.deadline ?? null,
         group_enabled: body.group_enabled ?? true,
@@ -5402,8 +5418,9 @@ export async function POST(req: NextRequest) {
       'cover_layout_mode',     // 'fixed'|'default_editable'|'parent_choice'|null
       'cover_default_type',    // 'portrait_photo'|'common_photo'|'design_only'|null
       'cover_available_ids',   // uuid[] — какие обложки показывать родителю
-      'print_preset_id',       // uuid|null — пресет печати (расчёт корешка)
-      'sheet_type_id',         // string|null — тип листа внутри пресета
+      'print_preset_id',       // uuid|null — legacy пресет печати (не используется для корешка)
+      'printer_id',            // uuid|null — типография (расчёт корешка по диапазонам)
+      'sheet_type_id',         // string|null — тип листа внутри типографии
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowedFields) {

@@ -17,7 +17,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import {
   Building2, Camera, Rocket, Ruler, LayoutGrid, LayoutTemplate,
-  Gift, BookImage, Lightbulb, LogOut, PanelLeftClose, PanelLeftOpen, Menu, X,
+  Gift, BookImage, Lightbulb, Printer, LogOut, PanelLeftClose, PanelLeftOpen, Menu, X,
 } from 'lucide-react'
 import { ThemeToggle } from '../../app/_components/ThemeToggle'
 import {
@@ -38,6 +38,7 @@ const ITEMS: Item[] = [
   { kind: 'route', key: 'presets', label: 'Пресеты', icon: LayoutTemplate, href: '/super/presets' },
   { kind: 'route', key: 'referrals', label: 'Реферальные программы', icon: Gift, href: '/super/referral-programs' },
   { kind: 'route', key: 'covers', label: 'Обложки', icon: BookImage, href: '/super/covers' },
+  { kind: 'route', key: 'printers', label: 'Печать', icon: Printer, href: '/super/printers' },
   { kind: 'route', key: 'ideas', label: 'Идеи', icon: Lightbulb, href: '/super/ideas', badge: 'ideasPending' },
 ]
 
