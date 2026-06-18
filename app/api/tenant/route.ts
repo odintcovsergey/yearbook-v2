@@ -1156,18 +1156,35 @@ export async function GET(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
-  // covers_list (Этап 7 ТЗ обложки) — опубликованные обложки для блока
-  // «Обложка» в форме заказа: глобальные + свои. Только для выбора партнёром
-  // (какие показывать родителю). Возвращает лёгкие поля (без placeholders).
+  // covers_list — опубликованные обложки для блока «Обложка» в форме заказа.
+  // Область: РОДНЫЕ обложки дизайна заказа (template_set_id) + по флагу
+  // include_global ещё и дизайнерские (is_global). Всё в рамках видимости
+  // тенанта (свои или глобальные). Лёгкие поля (без placeholders).
   // ----------------------------------------------------------
   if (action === 'covers_list') {
-    const { data, error } = await supabaseAdmin
+    const tsRaw = req.nextUrl.searchParams.get('template_set_id')
+    const tsId = tsRaw && UUID_REGEX.test(tsRaw) ? tsRaw : null
+    const includeGlobal = req.nextUrl.searchParams.get('include_global') === 'true'
+
+    let q = supabaseAdmin
       .from('covers')
       .select('id, name, cover_type, gender_hint, variant_label, is_global, tenant_id, template_set_id')
       .eq('is_published', true)
-      .or(`tenant_id.is.null,tenant_id.eq.${tid}`)
-      .order('cover_type')
-      .order('name')
+
+    // Фильтр области: родные дизайна (+ глобальные по флагу).
+    if (tsId) {
+      q = includeGlobal
+        ? q.or(`template_set_id.eq.${tsId},is_global.eq.true`)
+        : q.eq('template_set_id', tsId)
+    } else {
+      // Дизайн не выбран — показываем только дизайнерскую библиотеку (по флагу).
+      q = includeGlobal ? q.eq('is_global', true) : q.eq('template_set_id', '00000000-0000-0000-0000-000000000000')
+    }
+
+    // Видимость по тенанту: свои или глобальные.
+    q = q.or(`tenant_id.is.null,tenant_id.eq.${tid}`).order('cover_type').order('name')
+
+    const { data, error } = await q
     if (error) {
       return serverError(error, 'tenant')
     }

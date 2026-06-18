@@ -42,7 +42,6 @@ describe('pageRoleToCategory', () => {
     ['student_overflow_right', 'student_grid'],
     ['common', 'common'],
     ['final', 'final'],
-    ['cover', 'cover'],
   ];
 
   it.each(cases)('%s → %s', (role, category) => {
@@ -54,7 +53,14 @@ describe('pageRoleToCategory', () => {
     expect(pageRoleToCategory(undefined)).toBeNull();
   });
 
-  it('все 15 ролей покрыты (каждая даёт категорию из канона)', () => {
+  // Обложка больше не идёт через категорийную ротацию: фон живёт при обложке
+  // (covers.background_url). cover → null (fallback), нет секции в панели фонов.
+  it('cover → null (фон обложки хранится при обложке, не в категориях)', () => {
+    expect(pageRoleToCategory('cover')).toBeNull();
+    expect(BACKGROUND_CATEGORIES).not.toContain('cover');
+  });
+
+  it('все внутренние роли покрыты (каждая даёт категорию из канона)', () => {
     for (const [role] of cases) {
       const cat = pageRoleToCategory(role);
       expect(cat).not.toBeNull();

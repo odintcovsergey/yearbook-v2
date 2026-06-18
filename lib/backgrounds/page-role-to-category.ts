@@ -21,6 +21,9 @@
 import type { PageRole } from '@/lib/album-builder/types';
 
 /** Канонический порядок категорий — используется UI для секций загрузки. */
+// ВНИМАНИЕ: 'cover' здесь НЕТ намеренно. Фон обложки теперь хранится при самой
+// обложке (covers.background_url), а не списком в дизайне. Поэтому категория
+// «Обложка» убрана из панели фонов дизайна (ТЗ tz-cover-connect-to-order).
 export const BACKGROUND_CATEGORIES = [
   'intro',
   'teacher',
@@ -28,7 +31,6 @@ export const BACKGROUND_CATEGORIES = [
   'student_grid',
   'common',
   'final',
-  'cover',
 ] as const;
 
 export type BackgroundCategory = (typeof BACKGROUND_CATEGORIES)[number];
@@ -41,7 +43,6 @@ export const BACKGROUND_CATEGORY_LABELS: Record<BackgroundCategory, string> = {
   student_grid: 'Сетки / виньетки',
   common: 'Общий раздел',
   final: 'Финал',
-  cover: 'Обложка',
 };
 
 /**
@@ -78,8 +79,10 @@ export function pageRoleToCategory(
     case 'final':
       return 'final';
 
+    // Обложка больше не идёт через категорийную ротацию: фон живёт при обложке
+    // (covers.background_url). Возвращаем null → движок уйдёт в fallback.
     case 'cover':
-      return 'cover';
+      return null;
 
     default:
       return null;
