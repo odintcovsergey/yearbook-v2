@@ -130,6 +130,23 @@ export async function loadAlbumCovers(
     warnings.push('библиотека обложек пуста (covers): нечего назначить');
   }
 
+  // ── 5б. Общее фото класса для обложки: ПОСЛЕДНЕЕ загруженное common_full.
+  // Последнее — потому что первые могли уже уйти в блок альбома, а последнее
+  // ещё свободно. Подставляется авто (общая/учительская обложки); дизайнер
+  // заменит в редакторе. null → нечего подставлять (предупреждение в сводке).
+  let lastCommonPhotoUrl: string | null = null;
+  {
+    const { data: commons } = await supabase
+      .from('photos')
+      .select('storage_path')
+      .eq('album_id', albumId)
+      .eq('type', 'common_full')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const path = (commons?.[0] as { storage_path?: string } | undefined)?.storage_path;
+    if (path) lastCommonPhotoUrl = await getPhotoUrl(path);
+  }
+
   // ── 6. Вход движка ────────────────────────────────────────────────────────
   const students: CoverStudentInput[] = children.map((c) => ({
     child_id: c.id,
@@ -154,8 +171,8 @@ export async function loadAlbumCovers(
     year,
     classes: classes || null,
     spine_text: (a.title as string | null) ?? null,
-    common_photo_url: null,       // общее фото класса — подключим на рендере
-    back_common_photo_url: null,
+    common_photo_url: lastCommonPhotoUrl,       // последнее common_full (авто)
+    back_common_photo_url: lastCommonPhotoUrl,  // задняя — то же общее фото
     back_logo_url: null,
     back_contacts: null,
   };
