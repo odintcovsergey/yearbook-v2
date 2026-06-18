@@ -2,24 +2,16 @@
 
 import { useState, useEffect, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { ThemeToggle } from '../app/_components/ThemeToggle'
 import {
-  Building2,
-  Camera,
-  Rocket,
-  Ruler,
-  LayoutGrid,
-  LayoutTemplate,
-  Gift,
-  BookImage,
   AlertTriangle,
   Check,
   Upload,
   Download,
   Folder,
-  Lightbulb,
-  type LucideIcon,
 } from 'lucide-react'
+import {
+  subscribeSuperTabRequest, setActiveSuperTab, setSuperBadges,
+} from '@/lib/super-nav'
 
 type AuthData = {
   authenticated: boolean
@@ -151,10 +143,17 @@ export default function SuperPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth, superTab])
 
-  const handleLogout = async () => {
-    await api('/api/auth', { method: 'POST', body: JSON.stringify({ action: 'logout' }) })
-    router.push('/login')
-  }
+  // Боковое меню (в layout) переключает вкладки главной через super-nav.
+  useEffect(() => subscribeSuperTabRequest(setSuperTab), [])
+  // Сообщаем меню активную вкладку (для подсветки).
+  useEffect(() => { setActiveSuperTab(superTab) }, [superTab])
+  // Бейджи в меню: новые работы в очереди + идеи на модерации.
+  useEffect(() => {
+    setSuperBadges({
+      queueNew: queue.filter(a => a.workflow_status === 'submitted').length,
+      ideasPending,
+    })
+  }, [queue, ideasPending])
 
   const filtered = tenants.filter(t =>
     !search ||
@@ -173,26 +172,6 @@ export default function SuperPage() {
 
   return (
     <div className="min-h-screen">
-      <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1
-              className="text-xl font-semibold"
-              style={{ fontFamily: 'var(--font-display)' }}
-            >
-              Панель суперадминистратора
-            </h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {auth.user?.full_name} · {auth.user?.email}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <button onClick={handleLogout} className="btn-secondary">Выйти</button>
-          </div>
-        </div>
-      </header>
-
       {msg && (
         <div
           className={`fixed top-20 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg ${
@@ -221,49 +200,6 @@ export default function SuperPage() {
 
         {/* YC Storage widget — фаза В.2 */}
         <YcStorageWidget />
-
-        {/* Таб-бар */}
-        <div className="flex gap-1 mb-6 bg-muted rounded-xl p-1 w-fit">
-          {([
-            { key: 'tenants' as const, label: 'Арендаторы', icon: Building2 },
-            { key: 'partners' as const, label: 'Партнёры', icon: Camera },
-            { key: 'queue' as const, label: `Очередь работ${queue.filter(a => a.workflow_status === 'submitted').length > 0 ? ` · ${queue.filter(a => a.workflow_status === 'submitted').length} новых` : ''}`, icon: Rocket },
-          ] as { key: 'tenants' | 'partners' | 'queue'; label: string; icon: LucideIcon }[]).map(t => (
-            <button key={t.key} onClick={() => setSuperTab(t.key)}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${superTab === t.key ? 'bg-card shadow text-brand-700' : 'text-muted-foreground hover:text-foreground'}`}>
-              <t.icon size={16} /> {t.label}
-            </button>
-          ))}
-          <button onClick={() => router.push('/super/templates')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
-            <Ruler size={16} /> Шаблоны
-          </button>
-          <button onClick={() => router.push('/super/master-catalog')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
-            <LayoutGrid size={16} /> Каталог мастеров
-          </button>
-          <button onClick={() => router.push('/super/presets')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
-            <LayoutTemplate size={16} /> Пресеты
-          </button>
-          <button onClick={() => router.push('/super/referral-programs')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
-            <Gift size={16} /> Реферальные программы
-          </button>
-          <button onClick={() => router.push('/super/covers')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
-            <BookImage size={16} /> Обложки
-          </button>
-          <button onClick={() => router.push('/super/ideas')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all text-muted-foreground hover:text-foreground">
-            <Lightbulb size={16} /> Идеи
-            {ideasPending > 0 && (
-              <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-amber-500 text-white text-xs font-semibold">
-                {ideasPending}
-              </span>
-            )}
-          </button>
-        </div>
 
         {superTab === 'partners' && (
           <PartnersView
