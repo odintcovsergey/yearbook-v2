@@ -6,7 +6,9 @@
  * Анти-FOUC: инлайн-скрипт ставит `.dark` на <html> до рендера. Дефолт — светлая.
  */
 
+import { cookies } from 'next/headers'
 import { ThemeProvider } from '../app/_components/ThemeProvider'
+import { SuperShell } from './_components/SuperShell'
 
 const themeInitScript = `
 (function(){try{
@@ -17,10 +19,13 @@ const themeInitScript = `
 `
 
 export default function SuperLayout({ children }: { children: React.ReactNode }) {
+  const collapsed = cookies().get('super_sidebar_collapsed')?.value === '1'
   return (
     <>
       <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-      <ThemeProvider>{children}</ThemeProvider>
+      <ThemeProvider>
+        <SuperShell initialCollapsed={collapsed}>{children}</SuperShell>
+      </ThemeProvider>
     </>
   )
 }
