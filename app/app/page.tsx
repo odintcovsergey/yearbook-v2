@@ -5,14 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
   Camera,
-  Contact,
-  LayoutTemplate,
   Quote,
-  Users,
   Settings,
   Gift,
-  Ruler,
-  Palette,
   Upload,
   Loader2,
   AlertTriangle,
@@ -32,12 +27,11 @@ import {
   ArrowUp,
   ArrowDown,
   ChevronsUpDown,
-  Lightbulb,
 } from 'lucide-react'
 import CRMModal from './CRMModal'
 import IdeasModal from './_components/IdeasModal'
-import { ThemeToggle } from './_components/ThemeToggle'
 import { confirmDestructive } from '@/lib/impersonation-client'
+import { subscribeModal } from '@/lib/cabinet-nav'
 // РЭ.21.7.3: drag-and-drop секций в редакторе пресета.
 import {
   DndContext,
@@ -273,8 +267,6 @@ export default function AppPage() {
   }
 
   const canEdit = auth?.user?.role === 'owner' || auth?.user?.role === 'manager'
-  const canManageTeam = auth?.user?.role === 'owner'
-  const [isMainTenant, setIsMainTenant] = useState(false)
   const currentUserId = auth?.user?.id ?? null
 
   // Техдолг#4 — Lift originalsProgress в AppPage чтобы:
@@ -343,7 +335,6 @@ export default function AppPage() {
       const d = await r.json()
       setAlbums(d.albums)
       setSummary(d.summary)
-      if (d.isMainTenant !== undefined) setIsMainTenant(d.isMainTenant)
     }
   }
 
@@ -351,10 +342,21 @@ export default function AppPage() {
     if (auth) loadDashboard()
   }, [auth])
 
-  const handleLogout = async () => {
-    await api('/api/auth', { method: 'POST', body: JSON.stringify({ action: 'logout' }) })
-    router.push('/login')
-  }
+  // Боковое меню (в layout) открывает модальные разделы через cabinet-nav.
+  // Подписываемся: пункт меню → открываем нужную модалку здесь.
+  useEffect(() => {
+    return subscribeModal((key) => {
+      switch (key) {
+        case 'presets': setShowPresets(true); break
+        case 'quotes': setShowQuotes(true); break
+        case 'partners': setShowPartners(true); break
+        case 'crm': setShowCRM(true); break
+        case 'team': setShowTeam(true); break
+        case 'ideas': setShowIdeas(true); break
+        case 'settings': setShowSettings(true); break
+      }
+    })
+  }, [])
 
   const filteredAlbums = albums.filter(a => {
     const matchesFilter = filter === 'active' ? !a.archived : a.archived
@@ -418,12 +420,6 @@ export default function AppPage() {
     )
   }
 
-  const roleLabels: Record<string, string> = {
-    owner: 'Владелец',
-    manager: 'Менеджер',
-    viewer: 'Наблюдатель',
-  }
-
   return (
     <div className="min-h-screen">
       <Suspense fallback={null}>
@@ -432,21 +428,9 @@ export default function AppPage() {
           setSelectedAlbum={setSelectedAlbum}
         />
       </Suspense>
-      {/* Шапка */}
-      <header className="bg-card border-b border-border sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1
-              className="text-xl font-semibold"
-              style={{ fontFamily: 'var(--font-display)' }}
-            >
-              {auth.tenant?.name ?? 'Кабинет'}
-            </h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {auth.user?.full_name} · {roleLabels[auth.user?.role ?? ''] ?? auth.user?.role}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+      {/* Глобальный индикатор фоновой загрузки оригиналов (раньше жил в шапке —
+          навигация переехала в боковое меню). Плавающий бейдж справа сверху. */}
+      <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
             {/* Техдолг#4 — глобальный индикатор фоновой загрузки оригиналов.
                 Виден везде в кабинете (даже когда модал альбома закрыт),
                 клик не нужен — только информирующий бейдж. Цвет зависит
@@ -511,39 +495,7 @@ export default function AppPage() {
                 )}
               </div>
             )}
-            <button
-              onClick={() => router.push('/app/templates')}
-              className="btn-secondary"
-              title="Структуры альбома (секции, страницы, размещение)"
-            >
-              <Ruler size={16} /> Шаблоны
-            </button>
-            <button
-              onClick={() => router.push('/app/designs')}
-              className="btn-secondary"
-              title="Дизайны: визуальное оформление альбома"
-            >
-              <Palette size={16} /> Дизайны
-            </button>
-            <button
-              onClick={() => router.push('/app/referral-programs')}
-              className="btn-secondary"
-              title="Реферальные программы: готовые и свои"
-            >
-              <Gift size={16} /> Рефералки
-            </button>
-            <button
-              onClick={() => setShowIdeas(true)}
-              className="btn-secondary"
-              title="Идеи и предложения сообщества — предложить и проголосовать"
-            >
-              <Lightbulb size={16} /> Идеи
-            </button>
-            <ThemeToggle />
-            <button onClick={handleLogout} className="btn-secondary">Выйти</button>
-          </div>
-        </div>
-      </header>
+      </div>
 
       {msg && (
         <div
@@ -609,63 +561,6 @@ export default function AppPage() {
                 {summary && <span className="text-muted-foreground ml-1.5">{summary.albums_archived}</span>}
               </button>
             </div>
-
-{isMainTenant && (
-              <button
-                onClick={() => setShowPartners(true)}
-                className="btn-ghost text-sm"
-                type="button"
-              >
-                <Camera size={16} /> Партнёры
-              </button>
-            )}
-
-            <button
-              onClick={() => setShowCRM(true)}
-              className="btn-ghost text-sm"
-              type="button"
-              title="CRM — клиенты и сделки"
-            >
-              <Contact size={16} /> CRM
-            </button>
-
-            <button
-              onClick={() => setShowPresets(true)}
-              className="btn-ghost text-sm"
-              type="button"
-              title="Пресеты — структура альбома"
-            >
-              <LayoutTemplate size={16} /> Пресеты
-            </button>
-
-            <button
-              onClick={() => setShowQuotes(true)}
-              className="btn-ghost text-sm"
-              type="button"
-              title="Управление цитатами"
-            >
-              <Quote size={16} /> Цитаты
-            </button>
-
-            {canManageTeam && (
-              <button
-                onClick={() => setShowTeam(true)}
-                className="btn-ghost text-sm"
-                type="button"
-                title="Сотрудники и приглашения"
-              >
-                <Users size={16} /> Команда
-              </button>
-            )}
-
-            <button
-              onClick={() => setShowSettings(true)}
-              className="btn-ghost text-sm"
-              type="button"
-              title="Настройки аккаунта"
-            >
-              <Settings size={16} /> Настройки
-            </button>
 
             {canEdit && (
               <button onClick={() => setShowCreate(true)} className="btn-primary">
