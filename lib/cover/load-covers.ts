@@ -18,8 +18,10 @@ import {
   type CoverStudentInput,
   type CoverSharedContent,
 } from './assemble';
-import { resolveAlbumSpineWidthMm } from './album-spine';
-import type { Cover, CoverType, PrintSpec } from './types';
+import { countAlbumSheets } from './album-spine';
+import { resolveSpineFromRanges } from '../printers/spine';
+import type { PrinterConfig } from '../printers/types';
+import type { Cover, CoverType } from './types';
 
 export type AssembledCoversResult = {
   covers: CoverInstance[];
@@ -53,7 +55,7 @@ export async function loadAlbumCovers(
       'id, title, classes, city, year, school_name, tenant_id, template_set_id, ' +
         'deadline, created_at, ' +
         'cover_layout_mode, cover_default_type, cover_available_ids, ' +
-        'print_preset_id, sheet_type_id',
+        'printer_id, sheet_type_id',
     )
     .eq('id', albumId)
     .single();
@@ -177,29 +179,30 @@ export async function loadAlbumCovers(
 }
 
 /**
- * Считает ширину корешка для альбома: число листов из сохранённого layout +
- * толщина/запас из пресета печати. null если нет пресета или layout.
+ * Считает ширину корешка для альбома: число разворотов из сохранённого layout →
+ * диапазон корешка выбранной типографии (типа листа). null, если не задана
+ * типография, нет layout или число разворотов не попало ни в один диапазон.
  */
 async function loadSpineWidth(
   supabase: SupabaseClient,
   album: Record<string, unknown>,
   warnings: string[],
 ): Promise<number | null> {
-  const printPresetId = (album.print_preset_id as string | null) ?? null;
+  const printerId = (album.printer_id as string | null) ?? null;
   const templateSetId = (album.template_set_id as string | null) ?? null;
-  if (!printPresetId) {
-    warnings.push('пресет печати не задан (print_preset_id) — корешок не посчитан');
+  if (!printerId) {
+    warnings.push('типография не выбрана — корешок не посчитан');
     return null;
   }
 
-  const { data: presetRow } = await supabase
-    .from('config_presets')
-    .select('print_spec')
-    .eq('id', printPresetId)
+  const { data: printerRow } = await supabase
+    .from('printers')
+    .select('config')
+    .eq('id', printerId)
     .single();
-  const printSpec = ((presetRow as { print_spec?: PrintSpec } | null)?.print_spec ?? null) as PrintSpec | null;
-  if (!printSpec) {
-    warnings.push('у пресета печати нет print_spec — корешок не посчитан');
+  const config = ((printerRow as { config?: PrinterConfig } | null)?.config ?? null) as PrinterConfig | null;
+  if (!config || (config.sheet_types?.length ?? 0) === 0) {
+    warnings.push('у типографии нет типов листов — корешок не посчитан');
     return null;
   }
 
@@ -213,7 +216,7 @@ async function loadSpineWidth(
     .maybeSingle();
   const spreads = ((layoutRow as { spreads?: SpreadInstance[] } | null)?.spreads ?? []) as SpreadInstance[];
   if (spreads.length === 0) {
-    warnings.push('нет сохранённого layout — число листов неизвестно, корешок не посчитан');
+    warnings.push('нет сохранённого макета альбома — число разворотов неизвестно, корешок не посчитан');
     return null;
   }
 
@@ -229,5 +232,10 @@ async function loadSpineWidth(
     }
   }
 
-  return resolveAlbumSpineWidthMm(spreads, templatesById, printSpec, (album.sheet_type_id as string | null) ?? null);
+  const spreadCount = countAlbumSheets(spreads, templatesById);
+  const spine = resolveSpineFromRanges(config, (album.sheet_type_id as string | null) ?? null, spreadCount);
+  if (spine === null) {
+    warnings.push(`нет диапазона корешка для ${spreadCount} разворотов — добавьте диапазон в типографии`);
+  }
+  return spine;
 }
