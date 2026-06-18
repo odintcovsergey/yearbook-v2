@@ -6,6 +6,8 @@ import { ycUpload, ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
 import { renderPreviewSvg } from '@/lib/album-builder/render-preview-svg'
 import { resolveAlbumEffectivePrintType } from '@/lib/album-builder'
 import { buildAlbumCoverPreviews } from '@/lib/cover/preview-album'
+import { buildCoverSummary } from '@/lib/cover/summary'
+import type { CoverType, CoverLayoutMode } from '@/lib/cover/types'
 import { validatePreset } from '@/lib/presets/validate'
 import { buildPresetPreviewBundle } from '@/lib/presets/preview-bundle'
 import { loadBundle } from '@/lib/rule-engine/loaders'
@@ -960,6 +962,82 @@ export async function GET(req: NextRequest) {
       surcharge_total: surch.reduce((sum: number, s: any) => sum + (s.surcharge ?? 0), 0),
       surcharge_count: surch.length,
     })
+  }
+
+  // ----------------------------------------------------------
+  // cover_summary — сводка обложек заказа (ТЗ tz-cover-summary): кто что выбрал,
+  // сколько обложек на печать (дедупликация общей/дизайна), предупреждения.
+  // Только чтение. Учительская обложка пока НЕ считается (нет признака).
+  // ----------------------------------------------------------
+  if (action === 'cover_summary' && albumId) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+
+    const { data: album } = await supabaseAdmin
+      .from('albums')
+      .select('id, cover_layout_mode, cover_default_type')
+      .eq('id', albumId)
+      .single()
+    const mode = (album?.cover_layout_mode as CoverLayoutMode | null) ?? null
+    const defaultType = (album?.cover_default_type as CoverType | null) ?? null
+
+    const { data: childrenRaw } = await supabaseAdmin
+      .from('children')
+      .select('id, full_name')
+      .eq('album_id', albumId)
+      .order('full_name')
+    const children = (childrenRaw ?? []) as Array<{ id: string; full_name: string }>
+    const childIds = children.map((c) => c.id)
+
+    // Выбор обложки (новая система).
+    const choiceByChild: Record<string, { cover_type: CoverType | null; photo_option: 'same' | 'other' | null; paid: boolean }> = {}
+    // Портрет, выбранный специально для обложки (selections.portrait_cover).
+    const coverPortraitByChild: Record<string, string> = {}
+    if (childIds.length > 0) {
+      const [choicesRes, selsRes] = await Promise.all([
+        supabaseAdmin.from('cover_choices')
+          .select('child_id, cover_type, photo_option, paid_personalization, surcharge')
+          .in('child_id', childIds),
+        supabaseAdmin.from('selections')
+          .select('child_id, photos(thumb_path, storage_path)')
+          .in('child_id', childIds)
+          .eq('selection_type', 'portrait_cover'),
+      ])
+      for (const ch of (choicesRes.data ?? []) as Array<Record<string, unknown>>) {
+        choiceByChild[ch.child_id as string] = {
+          cover_type: (ch.cover_type as CoverType | null) ?? null,
+          photo_option: (ch.photo_option as 'same' | 'other' | null) ?? null,
+          paid: (ch.paid_personalization as boolean) === true || ((ch.surcharge as number) ?? 0) > 0,
+        }
+      }
+      for (const s of (selsRes.data ?? []) as Array<Record<string, unknown>>) {
+        const photo = s.photos as { thumb_path?: string; storage_path?: string } | null
+        const path = photo?.thumb_path ?? photo?.storage_path
+        if (path) coverPortraitByChild[s.child_id as string] = await getPhotoUrl(path)
+      }
+    }
+
+    // Есть ли хотя бы одно общее фото класса (photos.type='common_full').
+    const { count: commonCount } = await supabaseAdmin
+      .from('photos')
+      .select('id', { count: 'exact', head: true })
+      .eq('album_id', albumId)
+      .eq('type', 'common_full')
+
+    const summary = buildCoverSummary({
+      mode,
+      default_type: defaultType,
+      students: children.map((c) => ({
+        child_id: c.id,
+        full_name: c.full_name ?? '',
+        choice: choiceByChild[c.id] ?? null,
+        cover_portrait_url: coverPortraitByChild[c.id] ?? null,
+      })),
+      common_photo_available: (commonCount ?? 0) > 0,
+    })
+
+    return NextResponse.json({ mode, default_type: defaultType, ...summary })
   }
 
   // ----------------------------------------------------------

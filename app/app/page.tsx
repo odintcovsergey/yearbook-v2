@@ -44,6 +44,11 @@ const ExportPanel = dynamic(
   { ssr: false, loading: () => null },
 )
 
+const CoversSummaryBlock = dynamic(
+  () => import('./_components/CoversSummaryBlock'),
+  { ssr: false, loading: () => null },
+)
+
 // ============================================================
 // ТИПЫ
 // ============================================================
@@ -2484,6 +2489,9 @@ function AlbumDetailModal({
                       )}
                     </div>
                   )}
+
+                  {/* Сводка обложек заказа (только просмотр) */}
+                  <CoversSummaryBlock albumId={album.id} />
 
                   {/* График динамики */}
                   {daily.length > 0 && (
