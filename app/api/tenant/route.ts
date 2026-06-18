@@ -2681,6 +2681,51 @@ export async function POST(req: NextRequest) {
     }
 
     // ----------------------------------------------------------
+    // upload_cover_qr — QR-картинка для задней обложки заказа (ТЗ обложек).
+    // Формат: file, album_id. PNG, до 1000px (fit=inside, без обрезки — QR
+    // должен остаться квадратным/чётким). Путь photos/<album_id>/cover-qr.png,
+    // сохраняется в albums.cover_qr_url.
+    // ----------------------------------------------------------
+    if (formAction === 'upload_cover_qr') {
+      const file = form.get('file') as File | null
+      const qrAlbumId = form.get('album_id') as string | null
+      if (!file || !qrAlbumId) {
+        return NextResponse.json({ error: 'Файл и album_id обязательны' }, { status: 400 })
+      }
+      if (!(await assertAlbumAccess(auth, qrAlbumId))) {
+        return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        return NextResponse.json({ error: 'Размер файла не должен превышать 5 МБ' }, { status: 400 })
+      }
+      const sharp = (await import('sharp')).default
+      const buffer = Buffer.from(await file.arrayBuffer())
+      let processed: Buffer
+      try {
+        processed = await sharp(buffer)
+          .rotate()
+          .resize(1000, 1000, { fit: 'inside', withoutEnlargement: true })
+          .png()
+          .toBuffer()
+      } catch {
+        return NextResponse.json({ error: 'Не удалось обработать изображение' }, { status: 400 })
+      }
+      const qrPath = `${qrAlbumId}/cover-qr.png`
+      const { error: upErr } = await supabaseAdmin.storage
+        .from('photos')
+        .upload(qrPath, processed, { contentType: 'image/png', upsert: true })
+      if (upErr) return serverError(upErr, 'tenant')
+      const { error: dbErr } = await supabaseAdmin
+        .from('albums')
+        .update({ cover_qr_url: qrPath })
+        .eq('id', qrAlbumId)
+      if (dbErr) return serverError(dbErr, 'tenant')
+      const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${qrPath}?t=${Date.now()}`
+      await logAction(auth, 'album.upload_cover_qr', 'album', qrAlbumId, {})
+      return NextResponse.json({ ok: true, public_url: publicUrl })
+    }
+
+    // ----------------------------------------------------------
     // upload_photo (default multipart action) — фото альбома
     // Формат: file, type, album_id
     // type ∈ {portrait, group, teacher,
@@ -5348,6 +5393,17 @@ export async function POST(req: NextRequest) {
         .insert({ album_id, cover_type: match.cover_type, child_id: match.child_id, data })
       if (error) return serverError(error, 'tenant')
     }
+    return NextResponse.json({ ok: true })
+  }
+
+  // clear_cover_qr — убрать QR заказа (back_qr станет пустым).
+  if (body.action === 'clear_cover_qr') {
+    const { album_id } = body
+    if (!album_id || !(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const { error } = await supabaseAdmin.from('albums').update({ cover_qr_url: null }).eq('id', album_id)
+    if (error) return serverError(error, 'tenant')
     return NextResponse.json({ ok: true })
   }
 

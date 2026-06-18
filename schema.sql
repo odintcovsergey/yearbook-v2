@@ -160,6 +160,10 @@ create index if not exists idx_printers_tenant on printers(tenant_id);
 alter table albums
   add column if not exists printer_id uuid references printers(id) on delete set null;
 
+-- QR-код задней обложки (картинка в bucket photos), ТЗ tz-cover-editor.
+alter table albums
+  add column if not exists cover_qr_url text;
+
 -- ============================================================
 -- ПРАВКИ РЕДАКТОРА ОБЛОЖЕК (cover_edits) — ТЗ tz-cover-editor.
 -- Шаблонные (cover_type, child_id NULL) + поштучный кроп (child_id, cover_type NULL).

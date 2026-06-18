@@ -55,7 +55,7 @@ export async function loadAlbumCovers(
       'id, title, classes, city, year, school_name, tenant_id, template_set_id, ' +
         'deadline, created_at, ' +
         'cover_layout_mode, cover_default_type, cover_available_ids, ' +
-        'printer_id, sheet_type_id',
+        'printer_id, sheet_type_id, cover_qr_url',
     )
     .eq('id', albumId)
     .single();
@@ -188,6 +188,9 @@ export async function loadAlbumCovers(
     back_common_photo_url: null,           // задняя — пусто по умолчанию (drag в редакторе)
     back_logo_url: backLogoUrl,            // логотип партнёра в back_logo (авто)
     back_contacts: null,
+    back_qr_url: a.cover_qr_url            // QR заказа в back_qr (авто, если загружен)
+      ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${a.cover_qr_url as string}`
+      : null,
   };
 
   const covers = assembleCovers(

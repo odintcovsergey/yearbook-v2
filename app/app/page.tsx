@@ -54,6 +54,11 @@ const CoverEditorBlock = dynamic(
   { ssr: false, loading: () => null },
 )
 
+const CoverQrUploader = dynamic(
+  () => import('./_components/CoverQrUploader'),
+  { ssr: false, loading: () => null },
+)
+
 // ============================================================
 // ТИПЫ
 // ============================================================
@@ -4254,6 +4259,10 @@ function AlbumFormModal({
                     </select>
                   )
                 })()}
+
+                {mode === 'edit' && album?.id && (
+                  <CoverQrUploader albumId={album.id} initialPath={(album as any).cover_qr_url ?? null} />
+                )}
 
                 {mode === 'edit' && album?.id && (
                   <div className="mt-3">

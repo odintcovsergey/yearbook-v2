@@ -70,6 +70,7 @@ const SHARED: CoverSharedContent = {
   back_common_photo_url: null,
   back_logo_url: null,
   back_contacts: null,
+  back_qr_url: null,
 };
 
 describe('resolveCoverForStudent', () => {
