@@ -12,6 +12,41 @@
 
 import type { CoverType } from './types';
 
+/**
+ * Метки-СОДЕРЖИМОЕ, которые ЛИЧНЫЕ для каждого ученика (а не общие на тип
+ * обложки): имя выпускника и класс. Их значение берётся из данных ученика
+ * (fillCoverData) и правится поштучно (scope='student'). Поэтому при слиянии
+ * НЕ применяем такие ключи из шаблонной (type) правки — иначе одно введённое
+ * имя перекрыло бы имена ВСЕХ учеников типа «Портрет».
+ *
+ * ВАЖНО: это только КОНТЕНТ (сам текст). Служебные ключи стиля
+ * (__fontSize__cover_student_name и т.п.) остаются общими на тип — все имена
+ * выглядят одинаково.
+ */
+export const PER_STUDENT_COVER_LABELS = ['cover_student_name', 'cover_class'] as const;
+
+/** Убирает личные метки-контент из шаблонной (type) правки. */
+function stripPerStudentContent(
+  typeEdit: Record<string, string | null>,
+): Record<string, string | null> {
+  const out = { ...typeEdit };
+  for (const lbl of PER_STUDENT_COVER_LABELS) delete out[lbl];
+  return out;
+}
+
+/**
+ * Слияние данных обложки: base ⊕ type ⊕ student. Личные метки-контент
+ * (имя/класс) из type-слоя выкидываются (см. PER_STUDENT_COVER_LABELS).
+ * Единая точка слияния — используется и сборкой, и редактором (live-патчи).
+ */
+export function mergeCoverData(
+  base: Record<string, string | null>,
+  typePatch: Record<string, string | null>,
+  studentPatch: Record<string, string | null>,
+): Record<string, string | null> {
+  return { ...base, ...stripPerStudentContent(typePatch), ...studentPatch };
+}
+
 export type CoverEditRow = {
   /** Шаблонная правка типа (child_id null). */
   cover_type: CoverType | null;
@@ -38,7 +73,7 @@ export function mergeCoverEditsInto<T extends CoverInstanceLike>(
 ): T {
   const typeEdit = editsByType[instance.cover_type] ?? {};
   const childEdit = instance.child_id ? (editsByChild[instance.child_id] ?? {}) : {};
-  return { ...instance, data: { ...instance.data, ...typeEdit, ...childEdit } };
+  return { ...instance, data: mergeCoverData(instance.data, typeEdit, childEdit) };
 }
 
 /** Раскладывает строки cover_edits в карты по типу и по ученику. */

@@ -17,6 +17,7 @@ import { ChevronLeft, PanelRightClose, PanelRightOpen, Eye, Type } from 'lucide-
 import { layoutCover } from '@/lib/cover/layout'
 import { renderCoverPreviewSvg } from '@/lib/cover/preview-svg'
 import { parseFontSizeMult, parseColor, parseHAlign, parseVAlign, parseFontFamily } from '@/lib/text-style'
+import { mergeCoverData, PER_STUDENT_COVER_LABELS } from '@/lib/cover/editor-merge'
 import type { CoverTextStyleOverrides } from '@/lib/cover/text-styles'
 import type { RenderPlaceholder } from '@/lib/album-builder/types'
 import TextStylePanel from '../../../_components/TextStylePanel'
@@ -108,7 +109,16 @@ export default function CoverEditorPage() {
       .then(([ed, ph]: [EditorData, AlbumPhoto[] | { photos?: AlbumPhoto[] }]) => {
         if (!alive) return
         setEditor(ed)
-        setTypePatches(ed.editsByType ?? {})
+        // Личные метки (имя/класс) из шаблонных правок выкидываем сразу при
+        // загрузке: они не должны жить на уровне типа (иначе перетирают всех).
+        // Чистим и состояние, чтобы при следующем сохранении типа не вернулись.
+        const cleanByType: Record<string, Record<string, string | null>> = {}
+        for (const [ct, d] of Object.entries(ed.editsByType ?? {})) {
+          const copy = { ...d }
+          for (const lbl of PER_STUDENT_COVER_LABELS) delete copy[lbl]
+          cleanByType[ct] = copy
+        }
+        setTypePatches(cleanByType)
         setStudentPatches(ed.editsByChild ?? {})
         setCoverTextStyles(ed.coverTextStyles ?? {})
         setHistory({ past: [], future: [] })
@@ -125,7 +135,7 @@ export default function CoverEditorPage() {
 
   const data = useMemo(() => {
     if (!item) return {}
-    return { ...item.base, ...(typePatches[item.cover_type] ?? {}), ...(item.child_id ? studentPatches[item.child_id] ?? {} : {}) }
+    return mergeCoverData(item.base, typePatches[item.cover_type] ?? {}, item.child_id ? studentPatches[item.child_id] ?? {} : {})
   }, [item, typePatches, studentPatches])
 
   // ── Сохранение (дебаунс по области) ──────────────────────────────────────
@@ -416,7 +426,17 @@ export default function CoverEditorPage() {
                     setEditingTextLabel(label)
                     setTextStylePanel({ label, rightEdge, topEdge, leftEdge })
                   }}
-                  onTextSubmit={(label, val) => { if (item) setTypeKey(item.cover_type, label, val); setEditingTextLabel(null); setTextStylePanel(null) }}
+                  onTextSubmit={(label, val) => {
+                    if (item) {
+                      // Имя/класс — личные: пишем в область ученика. Остальное — на тип.
+                      if ((PER_STUDENT_COVER_LABELS as readonly string[]).includes(label.toLowerCase()) && item.child_id) {
+                        setStudentKeys(item.child_id, { [label]: val })
+                      } else {
+                        setTypeKey(item.cover_type, label, val)
+                      }
+                    }
+                    setEditingTextLabel(null); setTextStylePanel(null)
+                  }}
                   onTextCancel={() => { setEditingTextLabel(null); setTextStylePanel(null) }}
                   onPhotoClick={(label) => { setEditingTextLabel(null); setTextStylePanel(null); setCropLabel(label) }}
                   croppingLabel={cropLabel}
@@ -426,7 +446,7 @@ export default function CoverEditorPage() {
             </div>
             {item?.child_id && (
               <div className="shrink-0 text-center text-xs text-muted-foreground pb-2">
-                Кроп портрета сохраняется индивидуально для ученика. Тексты — общие для всех обложек типа «{TYPE_LABEL[item.cover_type]}».
+                Имя и класс — индивидуальны для ученика; кроп портрета тоже. Остальные тексты (заголовок, год, школа…) — общие для всех обложек типа «{TYPE_LABEL[item.cover_type]}».
               </div>
             )}
             {/* Навигация между обложками. */}
@@ -519,7 +539,7 @@ export default function CoverEditorPage() {
         <CoverPreviewFullscreen
           items={items.reduce<CoverPreviewItem[]>((acc, it) => {
             if (!it.master) return acc
-            const merged = { ...it.base, ...(typePatches[it.cover_type] ?? {}), ...(it.child_id ? studentPatches[it.child_id] ?? {} : {}) }
+            const merged = mergeCoverData(it.base, typePatches[it.cover_type] ?? {}, it.child_id ? studentPatches[it.child_id] ?? {} : {})
             acc.push({ master: it.master, data: merged, name: it.child_name ?? TYPE_LABEL[it.cover_type] })
             return acc
           }, [])}
@@ -553,7 +573,7 @@ function coverThumb(
   const m = it.master
   if (!m) return ''
   const n = (v: number | null) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
-  const data = { ...it.base, ...(typePatches[it.cover_type] ?? {}), ...(it.child_id ? studentPatches[it.child_id] ?? {} : {}) }
+  const data = mergeCoverData(it.base, typePatches[it.cover_type] ?? {}, it.child_id ? studentPatches[it.child_id] ?? {} : {})
   const laid = layoutCover(
     { backWidthMm: n(m.back_width_mm), frontWidthMm: n(m.front_width_mm), heightMm: n(m.height_mm), nominalSpineWidthMm: n(m.nominal_spine_width_mm), realSpineWidthMm: spine ?? n(m.nominal_spine_width_mm) },
     m.placeholders as Array<RenderPlaceholder & { zone?: 'back' | 'spine' | 'front' }>,
