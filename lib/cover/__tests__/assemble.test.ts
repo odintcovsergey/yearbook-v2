@@ -22,13 +22,14 @@ function makeCover(opts: {
   labels?: string[];
   available?: boolean;
   name?: string;
+  template_set_id?: string | null;
 }): Cover {
   coverSeq += 1;
   return {
     id: opts.id ?? `cover-${coverSeq}`,
     tenant_id: null,
-    is_global: true,
-    template_set_id: null,
+    is_global: opts.template_set_id == null,
+    template_set_id: opts.template_set_id ?? null,
     name: opts.name ?? `Cover ${coverSeq}`,
     slug: null,
     cover_type: opts.type,
@@ -113,6 +114,22 @@ describe('resolveCoverForStudent', () => {
     // d2 имеет sort_order 0 < d1 → берётся d2
     const r = resolveCoverForStudent(student('1'), config);
     expect(r.cover?.id).toBe('d2');
+  });
+
+  it('родная обложка дизайна берётся раньше дизайнерской того же типа', () => {
+    // Два портретных мастера: глобальный (sort 0) и родной дизайну (sort 0).
+    // При равном sort_order побеждает родной (template_set_id == design).
+    const globalP = makeCover({ id: 'gp', type: 'portrait_photo', sort: 0 });
+    const nativeP = makeCover({ id: 'np', type: 'portrait_photo', sort: 0, template_set_id: 'design-1' });
+    const config: CoverAssemblyConfig = {
+      mode: 'default_editable',
+      default_type: 'portrait_photo',
+      available_cover_ids: ['gp', 'np'],
+      library: [globalP, nativeP],
+      design_template_set_id: 'design-1',
+    };
+    const r = resolveCoverForStudent(student('1'), config);
+    expect(r.cover?.id).toBe('np');
   });
 
   it('невалидный выбор (не из available) откатывается на дефолт', () => {

@@ -158,7 +158,17 @@ export async function loadAlbumCovers(
     back_contacts: null,
   };
 
-  const covers = assembleCovers(students, { mode, default_type: defaultType, available_cover_ids: availableIds, library }, shared);
+  const covers = assembleCovers(
+    students,
+    {
+      mode,
+      default_type: defaultType,
+      available_cover_ids: availableIds,
+      library,
+      design_template_set_id: (a.template_set_id as string | null) ?? null,
+    },
+    shared,
+  );
 
   // ── 7. Ширина корешка (Этап 3) — best-effort ──────────────────────────────
   const spine_width_mm = await loadSpineWidth(supabase, a, warnings);
