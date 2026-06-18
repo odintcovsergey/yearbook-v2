@@ -129,6 +129,7 @@ describe('renderCoverPreviewSvg', () => {
       data: { back_logo: 'https://cdn/logo.png' },
     });
     expect(svg).toContain('<clipPath');
-    expect(svg).toContain('<circle');
+    // is_circle = овальная рамка → эллипс по габаритам слота (не круг).
+    expect(svg).toContain('<ellipse');
   });
 });

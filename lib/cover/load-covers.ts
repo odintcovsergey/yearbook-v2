@@ -55,7 +55,7 @@ export async function loadAlbumCovers(
       'id, title, classes, city, year, school_name, tenant_id, template_set_id, ' +
         'deadline, created_at, ' +
         'cover_layout_mode, cover_default_type, cover_available_ids, ' +
-        'printer_id, sheet_type_id',
+        'printer_id, sheet_type_id, cover_qr_url',
     )
     .eq('id', albumId)
     .single();
@@ -130,6 +130,36 @@ export async function loadAlbumCovers(
     warnings.push('библиотека обложек пуста (covers): нечего назначить');
   }
 
+  // ── 5б. Общее фото класса для ПЕРЕДНЕЙ обложки: ПОСЛЕДНЕЕ common_full.
+  // Последнее — первые могли уйти в блок, а последнее ещё свободно. Подставляется
+  // авто на общую обложку (cover_common_photo). На ЗАДНЮЮ (back_common_photo) НЕ
+  // подставляем — чаще там фото не нужно; менеджер при необходимости перетащит
+  // общее фото на заднюю в редакторе. null → нечего подставлять (warning в сводке).
+  let lastCommonPhotoUrl: string | null = null;
+  {
+    const { data: commons } = await supabase
+      .from('photos')
+      .select('storage_path')
+      .eq('album_id', albumId)
+      .eq('type', 'common_full')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const path = (commons?.[0] as { storage_path?: string } | undefined)?.storage_path;
+    if (path) lastCommonPhotoUrl = await getPhotoUrl(path);
+  }
+
+  // ── 5в. Логотип партнёра для задней обложки (back_logo). Из tenants.logo_url
+  // (путь в публичном bucket photos). Подставляется автоматически в рамку back_logo.
+  let backLogoUrl: string | null = null;
+  {
+    const tenantId = (a.tenant_id as string | null) ?? null;
+    if (tenantId) {
+      const { data: t } = await supabase.from('tenants').select('logo_url').eq('id', tenantId).single();
+      const logoPath = (t as { logo_url?: string | null } | null)?.logo_url ?? null;
+      if (logoPath) backLogoUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${logoPath}`;
+    }
+  }
+
   // ── 6. Вход движка ────────────────────────────────────────────────────────
   const students: CoverStudentInput[] = children.map((c) => ({
     child_id: c.id,
@@ -154,10 +184,13 @@ export async function loadAlbumCovers(
     year,
     classes: classes || null,
     spine_text: (a.title as string | null) ?? null,
-    common_photo_url: null,       // общее фото класса — подключим на рендере
-    back_common_photo_url: null,
-    back_logo_url: null,
+    common_photo_url: lastCommonPhotoUrl,  // передняя общая обложка (авто)
+    back_common_photo_url: null,           // задняя — пусто по умолчанию (drag в редакторе)
+    back_logo_url: backLogoUrl,            // логотип партнёра в back_logo (авто)
     back_contacts: null,
+    back_qr_url: a.cover_qr_url            // QR заказа в back_qr (авто, если загружен)
+      ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${a.cover_qr_url as string}`
+      : null,
   };
 
   const covers = assembleCovers(

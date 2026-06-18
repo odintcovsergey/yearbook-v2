@@ -64,6 +64,7 @@ export type CoverSharedContent = {
   back_common_photo_url: string | null; // back_common_photo
   back_logo_url: string | null;         // back_logo
   back_contacts: string | null;         // back_contacts
+  back_qr_url: string | null;           // back_qr (QR-картинка заказа)
 };
 
 /** Результат сборки одной обложки (аналог SpreadInstance). */
@@ -199,7 +200,9 @@ export function fillCoverData(
       case 'back_contacts':
         data[ph.label] = shared.back_contacts;
         break;
-      // back_qr и прочее — на будущее/рендеру, не заполняем здесь.
+      case 'back_qr':
+        data[ph.label] = shared.back_qr_url;
+        break;
       default:
         break;
     }

@@ -7,6 +7,7 @@ import { renderPreviewSvg } from '@/lib/album-builder/render-preview-svg'
 import { resolveAlbumEffectivePrintType } from '@/lib/album-builder'
 import { buildAlbumCoverPreviews } from '@/lib/cover/preview-album'
 import { buildCoverSummary } from '@/lib/cover/summary'
+import { loadCoverEditor } from '@/lib/cover/load-editor'
 import type { CoverType, CoverLayoutMode } from '@/lib/cover/types'
 import { validatePreset } from '@/lib/presets/validate'
 import { buildPresetPreviewBundle } from '@/lib/presets/preview-bundle'
@@ -1038,6 +1039,19 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ mode, default_type: defaultType, ...summary })
+  }
+
+  // ----------------------------------------------------------
+  // cover_editor — данные редактора обложек (ТЗ tz-cover-editor): все обложки
+  // заказа по группировке + геометрия мастеров + слитые правки + галерея общих
+  // фото. Только чтение.
+  // ----------------------------------------------------------
+  if (action === 'cover_editor' && albumId) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const result = await loadCoverEditor(supabaseAdmin, albumId)
+    return NextResponse.json(result)
   }
 
   // ----------------------------------------------------------
@@ -2664,6 +2678,51 @@ export async function POST(req: NextRequest) {
       })
 
       return NextResponse.json({ ok: true, logo_url: logoPath, public_url: publicUrl })
+    }
+
+    // ----------------------------------------------------------
+    // upload_cover_qr — QR-картинка для задней обложки заказа (ТЗ обложек).
+    // Формат: file, album_id. PNG, до 1000px (fit=inside, без обрезки — QR
+    // должен остаться квадратным/чётким). Путь photos/<album_id>/cover-qr.png,
+    // сохраняется в albums.cover_qr_url.
+    // ----------------------------------------------------------
+    if (formAction === 'upload_cover_qr') {
+      const file = form.get('file') as File | null
+      const qrAlbumId = form.get('album_id') as string | null
+      if (!file || !qrAlbumId) {
+        return NextResponse.json({ error: 'Файл и album_id обязательны' }, { status: 400 })
+      }
+      if (!(await assertAlbumAccess(auth, qrAlbumId))) {
+        return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        return NextResponse.json({ error: 'Размер файла не должен превышать 5 МБ' }, { status: 400 })
+      }
+      const sharp = (await import('sharp')).default
+      const buffer = Buffer.from(await file.arrayBuffer())
+      let processed: Buffer
+      try {
+        processed = await sharp(buffer)
+          .rotate()
+          .resize(1000, 1000, { fit: 'inside', withoutEnlargement: true })
+          .png()
+          .toBuffer()
+      } catch {
+        return NextResponse.json({ error: 'Не удалось обработать изображение' }, { status: 400 })
+      }
+      const qrPath = `${qrAlbumId}/cover-qr.png`
+      const { error: upErr } = await supabaseAdmin.storage
+        .from('photos')
+        .upload(qrPath, processed, { contentType: 'image/png', upsert: true })
+      if (upErr) return serverError(upErr, 'tenant')
+      const { error: dbErr } = await supabaseAdmin
+        .from('albums')
+        .update({ cover_qr_url: qrPath })
+        .eq('id', qrAlbumId)
+      if (dbErr) return serverError(dbErr, 'tenant')
+      const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${qrPath}?t=${Date.now()}`
+      await logAction(auth, 'album.upload_cover_qr', 'album', qrAlbumId, {})
+      return NextResponse.json({ ok: true, public_url: publicUrl })
     }
 
     // ----------------------------------------------------------
@@ -5300,6 +5359,54 @@ export async function POST(req: NextRequest) {
   // ----------------------------------------------------------
   // update_album — редактирование настроек альбома
   // ----------------------------------------------------------
+  // cover_save_edit — сохранить правки редактора обложек (ТЗ tz-cover-editor).
+  // scope='type' (шаблонная правка типа, cover_type) | 'student' (поштучный
+  // кроп, child_id). Upsert строки cover_edits, data — служебные ключи.
+  if (body.action === 'cover_save_edit') {
+    const { album_id } = body
+    if (!album_id || !(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const scope = body.scope
+    const data = (body.data && typeof body.data === 'object') ? body.data : {}
+    let match: { cover_type: string | null; child_id: string | null }
+    if (scope === 'type' && typeof body.cover_type === 'string') {
+      match = { cover_type: body.cover_type, child_id: null }
+    } else if (scope === 'student' && typeof body.child_id === 'string' && UUID_REGEX.test(body.child_id)) {
+      match = { cover_type: null, child_id: body.child_id }
+    } else {
+      return NextResponse.json({ error: 'invalid scope' }, { status: 400 })
+    }
+
+    // Upsert вручную (частичные уникальные индексы): найти → update/insert.
+    let existing = supabaseAdmin.from('cover_edits').select('id').eq('album_id', album_id)
+    existing = match.child_id
+      ? existing.eq('child_id', match.child_id)
+      : existing.is('child_id', null).eq('cover_type', match.cover_type as string)
+    const { data: found } = await existing.maybeSingle()
+    if (found?.id) {
+      const { error } = await supabaseAdmin.from('cover_edits')
+        .update({ data, updated_at: new Date().toISOString() }).eq('id', found.id)
+      if (error) return serverError(error, 'tenant')
+    } else {
+      const { error } = await supabaseAdmin.from('cover_edits')
+        .insert({ album_id, cover_type: match.cover_type, child_id: match.child_id, data })
+      if (error) return serverError(error, 'tenant')
+    }
+    return NextResponse.json({ ok: true })
+  }
+
+  // clear_cover_qr — убрать QR заказа (back_qr станет пустым).
+  if (body.action === 'clear_cover_qr') {
+    const { album_id } = body
+    if (!album_id || !(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const { error } = await supabaseAdmin.from('albums').update({ cover_qr_url: null }).eq('id', album_id)
+    if (error) return serverError(error, 'tenant')
+    return NextResponse.json({ ok: true })
+  }
+
   if (body.action === 'update_album') {
     const { album_id } = body
     if (!album_id) {

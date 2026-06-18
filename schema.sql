@@ -160,6 +160,26 @@ create index if not exists idx_printers_tenant on printers(tenant_id);
 alter table albums
   add column if not exists printer_id uuid references printers(id) on delete set null;
 
+-- QR-код задней обложки (картинка в bucket photos), ТЗ tz-cover-editor.
+alter table albums
+  add column if not exists cover_qr_url text;
+
+-- ============================================================
+-- ПРАВКИ РЕДАКТОРА ОБЛОЖЕК (cover_edits) — ТЗ tz-cover-editor.
+-- Шаблонные (cover_type, child_id NULL) + поштучный кроп (child_id, cover_type NULL).
+-- ============================================================
+create table if not exists cover_edits (
+  id         uuid primary key default gen_random_uuid(),
+  album_id   uuid not null references albums(id) on delete cascade,
+  cover_type text,
+  child_id   uuid references children(id) on delete cascade,
+  data       jsonb not null default '{}'::jsonb,
+  updated_at timestamptz default now()
+);
+create unique index if not exists cover_edits_type_uniq    on cover_edits(album_id, cover_type) where child_id is null;
+create unique index if not exists cover_edits_student_uniq on cover_edits(album_id, child_id)   where child_id is not null;
+create index if not exists idx_cover_edits_album on cover_edits(album_id);
+
 -- ============================================================
 -- STORAGE — создайте bucket "photos" вручную в Supabase UI
 -- Storage → New bucket → name: photos → Public: YES

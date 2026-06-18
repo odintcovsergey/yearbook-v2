@@ -1,0 +1,285 @@
+'use client'
+
+/**
+ * Полностраничный редактор обложек (ТЗ tz-cover-editor, итерация «как развороты»).
+ * Корпус один-в-один с редактором разворотов: палитра фото справа, холст по
+ * центру, лента обложек снизу. Холст — CoverCanvas (обёртка AlbumSpreadCanvas).
+ *
+ * Правки двух глубин: шаблонные на тип (cover_type) и поштучный кроп портрета
+ * на ученика (child_id). Перетаскивание фото из палитры заменяет фото в слоте.
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
+import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { ChevronLeft, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { layoutCover } from '@/lib/cover/layout'
+import { renderCoverPreviewSvg } from '@/lib/cover/preview-svg'
+import type { RenderPlaceholder } from '@/lib/album-builder/types'
+import type { AlbumPhoto } from '../../../_components/PhotoPalette'
+import type { CropHandlers } from '../../../_components/AlbumSpreadCanvas'
+import type { CoverCanvasMaster } from '../../../_components/CoverCanvas'
+
+const PhotoPalette = dynamic(() => import('../../../_components/PhotoPalette'), { ssr: false, loading: () => null })
+const CoverCanvas = dynamic(() => import('../../../_components/CoverCanvas'), { ssr: false, loading: () => null })
+
+type CoverType = 'portrait_photo' | 'common_photo' | 'design_only'
+type Item = {
+  key: string
+  child_id: string | null
+  child_name: string | null
+  cover_type: CoverType
+  cover_name: string | null
+  has_cover: boolean
+  master: CoverCanvasMaster | null
+  data: Record<string, string | null>
+  base: Record<string, string | null>
+}
+type EditorData = {
+  items: Item[]
+  spine_width_mm: number | null
+  editsByType: Record<string, Record<string, string | null>>
+  editsByChild: Record<string, Record<string, string | null>>
+  common_photos: Array<{ id: string; url: string }>
+  warnings: string[]
+}
+
+const TYPE_LABEL: Record<CoverType, string> = {
+  portrait_photo: 'Портрет', common_photo: 'Общая', design_only: 'Дизайн',
+}
+
+export default function CoverEditorPage() {
+  const router = useRouter()
+  const params = useParams<{ id: string }>()
+  const albumId = params.id
+
+  const [editor, setEditor] = useState<EditorData | null>(null)
+  const [photos, setPhotos] = useState<AlbumPhoto[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [currentIdx, setCurrentIdx] = useState(0)
+  const [paletteCollapsed, setPaletteCollapsed] = useState(false)
+
+  // Патчи правок: по типу обложки и по ученику. Инициализируются из БД.
+  const [typePatches, setTypePatches] = useState<Record<string, Record<string, string | null>>>({})
+  const [studentPatches, setStudentPatches] = useState<Record<string, Record<string, string | null>>>({})
+
+  const [editingTextLabel, setEditingTextLabel] = useState<string | null>(null)
+  const [cropLabel, setCropLabel] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  // Загрузка данных редактора + фото для палитры.
+  useEffect(() => {
+    let alive = true
+    Promise.all([
+      fetch(`/api/tenant?action=cover_editor&album_id=${albumId}`, { credentials: 'include' }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))),
+      fetch(`/api/tenant?action=album_photos&album_id=${albumId}`, { credentials: 'include' }).then((r) => (r.ok ? r.json() : [])),
+    ])
+      .then(([ed, ph]: [EditorData, AlbumPhoto[] | { photos?: AlbumPhoto[] }]) => {
+        if (!alive) return
+        setEditor(ed)
+        setTypePatches(ed.editsByType ?? {})
+        setStudentPatches(ed.editsByChild ?? {})
+        setPhotos(Array.isArray(ph) ? ph : (ph.photos ?? []))
+      })
+      .catch((e) => { if (alive) setError(e instanceof Error ? e.message : 'Ошибка загрузки') })
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [albumId])
+
+  // Редактируемые обложки (есть мастер).
+  const items = useMemo(() => (editor?.items ?? []).filter((i) => i.has_cover && i.master), [editor])
+  const item = items[currentIdx] ?? null
+
+  const data = useMemo(() => {
+    if (!item) return {}
+    return { ...item.base, ...(typePatches[item.cover_type] ?? {}), ...(item.child_id ? studentPatches[item.child_id] ?? {} : {}) }
+  }, [item, typePatches, studentPatches])
+
+  // ── Сохранение (дебаунс по области) ──────────────────────────────────────
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const saveDebounced = useCallback((saveKey: string, body: Record<string, unknown>) => {
+    if (timers.current[saveKey]) clearTimeout(timers.current[saveKey])
+    setSaving(true)
+    timers.current[saveKey] = setTimeout(async () => {
+      try {
+        await fetch('/api/tenant', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      } finally { setSaving(false) }
+    }, 700)
+  }, [])
+
+  const setTypeKey = useCallback((coverType: CoverType, label: string, val: string | null) => {
+    setTypePatches((prev) => {
+      const cur = { ...(prev[coverType] ?? {}) }
+      if (val === null) delete cur[label]; else cur[label] = val
+      saveDebounced(`type:${coverType}`, { action: 'cover_save_edit', album_id: albumId, scope: 'type', cover_type: coverType, data: cur })
+      return { ...prev, [coverType]: cur }
+    })
+  }, [albumId, saveDebounced])
+
+  const setStudentKeys = useCallback((childId: string, patch: Record<string, string | null>) => {
+    setStudentPatches((prev) => {
+      const cur = { ...(prev[childId] ?? {}), ...patch }
+      saveDebounced(`student:${childId}`, { action: 'cover_save_edit', album_id: albumId, scope: 'student', child_id: childId, data: cur })
+      return { ...prev, [childId]: cur }
+    })
+  }, [albumId, saveDebounced])
+
+  // ── Кроп: портрет per-student у портретных, иначе шаблонно ───────────────
+  const cropHandlers: CropHandlers = useMemo(() => ({
+    onChange: (u) => {
+      if (!cropLabel || !item) return
+      const patch: Record<string, string | null> = {}
+      if (u.scale !== undefined) patch[`__scale__${cropLabel}`] = u.scale
+      if (u.offset !== undefined) patch[`__offset__${cropLabel}`] = u.offset
+      if (u.rotate !== undefined) patch[`__rotate__${cropLabel}`] = u.rotate
+      if (cropLabel === 'cover_portrait' && item.child_id) setStudentKeys(item.child_id, patch)
+      else for (const k of Object.keys(patch)) setTypeKey(item.cover_type, k, patch[k])
+    },
+    onClose: () => setCropLabel(null),
+    onGestureStart: () => {},
+    onGestureEnd: () => {},
+  }), [cropLabel, item, setStudentKeys, setTypeKey])
+
+  // ── Drag фото из палитры на слот ─────────────────────────────────────────
+  const handleDragEnd = useCallback((e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || !item) return
+    const photo = (active.data.current as { photo?: AlbumPhoto } | undefined)?.photo
+    if (!photo) return
+    const overId = String(over.id)
+    const at = overId.lastIndexOf('@')
+    const label = at === -1 ? overId : overId.slice(0, at)
+    if (label === 'cover_portrait' && item.child_id) setStudentKeys(item.child_id, { cover_portrait: photo.url })
+    else setTypeKey(item.cover_type, label, photo.url)
+  }, [item, setStudentKeys, setTypeKey])
+
+  // ── Размер холста ────────────────────────────────────────────────────────
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const [canvasWidth, setCanvasWidth] = useState(800)
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const update = () => setCanvasWidth(Math.max(320, el.clientWidth - 32))
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [loading, paletteCollapsed])
+
+  if (loading) return <div className="p-8 text-sm text-muted-foreground">Загрузка редактора обложек…</div>
+  if (error) return <div className="p-8 text-sm text-red-600">{error}</div>
+  if (items.length === 0) return (
+    <div className="p-8 text-sm text-muted-foreground">
+      Нет обложек для редактирования. Настрой обложку в заказе.
+      <button className="ml-2 text-brand hover:underline" onClick={() => router.back()}>Назад</button>
+    </div>
+  )
+
+  return (
+    <div className="h-screen flex flex-col bg-muted">
+      {/* Шапка */}
+      <header className="shrink-0 flex items-center justify-between gap-2 bg-card border-b border-border px-4 py-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <button onClick={() => router.back()} className="btn-secondary !px-2 !py-1.5" title="Назад">
+            <ChevronLeft size={18} />
+          </button>
+          <h1 className="font-semibold truncate" style={{ fontFamily: 'var(--font-display)' }}>Редактор обложек</h1>
+          <span className="text-xs text-muted-foreground truncate">
+            {item ? (item.child_name ?? TYPE_LABEL[item.cover_type]) : ''} · {item?.cover_name}
+          </span>
+        </div>
+        <div className="text-xs text-muted-foreground">{saving ? 'Сохраняю…' : 'Сохранено'}</div>
+      </header>
+
+      <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <div className="flex-1 flex overflow-hidden">
+          {/* Холст */}
+          <main className="flex-1 flex flex-col min-w-0">
+            <div ref={canvasRef} className="flex-1 min-h-0 flex items-center justify-center p-4 overflow-auto">
+              {item && item.master && (
+                <CoverCanvas
+                  master={item.master}
+                  data={data}
+                  spineWidthMm={editor?.spine_width_mm ?? null}
+                  containerWidth={canvasWidth}
+                  mode="edit"
+                  editingTextLabel={editingTextLabel}
+                  onTextClick={(label) => setEditingTextLabel(label)}
+                  onTextSubmit={(label, val) => { if (item) setTypeKey(item.cover_type, label, val); setEditingTextLabel(null) }}
+                  onTextCancel={() => setEditingTextLabel(null)}
+                  onPhotoClick={(label) => setCropLabel(label)}
+                  croppingLabel={cropLabel}
+                  cropHandlers={cropHandlers}
+                />
+              )}
+            </div>
+            {item?.child_id && (
+              <div className="shrink-0 text-center text-xs text-muted-foreground pb-2">
+                Кроп портрета сохраняется индивидуально для ученика. Тексты — общие для всех обложек типа «{TYPE_LABEL[item.cover_type]}».
+              </div>
+            )}
+          </main>
+
+          {/* Палитра фото */}
+          <button
+            onClick={() => setPaletteCollapsed((v) => !v)}
+            className="shrink-0 w-6 bg-card border-l border-border flex items-center justify-center text-muted-foreground hover:text-foreground"
+            title={paletteCollapsed ? 'Показать фото' : 'Скрыть фото'}
+          >
+            {paletteCollapsed ? <PanelRightOpen size={16} /> : <PanelRightClose size={16} />}
+          </button>
+          <div className="hidden md:block shrink-0 overflow-hidden transition-[width]" style={{ width: paletteCollapsed ? 0 : 360 }}>
+            <PhotoPalette spreads={[]} photos={photos} />
+          </div>
+        </div>
+
+        {/* Лента обложек */}
+        <div className="shrink-0 bg-card border-t border-border px-4 py-3">
+          <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Обложки ({items.length})</div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {items.map((it, idx) => (
+              <button
+                key={it.key}
+                onClick={() => { setCurrentIdx(idx); setCropLabel(null); setEditingTextLabel(null) }}
+                className={`flex-shrink-0 text-left rounded border-2 p-1 bg-card ${idx === currentIdx ? 'border-brand-500 ring-2 ring-brand-200' : 'border-border'}`}
+                style={{ width: 110 }}
+              >
+                <div className="w-full bg-muted rounded overflow-hidden" style={{ aspectRatio: '3 / 2' }}
+                  dangerouslySetInnerHTML={{ __html: it.master ? coverThumb(it, editor?.spine_width_mm ?? null, typePatches, studentPatches) : '' }} />
+                <div className="text-[10px] truncate mt-0.5">{it.child_name ?? TYPE_LABEL[it.cover_type]}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </DndContext>
+    </div>
+  )
+}
+
+// Миниатюра ленты со слитыми правками (pure-рендер SVG).
+function coverThumb(
+  it: Item,
+  spine: number | null,
+  typePatches: Record<string, Record<string, string | null>>,
+  studentPatches: Record<string, Record<string, string | null>>,
+): string {
+  const m = it.master
+  if (!m) return ''
+  const n = (v: number | null) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+  const data = { ...it.base, ...(typePatches[it.cover_type] ?? {}), ...(it.child_id ? studentPatches[it.child_id] ?? {} : {}) }
+  const laid = layoutCover(
+    { backWidthMm: n(m.back_width_mm), frontWidthMm: n(m.front_width_mm), heightMm: n(m.height_mm), nominalSpineWidthMm: n(m.nominal_spine_width_mm), realSpineWidthMm: spine ?? n(m.nominal_spine_width_mm) },
+    m.placeholders as Array<RenderPlaceholder & { zone?: 'back' | 'spine' | 'front' }>,
+  )
+  let width = laid.width_mm, height = n(m.height_mm)
+  if (width <= 0 || height <= 0) { width = 100; height = 67 }
+  return renderCoverPreviewSvg({
+    width_mm: width || 100, height_mm: height || 100,
+    spine_left_mm: laid.spine_left_mm, spine_right_mm: laid.spine_right_mm,
+    placeholders: laid.placeholders, data, background_url: m.background_url, hide_empty_slots: true,
+  })
+}
