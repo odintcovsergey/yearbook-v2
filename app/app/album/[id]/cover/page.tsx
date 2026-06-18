@@ -16,7 +16,9 @@ import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } f
 import { ChevronLeft, PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { layoutCover } from '@/lib/cover/layout'
 import { renderCoverPreviewSvg } from '@/lib/cover/preview-svg'
+import { parseFontSizeMult, parseColor, parseHAlign, parseVAlign, parseFontFamily } from '@/lib/text-style'
 import type { RenderPlaceholder } from '@/lib/album-builder/types'
+import TextStylePanel from '../../../_components/TextStylePanel'
 import type { AlbumPhoto } from '../../../_components/PhotoPalette'
 import type { CropHandlers } from '../../../_components/AlbumSpreadCanvas'
 import type { CoverCanvasMaster } from '../../../_components/CoverCanvas'
@@ -66,6 +68,13 @@ export default function CoverEditorPage() {
   const [studentPatches, setStudentPatches] = useState<Record<string, Record<string, string | null>>>({})
 
   const [editingTextLabel, setEditingTextLabel] = useState<string | null>(null)
+  // Панель стилей текста (шрифт/размер/цвет/выравнивание). Открывается вместе
+  // с инлайн-редактором текста; rightEdge/topEdge/leftEdge — границы слота для
+  // позиционирования панели (как в редакторе разворотов).
+  const [textStylePanel, setTextStylePanel] = useState<
+    | null
+    | { label: string; rightEdge: number; topEdge: number; leftEdge: number }
+  >(null)
   const [cropLabel, setCropLabel] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -127,6 +136,35 @@ export default function CoverEditorPage() {
       return { ...prev, [childId]: cur }
     })
   }, [albumId, saveDebounced])
+
+  // ── Стиль текста: служебные ключи __fontSize__/__color__/__halign__/
+  //    __valign__/__font__ на уровне типа обложки (шаблонные правки) ─────────
+  const handleTextStyleChange = useCallback((updates: {
+    fontSize?: string | null
+    color?: string | null
+    halign?: string | null
+    valign?: string | null
+    font?: string | null
+  }) => {
+    if (!textStylePanel || !item) return
+    const label = textStylePanel.label
+    const coverType = item.cover_type
+    setTypePatches((prev) => {
+      const cur = { ...(prev[coverType] ?? {}) }
+      const apply = (key: string, val?: string | null) => {
+        if (val === undefined) return
+        if (val === null) delete cur[key]
+        else cur[key] = val
+      }
+      apply(`__fontSize__${label}`, updates.fontSize)
+      apply(`__color__${label}`, updates.color)
+      apply(`__halign__${label}`, updates.halign)
+      apply(`__valign__${label}`, updates.valign)
+      apply(`__font__${label}`, updates.font)
+      saveDebounced(`type:${coverType}`, { action: 'cover_save_edit', album_id: albumId, scope: 'type', cover_type: coverType, data: cur })
+      return { ...prev, [coverType]: cur }
+    })
+  }, [textStylePanel, item, albumId, saveDebounced])
 
   // ── Кроп: портрет per-student у портретных, иначе шаблонно ───────────────
   const cropHandlers: CropHandlers = useMemo(() => ({
@@ -208,10 +246,13 @@ export default function CoverEditorPage() {
                   containerWidth={canvasWidth}
                   mode="edit"
                   editingTextLabel={editingTextLabel}
-                  onTextClick={(label) => setEditingTextLabel(label)}
-                  onTextSubmit={(label, val) => { if (item) setTypeKey(item.cover_type, label, val); setEditingTextLabel(null) }}
-                  onTextCancel={() => setEditingTextLabel(null)}
-                  onPhotoClick={(label) => setCropLabel(label)}
+                  onTextClick={(label, _currentValue, rightEdge, topEdge, leftEdge) => {
+                    setEditingTextLabel(label)
+                    setTextStylePanel({ label, rightEdge, topEdge, leftEdge })
+                  }}
+                  onTextSubmit={(label, val) => { if (item) setTypeKey(item.cover_type, label, val); setEditingTextLabel(null); setTextStylePanel(null) }}
+                  onTextCancel={() => { setEditingTextLabel(null); setTextStylePanel(null) }}
+                  onPhotoClick={(label) => { setEditingTextLabel(null); setTextStylePanel(null); setCropLabel(label) }}
                   croppingLabel={cropLabel}
                   cropHandlers={cropHandlers}
                 />
@@ -244,7 +285,7 @@ export default function CoverEditorPage() {
             {items.map((it, idx) => (
               <button
                 key={it.key}
-                onClick={() => { setCurrentIdx(idx); setCropLabel(null); setEditingTextLabel(null) }}
+                onClick={() => { setCurrentIdx(idx); setCropLabel(null); setEditingTextLabel(null); setTextStylePanel(null) }}
                 className={`flex-shrink-0 text-left rounded border-2 p-1 bg-card ${idx === currentIdx ? 'border-brand-500 ring-2 ring-brand-200' : 'border-border'}`}
                 style={{ width: 110 }}
               >
@@ -256,6 +297,34 @@ export default function CoverEditorPage() {
           </div>
         </div>
       </DndContext>
+
+      {/* Панель стилей текста — шрифт/размер/цвет/выравнивание (как в разворотах). */}
+      {textStylePanel && item && (() => {
+        const label = textStylePanel.label
+        const mult = parseFontSizeMult(data[`__fontSize__${label}`])
+        const colorOv = parseColor(data[`__color__${label}`])
+        const hAlignOv = parseHAlign(data[`__halign__${label}`])
+        const vAlignOv = parseVAlign(data[`__valign__${label}`])
+        const fontOv = parseFontFamily(data[`__font__${label}`])
+        const ph = item.master?.placeholders.find((p) => p.label === label)
+        const templateFontFamily = ph && ph.type === 'text' ? ph.font_family : null
+        return (
+          <TextStylePanel
+            label={label}
+            fontSizeMult={mult}
+            colorOverride={colorOv}
+            hAlignOverride={hAlignOv}
+            vAlignOverride={vAlignOv}
+            fontFamilyOverride={fontOv}
+            templateFontFamily={templateFontFamily}
+            rightEdge={textStylePanel.rightEdge}
+            topEdge={textStylePanel.topEdge}
+            leftEdge={textStylePanel.leftEdge}
+            onChange={handleTextStyleChange}
+            onClose={() => setTextStylePanel(null)}
+          />
+        )
+      })()}
     </div>
   )
 }
