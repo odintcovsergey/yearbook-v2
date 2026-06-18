@@ -13,12 +13,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
-import { ChevronLeft, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { ChevronLeft, PanelRightClose, PanelRightOpen, Eye } from 'lucide-react'
 import { layoutCover } from '@/lib/cover/layout'
 import { renderCoverPreviewSvg } from '@/lib/cover/preview-svg'
 import { parseFontSizeMult, parseColor, parseHAlign, parseVAlign, parseFontFamily } from '@/lib/text-style'
 import type { RenderPlaceholder } from '@/lib/album-builder/types'
 import TextStylePanel from '../../../_components/TextStylePanel'
+import CoverPreviewFullscreen, { type CoverPreviewItem } from '../../../_components/CoverPreviewFullscreen'
 import type { AlbumPhoto } from '../../../_components/PhotoPalette'
 import type { CropHandlers } from '../../../_components/AlbumSpreadCanvas'
 import type { CoverCanvasMaster } from '../../../_components/CoverCanvas'
@@ -77,6 +78,17 @@ export default function CoverEditorPage() {
   >(null)
   const [cropLabel, setCropLabel] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // Полноэкранный просмотр готовых обложек («Вид»).
+  const [fullscreenOpen, setFullscreenOpen] = useState(false)
+
+  // ── Undo/Redo: история снимков правок (typePatches + studentPatches) ──────
+  type Snapshot = {
+    typePatches: Record<string, Record<string, string | null>>
+    studentPatches: Record<string, Record<string, string | null>>
+  }
+  const [history, setHistory] = useState<{ past: Snapshot[]; future: Snapshot[] }>({ past: [], future: [] })
+  // Во время непрерывного жеста (кроп) не пишем шаг на каждый тик.
+  const suspendHistoryRef = useRef(false)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -92,6 +104,7 @@ export default function CoverEditorPage() {
         setEditor(ed)
         setTypePatches(ed.editsByType ?? {})
         setStudentPatches(ed.editsByChild ?? {})
+        setHistory({ past: [], future: [] })
         setPhotos(Array.isArray(ph) ? ph : (ph.photos ?? []))
       })
       .catch((e) => { if (alive) setError(e instanceof Error ? e.message : 'Ошибка загрузки') })
@@ -120,22 +133,84 @@ export default function CoverEditorPage() {
     }, 700)
   }, [])
 
+  // Снимок текущих правок (через refs — всегда актуально, без устаревания в
+  // замыканиях). Перед каждым действием кладём его в past.
+  const typePatchesRef = useRef(typePatches)
+  typePatchesRef.current = typePatches
+  const studentPatchesRef = useRef(studentPatches)
+  studentPatchesRef.current = studentPatches
+  const snapshot = useCallback((): Snapshot => ({
+    typePatches: typePatchesRef.current,
+    studentPatches: studentPatchesRef.current,
+  }), [])
+  const pushHistory = useCallback(() => {
+    if (suspendHistoryRef.current) return
+    setHistory((h) => ({ past: [...h.past, snapshot()].slice(-100), future: [] }))
+  }, [snapshot])
+
   const setTypeKey = useCallback((coverType: CoverType, label: string, val: string | null) => {
+    pushHistory()
     setTypePatches((prev) => {
       const cur = { ...(prev[coverType] ?? {}) }
       if (val === null) delete cur[label]; else cur[label] = val
       saveDebounced(`type:${coverType}`, { action: 'cover_save_edit', album_id: albumId, scope: 'type', cover_type: coverType, data: cur })
       return { ...prev, [coverType]: cur }
     })
-  }, [albumId, saveDebounced])
+  }, [albumId, saveDebounced, pushHistory])
 
   const setStudentKeys = useCallback((childId: string, patch: Record<string, string | null>) => {
+    pushHistory()
     setStudentPatches((prev) => {
       const cur = { ...(prev[childId] ?? {}), ...patch }
       saveDebounced(`student:${childId}`, { action: 'cover_save_edit', album_id: albumId, scope: 'student', child_id: childId, data: cur })
       return { ...prev, [childId]: cur }
     })
+  }, [albumId, saveDebounced, pushHistory])
+
+  // Сохраняет на сервер все области (тип/ученик), различающиеся между снимками.
+  // Используется при undo/redo: восстановленное состояние нужно записать в БД.
+  const saveChangedScopes = useCallback((from: Snapshot, to: Snapshot) => {
+    const types = Array.from(new Set([...Object.keys(from.typePatches), ...Object.keys(to.typePatches)]))
+    for (const ct of types) {
+      const a = from.typePatches[ct] ?? {}
+      const b = to.typePatches[ct] ?? {}
+      if (JSON.stringify(a) !== JSON.stringify(b)) {
+        saveDebounced(`type:${ct}`, { action: 'cover_save_edit', album_id: albumId, scope: 'type', cover_type: ct, data: b })
+      }
+    }
+    const kids = Array.from(new Set([...Object.keys(from.studentPatches), ...Object.keys(to.studentPatches)]))
+    for (const cid of kids) {
+      const a = from.studentPatches[cid] ?? {}
+      const b = to.studentPatches[cid] ?? {}
+      if (JSON.stringify(a) !== JSON.stringify(b)) {
+        saveDebounced(`student:${cid}`, { action: 'cover_save_edit', album_id: albumId, scope: 'student', child_id: cid, data: b })
+      }
+    }
   }, [albumId, saveDebounced])
+
+  const handleUndo = useCallback(() => {
+    setHistory((h) => {
+      if (h.past.length === 0) return h
+      const prev = h.past[h.past.length - 1]
+      const cur = snapshot()
+      setTypePatches(prev.typePatches)
+      setStudentPatches(prev.studentPatches)
+      saveChangedScopes(cur, prev)
+      return { past: h.past.slice(0, -1), future: [...h.future, cur] }
+    })
+  }, [snapshot, saveChangedScopes])
+
+  const handleRedo = useCallback(() => {
+    setHistory((h) => {
+      if (h.future.length === 0) return h
+      const next = h.future[h.future.length - 1]
+      const cur = snapshot()
+      setTypePatches(next.typePatches)
+      setStudentPatches(next.studentPatches)
+      saveChangedScopes(cur, next)
+      return { past: [...h.past, cur], future: h.future.slice(0, -1) }
+    })
+  }, [snapshot, saveChangedScopes])
 
   // ── Стиль текста: служебные ключи __fontSize__/__color__/__halign__/
   //    __valign__/__font__ на уровне типа обложки (шаблонные правки) ─────────
@@ -147,6 +222,7 @@ export default function CoverEditorPage() {
     font?: string | null
   }) => {
     if (!textStylePanel || !item) return
+    pushHistory()
     const label = textStylePanel.label
     const coverType = item.cover_type
     setTypePatches((prev) => {
@@ -164,7 +240,7 @@ export default function CoverEditorPage() {
       saveDebounced(`type:${coverType}`, { action: 'cover_save_edit', album_id: albumId, scope: 'type', cover_type: coverType, data: cur })
       return { ...prev, [coverType]: cur }
     })
-  }, [textStylePanel, item, albumId, saveDebounced])
+  }, [textStylePanel, item, albumId, saveDebounced, pushHistory])
 
   // ── Кроп: портрет per-student у портретных, иначе шаблонно ───────────────
   const cropHandlers: CropHandlers = useMemo(() => ({
@@ -178,9 +254,11 @@ export default function CoverEditorPage() {
       else for (const k of Object.keys(patch)) setTypeKey(item.cover_type, k, patch[k])
     },
     onClose: () => setCropLabel(null),
-    onGestureStart: () => {},
-    onGestureEnd: () => {},
-  }), [cropLabel, item, setStudentKeys, setTypeKey])
+    // Непрерывный жест кропа → один шаг undo: снимок один раз в начале,
+    // далее не пишем историю до конца жеста.
+    onGestureStart: () => { pushHistory(); suspendHistoryRef.current = true },
+    onGestureEnd: () => { suspendHistoryRef.current = false },
+  }), [cropLabel, item, setStudentKeys, setTypeKey, pushHistory])
 
   // ── Drag фото из палитры на слот ─────────────────────────────────────────
   const handleDragEnd = useCallback((e: DragEndEvent) => {
@@ -208,6 +286,29 @@ export default function CoverEditorPage() {
     return () => ro.disconnect()
   }, [loading, paletteCollapsed])
 
+  // Переход к обложке N со сбросом активных режимов (кроп/текст/панель).
+  const goToIdx = useCallback((i: number) => {
+    setCurrentIdx(Math.max(0, Math.min(items.length - 1, i)))
+    setCropLabel(null)
+    setEditingTextLabel(null)
+    setTextStylePanel(null)
+  }, [items.length])
+
+  // Клавиатура: Ctrl/Cmd+Z — отменить, Ctrl/Cmd+Shift+Z — повторить.
+  // Во время инлайн-редактирования текста и в полноэкранном «Виде» не
+  // перехватываем (там свой undo / своя навигация).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (fullscreenOpen || editingTextLabel) return
+      const mod = e.metaKey || e.ctrlKey
+      if (!mod || e.key.toLowerCase() !== 'z') return
+      e.preventDefault()
+      if (e.shiftKey) handleRedo(); else handleUndo()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreenOpen, editingTextLabel, handleUndo, handleRedo])
+
   if (loading) return <div className="p-8 text-sm text-muted-foreground">Загрузка редактора обложек…</div>
   if (error) return <div className="p-8 text-sm text-red-600">{error}</div>
   if (items.length === 0) return (
@@ -230,7 +331,45 @@ export default function CoverEditorPage() {
             {item ? (item.child_name ?? TYPE_LABEL[item.cover_type]) : ''} · {item?.cover_name}
           </span>
         </div>
-        <div className="text-xs text-muted-foreground">{saving ? 'Сохраняю…' : 'Сохранено'}</div>
+        <div className="flex items-center gap-3">
+          {/* Полноэкранный просмотр готовых обложек. */}
+          <button
+            type="button"
+            onClick={() => setFullscreenOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted text-foreground transition-colors"
+            title="Полноэкранный просмотр готовых обложек"
+          >
+            <Eye size={16} /> Вид
+          </button>
+          {/* Отменить / Повторить. */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={history.past.length === 0}
+              className="px-2.5 py-1 text-sm rounded border border-border bg-card hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title="Отменить (Ctrl/⌘+Z)"
+            >
+              ↶ Отменить
+              {history.past.length > 0 && (
+                <span className="ml-1 text-xs text-muted-foreground">({history.past.length})</span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleRedo}
+              disabled={history.future.length === 0}
+              className="px-2.5 py-1 text-sm rounded border border-border bg-card hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title="Повторить (Ctrl/⌘+Shift+Z)"
+            >
+              ↷ Повторить
+              {history.future.length > 0 && (
+                <span className="ml-1 text-xs text-muted-foreground">({history.future.length})</span>
+              )}
+            </button>
+          </div>
+          <div className="text-xs text-muted-foreground">{saving ? 'Сохраняю…' : '✓ Сохранено'}</div>
+        </div>
       </header>
 
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
@@ -263,6 +402,28 @@ export default function CoverEditorPage() {
                 Кроп портрета сохраняется индивидуально для ученика. Тексты — общие для всех обложек типа «{TYPE_LABEL[item.cover_type]}».
               </div>
             )}
+            {/* Навигация между обложками. */}
+            <div className="shrink-0 flex items-center justify-center gap-3 pb-3">
+              <button
+                type="button"
+                onClick={() => goToIdx(currentIdx - 1)}
+                disabled={currentIdx <= 0}
+                className="px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ◀ Назад
+              </button>
+              <span className="text-sm text-muted-foreground">
+                Обложка {currentIdx + 1} из {items.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => goToIdx(currentIdx + 1)}
+                disabled={currentIdx >= items.length - 1}
+                className="px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Вперёд ▶
+              </button>
+            </div>
           </main>
 
           {/* Палитра фото */}
@@ -285,7 +446,7 @@ export default function CoverEditorPage() {
             {items.map((it, idx) => (
               <button
                 key={it.key}
-                onClick={() => { setCurrentIdx(idx); setCropLabel(null); setEditingTextLabel(null); setTextStylePanel(null) }}
+                onClick={() => goToIdx(idx)}
                 className={`flex-shrink-0 text-left rounded border-2 p-1 bg-card ${idx === currentIdx ? 'border-brand-500 ring-2 ring-brand-200' : 'border-border'}`}
                 style={{ width: 110 }}
               >
@@ -325,6 +486,21 @@ export default function CoverEditorPage() {
           />
         )
       })()}
+
+      {/* Полноэкранный просмотр готовых обложек («Вид»). */}
+      {fullscreenOpen && (
+        <CoverPreviewFullscreen
+          items={items.reduce<CoverPreviewItem[]>((acc, it) => {
+            if (!it.master) return acc
+            const merged = { ...it.base, ...(typePatches[it.cover_type] ?? {}), ...(it.child_id ? studentPatches[it.child_id] ?? {} : {}) }
+            acc.push({ master: it.master, data: merged, name: it.child_name ?? TYPE_LABEL[it.cover_type] })
+            return acc
+          }, [])}
+          spineWidthMm={editor?.spine_width_mm ?? null}
+          initialIdx={currentIdx}
+          onClose={() => setFullscreenOpen(false)}
+        />
+      )}
     </div>
   )
 }
