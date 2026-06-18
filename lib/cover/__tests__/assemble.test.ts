@@ -216,6 +216,20 @@ describe('fillCoverData', () => {
     const data = fillCoverData(c, 'design_only', null, SHARED);
     expect(data.cover_student_name).toBeNull();
   });
+
+  it('декор-метки (__under/__over/__fg) гасятся в null (не показывают default_text)', () => {
+    const c = makeCover({
+      type: 'portrait_photo',
+      labels: ['cover_student_name', 'cover_student_name__under', 'cover_title__over', '__fg_1'],
+    });
+    const data = fillCoverData(c, 'portrait_photo', student('3'), SHARED);
+    expect(data.cover_student_name).toBe('Ученик 3'); // обычный слот заполнен
+    // Декор: ключ присутствует и равен null → холст не подставит default_text.
+    expect('cover_student_name__under' in data).toBe(true);
+    expect(data.cover_student_name__under).toBeNull();
+    expect(data.cover_title__over).toBeNull();
+    expect(data.__fg_1).toBeNull();
+  });
 });
 
 describe('assembleCovers', () => {

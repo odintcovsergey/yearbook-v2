@@ -138,6 +138,15 @@ export function resolveCoverForStudent(
 }
 
 /**
+ * Метка привязанного/переднего декора: `<base>__under` / `<base>__over`
+ * (привязанный декор) или `__fg` / `__fg_<n>` (передний план). Такие фреймы —
+ * графика, поэтому текстовую заглушку (default_text) на них не показываем.
+ */
+function isDecorationLabel(label: string): boolean {
+  return /__(under|over)$/.test(label) || /^__fg(_\d+)?$/.test(label);
+}
+
+/**
  * Раскладывает данные по меткам обложки для конкретного ученика и типа.
  * Заполняет только известные семантические метки; декоративный текст
  * (default_text) и неизвестные метки оставляет рендеру.
@@ -157,6 +166,15 @@ export function fillCoverData(
 
   for (const ph of cover.placeholders) {
     const label = ph.label.toLowerCase();
+    // Декор-метки (`<base>__under` / `__over` / `__fg`) — это графика-подложка
+    // или рамка, а НЕ текст. Если такой фрейм по ошибке пришёл текстовым
+    // (с default_text из IDML, напр. `cover_student_name__under` тащил
+    // «Фёдорова Варвара»), явно гасим его: ставим null, чтобы рендер холста
+    // не подставлял default_text как заглушку.
+    if (isDecorationLabel(label)) {
+      data[ph.label] = null;
+      continue;
+    }
     switch (label) {
       case 'cover_portrait':
         // Портрет только для персональных обложек (portrait_photo).
