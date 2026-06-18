@@ -11,8 +11,9 @@
  */
 
 import type {
-  Placeholder,
+  DecorationPlaceholder,
   PhotoPlaceholder,
+  RenderPlaceholder,
   TextPlaceholder,
 } from '../album-builder/types';
 
@@ -28,17 +29,37 @@ export type CoverPreviewInput = {
   height_mm: number;
   spine_left_mm: number;
   spine_right_mm: number;
-  placeholders: Placeholder[];
+  /** Слоты обложки. Декор (type='decoration') рисуется по слою under/over/fg. */
+  placeholders: RenderPlaceholder[];
   /** Данные сборки (label → URL фото или текст). Пусто = заглушки слотов. */
   data?: Record<string, string | null>;
+  /** Фон обложки на всё полотно (covers.background_url). */
+  background_url?: string | null;
+  /**
+   * Скрывать пустые слоты (без данных) вместо серых заглушек. true для превью
+   * собранного альбома (реальная обложка), false для библиотечного превью.
+   */
+  hide_empty_slots?: boolean;
 };
 
 /**
  * Рендерит SVG-превью полотна обложки. viewBox — в миллиметрах, масштаб через
  * CSS контейнера. Готово для dangerouslySetInnerHTML.
+ *
+ * Порядок слоёв: фон → декор under → слоты (фото/текст) → декор over/foreground
+ * → пунктир границ корешка (всегда сверху, чтобы был виден плавающий корешок).
  */
 export function renderCoverPreviewSvg(input: CoverPreviewInput): string {
-  const { width_mm: w, height_mm: h, spine_left_mm, spine_right_mm, placeholders, data } = input;
+  const {
+    width_mm: w,
+    height_mm: h,
+    spine_left_mm,
+    spine_right_mm,
+    placeholders,
+    data,
+    background_url,
+    hide_empty_slots,
+  } = input;
 
   const parts: string[] = [];
   parts.push(
@@ -50,17 +71,51 @@ export function renderCoverPreviewSvg(input: CoverPreviewInput): string {
     `<rect x="0" y="0" width="${fmt(w)}" height="${fmt(h)}" fill="white" stroke="${PAGE_BORDER}" stroke-width="${fmt(PAGE_BORDER_WIDTH_MM)}"/>`,
   );
 
+  // Фон обложки на всё полотно (cover-crop).
+  if (background_url) {
+    parts.push(
+      `<image href="${esc(background_url)}" x="0" y="0" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid slice"/>`,
+    );
+  }
+
+  // Декор под слотами.
+  for (const ph of placeholders) {
+    if (ph.type === 'decoration' && ph.layer === 'under') {
+      parts.push(renderDecor(ph as DecorationPlaceholder));
+    }
+  }
+
+  // Слоты (фото/текст).
+  for (const ph of placeholders) {
+    if (ph.type === 'photo' || ph.type === 'text') {
+      parts.push(renderPlaceholder(ph, data, hide_empty_slots ?? false));
+    }
+  }
+
+  // Декор поверх слотов (over + передний план).
+  for (const ph of placeholders) {
+    if (ph.type === 'decoration' && (ph.layer === 'over' || ph.layer === 'foreground')) {
+      parts.push(renderDecor(ph as DecorationPlaceholder));
+    }
+  }
+
   // Границы зоны корешка (пунктир) — наглядно показывают плавающий корешок.
   parts.push(zoneGuide(spine_left_mm, h));
   parts.push(zoneGuide(spine_right_mm, h));
 
-  // Содержимое.
-  for (const ph of placeholders) {
-    parts.push(renderPlaceholder(ph, data));
-  }
-
   parts.push('</svg>');
   return parts.join('');
+}
+
+/** Декор-картинка (привязанный/передний план) — рисуется в своей рамке. */
+function renderDecor(ph: DecorationPlaceholder): string {
+  if (!ph.url) return '';
+  const { x_mm: x, y_mm: y, width_mm: w, height_mm: h } = ph;
+  const rotation = ph.rotation_deg ?? 0;
+  const transform = rotation !== 0
+    ? ` transform="rotate(${fmt(rotation)} ${fmt(x + w / 2)} ${fmt(y + h / 2)})"`
+    : '';
+  return `<image href="${esc(ph.url)}" x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid meet"${transform}/>`;
 }
 
 function zoneGuide(x: number, h: number): string {
@@ -68,25 +123,24 @@ function zoneGuide(x: number, h: number): string {
 }
 
 function renderPlaceholder(
-  ph: Placeholder,
-  data?: Record<string, string | null>,
+  ph: PhotoPlaceholder | TextPlaceholder,
+  data: Record<string, string | null> | undefined,
+  hideEmpty: boolean,
 ): string {
   if (ph.type === 'photo') {
-    return renderPhotoSlot(ph, data?.[ph.label] ?? null);
+    return renderPhotoSlot(ph, data?.[ph.label] ?? null, hideEmpty);
   }
-  if (ph.type === 'text') {
-    return renderTextSlot(ph, data?.[ph.label] ?? null);
-  }
-  // Декор и прочее в SVG-превью пропускаем (отрисуется в Konva/PDF).
-  return '';
+  return renderTextSlot(ph, data?.[ph.label] ?? null, hideEmpty);
 }
 
-function renderPhotoSlot(ph: PhotoPlaceholder, url: string | null): string {
+function renderPhotoSlot(ph: PhotoPlaceholder, url: string | null, hideEmpty: boolean): string {
   const { x_mm: x, y_mm: y, width_mm: w, height_mm: h } = ph;
   const rotation = ph.rotation_deg ?? 0;
   const transform = rotation !== 0
     ? ` transform="rotate(${fmt(rotation)} ${fmt(x + w / 2)} ${fmt(y + h / 2)})"`
     : '';
+
+  if (!url && hideEmpty) return '';
 
   if (url) {
     if (ph.is_circle) {
@@ -108,7 +162,7 @@ function renderPhotoSlot(ph: PhotoPlaceholder, url: string | null): string {
   return `<rect x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}" fill="${SLOT_FILL}"${transform}/>`;
 }
 
-function renderTextSlot(ph: TextPlaceholder, value: string | null): string {
+function renderTextSlot(ph: TextPlaceholder, value: string | null, hideEmpty: boolean): string {
   const { x_mm: x, y_mm: y, width_mm: w, height_mm: h } = ph;
   const rotation = ph.rotation_deg ?? 0;
   const cx = x + w / 2;
@@ -116,6 +170,8 @@ function renderTextSlot(ph: TextPlaceholder, value: string | null): string {
   const transform = rotation !== 0
     ? ` transform="rotate(${fmt(rotation)} ${fmt(cx)} ${fmt(cy)})"`
     : '';
+
+  if (!(value && value.trim()) && hideEmpty) return '';
 
   if (value && value.trim()) {
     // Реальный текст — показываем по центру слота.

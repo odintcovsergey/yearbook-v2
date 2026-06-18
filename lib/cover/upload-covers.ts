@@ -24,9 +24,15 @@ const DECORATIONS_BUCKET = 'template-decorations';
 export type CoverUploadMeta = {
   /** null = глобальная обложка (видна всем). UUID = обложка тенанта. */
   tenantId: string | null;
+  /**
+   * UUID дизайна (template_set). Если задан — обложка РОДНАЯ для дизайна:
+   * template_set_id заполнен, is_global=false (видна только своему дизайну).
+   * null = библиотечная (дизайнерская) обложка.
+   */
+  templateSetId?: string | null;
   /** Публиковать сразу (видна в выборе). По умолчанию false (черновик). */
   isPublished?: boolean;
-  /** Перезаписать обложку с тем же (tenant, slug). */
+  /** Перезаписать обложку с тем же (tenant, template_set, slug). */
   force?: boolean;
 };
 
@@ -91,11 +97,14 @@ export function buildCoverRow(
 ): Record<string, unknown> {
   const { cover_type, gender_hint } = deriveCoverType(master.name, master.placeholders);
   const zones = master.cover_zones ?? null;
+  const templateSetId = meta.templateSetId ?? null;
 
   return {
     tenant_id: meta.tenantId,
-    is_global: meta.tenantId === null,
-    template_set_id: null, // библиотечная (не привязана к дизайну)
+    // Глобальная (дизайнерская библиотека) — только если НЕ привязана к дизайну
+    // И не принадлежит тенанту. Родная обложка дизайна → is_global=false.
+    is_global: templateSetId === null && meta.tenantId === null,
+    template_set_id: templateSetId,
     name: master.name,
     slug: coverSlug(master.name),
     cover_type,
@@ -170,10 +179,13 @@ export async function uploadCoversToSupabase(
     const tenantKey = meta.tenantId ?? 'global';
     await uploadCoverDecor(master, `${tenantKey}/${slug}`, supabase);
 
-    // Перезапись: удаляем существующую обложку того же (tenant, slug).
+    // Перезапись: удаляем существующую обложку того же (tenant, template_set, slug).
     if (meta.force) {
       let del = supabase.from('covers').delete().eq('slug', slug);
       del = meta.tenantId ? del.eq('tenant_id', meta.tenantId) : del.is('tenant_id', null);
+      del = meta.templateSetId
+        ? del.eq('template_set_id', meta.templateSetId)
+        : del.is('template_set_id', null);
       const { error: delErr } = await del;
       if (delErr) {
         throw new Error(`Failed to replace cover ${slug}: ${delErr.message}`);

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { BookImage, AlertTriangle } from 'lucide-react'
 import CoverUploadModal from './_components/CoverUploadModal'
+import CoverBackgroundButton from './_components/CoverBackgroundButton'
 
 type AuthData = {
   authenticated: boolean
@@ -23,6 +24,7 @@ type CoverRow = {
   front_width_mm: number | null
   height_mm: number | null
   nominal_spine_width_mm: number | null
+  background_url: string | null
   preview_svg: string
 }
 
@@ -63,7 +65,9 @@ export default function CoversPage() {
     setLoading(true)
     setError(null)
     try {
-      const r = await api('/api/covers?action=list')
+      // Эта страница — дизайнерская библиотека (глобальные обложки).
+      // Родные обложки дизайнов живут в карточке дизайна (scope=library их прячет).
+      const r = await api('/api/covers?action=list&scope=library')
       if (!r.ok) {
         const d = await r.json().catch(() => ({}))
         throw new Error(d.error ?? `HTTP ${r.status}`)
@@ -170,10 +174,14 @@ export default function CoversPage() {
                   {c.gender_hint ? ` · ${c.gender_hint}` : ''}
                   {c.is_global ? ' · глобальная' : ''}
                 </div>
-                <div className="text-xs text-muted-foreground mb-3">
+                <div className="text-xs text-muted-foreground mb-2">
                   {c.nominal_spine_width_mm != null
                     ? `корешок (макет) ${c.nominal_spine_width_mm} мм`
                     : <><AlertTriangle size={12} className="inline" /> зоны не распознаны</>}
+                  {c.background_url ? ' · фон есть' : ' · без фона'}
+                </div>
+                <div className="mb-3">
+                  <CoverBackgroundButton coverId={c.id} hasBackground={!!c.background_url} onChanged={loadCovers} />
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => togglePublished(c)} disabled={busyId === c.id} className="btn-secondary text-xs flex-1">

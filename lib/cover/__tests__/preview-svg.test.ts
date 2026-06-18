@@ -62,6 +62,41 @@ describe('renderCoverPreviewSvg', () => {
     expect(svg).toContain('#d1d5db'); // заглушка фото/текста
   });
 
+  it('рисует фон обложки на всё полотно (background_url)', () => {
+    const svg = renderCoverPreviewSvg({ ...BASE, background_url: 'https://cdn/bg.jpg' });
+    expect(svg).toContain('href="https://cdn/bg.jpg"');
+    expect(svg).toContain('width="420"');
+    expect(svg).toContain('height="280"');
+  });
+
+  it('hide_empty_slots: пустые слоты не рисуются (нет серых заглушек)', () => {
+    const svg = renderCoverPreviewSvg({ ...BASE, hide_empty_slots: true });
+    expect(svg).not.toContain('#d1d5db');
+  });
+
+  it('hide_empty_slots не скрывает заполненные слоты', () => {
+    const svg = renderCoverPreviewSvg({
+      ...BASE,
+      hide_empty_slots: true,
+      data: { cover_title: 'Выпуск 11А' },
+    });
+    expect(svg).toContain('Выпуск 11А');
+  });
+
+  it('рисует декор-картинку (type=decoration) через <image>', () => {
+    const decor = {
+      type: 'decoration',
+      label: 'cover_title__under',
+      layer: 'under',
+      attached_to: 'cover_title',
+      url: 'https://cdn/ribbon.png',
+      x_mm: 240, y_mm: 120, width_mm: 100, height_mm: 30,
+      offset_x_mm: 0, offset_y_mm: 0,
+    } as unknown as CoverPreviewInput['placeholders'][number];
+    const svg = renderCoverPreviewSvg({ ...BASE, placeholders: [...BASE.placeholders, decor] });
+    expect(svg).toContain('href="https://cdn/ribbon.png"');
+  });
+
   it('с данными показывает фото через <image> и текст через <text>', () => {
     const svg = renderCoverPreviewSvg({
       ...BASE,

@@ -111,6 +111,7 @@ export async function buildCoverGallery(
       front_width_mm: c.front_width_mm,
       height_mm: c.height_mm,
       nominal_spine_width_mm: (c as unknown as { nominal_spine_width_mm: number | null }).nominal_spine_width_mm ?? null,
+      background_url: c.background_url ?? null,
     };
     items.push({
       id: c.id,
