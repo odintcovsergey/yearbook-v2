@@ -3440,6 +3440,21 @@ function AlbumFormModal({
     setCoverPreviewLoading(true)
     setCoverPreviewData(null)
     try {
+      // Превью читает СОХРАНЁННЫЙ заказ. Сначала сохраняем текущие настройки
+      // обложки/типографии, чтобы свежий выбор был виден в превью.
+      await api('/api/tenant', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'update_album',
+          album_id: album.id,
+          cover_portrait_charge: form.cover_portrait_charge,
+          cover_layout_mode: form.cover_layout_mode,
+          cover_default_type: form.cover_default_type,
+          cover_available_ids: form.cover_available_ids,
+          printer_id: form.printer_id,
+          sheet_type_id: form.sheet_type_id,
+        }),
+      })
       const r = await api(`/api/tenant?action=cover_album_preview&album_id=${album.id}`)
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
@@ -3782,7 +3797,7 @@ function AlbumFormModal({
                 <div className="text-sm text-muted-foreground mb-3">
                   Корешок: {coverPreviewData.spine_width_mm != null
                     ? `${coverPreviewData.spine_width_mm.toFixed(1)} мм`
-                    : 'не посчитан (нет пресета печати или сохранённого макета альбома)'}
+                    : 'не посчитан (нет типографии, диапазона или сохранённого макета альбома)'}
                 </div>
                 {coverPreviewData.warnings.length > 0 && (
                   <div className="card p-3 bg-amber-50 border-amber-200 text-xs text-amber-800 mb-3">
@@ -4235,7 +4250,7 @@ function AlbumFormModal({
                       <Eye size={16} /> Превью обложки
                     </button>
                     <div className="text-xs text-muted-foreground mt-1">
-                      Соберёт обложку с реальными ФИО/городом/годом и посчитанным корешком.
+                      Сохранит настройки обложки и соберёт превью с реальными ФИО/городом/годом и корешком.
                     </div>
                   </div>
                 )}
