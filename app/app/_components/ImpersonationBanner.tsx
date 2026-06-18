@@ -82,7 +82,7 @@ export function ImpersonationBanner() {
   if (!state?.impersonating) return null
 
   return (
-    <div className="w-full bg-amber-500 text-amber-950 px-4 py-2 flex items-center justify-center gap-3 text-sm font-medium shadow-md relative z-[60]">
+    <div className="w-full bg-amber-500 text-amber-950 px-4 py-2 flex items-center justify-center gap-3 text-sm font-medium shadow-md sticky top-0 z-[60]">
       <span className="text-base leading-none">👤</span>
       <span>
         Вы в кабинете партнёра <b>«{state.partnerName}»</b> как менеджер <b>{state.managerName}</b>.
