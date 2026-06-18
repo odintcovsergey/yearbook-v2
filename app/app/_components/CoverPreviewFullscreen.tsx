@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
+import type { CoverTextStyleOverrides } from '@/lib/cover/text-styles'
 import type { CoverCanvasMaster } from './CoverCanvas'
 
 const CoverCanvas = dynamic(() => import('./CoverCanvas'), { ssr: false, loading: () => null })
@@ -27,6 +28,7 @@ type Props = {
   items: CoverPreviewItem[]
   spineWidthMm: number | null
   initialIdx: number
+  coverTextStyles?: CoverTextStyleOverrides | null
   onClose: () => void
 }
 
@@ -34,7 +36,7 @@ function num(v: number | null): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0
 }
 
-export default function CoverPreviewFullscreen({ items, spineWidthMm, initialIdx, onClose }: Props) {
+export default function CoverPreviewFullscreen({ items, spineWidthMm, initialIdx, coverTextStyles, onClose }: Props) {
   const total = items.length
   const clampIdx = useCallback((i: number) => Math.max(0, Math.min(total - 1, i)), [total])
   const [idx, setIdx] = useState(() => clampIdx(initialIdx))
@@ -138,6 +140,7 @@ export default function CoverPreviewFullscreen({ items, spineWidthMm, initialIdx
               spineWidthMm={spineWidthMm}
               containerWidth={containerWidth}
               mode="preview"
+              coverTextStyles={coverTextStyles}
             />
           </div>
         ) : (

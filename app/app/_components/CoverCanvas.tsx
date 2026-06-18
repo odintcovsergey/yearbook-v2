@@ -10,6 +10,7 @@
 import dynamic from 'next/dynamic'
 import { layoutCover } from '@/lib/cover/layout'
 import { hiddenOverridesFromData } from '@/lib/cover/editor-merge'
+import { applyCoverTextStyles, type CoverTextStyleOverrides } from '@/lib/cover/text-styles'
 import type { SpreadInstance, SpreadTemplate, RenderPlaceholder } from '@/lib/album-builder/types'
 import type { CropHandlers } from './AlbumSpreadCanvas'
 
@@ -30,6 +31,8 @@ type Props = {
   spineWidthMm: number | null
   containerWidth: number
   mode?: 'preview' | 'edit'
+  /** Глобальные стили текстов обложки (нижний слой под точечными правками). */
+  coverTextStyles?: CoverTextStyleOverrides | null
   editingTextLabel?: string | null
   onTextClick?: (label: string, currentValue: string | null, rightEdge: number, topEdge: number, leftEdge: number, instanceKey: number) => void
   onTextSubmit?: (label: string, newValue: string | null) => void
@@ -44,7 +47,7 @@ function num(v: number | null): number {
 }
 
 export default function CoverCanvas({
-  master, data, spineWidthMm, containerWidth, mode = 'edit',
+  master, data, spineWidthMm, containerWidth, mode = 'edit', coverTextStyles,
   editingTextLabel, onTextClick, onTextSubmit, onTextCancel, onPhotoClick, croppingLabel, cropHandlers,
 }: Props) {
   const back = num(master.back_width_mm)
@@ -86,7 +89,10 @@ export default function CoverCanvas({
     audit_notes: null,
   } as unknown as SpreadTemplate
 
-  const instance: SpreadInstance = { spread_index: 0, template_id: 'cover', template_name: 'cover', data }
+  // Глобальные стили текстов обложки — нижний слой служебных ключей (точечные
+  // правки в data их перекрывают внутри applyCoverTextStyles).
+  const dataWithStyles = applyCoverTextStyles(data, laid.placeholders, coverTextStyles)
+  const instance: SpreadInstance = { spread_index: 0, template_id: 'cover', template_name: 'cover', data: dataWithStyles }
 
   // Пустые ФОТО-слоты скрываем на холсте (как в превью): на задней обложке
   // рамки общего фото/QR не нужны, пока туда ничего не подставлено. Текстовые

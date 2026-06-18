@@ -5396,6 +5396,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  // cover_save_text_styles — сохранить глобальные стили текстов обложки в
+  // albums.cover_text_style_overrides (jsonb). Применяется ко всем обложкам.
+  if (body.action === 'cover_save_text_styles') {
+    const { album_id } = body
+    if (!album_id || !(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const v = body.cover_text_style_overrides
+    if (v !== null && (typeof v !== 'object' || Array.isArray(v))) {
+      return NextResponse.json(
+        { error: 'cover_text_style_overrides должен быть object или null' },
+        { status: 400 },
+      )
+    }
+    const { error } = await supabaseAdmin
+      .from('albums')
+      .update({ cover_text_style_overrides: v ?? {} })
+      .eq('id', album_id)
+    if (error) return serverError(error, 'tenant')
+    return NextResponse.json({ ok: true })
+  }
+
   // clear_cover_qr — убрать QR заказа (back_qr станет пустым).
   if (body.action === 'clear_cover_qr') {
     const { album_id } = body

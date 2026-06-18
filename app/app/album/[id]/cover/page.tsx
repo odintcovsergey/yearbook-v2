@@ -13,13 +13,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
-import { ChevronLeft, PanelRightClose, PanelRightOpen, Eye } from 'lucide-react'
+import { ChevronLeft, PanelRightClose, PanelRightOpen, Eye, Type } from 'lucide-react'
 import { layoutCover } from '@/lib/cover/layout'
 import { renderCoverPreviewSvg } from '@/lib/cover/preview-svg'
 import { parseFontSizeMult, parseColor, parseHAlign, parseVAlign, parseFontFamily } from '@/lib/text-style'
+import type { CoverTextStyleOverrides } from '@/lib/cover/text-styles'
 import type { RenderPlaceholder } from '@/lib/album-builder/types'
 import TextStylePanel from '../../../_components/TextStylePanel'
 import CoverPreviewFullscreen, { type CoverPreviewItem } from '../../../_components/CoverPreviewFullscreen'
+import CoverTextStylesModal from '../../../_components/CoverTextStylesModal'
 import type { AlbumPhoto } from '../../../_components/PhotoPalette'
 import type { CropHandlers } from '../../../_components/AlbumSpreadCanvas'
 import type { CoverCanvasMaster } from '../../../_components/CoverCanvas'
@@ -44,6 +46,7 @@ type EditorData = {
   spine_width_mm: number | null
   editsByType: Record<string, Record<string, string | null>>
   editsByChild: Record<string, Record<string, string | null>>
+  coverTextStyles: CoverTextStyleOverrides
   common_photos: Array<{ id: string; url: string }>
   warnings: string[]
 }
@@ -80,6 +83,9 @@ export default function CoverEditorPage() {
   const [saving, setSaving] = useState(false)
   // Полноэкранный просмотр готовых обложек («Вид»).
   const [fullscreenOpen, setFullscreenOpen] = useState(false)
+  // Глобальные стили текстов обложек + модалка «Стили текстов».
+  const [coverTextStyles, setCoverTextStyles] = useState<CoverTextStyleOverrides>({})
+  const [textStylesModalOpen, setTextStylesModalOpen] = useState(false)
 
   // ── Undo/Redo: история снимков правок (typePatches + studentPatches) ──────
   type Snapshot = {
@@ -104,6 +110,7 @@ export default function CoverEditorPage() {
         setEditor(ed)
         setTypePatches(ed.editsByType ?? {})
         setStudentPatches(ed.editsByChild ?? {})
+        setCoverTextStyles(ed.coverTextStyles ?? {})
         setHistory({ past: [], future: [] })
         setPhotos(Array.isArray(ph) ? ph : (ph.photos ?? []))
       })
@@ -242,6 +249,16 @@ export default function CoverEditorPage() {
     })
   }, [textStylePanel, item, albumId, saveDebounced, pushHistory])
 
+  // ── Глобальные стили текстов обложек (модалка «Стили текстов») ────────────
+  const handleSaveCoverTextStyles = useCallback(async (next: CoverTextStyleOverrides) => {
+    const res = await fetch('/api/tenant', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'cover_save_text_styles', album_id: albumId, cover_text_style_overrides: next }),
+    })
+    if (!res.ok) throw new Error('Не удалось сохранить стили')
+    setCoverTextStyles(next)
+  }, [albumId])
+
   // ── Кроп: портрет per-student у портретных, иначе шаблонно ───────────────
   const cropHandlers: CropHandlers = useMemo(() => ({
     onChange: (u) => {
@@ -332,6 +349,15 @@ export default function CoverEditorPage() {
           </span>
         </div>
         <div className="flex items-center gap-3">
+          {/* Глобальные стили текстов всех обложек. */}
+          <button
+            type="button"
+            onClick={() => setTextStylesModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted text-foreground transition-colors"
+            title="Шрифт, размер, цвет и выравнивание текстов — для всех обложек сразу"
+          >
+            <Type size={16} /> Стили текстов
+          </button>
           {/* Полноэкранный просмотр готовых обложек. */}
           <button
             type="button"
@@ -384,6 +410,7 @@ export default function CoverEditorPage() {
                   spineWidthMm={editor?.spine_width_mm ?? null}
                   containerWidth={canvasWidth}
                   mode="edit"
+                  coverTextStyles={coverTextStyles}
                   editingTextLabel={editingTextLabel}
                   onTextClick={(label, _currentValue, rightEdge, topEdge, leftEdge) => {
                     setEditingTextLabel(label)
@@ -498,7 +525,18 @@ export default function CoverEditorPage() {
           }, [])}
           spineWidthMm={editor?.spine_width_mm ?? null}
           initialIdx={currentIdx}
+          coverTextStyles={coverTextStyles}
           onClose={() => setFullscreenOpen(false)}
+        />
+      )}
+
+      {/* Модалка глобальных стилей текстов обложек. */}
+      {textStylesModalOpen && (
+        <CoverTextStylesModal
+          initialOverrides={coverTextStyles}
+          onPreview={setCoverTextStyles}
+          onSave={handleSaveCoverTextStyles}
+          onClose={() => setTextStylesModalOpen(false)}
         />
       )}
     </div>

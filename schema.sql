@@ -164,6 +164,10 @@ alter table albums
 alter table albums
   add column if not exists cover_qr_url text;
 
+-- Глобальные стили текстов обложек (по смысловым группам), ТЗ tz-cover-editor.
+alter table albums
+  add column if not exists cover_text_style_overrides jsonb not null default '{}'::jsonb;
+
 -- ============================================================
 -- ПРАВКИ РЕДАКТОРА ОБЛОЖЕК (cover_edits) — ТЗ tz-cover-editor.
 -- Шаблонные (cover_type, child_id NULL) + поштучный кроп (child_id, cover_type NULL).

@@ -15,6 +15,7 @@ import {
   mergeCoverEditsInto,
   type CoverEditRow,
 } from './editor-merge';
+import { parseCoverTextStyleOverrides, type CoverTextStyleOverrides } from './text-styles';
 import type { CoverType } from './types';
 
 export type CoverEditorMaster = {
@@ -48,6 +49,8 @@ export type CoverEditorResult = {
   /** Сырые правки по типу и по ученику (для патчей редактора). */
   editsByType: Record<string, Record<string, string | null>>;
   editsByChild: Record<string, Record<string, string | null>>;
+  /** Глобальные стили текстов обложки (albums.cover_text_style_overrides). */
+  coverTextStyles: CoverTextStyleOverrides;
   /** Галерея общих фото класса (для замены на общей/учительской). */
   common_photos: Array<{ id: string; url: string }>;
   warnings: string[];
@@ -96,6 +99,16 @@ export async function loadCoverEditor(
     .eq('album_id', albumId);
   const { byType, byChild } = indexCoverEdits((editRows ?? []) as CoverEditRow[]);
 
+  // Глобальные стили текстов обложки (albums.cover_text_style_overrides).
+  const { data: albumRow } = await supabase
+    .from('albums')
+    .select('cover_text_style_overrides')
+    .eq('id', albumId)
+    .maybeSingle();
+  const coverTextStyles = parseCoverTextStyleOverrides(
+    (albumRow as { cover_text_style_overrides?: unknown } | null)?.cover_text_style_overrides,
+  );
+
   // Галерея общих фото класса (для замены).
   const { data: commonsRaw } = await supabase
     .from('photos')
@@ -134,6 +147,7 @@ export async function loadCoverEditor(
     spine_width_mm: assembled.spine_width_mm,
     editsByType: byType,
     editsByChild: byChild,
+    coverTextStyles,
     common_photos,
     warnings: assembled.warnings,
   };
