@@ -165,8 +165,8 @@ export function extractPlaceholders(
   masterName: string,
   warnings: ParserWarning[],
   resolver: StyleResolver,
-  coverZones: CoverZoneResult | null = null,
-): Placeholder[] {
+  isCover = false,
+): { placeholders: Placeholder[]; coverZones: CoverZones | null } {
   const frames = collectFrames(masterSpread);
   const result: Array<Placeholder & { _pageIndex: number }> = [];
   let unlabeledCount = 0;
@@ -205,17 +205,178 @@ export function extractPlaceholders(
   // привязку — декор и его база на одной странице).
   computeDecorationOffsets(result, masterName, warnings);
 
-  dedupeLabels(result, masterName, warnings, coverZones?.zoneByPageIndex ?? null);
+  // Обложка: помечаем каждый плейсхолдер зоной (задняя | корешок | передняя)
+  // и считаем ширины зон. Делаем ДО dedupeLabels, чтобы суффиксы коллизий
+  // строились по ЗОНЕ (_back/_front), а не по индексу страницы (_left/_right).
+  const coverZones = isCover
+    ? assignCoverZones(result, geometry, masterName, warnings)
+    : null;
 
-  // Обложка: помечаем каждый плейсхолдер зоной (задняя/корешок/передняя) по
-  // странице 3-страничного разворота. _pageIndex — индекс страницы из pickPageIndex.
-  if (coverZones) {
-    for (const ph of result) {
-      ph.zone = coverZones.zoneByPageIndex[ph._pageIndex] ?? undefined;
+  dedupeLabels(result, masterName, warnings, isCover);
+
+  return {
+    placeholders: result.map(({ _pageIndex: _, ...rest }) => rest as Placeholder),
+    coverZones,
+  };
+}
+
+// ─── Привязка зон обложки к плейсхолдерам ──────────────────────────────────
+
+/**
+ * Помечает каждый плейсхолдер cover-мастера зоной (back | spine | front) и
+ * возвращает ширины зон. Поддерживает три способа рисования обложки:
+ *
+ *  - 1 широкая страница-полотно (НАШ основной случай для okeybook): задняя
+ *    слева, передняя справа, граница между ними определяется по контенту.
+ *    Зона слота берётся по его X-центру относительно границы.
+ *  - 2 страницы (facing): задняя слева, передняя справа, зона = страница.
+ *  - 3 страницы: задняя | корешок | передняя, зона = страница.
+ *
+ * Для 0 или 4+ страниц обложка не распознаётся (warning, зоны null).
+ */
+function assignCoverZones(
+  placeholders: Array<Placeholder & { _pageIndex: number }>,
+  geometry: SpreadGeometry,
+  masterName: string,
+  warnings: ParserWarning[],
+): CoverZones | null {
+  const n = geometry.pages_x_ranges.length;
+
+  if (n === 2 || n === 3) {
+    // Разворот из 2/3 страниц: зона = страница (по x-координате). Существующее
+    // поведение — каждой странице соответствует зона, плейсхолдер наследует её
+    // через _pageIndex.
+    const cz = computeCoverZones(geometry.pages_x_ranges);
+    if (!cz) return null; // недостижимо при n=2/3 — перестраховка
+    for (const ph of placeholders) {
+      ph.zone = cz.zoneByPageIndex[ph._pageIndex] ?? undefined;
+    }
+    return cz.zones;
+  }
+
+  if (n === 1) {
+    return assignSinglePageCoverZones(placeholders, geometry, masterName, warnings);
+  }
+
+  warnings.push({
+    message:
+      'cover-мастер не распознан как полотно (1 широкая страница) или разворот ' +
+      '(2/3 страницы); зоны не определены (см. docs/designer-cover-instructions.md)',
+    master: masterName,
+  });
+  return null;
+}
+
+/** Метка задней зоны: слоты `back_*` (back_logo, back_qr, back_contacts…). */
+function isBackCoverLabel(label: string): boolean {
+  return label.startsWith('back');
+}
+
+/** Метка передней зоны: слоты `cover_*` (cover_portrait, cover_year…). */
+function isFrontCoverLabel(label: string): boolean {
+  return label.startsWith('cover');
+}
+
+/**
+ * Зоны для обложки-полотна на ОДНОЙ широкой странице (~434 мм): задняя слева,
+ * передняя справа, между ними плавающий корешок (номинально 0 — реальная
+ * ширина подставляется при сборке по толщине книги).
+ *
+ * Граница задняя/передняя — по контенту: правый край самого правого `back_*`
+ * слота и левый край самого левого `cover_*` слота, граница посередине между
+ * ними. Если по контенту неоднозначно (нет таких слотов или они перекрывают
+ * друг друга) — fallback на геометрическую середину рабочей ширины.
+ *
+ * Рабочая ширина = trim-страница (GeometricBounds), вылеты (bleed) в неё уже
+ * не входят — InDesign рисует bleed за пределами trim-бокса.
+ *
+ * Зона каждого плейсхолдера — по его X-центру относительно границы. Валидация:
+ * `back_*` ожидаются в back, `cover_*` — в front; расхождение → warning (но не
+ * падаем — макет дизайнера мог нарушить соглашение).
+ */
+function assignSinglePageCoverZones(
+  placeholders: Array<Placeholder & { _pageIndex: number }>,
+  geometry: SpreadGeometry,
+  masterName: string,
+  warnings: ParserWarning[],
+): CoverZones {
+  const range = geometry.pages_x_ranges[0];
+  // Края страницы в координатах плейсхолдеров (мм от origin.x): x_mm слота =
+  // ptToMm(absX - origin.x), приводим края страницы к той же системе.
+  const page = {
+    left_mm: ptToMm(range.x_min - geometry.origin.x),
+    right_mm: ptToMm(range.x_max - geometry.origin.x),
+  };
+
+  const { zones, zoneBySlot } = computeCoverZonesSinglePage(page, placeholders);
+  placeholders.forEach((ph, i) => {
+    ph.zone = zoneBySlot[i];
+  });
+
+  // Валидация соглашения о метках.
+  for (const ph of placeholders) {
+    if (isBackCoverLabel(ph.label) && ph.zone !== 'back') {
+      warnings.push({
+        message: `cover-слот '${ph.label}' (back_*) попал в зону '${ph.zone}', ожидалась back`,
+        master: masterName,
+        label: ph.label,
+      });
+    } else if (isFrontCoverLabel(ph.label) && ph.zone !== 'front') {
+      warnings.push({
+        message: `cover-слот '${ph.label}' (cover_*) попал в зону '${ph.zone}', ожидалась front`,
+        master: masterName,
+        label: ph.label,
+      });
     }
   }
 
-  return result.map(({ _pageIndex: _, ...rest }) => rest as Placeholder);
+  return zones;
+}
+
+/**
+ * Чистая функция: для обложки-полотна (одна широкая страница) считает границу
+ * задняя/передняя и ширины зон, и раскладывает слоты по зонам.
+ *
+ * @param page  края рабочей страницы в мм (left_mm, right_mm).
+ * @param slots слоты с координатами в той же системе (x_mm от левого края).
+ * @returns zones (ширины back/spine/front), zoneBySlot (зона по индексу слота),
+ *          boundary_mm (X границы задняя/передняя).
+ */
+export function computeCoverZonesSinglePage(
+  page: { left_mm: number; right_mm: number },
+  slots: ReadonlyArray<{ label: string; x_mm: number; width_mm: number }>,
+): { zones: CoverZones; zoneBySlot: CoverZone[]; boundary_mm: number } {
+  const geomMiddle = (page.left_mm + page.right_mm) / 2;
+
+  let backRight = -Infinity;
+  let frontLeft = Infinity;
+  for (const s of slots) {
+    if (isBackCoverLabel(s.label)) {
+      backRight = Math.max(backRight, s.x_mm + s.width_mm);
+    } else if (isFrontCoverLabel(s.label)) {
+      frontLeft = Math.min(frontLeft, s.x_mm);
+    }
+  }
+
+  // Граница по контенту, если back_* целиком левее cover_*; иначе — середина.
+  const boundary =
+    backRight !== -Infinity && frontLeft !== Infinity && backRight <= frontLeft
+      ? (backRight + frontLeft) / 2
+      : geomMiddle;
+
+  const zoneBySlot: CoverZone[] = slots.map((s) =>
+    s.x_mm + s.width_mm / 2 < boundary ? 'back' : 'front',
+  );
+
+  return {
+    zones: {
+      back_width_mm: boundary - page.left_mm,
+      spine_width_mm: 0, // корешок номинально 0; реальная ширина — при сборке
+      front_width_mm: page.right_mm - boundary,
+    },
+    zoneBySlot,
+    boundary_mm: boundary,
+  };
 }
 
 // ─── Сбор фреймов ─────────────────────────────────────────────────────────
@@ -444,7 +605,7 @@ function dedupeLabels(
   placeholders: Array<Placeholder & { _pageIndex: number }>,
   masterName: string,
   warnings: ParserWarning[],
-  coverZoneByPageIndex: readonly CoverZone[] | null = null,
+  isCover = false,
 ): void {
   // Группируем по label, в группах с >1 — добавляем суффиксы по pageIndex.
   const byLabel = new Map<
@@ -461,7 +622,7 @@ function dedupeLabels(
     if (group.length === 1) return;
 
     warnings.push({
-      message: coverZoneByPageIndex
+      message: isCover
         ? 'duplicate label, generated _back/_spine/_front suffixes'
         : 'duplicate label, generated _left/_right suffixes',
       master: masterName,
@@ -469,9 +630,10 @@ function dedupeLabels(
     });
 
     for (const ph of group) {
-      // Обложка: суффикс по зоне (_back/_spine/_front), иначе _left/_right.
-      const suffix = coverZoneByPageIndex
-        ? `_${coverZoneByPageIndex[ph._pageIndex] ?? 'back'}`
+      // Обложка: суффикс по ЗОНЕ слота (_back/_spine/_front) — единое полотно
+      // не делится на _left/_right. Для обычных мастеров — по индексу страницы.
+      const suffix = isCover
+        ? `_${ph.zone ?? 'back'}`
         : ph._pageIndex === 0
           ? '_left'
           : '_right';

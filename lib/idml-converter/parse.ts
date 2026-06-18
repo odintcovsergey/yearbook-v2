@@ -17,7 +17,6 @@
 import JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
 import {
-  computeCoverZones,
   computeSpreadGeometry,
   extractPlaceholders,
 } from './extract-geometry';
@@ -162,26 +161,17 @@ function parseMasterSpread(
 
   const type = typeFromName(name);
 
-  // Обложка: разбираем полотно на три зоны (задняя/корешок/передняя) из
-  // 3-страничного разворота. coverZones=null → разметка не распознана.
-  const coverZones =
-    type === 'cover' ? computeCoverZones(geometry.pages_x_ranges) : null;
-  if (type === 'cover' && !coverZones) {
-    warnings.push({
-      message:
-        'cover-мастер не распознан как 3-страничный разворот (задняя|корешок|передняя); ' +
-        'зоны не определены (см. docs/designer-cover-instructions.md)',
-      master: name,
-    });
-  }
-
-  const placeholders = extractPlaceholders(
+  // Обложка: разбираем полотно на зоны (задняя | корешок | передняя). Парсер
+  // понимает единое полотно (1 широкая страница) и развороты из 2/3 страниц.
+  // Зона каждого плейсхолдера и ширины зон считаются внутри extractPlaceholders
+  // (нужны координаты слотов, чтобы найти границу задняя/передняя по контенту).
+  const { placeholders, coverZones } = extractPlaceholders(
     masterSpread,
     geometry,
     name,
     warnings,
     resolver,
-    coverZones,
+    type === 'cover',
   );
 
   return {
@@ -192,7 +182,7 @@ function parseMasterSpread(
     height_mm: geometry.height_mm,
     placeholders,
     rules: null,
-    cover_zones: coverZones?.zones ?? null,
+    cover_zones: coverZones,
   };
 }
 
