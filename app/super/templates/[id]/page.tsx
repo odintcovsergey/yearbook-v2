@@ -6,6 +6,7 @@ import { useRouter, useParams } from 'next/navigation'
 import type { TemplateSetDetailResponse, SpreadTemplate } from '../_components/types'
 import { PLACEHOLDER_COLORS } from '../_components/colors'
 import CategoryBackgroundsPanel from '../_components/CategoryBackgroundsPanel'
+import CoverDesignPanel from '../_components/CoverDesignPanel'
 import type { ConfigType, PrintType } from '@/lib/album-builder/types'
 
 type BuildAlbumResult = {
@@ -311,6 +312,8 @@ export default function TemplateDetailPage() {
               </div>
 
               <CategoryBackgroundsPanel templateSetId={data.template_set.id} />
+
+              <CoverDesignPanel templateSetId={data.template_set.id} />
 
               <div className="mt-4">
                 <button

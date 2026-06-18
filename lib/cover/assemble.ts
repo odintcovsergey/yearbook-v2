@@ -42,6 +42,13 @@ export type CoverAssemblyConfig = {
   available_cover_ids: string[];
   /** Библиотека доступных cover-мастеров (уже отфильтрована global+tenant+published). */
   library: Cover[];
+  /**
+   * Дизайн заказа (albums.template_set_id). Если задан — при выборе дефолтной
+   * обложки РОДНАЯ обложка дизайна (template_set_id == design) берётся раньше
+   * дизайнерской (глобальной) того же типа. Иначе одноимённая глобальная могла
+   * бы перебить родную при равном sort_order.
+   */
+  design_template_set_id?: string | null;
 };
 
 /** Общее (одинаковое для всех) содержимое обложки: тексты и общие фото. */
@@ -86,9 +93,17 @@ function pickDefaultCover(
   type: CoverType,
   config: CoverAssemblyConfig,
 ): Cover | null {
+  const designTs = config.design_template_set_id ?? null;
+  const isNative = (c: Cover): boolean => designTs != null && c.template_set_id === designTs;
   const candidates = config.library
     .filter((c) => c.cover_type === type && isAvailable(c, config.available_cover_ids))
-    .sort((a, b) => a.sort_order - b.sort_order);
+    // Родная обложка дизайна — раньше дизайнерской того же типа; затем sort_order.
+    .sort((a, b) => {
+      const na = isNative(a) ? 0 : 1;
+      const nb = isNative(b) ? 0 : 1;
+      if (na !== nb) return na - nb;
+      return a.sort_order - b.sort_order;
+    });
   return candidates[0] ?? null;
 }
 

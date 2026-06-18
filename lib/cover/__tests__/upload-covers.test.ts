@@ -84,4 +84,11 @@ describe('buildCoverRow', () => {
     expect(row.tenant_id).toBe('tid-1');
     expect(row.is_published).toBe(true);
   });
+
+  it('родная обложка дизайна (templateSetId) → template_set_id заполнен, is_global false', () => {
+    const row = buildCoverRow(master(), { tenantId: null, templateSetId: 'ts-1' });
+    expect(row.template_set_id).toBe('ts-1');
+    // даже при tenantId=null — это НЕ глобальная библиотека, а родная дизайну.
+    expect(row.is_global).toBe(false);
+  });
 });

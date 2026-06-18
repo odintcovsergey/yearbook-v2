@@ -3370,7 +3370,11 @@ function AlbumFormModal({
   const [coverLibrary, setCoverLibrary] = useState<Array<{
     id: string; name: string; cover_type: string
     gender_hint: string | null; variant_label: string | null; is_global: boolean
+    template_set_id: string | null
   }>>([])
+  // Показывать ли дизайнерские (глобальные) обложки в выборе, помимо родных
+  // обложек дизайна заказа. По умолчанию только родные.
+  const [showDesignerCovers, setShowDesignerCovers] = useState(false)
   const [printPresets, setPrintPresets] = useState<Array<{
     id: string; name: string
     print_spec: { sheet_types?: Array<{ id: string; label: string }> } | null
@@ -3405,12 +3409,20 @@ function AlbumFormModal({
     }
   }, [mode])
 
-  // Обложка (Этап 7): библиотека обложек + пресеты печати — в обоих режимах.
+  // Обложка: список доступных обложек — родные обложки дизайна заказа
+  // (по template_set_id), плюс дизайнерские (глобальные) по кнопке.
   useEffect(() => {
-    api('/api/tenant?action=covers_list')
+    const params = new URLSearchParams({ action: 'covers_list' })
+    if (form.template_set_id) params.set('template_set_id', form.template_set_id)
+    if (showDesignerCovers) params.set('include_global', 'true')
+    api(`/api/tenant?${params.toString()}`)
       .then(r => r.ok ? r.json() : { covers: [] })
       .then(d => setCoverLibrary(d.covers ?? []))
       .catch(() => setCoverLibrary([]))
+  }, [form.template_set_id, showDesignerCovers])
+
+  // Пресеты печати (для расчёта корешка) — один раз.
+  useEffect(() => {
     api('/api/tenant?action=print_presets_list')
       .then(r => r.ok ? r.json() : { presets: [] })
       .then(d => setPrintPresets(d.presets ?? []))
@@ -4119,12 +4131,24 @@ function AlbumFormModal({
                   ))}
                 </div>
 
-                <label className="block text-xs text-muted-foreground mb-1">
-                  Какие обложки показывать родителю {form.cover_layout_mode === 'fixed' && '(при «жёстко» родитель не выбирает)'}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs text-muted-foreground">
+                    Какие обложки показывать родителю {form.cover_layout_mode === 'fixed' && '(при «жёстко» родитель не выбирает)'}
+                  </label>
+                  <button
+                    type="button"
+                    className="text-xs text-brand hover:underline"
+                    onClick={() => setShowDesignerCovers((v) => !v)}
+                    disabled={loading}
+                  >
+                    {showDesignerCovers ? 'Только родные дизайна' : 'Показать дизайнерские'}
+                  </button>
+                </div>
                 {coverLibrary.length === 0 ? (
                   <div className="text-xs text-muted-foreground mb-3">
-                    Обложки ещё не загружены — раздел заработает после загрузки (Обложки в супер-админке).
+                    {form.template_set_id
+                      ? 'У этого дизайна пока нет своих обложек. Нажми «Показать дизайнерские» или загрузи обложки в дизайн (супер-админка).'
+                      : 'Сначала выбери дизайн заказа — тогда покажутся его родные обложки.'}
                   </div>
                 ) : (
                   <div className="flex flex-col gap-1 mb-3 max-h-48 overflow-y-auto border border-border rounded-lg p-2">
@@ -4147,7 +4171,7 @@ function AlbumFormModal({
                           <span className="text-xs text-muted-foreground">
                             {COVER_TYPE_LABEL[c.cover_type] ?? c.cover_type}
                             {c.gender_hint ? ` · ${c.gender_hint}` : ''}
-                            {c.is_global ? '' : ' · своя'}
+                            {c.is_global ? ' · дизайнерская' : c.template_set_id ? ' · родная' : ''}
                           </span>
                         </label>
                       )

@@ -2,12 +2,19 @@
 
 import { useState, FormEvent } from 'react'
 
+// IDML = zip-пакет; браузер обычно отдаёт пустой type. Подписываем и шлём
+// строго octet-stream (совпадает с тем, что принимает /api/upload-url).
+const IDML_CONTENT_TYPE = 'application/octet-stream'
+
 export default function CoverUploadModal({
   onClose,
   onSuccess,
+  templateSetId = null,
 }: {
   onClose: () => void
   onSuccess: () => void
+  /** UUID дизайна — загрузка родной обложки в дизайн. null = дизайнерская библиотека. */
+  templateSetId?: string | null
 }) {
   const [file, setFile] = useState<File | null>(null)
   const [isPublished, setIsPublished] = useState(false)
@@ -16,23 +23,56 @@ export default function CoverUploadModal({
   const [conflictPending, setConflictPending] = useState(false)
   const [result, setResult] = useState<{ cover_count: number; names: string[]; warnings: string[] } | null>(null)
 
-  const buildFormData = (force: boolean): FormData => {
-    const fd = new FormData()
-    fd.append('file', file as File)
-    fd.append('tenant_id', 'global')
-    if (isPublished) fd.append('is_published', 'true')
-    if (force) fd.append('force', 'true')
-    return fd
-  }
-
+  // Большой IDML обложек (~8 МБ) не пролезает в тело serverless-функции
+  // (лимит Vercel) → грузим напрямую в хранилище по presigned URL, затем
+  // регистрируем по storage_key (обход HTTP 413).
   const doSubmit = async (force: boolean) => {
+    if (!file) { setError('Выберите IDML-файл'); return }
     setSubmitting(true)
     setError(null)
     try {
+      // Шаг 1 — presigned URL.
+      const presignRes = await fetch('/api/upload-url', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          upload_type: 'idml',
+          filename: file.name,
+          content_type: IDML_CONTENT_TYPE,
+        }),
+      })
+      const presign = await presignRes.json().catch(() => ({}))
+      if (!presignRes.ok || !presign.upload_url || !presign.key) {
+        setError(presign.error || `Не удалось получить ссылку загрузки (HTTP ${presignRes.status})`)
+        setSubmitting(false)
+        return
+      }
+
+      // Шаг 2 — PUT файла напрямую в хранилище.
+      const putRes = await fetch(presign.upload_url, {
+        method: 'PUT',
+        headers: { 'Content-Type': IDML_CONTENT_TYPE },
+        body: file,
+      })
+      if (!putRes.ok) {
+        setError(`Не удалось загрузить файл в хранилище (HTTP ${putRes.status})`)
+        setSubmitting(false)
+        return
+      }
+
+      // Шаг 3 — регистрация и парсинг по storage_key.
       const r = await fetch('/api/covers?action=import', {
         method: 'POST',
         credentials: 'include',
-        body: buildFormData(force),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storage_key: presign.key,
+          tenant_id: 'global',
+          template_set_id: templateSetId,
+          is_published: isPublished,
+          force,
+        }),
       })
       const data = await r.json().catch(() => ({}))
       if (r.status === 409 && data.error === 'slug_exists') {
@@ -106,7 +146,7 @@ export default function CoverUploadModal({
               <label className="text-sm font-medium text-foreground block mb-1">IDML файл обложки</label>
               <input type="file" accept=".idml" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="input" required />
               <div className="text-xs text-muted-foreground mt-1">
-                Обложка = один разворот из 3 страниц (задняя | корешок | передняя), имя мастера на C-.
+                Обложка = полотно (задняя | корешок | передняя), имя мастера на C-.
                 См. docs/designer-cover-instructions.md
               </div>
             </div>
@@ -116,7 +156,11 @@ export default function CoverUploadModal({
               Опубликовать сразу (видна в выборе)
             </label>
 
-            <div className="text-xs text-muted-foreground">Обложка будет глобальной (для всех партнёров).</div>
+            <div className="text-xs text-muted-foreground">
+              {templateSetId
+                ? 'Обложка будет родной для этого дизайна (видна только ему).'
+                : 'Обложка будет дизайнерской (глобальной, для всех дизайнов).'}
+            </div>
 
             {error && <div className="text-sm text-red-600">{error}</div>}
 

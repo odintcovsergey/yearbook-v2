@@ -7,7 +7,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Placeholder } from '../album-builder/types';
+import type { Placeholder, RenderPlaceholder } from '../album-builder/types';
 import { loadAlbumCovers } from './load-covers';
 import { layoutCover } from './layout';
 import { renderCoverPreviewSvg } from './preview-svg';
@@ -38,6 +38,7 @@ export type CoverMasterRow = {
   front_width_mm: number | null;
   height_mm: number | null;
   nominal_spine_width_mm: number | null;
+  background_url: string | null;
 };
 
 export async function buildAlbumCoverPreviews(
@@ -54,7 +55,7 @@ export async function buildAlbumCoverPreviews(
   if (coverIds.length > 0) {
     const { data } = await supabase
       .from('covers')
-      .select('id, placeholders, back_width_mm, front_width_mm, height_mm, nominal_spine_width_mm')
+      .select('id, placeholders, back_width_mm, front_width_mm, height_mm, nominal_spine_width_mm, background_url')
       .in('id', coverIds);
     for (const m of (data ?? []) as CoverMasterRow[]) masters.set(m.id, m);
   }
@@ -99,7 +100,7 @@ export function renderCoverMasterSvg(
   const real = realSpineMm ?? nominal;
 
   const placeholders = (Array.isArray(m.placeholders) ? m.placeholders : []) as Array<
-    Placeholder & { zone?: 'back' | 'spine' | 'front' }
+    RenderPlaceholder & { zone?: 'back' | 'spine' | 'front' }
   >;
   const laid = layoutCover(
     { backWidthMm: back, frontWidthMm: front, heightMm: height, nominalSpineWidthMm: nominal, realSpineWidthMm: real },
@@ -121,6 +122,9 @@ export function renderCoverMasterSvg(
     spine_right_mm: laid.spine_right_mm,
     placeholders: laid.placeholders,
     data,
+    background_url: m.background_url,
+    // Превью собранной обложки: пустые слоты скрываем (реальный вид), не серые.
+    hide_empty_slots: true,
   });
 }
 
