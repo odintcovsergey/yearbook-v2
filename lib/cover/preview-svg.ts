@@ -142,12 +142,18 @@ function renderPhotoSlot(ph: PhotoPlaceholder, url: string | null, hideEmpty: bo
 
   if (!url && hideEmpty) return '';
 
+  // is_circle = овальная рамка (эллипс по габаритам слота, как на Konva-холсте),
+  // а НЕ окружность — иначе портрет-овал в превью выглядел кругом.
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const rx = w / 2;
+  const ry = h / 2;
+
   if (url) {
     if (ph.is_circle) {
-      const r = Math.min(w, h) / 2;
       const cid = `clip-${slug(ph.label)}`;
       return (
-        `<clipPath id="${cid}"><circle cx="${fmt(x + w / 2)}" cy="${fmt(y + h / 2)}" r="${fmt(r)}"/></clipPath>` +
+        `<clipPath id="${cid}"><ellipse cx="${fmt(cx)}" cy="${fmt(cy)}" rx="${fmt(rx)}" ry="${fmt(ry)}"/></clipPath>` +
         `<image href="${esc(url)}" x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${cid})"${transform}/>`
       );
     }
@@ -156,8 +162,7 @@ function renderPhotoSlot(ph: PhotoPlaceholder, url: string | null, hideEmpty: bo
 
   // Пустой слот — заглушка.
   if (ph.is_circle) {
-    const r = Math.min(w, h) / 2;
-    return `<circle cx="${fmt(x + w / 2)}" cy="${fmt(y + h / 2)}" r="${fmt(r)}" fill="${SLOT_FILL}"${transform}/>`;
+    return `<ellipse cx="${fmt(cx)}" cy="${fmt(cy)}" rx="${fmt(rx)}" ry="${fmt(ry)}" fill="${SLOT_FILL}"${transform}/>`;
   }
   return `<rect x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}" fill="${SLOT_FILL}"${transform}/>`;
 }
