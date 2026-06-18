@@ -107,12 +107,6 @@ export default function CoversSummaryBlock({ albumId }: { albumId: string }) {
       <div className="max-h-72 overflow-y-auto rounded-lg border border-border bg-card divide-y divide-border">
         {data.rows.map((r) => (
           <div key={r.child_id} className="flex items-center gap-3 px-3 py-1.5 text-sm">
-            {r.cover_type === 'portrait_photo' && r.photo_option === 'other' && r.cover_portrait_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={r.cover_portrait_url} alt="" className="w-7 h-9 object-cover rounded shrink-0" />
-            ) : (
-              <div className="w-7 h-9 rounded bg-muted shrink-0" />
-            )}
             <span className="flex-1 truncate">{r.full_name}</span>
             <span className="text-xs text-muted-foreground w-16 text-right">
               {r.cover_type ? TYPE_LABEL[r.cover_type] : '—'}
