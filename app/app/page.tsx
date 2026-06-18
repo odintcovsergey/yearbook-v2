@@ -49,6 +49,11 @@ const CoversSummaryBlock = dynamic(
   { ssr: false, loading: () => null },
 )
 
+const CoverEditorBlock = dynamic(
+  () => import('./_components/CoverEditorBlock'),
+  { ssr: false, loading: () => null },
+)
+
 // ============================================================
 // ТИПЫ
 // ============================================================
@@ -2492,6 +2497,9 @@ function AlbumDetailModal({
 
                   {/* Сводка обложек заказа (только просмотр) */}
                   <CoversSummaryBlock albumId={album.id} />
+
+                  {/* Редактор обложек (кроп/тексты/общее фото) */}
+                  <CoverEditorBlock albumId={album.id} />
 
                   {/* График динамики */}
                   {daily.length > 0 && (
