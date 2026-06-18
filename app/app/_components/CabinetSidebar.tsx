@@ -16,7 +16,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import {
-  LayoutDashboard, Ruler, Palette, LayoutTemplate, Quote, Gift,
+  LayoutDashboard, Ruler, Palette, Quote, Gift,
   Camera, Contact, Users, Lightbulb, Settings, LogOut,
   PanelLeftClose, PanelLeftOpen, Menu, X,
 } from 'lucide-react'
@@ -67,7 +67,6 @@ export function CabinetSidebar({ initialCollapsed }: { initialCollapsed: boolean
     { key: 'albums', label: 'Альбомы', icon: LayoutDashboard, href: '/app' },
     { key: 'templates', label: 'Шаблоны', icon: Ruler, href: '/app/templates' },
     { key: 'designs', label: 'Дизайны', icon: Palette, href: '/app/designs' },
-    { key: 'presets', label: 'Пресеты', icon: LayoutTemplate, modal: 'presets' },
     { key: 'quotes', label: 'Цитаты', icon: Quote, modal: 'quotes' },
     { key: 'referrals', label: 'Рефералки', icon: Gift, href: '/app/referral-programs' },
     isMainTenant && { key: 'partners', label: 'Партнёры', icon: Camera, modal: 'partners' as const },

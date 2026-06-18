@@ -16,7 +16,6 @@
  */
 
 export type CabinetModalKey =
-  | 'presets'
   | 'quotes'
   | 'partners'
   | 'crm'
