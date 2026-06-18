@@ -88,6 +88,14 @@ export default function CoverCanvas({
 
   const instance: SpreadInstance = { spread_index: 0, template_id: 'cover', template_name: 'cover', data }
 
+  // Пустые ФОТО-слоты скрываем на холсте (как в превью): на задней обложке
+  // рамки общего фото/QR не нужны, пока туда ничего не подставлено. Текстовые
+  // слоты не трогаем (их можно заполнить). Ручное скрытие — через __hidden__.
+  const overrides: Record<string, { hidden?: boolean }> = { ...hiddenOverridesFromData(data) }
+  for (const p of laid.placeholders) {
+    if (p.type === 'photo' && !data[p.label]) overrides[p.label] = { hidden: true }
+  }
+
   return (
     <AlbumSpreadCanvas
       instance={instance}
@@ -97,7 +105,7 @@ export default function CoverCanvas({
       backgroundUrl={master.background_url}
       pageSide="spread"
       spineMarginMm={null}
-      placeholderOverrides={hiddenOverridesFromData(data)}
+      placeholderOverrides={overrides}
       editingTextLabel={editingTextLabel}
       onTextClick={onTextClick}
       onTextSubmit={onTextSubmit}
