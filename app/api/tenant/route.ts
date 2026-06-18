@@ -7,6 +7,7 @@ import { renderPreviewSvg } from '@/lib/album-builder/render-preview-svg'
 import { resolveAlbumEffectivePrintType } from '@/lib/album-builder'
 import { buildAlbumCoverPreviews } from '@/lib/cover/preview-album'
 import { buildCoverSummary } from '@/lib/cover/summary'
+import { loadCoverEditor } from '@/lib/cover/load-editor'
 import type { CoverType, CoverLayoutMode } from '@/lib/cover/types'
 import { validatePreset } from '@/lib/presets/validate'
 import { buildPresetPreviewBundle } from '@/lib/presets/preview-bundle'
@@ -1038,6 +1039,19 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ mode, default_type: defaultType, ...summary })
+  }
+
+  // ----------------------------------------------------------
+  // cover_editor — данные редактора обложек (ТЗ tz-cover-editor): все обложки
+  // заказа по группировке + геометрия мастеров + слитые правки + галерея общих
+  // фото. Только чтение.
+  // ----------------------------------------------------------
+  if (action === 'cover_editor' && albumId) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const result = await loadCoverEditor(supabaseAdmin, albumId)
+    return NextResponse.json(result)
   }
 
   // ----------------------------------------------------------
@@ -5300,6 +5314,43 @@ export async function POST(req: NextRequest) {
   // ----------------------------------------------------------
   // update_album — редактирование настроек альбома
   // ----------------------------------------------------------
+  // cover_save_edit — сохранить правки редактора обложек (ТЗ tz-cover-editor).
+  // scope='type' (шаблонная правка типа, cover_type) | 'student' (поштучный
+  // кроп, child_id). Upsert строки cover_edits, data — служебные ключи.
+  if (body.action === 'cover_save_edit') {
+    const { album_id } = body
+    if (!album_id || !(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const scope = body.scope
+    const data = (body.data && typeof body.data === 'object') ? body.data : {}
+    let match: { cover_type: string | null; child_id: string | null }
+    if (scope === 'type' && typeof body.cover_type === 'string') {
+      match = { cover_type: body.cover_type, child_id: null }
+    } else if (scope === 'student' && typeof body.child_id === 'string' && UUID_REGEX.test(body.child_id)) {
+      match = { cover_type: null, child_id: body.child_id }
+    } else {
+      return NextResponse.json({ error: 'invalid scope' }, { status: 400 })
+    }
+
+    // Upsert вручную (частичные уникальные индексы): найти → update/insert.
+    let existing = supabaseAdmin.from('cover_edits').select('id').eq('album_id', album_id)
+    existing = match.child_id
+      ? existing.eq('child_id', match.child_id)
+      : existing.is('child_id', null).eq('cover_type', match.cover_type as string)
+    const { data: found } = await existing.maybeSingle()
+    if (found?.id) {
+      const { error } = await supabaseAdmin.from('cover_edits')
+        .update({ data, updated_at: new Date().toISOString() }).eq('id', found.id)
+      if (error) return serverError(error, 'tenant')
+    } else {
+      const { error } = await supabaseAdmin.from('cover_edits')
+        .insert({ album_id, cover_type: match.cover_type, child_id: match.child_id, data })
+      if (error) return serverError(error, 'tenant')
+    }
+    return NextResponse.json({ ok: true })
+  }
+
   if (body.action === 'update_album') {
     const { album_id } = body
     if (!album_id) {

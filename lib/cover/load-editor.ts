@@ -1,0 +1,140 @@
+/**
+ * Загрузка данных для РЕДАКТОРА обложек (ТЗ tz-cover-editor): все обложки заказа
+ * по группировке assembleCovers + геометрия мастеров + слитые правки
+ * (cover_edits) + галерея общих фото для замены.
+ *
+ * Только чтение/сборка. Сохранение правок — отдельный эндпоинт (cover_save_edit).
+ */
+
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { getPhotoUrl } from '@/lib/supabase';
+import type { RenderPlaceholder } from '../album-builder/types';
+import { loadAlbumCovers } from './load-covers';
+import {
+  indexCoverEdits,
+  mergeCoverEditsInto,
+  type CoverEditRow,
+} from './editor-merge';
+import type { CoverType } from './types';
+
+export type CoverEditorMaster = {
+  placeholders: RenderPlaceholder[];
+  back_width_mm: number | null;
+  front_width_mm: number | null;
+  height_mm: number | null;
+  nominal_spine_width_mm: number | null;
+  background_url: string | null;
+};
+
+export type CoverEditorItem = {
+  /** Уникальный ключ строки редактора. */
+  key: string;
+  child_id: string | null;
+  child_name: string | null;
+  cover_id: string | null;
+  cover_type: CoverType;
+  cover_name: string | null;
+  has_cover: boolean;
+  master: CoverEditorMaster | null;
+  /** Слитые данные (база ⊕ шаблонные ⊕ поштучные) — для миниатюры. */
+  data: Record<string, string | null>;
+  /** Базовые данные сборки (без правок) — основа для редактирования. */
+  base: Record<string, string | null>;
+};
+
+export type CoverEditorResult = {
+  items: CoverEditorItem[];
+  spine_width_mm: number | null;
+  /** Сырые правки по типу и по ученику (для патчей редактора). */
+  editsByType: Record<string, Record<string, string | null>>;
+  editsByChild: Record<string, Record<string, string | null>>;
+  /** Галерея общих фото класса (для замены на общей/учительской). */
+  common_photos: Array<{ id: string; url: string }>;
+  warnings: string[];
+};
+
+export async function loadCoverEditor(
+  supabase: SupabaseClient,
+  albumId: string,
+): Promise<CoverEditorResult> {
+  const assembled = await loadAlbumCovers(supabase, albumId);
+
+  // Геометрия мастеров.
+  const coverIds = Array.from(
+    new Set(assembled.covers.map((c) => c.cover_id).filter(Boolean)),
+  ) as string[];
+  const masters = new Map<string, CoverEditorMaster>();
+  if (coverIds.length > 0) {
+    const { data } = await supabase
+      .from('covers')
+      .select('id, placeholders, back_width_mm, front_width_mm, height_mm, nominal_spine_width_mm, background_url')
+      .in('id', coverIds);
+    for (const m of (data ?? []) as Array<Record<string, unknown>>) {
+      masters.set(m.id as string, {
+        placeholders: (Array.isArray(m.placeholders) ? m.placeholders : []) as RenderPlaceholder[],
+        back_width_mm: (m.back_width_mm as number | null) ?? null,
+        front_width_mm: (m.front_width_mm as number | null) ?? null,
+        height_mm: (m.height_mm as number | null) ?? null,
+        nominal_spine_width_mm: (m.nominal_spine_width_mm as number | null) ?? null,
+        background_url: (m.background_url as string | null) ?? null,
+      });
+    }
+  }
+
+  // Имена учеников.
+  const childIds = assembled.covers.map((c) => c.child_id).filter(Boolean) as string[];
+  const names = new Map<string, string>();
+  if (childIds.length > 0) {
+    const { data } = await supabase.from('children').select('id, full_name').in('id', childIds);
+    for (const c of (data ?? []) as Array<{ id: string; full_name: string }>) names.set(c.id, c.full_name);
+  }
+
+  // Правки редактора.
+  const { data: editRows } = await supabase
+    .from('cover_edits')
+    .select('cover_type, child_id, data')
+    .eq('album_id', albumId);
+  const { byType, byChild } = indexCoverEdits((editRows ?? []) as CoverEditRow[]);
+
+  // Галерея общих фото класса (для замены).
+  const { data: commonsRaw } = await supabase
+    .from('photos')
+    .select('id, storage_path, thumb_path, created_at')
+    .eq('album_id', albumId)
+    .eq('type', 'common_full')
+    .order('created_at', { ascending: false });
+  const common_photos: Array<{ id: string; url: string }> = [];
+  for (const p of (commonsRaw ?? []) as Array<Record<string, unknown>>) {
+    const path = (p.thumb_path as string | null) ?? (p.storage_path as string | null);
+    if (path) common_photos.push({ id: p.id as string, url: await getPhotoUrl(path) });
+  }
+
+  const items: CoverEditorItem[] = assembled.covers.map((inst) => {
+    const merged = mergeCoverEditsInto(
+      { child_id: inst.child_id, cover_type: inst.cover_type, data: inst.data },
+      byType,
+      byChild,
+    );
+    return {
+      key: inst.child_id ?? `type:${inst.cover_type}`,
+      child_id: inst.child_id,
+      child_name: inst.child_id ? names.get(inst.child_id) ?? null : null,
+      cover_id: inst.cover_id,
+      cover_type: inst.cover_type,
+      cover_name: inst.cover_name,
+      has_cover: !!inst.cover_id && masters.has(inst.cover_id),
+      master: inst.cover_id ? masters.get(inst.cover_id) ?? null : null,
+      data: merged.data,
+      base: inst.data,
+    };
+  });
+
+  return {
+    items,
+    spine_width_mm: assembled.spine_width_mm,
+    editsByType: byType,
+    editsByChild: byChild,
+    common_photos,
+    warnings: assembled.warnings,
+  };
+}
