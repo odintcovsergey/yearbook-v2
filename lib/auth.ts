@@ -21,12 +21,19 @@ export interface AuthContext {
   tenantId: string             // DEFAULT_TENANT_ID для legacy/superadmin
   role: UserRole
   isLegacy: boolean            // true = вход через x-admin-secret
+  // Impersonation («вход как партнёр»): когда сотрудник OkeyBook работает
+  // в кабинете партнёра, userId/tenantId/role — партнёрские, а actingUserId —
+  // реальный менеджер. При обычной работе actingUserId=null, impersonating=false.
+  actingUserId: string | null  // реальный исполнитель (менеджер) при imp
+  impersonating: boolean       // true = активна imp-сессия
 }
 
 interface JWTData extends JWTPayload {
   uid: string      // user_id
   tid: string      // tenant_id (пустая строка для superadmin)
   role: UserRole
+  act?: string     // (imp) id реального менеджера, который импесонирует
+  imp?: boolean    // (imp) признак impersonation-токена
 }
 
 // ============================================================
@@ -63,6 +70,47 @@ export async function createAccessToken(userId: string, tenantId: string, role: 
 export async function verifyAccessToken(token: string): Promise<JWTData | null> {
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET())
+    return payload as JWTData
+  } catch {
+    return null
+  }
+}
+
+// ============================================================
+// IMPERSONATION («вход как партнёр»)
+// ============================================================
+// Imp-токен накладывается ПОВЕРХ обычной сессии менеджера отдельным cookie
+// (imp_token), не трогая его auth_token. Контекст внутри токена — партнёрский
+// (tid=партнёр, uid=владелец партнёра, role=owner), а act=id менеджера.
+// «Выйти из кабинета» = удалить imp_token → getAuth снова берёт auth_token.
+
+export async function createImpersonationToken(
+  managerUserId: string,
+  partnerTenantId: string,
+  partnerOwnerUserId: string,
+): Promise<string> {
+  return new SignJWT({
+    uid: partnerOwnerUserId,
+    tid: partnerTenantId,
+    role: 'owner',
+    act: managerUserId,
+    imp: true,
+  } as JWTData)
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime(ACCESS_TOKEN_TTL)
+    .sign(JWT_SECRET())
+}
+
+// Проверка imp-токена ДЛЯ refresh-flow: подпись обязательна (защита от
+// подделки tid/uid), но истечение игнорируем в пределах окна refresh — чтобы
+// продлить imp-сессию по живой менеджерской refresh-сессии. clockTolerance
+// задан равным TTL refresh-токена.
+export async function verifyImpTokenForRefresh(token: string): Promise<JWTData | null> {
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET(), {
+      clockTolerance: REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60,
+    })
     return payload as JWTData
   } catch {
     return null
@@ -169,6 +217,29 @@ export async function verifyPassword(password: string, stored: string): Promise<
 export async function getAuth(req: NextRequest): Promise<AuthContext | null> {
   // Legacy-вход через x-admin-secret удалён (F4 аудита): статический god-key
   // без ротации/аудита. Остался только JWT-режим.
+
+  // 1. Impersonation: imp_token имеет приоритет над auth_token.
+  // Если imp-cookie ЕСТЬ, но невалиден/просрочен — НЕ откатываемся молча на
+  // менеджерский контекст (иначе запрос внезапно выполнится от имени OkeyBook),
+  // а возвращаем null → 401 → фронт обновит токен (refresh продлит imp по живой
+  // менеджерской сессии либо удалит imp и вернёт менеджера).
+  const impToken = req.cookies.get('imp_token')?.value
+  if (impToken) {
+    const payload = await verifyAccessToken(impToken)
+    if (payload && payload.imp === true && payload.act) {
+      return {
+        userId: payload.uid,
+        tenantId: payload.tid || DEFAULT_TENANT_ID(),
+        role: payload.role,
+        isLegacy: false,
+        actingUserId: payload.act,
+        impersonating: true,
+      }
+    }
+    return null
+  }
+
+  // 2. Обычная менеджерская/партнёрская сессия.
   const cookieToken = req.cookies.get('auth_token')?.value
   if (cookieToken) {
     const payload = await verifyAccessToken(cookieToken)
@@ -178,6 +249,8 @@ export async function getAuth(req: NextRequest): Promise<AuthContext | null> {
         tenantId: payload.tid || DEFAULT_TENANT_ID(),
         role: payload.role,
         isLegacy: false,
+        actingUserId: null,
+        impersonating: false,
       }
     }
   }
@@ -241,10 +314,13 @@ export async function logAction(
     await supabaseAdmin.from('audit_log').insert({
       tenant_id: auth.tenantId,
       user_id: auth.userId,
+      // Реальный исполнитель при impersonation (менеджер OkeyBook). При обычной
+      // работе = null. Колонка добавляется миграцией audit_log.acting_user_id.
+      acting_user_id: auth.actingUserId,
       action,
       target_type: targetType,
       target_id: targetId,
-      meta: meta ?? {},
+      meta: auth.impersonating ? { ...(meta ?? {}), impersonating: true } : (meta ?? {}),
       ip_address: ipAddress,
     })
   } catch (e) {
@@ -279,5 +355,25 @@ export function setAuthCookies(response: NextResponse, accessToken: string, refr
 export function clearAuthCookies(response: NextResponse) {
   response.cookies.delete('auth_token')
   response.cookies.delete('refresh_token')
+  // Imp-сессия не должна переживать выход/протухание менеджерской сессии.
+  response.cookies.delete('imp_token')
+  return response
+}
+
+// Cookie imp-токена (отдельно от auth_token). Path '/' — чтобы уходил и на
+// /api/tenant (рабочие запросы), и на /api/auth (продление в refresh-flow).
+export function setImpersonationCookie(response: NextResponse, impToken: string) {
+  response.cookies.set('imp_token', impToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 15 * 60,  // как access-токен
+  })
+  return response
+}
+
+export function clearImpersonationCookie(response: NextResponse) {
+  response.cookies.delete('imp_token')
   return response
 }

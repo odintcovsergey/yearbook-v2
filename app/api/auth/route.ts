@@ -11,6 +11,9 @@ import {
   clearAuthCookies,
   getAuth,
   logAction,
+  createImpersonationToken,
+  verifyImpTokenForRefresh,
+  setImpersonationCookie,
 } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
@@ -178,6 +181,21 @@ export async function POST(req: NextRequest) {
       path: '/',
       maxAge: 15 * 60,
     })
+
+    // Продление imp-сессии («вход как партнёр»): если есть imp_token и он подписан
+    // нами + его act совпадает с владельцем текущей менеджерской refresh-сессии —
+    // выдаём свежий imp_token. Иначе чужой/битый imp удаляем. Так imp живёт ровно
+    // пока жива менеджерская сессия, и менеджер не выпадает каждые 15 минут.
+    const impCookie = req.cookies.get('imp_token')?.value
+    if (impCookie) {
+      const impPayload = await verifyImpTokenForRefresh(impCookie)
+      if (impPayload?.imp === true && impPayload.act === session.user_id && impPayload.act && impPayload.tid && impPayload.uid) {
+        const freshImp = await createImpersonationToken(impPayload.act, impPayload.tid, impPayload.uid)
+        setImpersonationCookie(response, freshImp)
+      } else {
+        response.cookies.delete('imp_token')
+      }
+    }
 
     return response
   }
@@ -428,10 +446,23 @@ export async function GET(req: NextRequest) {
     tenant = t
   }
 
+  // Impersonation: подтягиваем имя реального менеджера для баннера.
+  let actingUser = null
+  if (auth.impersonating && auth.actingUserId) {
+    const { data: m } = await supabaseAdmin
+      .from('users')
+      .select('id, full_name, email')
+      .eq('id', auth.actingUserId)
+      .single()
+    actingUser = m
+  }
+
   return NextResponse.json({
     authenticated: true,
     user,
     tenant,
     isLegacy: false,
+    impersonating: auth.impersonating,
+    actingUser,
   })
 }

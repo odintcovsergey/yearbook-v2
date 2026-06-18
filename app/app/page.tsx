@@ -37,6 +37,7 @@ import {
 import CRMModal from './CRMModal'
 import IdeasModal from './_components/IdeasModal'
 import { ThemeToggle } from './_components/ThemeToggle'
+import { confirmDestructive } from '@/lib/impersonation-client'
 // РЭ.21.7.3: drag-and-drop секций в редакторе пресета.
 import {
   DndContext,
@@ -891,8 +892,6 @@ export default function AppPage() {
           onClose={() => setShowPartners(false)}
           onNotify={(t) => notify(t)}
           onError={(t) => notify(t, 'err')}
-          originalsProgress={originalsProgress}
-          setOriginalsProgress={setOriginalsProgress}
         />
       )}
     </div>
@@ -2144,7 +2143,7 @@ function AlbumDetailModal({
     // после save_album_layout (2.5) и сбрасывается в false после
     // build_album (2.1).
     if (layout?.has_user_edits) {
-      const ok = window.confirm(
+      const ok = confirmDestructive(
         'У вас есть ручные правки в редакторе. Пересборка их сотрёт. Продолжить?'
       )
       if (!ok) return
@@ -2232,7 +2231,7 @@ function AlbumDetailModal({
   }
 
   const handleReset = async (child: Child) => {
-    if (!confirm(`Сбросить выбор у «${child.full_name}»? Все выбранные фото и контакты будут удалены.`)) return
+    if (!confirmDestructive(`Сбросить выбор у «${child.full_name}»? Все выбранные фото и контакты будут удалены.`)) return
     setBusy(true)
     const r = await api('/api/tenant', {
       method: 'POST',
@@ -2250,7 +2249,7 @@ function AlbumDetailModal({
   }
 
   const handleDelete = async (child: Child) => {
-    if (!confirm(`Полностью удалить «${child.full_name}»? Это действие необратимо.`)) return
+    if (!confirmDestructive(`Полностью удалить «${child.full_name}»? Это действие необратимо.`)) return
     setBusy(true)
     const r = await api('/api/tenant', {
       method: 'POST',
@@ -5343,7 +5342,7 @@ function TeachersTab({
 
   const handleDelete = async (t: Teacher) => {
     const name = t.full_name || 'учителя без имени'
-    if (!confirm(`Удалить «${name}»?`)) return
+    if (!confirmDestructive(`Удалить «${name}»?`)) return
     setBusy(true)
     const r = await api('/api/tenant', {
       method: 'POST',
@@ -5675,7 +5674,7 @@ function ResponsibleTab({
 
   const handleDelete = async () => {
     if (!responsible) return
-    if (!confirm('Удалить ответственного родителя? Его ссылка перестанет работать. Данные учителей сохранятся.')) return
+    if (!confirmDestructive('Удалить ответственного родителя? Его ссылка перестанет работать. Данные учителей сохранятся.')) return
     setBusy(true)
     const r = await api('/api/tenant', {
       method: 'POST',
@@ -6273,7 +6272,7 @@ function PhotosTab({
   }
 
   const deletePhoto = async (photo: Photo) => {
-    if (!confirm(`Удалить фото «${photo.filename}»?\n\nБудет удалено из всех выборов учеников. Если его уже выбрали — таких учеников вернут в статус «В процессе».`)) return
+    if (!confirmDestructive(`Удалить фото «${photo.filename}»?\n\nБудет удалено из всех выборов учеников. Если его уже выбрали — таких учеников вернут в статус «В процессе».`)) return
     const r = await api('/api/tenant', {
       method: 'POST',
       body: JSON.stringify({ action: 'delete_photo', photo_id: photo.id }),
@@ -6419,7 +6418,7 @@ function PhotosTab({
       if (unmatched.length > 0) {
         const preview = unmatched.slice(0, 5).join(', ')
         const more = unmatched.length > 5 ? `, и ещё ${unmatched.length - 5}` : ''
-        if (!confirm(
+        if (!confirmDestructive(
           `Найдено ${matched.length} совпадений из ${files.length} файлов.\n\n` +
           `Не совпали (будут пропущены): ${preview}${more}\n\n` +
           `Продолжить?`,
@@ -7195,7 +7194,7 @@ function LeadsModal({
   }
 
   const deleteLead = async (lead: Lead) => {
-    if (!confirm(`Удалить заявку от ${lead.name}?\n\nЭто действие нельзя отменить.`)) return
+    if (!confirmDestructive(`Удалить заявку от ${lead.name}?\n\nЭто действие нельзя отменить.`)) return
     const r = await api('/api/tenant', {
       method: 'POST',
       body: JSON.stringify({ action: 'delete_lead', id: lead.id }),
@@ -7472,7 +7471,7 @@ function QuotesModal({
   const deleteQuote = async (q: Quote, force = false) => {
     if (!force) {
       const txt = q.text.length > 60 ? q.text.slice(0, 60) + '...' : q.text
-      if (!confirm(`Удалить цитату «${txt}»?`)) return
+      if (!confirmDestructive(`Удалить цитату «${txt}»?`)) return
     }
 
     const r = await api('/api/tenant', {
@@ -7491,7 +7490,7 @@ function QuotesModal({
     } else {
       const d = await r.json().catch(() => ({}))
       if (d.requires_force) {
-        if (confirm(`${d.error}\n\nПродолжить?`)) {
+        if (confirmDestructive(`${d.error}\n\nПродолжить?`)) {
           await deleteQuote(q, true)
         }
       } else {
@@ -8144,7 +8143,7 @@ function TeamModal({
   }
 
   const revokeInvitation = async (inv: Invitation) => {
-    if (!confirm(`Отозвать приглашение для ${inv.email}?`)) return
+    if (!confirmDestructive(`Отозвать приглашение для ${inv.email}?`)) return
     const r = await api('/api/tenant', {
       method: 'POST',
       body: JSON.stringify({ action: 'revoke_invitation', id: inv.id }),
@@ -8177,7 +8176,7 @@ function TeamModal({
   }
 
   const removeUser = async (u: TeamUser) => {
-    if (!confirm(`Удалить ${u.full_name || u.email} из команды?\n\nДоступ будет отозван немедленно. Это действие нельзя отменить.`)) return
+    if (!confirmDestructive(`Удалить ${u.full_name || u.email} из команды?\n\nДоступ будет отозван немедленно. Это действие нельзя отменить.`)) return
     const r = await api('/api/tenant', {
       method: 'POST',
       body: JSON.stringify({ action: 'remove_user', user_id: u.id }),
@@ -8731,7 +8730,7 @@ function SettingsModal({
   }
 
   const deleteLogo = async () => {
-    if (!confirm('Удалить логотип?')) return
+    if (!confirmDestructive('Удалить логотип?')) return
     const r = await api('/api/tenant', {
       method: 'POST',
       body: JSON.stringify({ action: 'update_branding', logo_url: null }),
@@ -9455,7 +9454,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
   }
 
   const handleSubmit = async () => {
-    if (!confirm('Передать альбом в OkeyBook на вёрстку? После этого отбор будет завершён.')) return
+    if (!confirmDestructive('Передать альбом в OkeyBook на вёрстку? После этого отбор будет завершён.')) return
     setSubmitting(true)
     const res = await post({ action: 'submit', album_id: (album as any).id })
     if (res.album) {
@@ -9480,7 +9479,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
     const confirmText = isFromInProduction
       ? 'Снять альбом с работы и вернуть в статус "Передан"?\n\nВНИМАНИЕ: вёрстка уже могла начаться. Действие изменит статус, но не отменит проделанную работу.'
       : 'Отменить передачу альбома в OkeyBook и вернуть в работу?\n\nЭтого делать обычно не нужно — но если передали по ошибке или нашли неточность в данных, можно вернуть.'
-    if (!confirm(confirmText)) return
+    if (!confirmDestructive(confirmText)) return
 
     const res = await post({ action: 'unsubmit', album_id: (album as any).id })
     if (res.album) {
@@ -9521,7 +9520,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
   }
 
   const handleDeleteOriginal = async (fileId: string) => {
-    if (!confirm('Удалить файл?')) return
+    if (!confirmDestructive('Удалить файл?')) return
     await post({ action: 'delete_original', album_id: (album as any).id, file_id: fileId })
     onOriginalsUpdate(originals.filter(o => o.id !== fileId))
   }
@@ -9831,7 +9830,7 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
   }
 
   const handleDiscardRetouched = async (storage_path: string) => {
-    if (!confirm('Удалить этот файл из системы?')) return
+    if (!confirmDestructive('Удалить этот файл из системы?')) return
     setRebindingPaths((prev) => new Set(prev).add(storage_path))
     try {
       const res = await fetch('/api/workflow', {
@@ -10299,24 +10298,20 @@ function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperA
 }
 
 // ============================================================
-// ПАРТНЁРСКИЙ ДАШБОРД — полноценный просмотр кабинета партнёра
+// ПАРТНЁРЫ — список + «Войти как партнёр» (impersonation). Полноценный
+// кабинет партнёра открывается переключением контекста (imp_token), отдельного
+// read-only просмотра больше нет.
 // ============================================================
 
-function PartnersDashboardModal({ onClose, onNotify, onError, originalsProgress, setOriginalsProgress }: {
+function PartnersDashboardModal({ onClose, onNotify, onError }: {
   onClose: () => void
   onNotify: (msg: string) => void
   onError: (msg: string) => void
-  originalsProgress: React.ComponentProps<typeof AlbumDetailModal>['originalsProgress']
-  setOriginalsProgress: React.ComponentProps<typeof AlbumDetailModal>['setOriginalsProgress']
 }) {
   const [tenants, setTenants] = useState<any[]>([])
-  const [selectedTenant, setSelectedTenant] = useState<any | null>(null)
-  const [dashboard, setDashboard] = useState<any | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null)
   const [backdropStart, setBackdropStart] = useState(false)
   const [search, setSearch] = useState('')
-
+  const [entering, setEntering] = useState<string | null>(null)
   const [showCreatePartner, setShowCreatePartner] = useState(false)
 
   const reloadTenants = () => {
@@ -10327,19 +10322,27 @@ function PartnersDashboardModal({ onClose, onNotify, onError, originalsProgress,
 
   useEffect(() => { reloadTenants() }, [])
 
-  const loadPartnerDashboard = async (tenant: any) => {
-    setSelectedTenant(tenant)
-    setLoading(true)
-    setDashboard(null)
-    setSelectedAlbum(null)
+  // «Войти как партнёр» — выдаём imp_token и полностью перезагружаем кабинет:
+  // серверный getAuth увидит imp-cookie и отдаст партнёрский контекст.
+  const enterAsPartner = async (tenant: any) => {
+    setEntering(tenant.id)
     try {
-      // Используем тот же dashboard endpoint с view_as — получаем полные данные партнёра
-      const res = await fetch(`/api/tenant?action=dashboard&view_as=${tenant.id}`)
-      const data = await res.json()
-      // childrenStats уже включены в albums[].stats
-      setDashboard(data)
-    } finally {
-      setLoading(false)
+      const res = await fetch('/api/tenant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'impersonate_start', partner_tenant_id: tenant.id }),
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        onError(d.error || 'Не удалось войти в кабинет партнёра')
+        setEntering(null)
+        return
+      }
+      window.location.href = '/app'
+    } catch {
+      onError('Не удалось войти в кабинет партнёра')
+      setEntering(null)
     }
   }
 
@@ -10354,13 +10357,12 @@ function PartnersDashboardModal({ onClose, onNotify, onError, originalsProgress,
       onMouseDown={e => { if (e.target === e.currentTarget) setBackdropStart(true) }}
       onMouseUp={e => { if (backdropStart && e.target === e.currentTarget) onClose(); setBackdropStart(false) }}
     >
-      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-7xl min-h-[80vh] flex flex-col">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col">
         {/* Шапка */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>
-              <Camera size={16} /> Партнёры
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold flex items-center gap-2" style={{ fontFamily: 'var(--font-display)' }}>
+              <Camera size={18} /> Партнёры
             </h2>
             <button
               onClick={() => setShowCreatePartner(true)}
@@ -10369,84 +10371,45 @@ function PartnersDashboardModal({ onClose, onNotify, onError, originalsProgress,
               + Партнёр
             </button>
           </div>
-            {selectedTenant && (
-              <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1">
-                <span className="text-xs text-amber-700">Просматриваете как:</span>
-                <span className="text-sm font-semibold text-amber-900">{selectedTenant.name}</span>
-                <button
-                  onClick={() => { setSelectedTenant(null); setDashboard(null) }}
-                  className="text-amber-400 hover:text-amber-700 ml-1 text-xs"
-                >×</button>
-              </div>
-            )}
-          </div>
-          <button onClick={onClose} className="text-muted-foreground hover:text-muted-foreground text-2xl leading-none">×</button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-2xl leading-none">×</button>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
-          {/* Список партнёров */}
-          <div className="w-56 border-r border-border flex flex-col flex-shrink-0">
-            <div className="p-3 border-b border-border">
-              <input className="input w-full text-sm" placeholder="Поиск..."
-                value={search} onChange={e => setSearch(e.target.value)} />
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {filtered.map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => loadPartnerDashboard(t)}
-                  className={`w-full text-left px-4 py-3 border-b border-border hover:bg-muted transition-colors ${
-                    selectedTenant?.id === t.id ? 'bg-muted border-l-2 border-l-gray-900' : ''
-                  }`}
-                >
-                  <p className="text-sm font-medium text-foreground truncate">{t.name}</p>
-                  {t.city && <p className="text-xs text-muted-foreground">{t.city}</p>}
-                </button>
-              ))}
-              {filtered.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-8">Нет партнёров</p>
-              )}
-            </div>
-          </div>
+        <div className="p-4 border-b border-border">
+          <input className="input w-full text-sm" placeholder="Поиск партнёра..."
+            value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
 
-          {/* Дашборд партнёра */}
-          <div className="flex-1 overflow-y-auto p-6">
-            {!selectedTenant && (
-              <div className="flex items-center justify-center h-full text-muted-foreground">
-                Выберите партнёра слева
+        <div className="px-4 pb-2 pt-3">
+          <p className="text-xs text-muted-foreground">
+            «Войти как партнёр» открывает его кабинет с полным доступом — вы видите и делаете
+            всё то же, что и партнёр. Все действия логируются как выполненные вами.
+          </p>
+        </div>
+
+        <div className="max-h-[60vh] overflow-y-auto px-4 pb-4">
+          {filtered.map(t => (
+            <div
+              key={t.id}
+              className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border last:border-0"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">{t.name}</p>
+                {t.city && <p className="text-xs text-muted-foreground">{t.city}</p>}
               </div>
-            )}
-            {selectedTenant && loading && (
-              <div className="flex items-center justify-center h-full text-muted-foreground">
-                Загрузка...
-              </div>
-            )}
-            {selectedTenant && dashboard && !loading && (
-              <PartnerDashboardContent
-                tenant={selectedTenant}
-                dashboard={dashboard}
-                onOpenAlbum={setSelectedAlbum}
-                onNotify={onNotify}
-                onError={onError}
-              />
-            )}
-          </div>
+              <button
+                onClick={() => enterAsPartner(t)}
+                disabled={entering === t.id}
+                className="btn-secondary text-sm px-3 py-1.5 flex-shrink-0 disabled:opacity-60"
+              >
+                {entering === t.id ? 'Входим…' : 'Войти как партнёр'}
+              </button>
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-8">Нет партнёров</p>
+          )}
         </div>
       </div>
-
-      {/* Модалка альбома партнёра — передаём view_as для загрузки данных партнёра */}
-      {selectedAlbum && selectedTenant && (
-        <AlbumDetailModal
-          album={selectedAlbum}
-          canEdit={true}
-          onClose={() => setSelectedAlbum(null)}
-          onNotify={onNotify}
-          onError={onError}
-          viewAsTenantId={selectedTenant.id}
-          originalsProgress={originalsProgress}
-          setOriginalsProgress={setOriginalsProgress}
-        />
-      )}
 
       {/* Создание нового партнёра */}
       {showCreatePartner && (
@@ -10458,129 +10421,6 @@ function PartnersDashboardModal({ onClose, onNotify, onError, originalsProgress,
             onNotify(`Партнёр «${tenant.name}» создан`)
           }}
         />
-      )}
-    </div>
-  )
-}
-
-function PartnerDashboardContent({ tenant, dashboard, onOpenAlbum, onNotify, onError }: {
-  tenant: any
-  dashboard: any
-  onOpenAlbum: (album: Album) => void
-  onNotify: (msg: string) => void
-  onError: (msg: string) => void
-}) {
-  const albums: Album[] = dashboard.albums ?? []
-  const active = albums.filter(a => !a.archived)
-
-  // Статистика уже в albums[].stats (из dashboard endpoint)
-  const summary = dashboard.summary ?? {}
-  const totalChildren = summary.children_total ?? 0
-  const submittedCount = summary.children_submitted ?? 0
-  const inProgressCount = active.reduce((s: number, a: any) => s + (a.stats?.in_progress ?? 0), 0)
-
-  const getAlbumStats = (album: any) => {
-    const s = album.stats ?? {}
-    const total = s.total ?? 0
-    const submitted = s.submitted ?? 0
-    const inProgress = s.in_progress ?? 0
-    return { total, submitted, inProgress, pct: total ? Math.round(submitted / total * 100) : 0 }
-  }
-
-  return (
-    <div>
-      {/* Шапка партнёра */}
-      <div className="mb-6">
-        <h3 className="text-2xl font-bold" style={{ fontFamily: 'var(--font-display)' }}>{tenant.name}</h3>
-        {tenant.city && <p className="text-muted-foreground text-sm">{tenant.city}</p>}
-      </div>
-
-      {/* Сводные карточки */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <div className="card p-4">
-          <p className="text-xs text-muted-foreground mb-1">Активных альбомов</p>
-          <p className="text-2xl font-bold">{active.length}</p>
-        </div>
-        <div className="card p-4">
-          <p className="text-xs text-muted-foreground mb-1">Учеников</p>
-          <p className="text-2xl font-bold">{totalChildren}</p>
-        </div>
-        <div className="card p-4">
-          <p className="text-xs text-muted-foreground mb-1">Завершили выбор</p>
-          <p className="text-2xl font-bold text-green-600">
-            {submittedCount}
-            {totalChildren > 0 && <span className="text-sm font-normal text-muted-foreground ml-1">{Math.round(submittedCount / totalChildren * 100)}%</span>}
-          </p>
-        </div>
-        <div className="card p-4">
-          <p className="text-xs text-muted-foreground mb-1">В процессе</p>
-          <p className="text-2xl font-bold text-blue-500">{inProgressCount}</p>
-        </div>
-      </div>
-
-      {/* Карточки альбомов */}
-      {active.length === 0 ? (
-        <p className="text-muted-foreground text-sm text-center py-12">Нет активных альбомов</p>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {active.map(album => {
-            const stats = getAlbumStats(album.id)
-            return (
-              <button
-                key={album.id}
-                onClick={() => onOpenAlbum(album)}
-                className="card p-4 text-left hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <p className="font-semibold text-foreground">{album.title}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {album.city && `${album.city} · `}{album.year}
-                      {(album as any).classes && ` · ${(album as any).classes}`}
-                    </p>
-                    {(album as any).template_title && (
-                      <p className="text-xs text-muted-foreground">{(album as any).template_title}</p>
-                    )}
-                  </div>
-                  <span className={`text-sm font-bold ${
-                    stats.pct === 100 ? 'text-green-600' : 'text-foreground'
-                  }`}>{stats.pct}%</span>
-                </div>
-
-                {/* Прогресс-бар */}
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-2">
-                  <div
-                    className="h-full bg-green-500 rounded-full"
-                    style={{ width: `${stats.pct}%` }}
-                  />
-                </div>
-
-                <p className="text-xs text-muted-foreground">
-                  {stats.submitted} из {stats.total} учеников
-                  {stats.inProgress > 0 && (
-                    <span className="ml-2 text-blue-400">{stats.inProgress} в процессе</span>
-                  )}
-                </p>
-
-                {/* Статус производства */}
-                {(album as any).workflow_status && (album as any).workflow_status !== 'active' && (
-                  <div className="mt-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
-                      (album as any).workflow_status === 'delivered' ? 'bg-green-100 text-green-700' :
-                      (album as any).workflow_status === 'in_production' ? 'bg-amber-100 text-amber-700' :
-                      'bg-purple-100 text-purple-700'
-                    }`}>
-                      {(album as any).workflow_status === 'ready' ? <><span className="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1.5 align-middle" />Готов к передаче</> :
-                       (album as any).workflow_status === 'submitted' ? <><span className="inline-block w-2 h-2 rounded-full bg-violet-500 mr-1.5 align-middle" />Передан в OkeyBook</> :
-                       (album as any).workflow_status === 'in_production' ? <><span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-1.5 align-middle" />В работе</> :
-                       <><span className="inline-block w-2 h-2 rounded-full bg-brand-500 mr-1.5 align-middle" />Готов</>}
-                    </span>
-                  </div>
-                )}
-              </button>
-            )
-          })}
-        </div>
       )}
     </div>
   )
