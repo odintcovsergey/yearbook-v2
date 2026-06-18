@@ -13,7 +13,7 @@ import type { SpreadInstance } from '@/lib/album-builder/types'
 // portrait/group/teacher и общие фото 'common_*' были смешаны в null
 // или общем 'group' табе. См. /api/tenant?action=album_photos в
 // app/api/tenant/route.ts — `type` оттуда уже отдаёт все варианты.
-type AlbumPhoto = {
+export type AlbumPhoto = {
   id: string
   filename: string
   storage_path: string
