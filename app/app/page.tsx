@@ -3158,6 +3158,7 @@ type FormData = {
   cover_available_ids: string[]      // какие обложки показывать родителю
   print_preset_id: string | null     // legacy пресет печати (не используется для корешка)
   printer_id: string | null          // типография (расчёт корешка по диапазонам)
+  format_id: string | null           // формат блока внутри типографии (config.formats)
   sheet_type_id: string | null       // тип листа внутри типографии
 }
 
@@ -3231,6 +3232,7 @@ function emptyForm(): FormData {
     cover_available_ids: [],
     print_preset_id: null,
     printer_id: null,
+    format_id: null,
     sheet_type_id: null,
   }
 }
@@ -3363,6 +3365,7 @@ function AlbumFormModal({
         cover_available_ids: (album as any).cover_available_ids ?? [],
         print_preset_id: (album as any).print_preset_id ?? null,
         printer_id: (album as any).printer_id ?? null,
+        format_id: (album as any).format_id ?? null,
         sheet_type_id: (album as any).sheet_type_id ?? null,
       }
     }
@@ -3399,10 +3402,13 @@ function AlbumFormModal({
   // Показывать ли дизайнерские (глобальные) обложки в выборе, помимо родных
   // обложек дизайна заказа. По умолчанию только родные.
   const [showDesignerCovers, setShowDesignerCovers] = useState(false)
-  // Типографии (расчёт корешка по диапазонам): id, name, config.sheet_types.
+  // Типографии (формат + корешок): id, name, config.formats/sheet_types.
   const [printers, setPrinters] = useState<Array<{
     id: string; name: string
-    config: { sheet_types?: Array<{ id: string; name: string }> } | null
+    config: {
+      sheet_types?: Array<{ id: string; name: string }>
+      formats?: Array<{ id: string; name: string }>
+    } | null
   }>>([])
   // Превью собранной обложки на альбом (edit mode).
   const [coverPreviewOpen, setCoverPreviewOpen] = useState(false)
@@ -3473,6 +3479,7 @@ function AlbumFormModal({
           cover_default_type: form.cover_default_type,
           cover_available_ids: form.cover_available_ids,
           printer_id: form.printer_id,
+          format_id: form.format_id,
           sheet_type_id: form.sheet_type_id,
         }),
       })
@@ -3647,6 +3654,7 @@ function AlbumFormModal({
       cover_available_ids: form.cover_available_ids,
       print_preset_id: form.print_preset_id,
       printer_id: form.printer_id,
+      format_id: form.format_id,
       sheet_type_id: form.sheet_type_id,
       group_enabled: form.group_enabled,
       group_min: parseInt(form.group_min) || 0,
@@ -4220,12 +4228,13 @@ function AlbumFormModal({
                   </div>
                 )}
 
-                <label className="block text-xs text-muted-foreground mb-1">Типография (для расчёта корешка)</label>
+                <label className="block text-xs text-muted-foreground mb-1">Типография (формат и корешок)</label>
                 <select
                   value={form.printer_id ?? ''}
                   disabled={loading}
                   onChange={(e) => {
                     set('printer_id', e.target.value || null)
+                    set('format_id', null)
                     set('sheet_type_id', null)
                   }}
                   className="input mb-2"
@@ -4243,20 +4252,38 @@ function AlbumFormModal({
 
                 {(() => {
                   const printer = printers.find((p) => p.id === form.printer_id)
-                  const sheets = printer?.config?.sheet_types ?? []
-                  if (!form.printer_id || sheets.length === 0) return null
+                  if (!form.printer_id || !printer) return null
+                  const formats = printer.config?.formats ?? []
+                  const sheets = printer.config?.sheet_types ?? []
                   return (
-                    <select
-                      value={form.sheet_type_id ?? ''}
-                      disabled={loading}
-                      onChange={(e) => set('sheet_type_id', e.target.value || null)}
-                      className="input"
-                    >
-                      <option value="">Тип листа по умолчанию</option>
-                      {sheets.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
+                    <>
+                      {formats.length > 0 && (
+                        <select
+                          value={form.format_id ?? ''}
+                          disabled={loading}
+                          onChange={(e) => set('format_id', e.target.value || null)}
+                          className="input mb-2"
+                        >
+                          <option value="">Формат: по умолчанию</option>
+                          {formats.map((f) => (
+                            <option key={f.id} value={f.id}>{f.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      {sheets.length > 0 && (
+                        <select
+                          value={form.sheet_type_id ?? ''}
+                          disabled={loading}
+                          onChange={(e) => set('sheet_type_id', e.target.value || null)}
+                          className="input"
+                        >
+                          <option value="">Тип листа по умолчанию</option>
+                          {sheets.map((s) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </>
                   )
                 })()}
 
