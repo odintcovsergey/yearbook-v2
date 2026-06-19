@@ -11,3 +11,6 @@ out/
 
 # Claude Code (per-user permission overrides — settings.json коммитим если появится)
 .claude/settings.local.json
+
+# macOS
+.DS_Store
