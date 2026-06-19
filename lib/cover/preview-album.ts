@@ -11,6 +11,7 @@ import type { Placeholder, RenderPlaceholder } from '../album-builder/types';
 import { loadAlbumCovers } from './load-covers';
 import { layoutCover } from './layout';
 import { renderCoverPreviewSvg } from './preview-svg';
+import { indexCoverEdits, mergeCoverEditsInto, type CoverEditRow } from './editor-merge';
 import type { CoverType } from './types';
 
 export type AlbumCoverPreview = {
@@ -68,15 +69,28 @@ export async function buildAlbumCoverPreviews(
     for (const c of (data ?? []) as Array<{ id: string; full_name: string }>) names.set(c.id, c.full_name);
   }
 
+  // Правки редактора (cover_edits): фон/скрытие/кроп/тексты — чтобы превью
+  // заказа совпадало с тем, что менеджер настроил в редакторе обложек.
+  const { data: editRows } = await supabase
+    .from('cover_edits')
+    .select('cover_type, child_id, data')
+    .eq('album_id', albumId);
+  const { byType, byChild } = indexCoverEdits((editRows ?? []) as CoverEditRow[]);
+
   const previews: AlbumCoverPreview[] = assembled.covers.map((inst) => {
     const master = inst.cover_id ? masters.get(inst.cover_id) ?? null : null;
+    const merged = mergeCoverEditsInto(
+      { child_id: inst.child_id, cover_type: inst.cover_type, data: inst.data },
+      byType,
+      byChild,
+    );
     return {
       child_id: inst.child_id,
       child_name: inst.child_id ? names.get(inst.child_id) ?? null : null,
       cover_name: inst.cover_name,
       cover_type: inst.cover_type,
       has_cover: !!master,
-      svg: master ? renderCoverMasterSvg(master, assembled.spine_width_mm, inst.data) : '',
+      svg: master ? renderCoverMasterSvg(master, assembled.spine_width_mm, merged.data) : '',
     };
   });
 

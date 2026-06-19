@@ -16,6 +16,7 @@ import type {
   RenderPlaceholder,
   TextPlaceholder,
 } from '../album-builder/types';
+import { resolveCoverBackground } from './editor-merge';
 
 const SLOT_FILL = '#d1d5db'; // gray-300
 const PAGE_BORDER = '#9ca3af'; // gray-400
@@ -61,6 +62,10 @@ export function renderCoverPreviewSvg(input: CoverPreviewInput): string {
     hide_empty_slots,
   } = input;
 
+  // Ручное скрытие элемента: ключ `__hidden__<label>` в data. Отличается от
+  // авто-скрытия пустых (hide_empty_slots) — гасит даже заполненный элемент.
+  const isHidden = (label: string): boolean => !!data?.[`__hidden__${label}`];
+
   const parts: string[] = [];
   parts.push(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fmt(w)} ${fmt(h)}" preserveAspectRatio="xMidYMid meet">`,
@@ -71,30 +76,35 @@ export function renderCoverPreviewSvg(input: CoverPreviewInput): string {
     `<rect x="0" y="0" width="${fmt(w)}" height="${fmt(h)}" fill="white" stroke="${PAGE_BORDER}" stroke-width="${fmt(PAGE_BORDER_WIDTH_MM)}"/>`,
   );
 
-  // Фон обложки на всё полотно (cover-crop).
-  if (background_url) {
+  // Фон обложки на всё полотно (cover-crop). Правка `__bg__` перекрывает мастер.
+  const bg = resolveCoverBackground(data, background_url);
+  if (bg) {
     parts.push(
-      `<image href="${esc(background_url)}" x="0" y="0" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid slice"/>`,
+      `<image href="${esc(bg)}" x="0" y="0" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid slice"/>`,
     );
   }
 
   // Декор под слотами.
   for (const ph of placeholders) {
-    if (ph.type === 'decoration' && ph.layer === 'under') {
+    if (ph.type === 'decoration' && ph.layer === 'under' && !isHidden(ph.label)) {
       parts.push(renderDecor(ph as DecorationPlaceholder));
     }
   }
 
   // Слоты (фото/текст).
   for (const ph of placeholders) {
-    if (ph.type === 'photo' || ph.type === 'text') {
+    if ((ph.type === 'photo' || ph.type === 'text') && !isHidden(ph.label)) {
       parts.push(renderPlaceholder(ph, data, hide_empty_slots ?? false));
     }
   }
 
   // Декор поверх слотов (over + передний план).
   for (const ph of placeholders) {
-    if (ph.type === 'decoration' && (ph.layer === 'over' || ph.layer === 'foreground')) {
+    if (
+      ph.type === 'decoration' &&
+      (ph.layer === 'over' || ph.layer === 'foreground') &&
+      !isHidden(ph.label)
+    ) {
       parts.push(renderDecor(ph as DecorationPlaceholder));
     }
   }

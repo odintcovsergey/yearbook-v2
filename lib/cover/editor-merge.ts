@@ -91,6 +91,32 @@ export function indexCoverEdits(rows: CoverEditRow[]): {
 }
 
 /**
+ * Служебный ключ ручной смены фона обложки. Значение — URL картинки фона
+ * (перекрывает фон мастера `covers.background_url`), либо `'none'` — явное «без
+ * фона» (тоже перекрывает мастер). Отсутствие ключа = фон мастера.
+ */
+export const COVER_BG_KEY = '__bg__';
+
+/** Сентинел «без фона» в значении `__bg__`. */
+export const COVER_BG_NONE = 'none';
+
+/**
+ * Эффективный фон обложки: правка `__bg__` из data перекрывает фон мастера.
+ *  - `__bg__` = URL  → этот URL;
+ *  - `__bg__` = 'none' → null (явно без фона);
+ *  - ключа нет        → фон мастера (masterBgUrl).
+ */
+export function resolveCoverBackground(
+  data: Record<string, string | null> | undefined,
+  masterBgUrl: string | null | undefined,
+): string | null {
+  const ov = data?.[COVER_BG_KEY];
+  if (ov === undefined || ov === null) return masterBgUrl ?? null;
+  if (ov === COVER_BG_NONE || ov === '') return null;
+  return ov;
+}
+
+/**
  * Из data достаёт placeholderOverrides для холста: ключ `__hidden__<label>`='1'
  * → { [label]: { hidden: true } }. Остальные служебные ключи холст читает сам.
  */

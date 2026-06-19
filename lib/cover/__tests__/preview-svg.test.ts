@@ -132,4 +132,37 @@ describe('renderCoverPreviewSvg', () => {
     // is_circle = овальная рамка → эллипс по габаритам слота (не круг).
     expect(svg).toContain('<ellipse');
   });
+
+  it('__bg__ перекрывает фон мастера', () => {
+    const svg = renderCoverPreviewSvg({
+      ...BASE,
+      background_url: 'https://cdn/master-bg.jpg',
+      data: { __bg__: 'https://cdn/custom-bg.jpg' },
+    });
+    expect(svg).toContain('href="https://cdn/custom-bg.jpg"');
+    expect(svg).not.toContain('master-bg.jpg');
+  });
+
+  it('__bg__=none → фон не рисуется даже при фоне мастера', () => {
+    const svg = renderCoverPreviewSvg({
+      ...BASE,
+      background_url: 'https://cdn/master-bg.jpg',
+      data: { __bg__: 'none' },
+    });
+    expect(svg).not.toContain('master-bg.jpg');
+  });
+
+  it('__hidden__<label> прячет заполненный элемент, остальные остаются', () => {
+    const svg = renderCoverPreviewSvg({
+      ...BASE,
+      placeholders: [photo('back_qr', 50), photo('cover_portrait', 250)],
+      data: {
+        back_qr: 'https://cdn/qr.png',
+        cover_portrait: 'https://cdn/p.jpg',
+        __hidden__back_qr: '1',
+      },
+    });
+    expect(svg).not.toContain('https://cdn/qr.png');
+    expect(svg).toContain('https://cdn/p.jpg');
+  });
 });

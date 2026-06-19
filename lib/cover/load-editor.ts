@@ -53,6 +53,11 @@ export type CoverEditorResult = {
   coverTextStyles: CoverTextStyleOverrides;
   /** Галерея общих фото класса (для замены на общей/учительской). */
   common_photos: Array<{ id: string; url: string }>;
+  /**
+   * Доступные фоны обложек этого дизайна (фоны обложек того же template_set) —
+   * для панели «Фон» в редакторе. Уникальны по URL.
+   */
+  available_backgrounds: Array<{ url: string; name: string }>;
   warnings: string[];
 };
 
@@ -99,15 +104,37 @@ export async function loadCoverEditor(
     .eq('album_id', albumId);
   const { byType, byChild } = indexCoverEdits((editRows ?? []) as CoverEditRow[]);
 
-  // Глобальные стили текстов обложки (albums.cover_text_style_overrides).
+  // Глобальные стили текстов обложки + дизайн заказа (для списка фонов).
   const { data: albumRow } = await supabase
     .from('albums')
-    .select('cover_text_style_overrides')
+    .select('cover_text_style_overrides, template_set_id')
     .eq('id', albumId)
     .maybeSingle();
   const coverTextStyles = parseCoverTextStyleOverrides(
     (albumRow as { cover_text_style_overrides?: unknown } | null)?.cover_text_style_overrides,
   );
+  const designTemplateSetId =
+    (albumRow as { template_set_id?: string | null } | null)?.template_set_id ?? null;
+
+  // Доступные фоны: фоны обложек того же дизайна (template_set) + фоны самих
+  // мастеров, уже назначенных на обложки заказа. Уникальны по URL.
+  const bgMap = new Map<string, string>(); // url → имя
+  for (const m of Array.from(masters.values())) {
+    if (m.background_url) bgMap.set(m.background_url, 'Текущий фон обложки');
+  }
+  if (designTemplateSetId) {
+    const { data: designCovers } = await supabase
+      .from('covers')
+      .select('name, background_url')
+      .eq('template_set_id', designTemplateSetId)
+      .not('background_url', 'is', null);
+    for (const c of (designCovers ?? []) as Array<{ name: string | null; background_url: string | null }>) {
+      if (c.background_url && !bgMap.has(c.background_url)) {
+        bgMap.set(c.background_url, c.name ?? 'Фон дизайна');
+      }
+    }
+  }
+  const available_backgrounds = Array.from(bgMap.entries()).map(([url, name]) => ({ url, name }));
 
   // Галерея общих фото класса (для замены).
   const { data: commonsRaw } = await supabase
@@ -149,6 +176,7 @@ export async function loadCoverEditor(
     editsByChild: byChild,
     coverTextStyles,
     common_photos,
+    available_backgrounds,
     warnings: assembled.warnings,
   };
 }

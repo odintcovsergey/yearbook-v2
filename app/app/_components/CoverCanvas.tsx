@@ -9,7 +9,7 @@
 
 import dynamic from 'next/dynamic'
 import { layoutCover } from '@/lib/cover/layout'
-import { hiddenOverridesFromData } from '@/lib/cover/editor-merge'
+import { hiddenOverridesFromData, resolveCoverBackground } from '@/lib/cover/editor-merge'
 import { applyCoverTextStyles, type CoverTextStyleOverrides } from '@/lib/cover/text-styles'
 import type { SpreadInstance, SpreadTemplate, RenderPlaceholder } from '@/lib/album-builder/types'
 import type { CropHandlers } from './AlbumSpreadCanvas'
@@ -108,7 +108,7 @@ export default function CoverCanvas({
       template={template}
       containerWidth={containerWidth}
       mode={mode}
-      backgroundUrl={master.background_url}
+      backgroundUrl={resolveCoverBackground(data, master.background_url)}
       pageSide="spread"
       spineMarginMm={null}
       placeholderOverrides={overrides}

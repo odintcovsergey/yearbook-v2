@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeCoverEditsInto, mergeCoverData, indexCoverEdits, hiddenOverridesFromData } from '../editor-merge';
+import { mergeCoverEditsInto, mergeCoverData, indexCoverEdits, hiddenOverridesFromData, resolveCoverBackground, COVER_BG_NONE } from '../editor-merge';
 
 describe('indexCoverEdits', () => {
   it('раскладывает по типу и по ученику', () => {
@@ -69,5 +69,31 @@ describe('hiddenOverridesFromData', () => {
     const o = hiddenOverridesFromData({ __hidden__back_qr: '1', cover_title: 'x' });
     expect(o.back_qr).toEqual({ hidden: true });
     expect(o.cover_title).toBeUndefined();
+  });
+});
+
+describe('resolveCoverBackground', () => {
+  it('нет правки __bg__ → фон мастера', () => {
+    expect(resolveCoverBackground({}, 'master.jpg')).toBe('master.jpg');
+    expect(resolveCoverBackground(undefined, 'master.jpg')).toBe('master.jpg');
+    expect(resolveCoverBackground({ cover_title: 'x' }, null)).toBeNull();
+  });
+
+  it('__bg__ = URL → этот фон (перекрывает мастер)', () => {
+    expect(resolveCoverBackground({ __bg__: 'custom.jpg' }, 'master.jpg')).toBe('custom.jpg');
+  });
+
+  it('__bg__ = none/пусто → явно без фона', () => {
+    expect(resolveCoverBackground({ __bg__: COVER_BG_NONE }, 'master.jpg')).toBeNull();
+    expect(resolveCoverBackground({ __bg__: '' }, 'master.jpg')).toBeNull();
+  });
+
+  it('__bg__ = null (сброс правки) → фон мастера', () => {
+    expect(resolveCoverBackground({ __bg__: null }, 'master.jpg')).toBe('master.jpg');
+  });
+
+  it('поштучный __bg__ перекрывает шаблонный через mergeCoverData', () => {
+    const merged = mergeCoverData({}, { __bg__: 'type.jpg' }, { __bg__: 'student.jpg' });
+    expect(resolveCoverBackground(merged, 'master.jpg')).toBe('student.jpg');
   });
 });
