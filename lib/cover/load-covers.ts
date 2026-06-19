@@ -19,7 +19,7 @@ import {
   type CoverSharedContent,
 } from './assemble';
 import { countAlbumSheets } from './album-spine';
-import { resolveSpineFromRanges } from '../printers/spine';
+import { resolveSpineMm } from '../printers/spine';
 import type { PrinterConfig } from '../printers/types';
 import type { Cover, CoverType } from './types';
 
@@ -266,7 +266,7 @@ async function loadSpineWidth(
   }
 
   const spreadCount = countAlbumSheets(spreads, templatesById);
-  const spine = resolveSpineFromRanges(config, (album.sheet_type_id as string | null) ?? null, spreadCount);
+  const spine = resolveSpineMm(config, (album.sheet_type_id as string | null) ?? null, spreadCount);
   if (spine === null) {
     warnings.push(`нет диапазона корешка для ${spreadCount} разворотов — добавьте диапазон в типографии`);
   }
