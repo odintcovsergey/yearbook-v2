@@ -232,10 +232,18 @@ export type AdaptCoverInput = {
   placeholders: CoverPlaceholder[];
 };
 
+type CoverAdaptBase = {
+  widthMm: number;
+  heightMm: number;
+  /** Границы корешка в адаптированных координатах (для SVG/линии корешка). */
+  spineLeftMm: number;
+  spineRightMm: number;
+  placeholders: CoverPlaceholder[];
+};
 export type CoverAdaptResult =
-  | { status: 'native'; widthMm: number; heightMm: number; placeholders: CoverPlaceholder[]; scale: 1 }
-  | { status: 'incompatible'; widthMm: number; heightMm: number; placeholders: CoverPlaceholder[]; scale: 1; warning: string }
-  | { status: 'adapted'; widthMm: number; heightMm: number; placeholders: CoverPlaceholder[]; scale: number };
+  | (CoverAdaptBase & { status: 'native'; scale: 1 })
+  | (CoverAdaptBase & { status: 'incompatible'; scale: 1; warning: string })
+  | (CoverAdaptBase & { status: 'adapted'; scale: number });
 
 /**
  * Адаптирует обложку под формат заказа.
@@ -254,14 +262,18 @@ export function adaptCoverToFormat(
   target: PrinterFormat | null,
 ): CoverAdaptResult {
   const nativeWidth = input.backWidthMm + input.spineWidthMm + input.frontWidthMm;
+  const nativeSpineLeft = input.backWidthMm;
+  const nativeSpineRight = input.backWidthMm + input.spineWidthMm;
   if (!target) {
-    return { status: 'native', widthMm: nativeWidth, heightMm: input.heightMm, placeholders: input.placeholders, scale: 1 };
+    return { status: 'native', widthMm: nativeWidth, heightMm: input.heightMm, spineLeftMm: nativeSpineLeft, spineRightMm: nativeSpineRight, placeholders: input.placeholders, scale: 1 };
   }
   if (input.family !== target.family) {
     return {
       status: 'incompatible',
       widthMm: nativeWidth,
       heightMm: input.heightMm,
+      spineLeftMm: nativeSpineLeft,
+      spineRightMm: nativeSpineRight,
       placeholders: input.placeholders,
       scale: 1,
       warning:
@@ -310,6 +322,8 @@ export function adaptCoverToFormat(
     status: 'adapted',
     widthMm: PW + spine + PW,
     heightMm: H,
+    spineLeftMm: PW,
+    spineRightMm: PW + spine,
     placeholders,
     scale: s,
   };

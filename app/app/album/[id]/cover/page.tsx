@@ -29,7 +29,7 @@ import CoverVisibilityPanel, { type CoverElement } from '../../../_components/Co
 import type { AlbumPhoto } from '../../../_components/PhotoPalette'
 import type { CropHandlers } from '../../../_components/AlbumSpreadCanvas'
 import type { CoverCanvasMaster } from '../../../_components/CoverCanvas'
-import { computeFormatFamily, resolveFormat } from '@/lib/format-adapt'
+import { adaptCoverToFormat, computeFormatFamily, resolveFormat } from '@/lib/format-adapt'
 import type { PrinterConfig, PrinterFormat } from '@/lib/printers/types'
 
 const PhotoPalette = dynamic(() => import('../../../_components/PhotoPalette'), { ssr: false, loading: () => null })
@@ -612,7 +612,7 @@ export default function CoverEditorPage() {
                 style={{ width: 110 }}
               >
                 <div className="w-full bg-muted rounded overflow-hidden" style={{ aspectRatio: '3 / 2' }}
-                  dangerouslySetInnerHTML={{ __html: it.master ? coverThumb(it, editor?.spine_width_mm ?? null, typePatches, studentPatches) : '' }} />
+                  dangerouslySetInnerHTML={{ __html: it.master ? coverThumb(it, editor?.spine_width_mm ?? null, typePatches, studentPatches, targetFormat) : '' }} />
                 <div className="text-[10px] truncate mt-0.5">{it.child_name ?? TYPE_LABEL[it.cover_type]}</div>
               </button>
             ))}
@@ -660,6 +660,8 @@ export default function CoverEditorPage() {
           spineWidthMm={editor?.spine_width_mm ?? null}
           initialIdx={currentIdx}
           coverTextStyles={coverTextStyles}
+          targetFormat={targetFormat}
+          designFamily={designFamily}
           onClose={() => setFullscreenOpen(false)}
         />
       )}
@@ -709,20 +711,29 @@ function coverThumb(
   spine: number | null,
   typePatches: Record<string, Record<string, string | null>>,
   studentPatches: Record<string, Record<string, string | null>>,
+  targetFormat: PrinterFormat | null,
 ): string {
   const m = it.master
   if (!m) return ''
   const n = (v: number | null) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
   const data = mergeCoverData(it.base, typePatches[it.cover_type] ?? {}, it.child_id ? studentPatches[it.child_id] ?? {} : {})
+  const back = n(m.back_width_mm), front = n(m.front_width_mm), heightMm = n(m.height_mm)
+  const real = spine ?? n(m.nominal_spine_width_mm)
   const laid = layoutCover(
-    { backWidthMm: n(m.back_width_mm), frontWidthMm: n(m.front_width_mm), heightMm: n(m.height_mm), nominalSpineWidthMm: n(m.nominal_spine_width_mm), realSpineWidthMm: spine ?? n(m.nominal_spine_width_mm) },
+    { backWidthMm: back, frontWidthMm: front, heightMm, nominalSpineWidthMm: n(m.nominal_spine_width_mm), realSpineWidthMm: real },
     m.placeholders as Array<RenderPlaceholder & { zone?: 'back' | 'spine' | 'front' }>,
   )
-  let width = laid.width_mm, height = n(m.height_mm)
+  const family = computeFormatFamily(front, heightMm)
+  const adapted = targetFormat
+    ? adaptCoverToFormat({ backWidthMm: back, frontWidthMm: front, heightMm, spineWidthMm: real, family, placeholders: laid.placeholders }, targetFormat)
+    : null
+  let width = adapted ? adapted.widthMm : laid.width_mm, height = adapted ? adapted.heightMm : heightMm
   if (width <= 0 || height <= 0) { width = 100; height = 67 }
   return renderCoverPreviewSvg({
     width_mm: width || 100, height_mm: height || 100,
-    spine_left_mm: laid.spine_left_mm, spine_right_mm: laid.spine_right_mm,
-    placeholders: laid.placeholders, data, background_url: m.background_url, hide_empty_slots: true,
+    spine_left_mm: adapted ? adapted.spineLeftMm : laid.spine_left_mm,
+    spine_right_mm: adapted ? adapted.spineRightMm : laid.spine_right_mm,
+    placeholders: adapted ? adapted.placeholders : laid.placeholders,
+    data, background_url: m.background_url, hide_empty_slots: true,
   })
 }

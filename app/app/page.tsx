@@ -2528,7 +2528,7 @@ function AlbumDetailModal({
                   <CoversSummaryBlock albumId={album.id} />
 
                   {/* Редактор обложек (кроп/тексты/общее фото) */}
-                  <CoverEditorBlock albumId={album.id} />
+                  <CoverEditorBlock albumId={album.id} targetFormat={targetFormat} />
 
                   {/* График динамики */}
                   {daily.length > 0 && (
