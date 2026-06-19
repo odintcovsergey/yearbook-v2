@@ -15,6 +15,7 @@ import dynamic from 'next/dynamic'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { CoverTextStyleOverrides } from '@/lib/cover/text-styles'
 import type { CoverCanvasMaster } from './CoverCanvas'
+import type { FormatFamily, PrinterFormat } from '@/lib/printers/types'
 
 const CoverCanvas = dynamic(() => import('./CoverCanvas'), { ssr: false, loading: () => null })
 
@@ -30,13 +31,16 @@ type Props = {
   initialIdx: number
   coverTextStyles?: CoverTextStyleOverrides | null
   onClose: () => void
+  /** ТЗ 19.06.2026: формат заказа + семейство дизайна для адаптации обложки. */
+  targetFormat?: PrinterFormat | null
+  designFamily?: FormatFamily | null
 }
 
 function num(v: number | null): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0
 }
 
-export default function CoverPreviewFullscreen({ items, spineWidthMm, initialIdx, coverTextStyles, onClose }: Props) {
+export default function CoverPreviewFullscreen({ items, spineWidthMm, initialIdx, coverTextStyles, onClose, targetFormat, designFamily }: Props) {
   const total = items.length
   const clampIdx = useCallback((i: number) => Math.max(0, Math.min(total - 1, i)), [total])
   const [idx, setIdx] = useState(() => clampIdx(initialIdx))
@@ -140,6 +144,8 @@ export default function CoverPreviewFullscreen({ items, spineWidthMm, initialIdx
               spineWidthMm={spineWidthMm}
               containerWidth={containerWidth}
               mode="preview"
+              targetFormat={targetFormat}
+              designFamily={designFamily}
               coverTextStyles={coverTextStyles}
             />
           </div>

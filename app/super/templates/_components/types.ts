@@ -18,6 +18,12 @@ export type TemplateSet = {
   default_background_url: string | null
   /** Модель «поля»: отступ контента от корешка (мм). null = legacy зеркало. */
   spine_margin_mm: number | null
+  /**
+   * Семейство пропорций дизайна (ТЗ 19.06.2026). null → вычисляется из пропорции
+   * page_width/height (см. lib/format-adapt). Адаптация под формат заказа —
+   * только внутри одного семейства.
+   */
+  format_family: 'vertical_rect' | 'square' | 'horizontal' | null
   created_at: string
   updated_at: string
   spread_count: number

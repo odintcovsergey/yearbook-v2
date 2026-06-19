@@ -29,6 +29,8 @@ import CoverVisibilityPanel, { type CoverElement } from '../../../_components/Co
 import type { AlbumPhoto } from '../../../_components/PhotoPalette'
 import type { CropHandlers } from '../../../_components/AlbumSpreadCanvas'
 import type { CoverCanvasMaster } from '../../../_components/CoverCanvas'
+import { adaptCoverToFormat, computeFormatFamily, resolveFormat } from '@/lib/format-adapt'
+import type { PrinterConfig, PrinterFormat } from '@/lib/printers/types'
 
 const PhotoPalette = dynamic(() => import('../../../_components/PhotoPalette'), { ssr: false, loading: () => null })
 const CoverCanvas = dynamic(() => import('../../../_components/CoverCanvas'), { ssr: false, loading: () => null })
@@ -66,6 +68,8 @@ export default function CoverEditorPage() {
   const albumId = params.id
 
   const [editor, setEditor] = useState<EditorData | null>(null)
+  // ТЗ 19.06.2026: формат заказа для адаптации обложки под формат типографии.
+  const [targetFormat, setTargetFormat] = useState<PrinterFormat | null>(null)
   const [photos, setPhotos] = useState<AlbumPhoto[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -140,9 +144,35 @@ export default function CoverEditorPage() {
     return () => { alive = false }
   }, [albumId])
 
+  // ТЗ 19.06.2026: формат заказа (printer_id + format_id → PrinterFormat).
+  useEffect(() => {
+    let alive = true
+    Promise.all([
+      fetch(`/api/tenant?action=album&album_id=${albumId}`, { credentials: 'include' }).then((r) => (r.ok ? r.json() : null)),
+      fetch(`/api/tenant?action=printers_list`, { credentials: 'include' }).then((r) => (r.ok ? r.json() : { printers: [] })),
+    ])
+      .then(([alb, pl]: [unknown, { printers?: Array<{ id: string; config: PrinterConfig | null }> }]) => {
+        if (!alive) return
+        const row = Array.isArray(alb) ? alb[0] : alb
+        const pid = (row as { printer_id?: string | null })?.printer_id ?? null
+        const fid = (row as { format_id?: string | null })?.format_id ?? null
+        if (!pid || !fid) { setTargetFormat(null); return }
+        const printer = (pl.printers ?? []).find((p) => p.id === pid)
+        setTargetFormat(resolveFormat(printer?.config ?? null, fid))
+      })
+      .catch(() => { if (alive) setTargetFormat(null) })
+    return () => { alive = false }
+  }, [albumId])
+
   // Редактируемые обложки (есть мастер).
   const items = useMemo(() => (editor?.items ?? []).filter((i) => i.has_cover && i.master), [editor])
   const item = items[currentIdx] ?? null
+  // Семейство дизайна обложки — по пропорции страницы (передней зоны × высота).
+  const designFamily = item?.master
+    ? computeFormatFamily(Number(item.master.front_width_mm) || 0, Number(item.master.height_mm) || 0)
+    : null
+  // Предупреждение о несовместимом семействе формата (как на разворотах).
+  const formatIncompatible = !!(targetFormat && designFamily && designFamily !== targetFormat.family)
 
   const data = useMemo(() => {
     if (!item) return {}
@@ -489,7 +519,12 @@ export default function CoverEditorPage() {
         <div className="flex-1 flex overflow-hidden">
           {/* Холст */}
           <main className="flex-1 flex flex-col min-w-0">
-            <div ref={canvasRef} className="flex-1 min-h-0 flex items-center justify-center p-4 overflow-auto">
+            <div ref={canvasRef} className="flex-1 min-h-0 flex flex-col items-center justify-center p-4 overflow-auto">
+              {formatIncompatible && targetFormat && (
+                <div className="mb-2 max-w-2xl text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                  ⚠️ Дизайн обложки не подходит под формат заказа ({targetFormat.name}) — показан родной формат. Нужен отдельный дизайн этого семейства.
+                </div>
+              )}
               {item && item.master && (
                 <CoverCanvas
                   master={item.master}
@@ -497,6 +532,8 @@ export default function CoverEditorPage() {
                   spineWidthMm={editor?.spine_width_mm ?? null}
                   containerWidth={canvasWidth}
                   mode="edit"
+                  targetFormat={targetFormat}
+                  designFamily={designFamily}
                   coverTextStyles={coverTextStyles}
                   editingTextLabel={editingTextLabel}
                   onTextClick={(label, _currentValue, rightEdge, topEdge, leftEdge) => {
@@ -575,7 +612,7 @@ export default function CoverEditorPage() {
                 style={{ width: 110 }}
               >
                 <div className="w-full bg-muted rounded overflow-hidden" style={{ aspectRatio: '3 / 2' }}
-                  dangerouslySetInnerHTML={{ __html: it.master ? coverThumb(it, editor?.spine_width_mm ?? null, typePatches, studentPatches) : '' }} />
+                  dangerouslySetInnerHTML={{ __html: it.master ? coverThumb(it, editor?.spine_width_mm ?? null, typePatches, studentPatches, targetFormat) : '' }} />
                 <div className="text-[10px] truncate mt-0.5">{it.child_name ?? TYPE_LABEL[it.cover_type]}</div>
               </button>
             ))}
@@ -623,6 +660,8 @@ export default function CoverEditorPage() {
           spineWidthMm={editor?.spine_width_mm ?? null}
           initialIdx={currentIdx}
           coverTextStyles={coverTextStyles}
+          targetFormat={targetFormat}
+          designFamily={designFamily}
           onClose={() => setFullscreenOpen(false)}
         />
       )}
@@ -672,20 +711,29 @@ function coverThumb(
   spine: number | null,
   typePatches: Record<string, Record<string, string | null>>,
   studentPatches: Record<string, Record<string, string | null>>,
+  targetFormat: PrinterFormat | null,
 ): string {
   const m = it.master
   if (!m) return ''
   const n = (v: number | null) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
   const data = mergeCoverData(it.base, typePatches[it.cover_type] ?? {}, it.child_id ? studentPatches[it.child_id] ?? {} : {})
+  const back = n(m.back_width_mm), front = n(m.front_width_mm), heightMm = n(m.height_mm)
+  const real = spine ?? n(m.nominal_spine_width_mm)
   const laid = layoutCover(
-    { backWidthMm: n(m.back_width_mm), frontWidthMm: n(m.front_width_mm), heightMm: n(m.height_mm), nominalSpineWidthMm: n(m.nominal_spine_width_mm), realSpineWidthMm: spine ?? n(m.nominal_spine_width_mm) },
+    { backWidthMm: back, frontWidthMm: front, heightMm, nominalSpineWidthMm: n(m.nominal_spine_width_mm), realSpineWidthMm: real },
     m.placeholders as Array<RenderPlaceholder & { zone?: 'back' | 'spine' | 'front' }>,
   )
-  let width = laid.width_mm, height = n(m.height_mm)
+  const family = computeFormatFamily(front, heightMm)
+  const adapted = targetFormat
+    ? adaptCoverToFormat({ backWidthMm: back, frontWidthMm: front, heightMm, spineWidthMm: real, family, placeholders: laid.placeholders }, targetFormat)
+    : null
+  let width = adapted ? adapted.widthMm : laid.width_mm, height = adapted ? adapted.heightMm : heightMm
   if (width <= 0 || height <= 0) { width = 100; height = 67 }
   return renderCoverPreviewSvg({
     width_mm: width || 100, height_mm: height || 100,
-    spine_left_mm: laid.spine_left_mm, spine_right_mm: laid.spine_right_mm,
-    placeholders: laid.placeholders, data, background_url: m.background_url, hide_empty_slots: true,
+    spine_left_mm: adapted ? adapted.spineLeftMm : laid.spine_left_mm,
+    spine_right_mm: adapted ? adapted.spineRightMm : laid.spine_right_mm,
+    placeholders: adapted ? adapted.placeholders : laid.placeholders,
+    data, background_url: m.background_url, hide_empty_slots: true,
   })
 }

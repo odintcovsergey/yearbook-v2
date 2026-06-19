@@ -13,6 +13,8 @@ import { hiddenOverridesFromData, resolveCoverBackground } from '@/lib/cover/edi
 import { applyCoverTextStyles, type CoverTextStyleOverrides } from '@/lib/cover/text-styles'
 import type { SpreadInstance, SpreadTemplate, RenderPlaceholder } from '@/lib/album-builder/types'
 import type { CropHandlers } from './AlbumSpreadCanvas'
+import { adaptCoverToFormat } from '@/lib/format-adapt'
+import type { FormatFamily, PrinterFormat } from '@/lib/printers/types'
 
 const AlbumSpreadCanvas = dynamic(() => import('./AlbumSpreadCanvas'), { ssr: false, loading: () => null })
 
@@ -40,6 +42,10 @@ type Props = {
   onPhotoClick?: (label: string, url: string, rightEdge: number, topEdge: number, leftEdge: number, instanceKey: number) => void
   croppingLabel?: string | null
   cropHandlers?: CropHandlers
+  /** ТЗ 19.06.2026: формат заказа для адаптации обложки (null → родной). */
+  targetFormat?: PrinterFormat | null
+  /** Семейство дизайна обложки (для проверки совместимости с форматом). */
+  designFamily?: FormatFamily | null
 }
 
 function num(v: number | null): number {
@@ -49,6 +55,7 @@ function num(v: number | null): number {
 export default function CoverCanvas({
   master, data, spineWidthMm, containerWidth, mode = 'edit', coverTextStyles,
   editingTextLabel, onTextClick, onTextSubmit, onTextCancel, onPhotoClick, croppingLabel, cropHandlers,
+  targetFormat, designFamily,
 }: Props) {
   const back = num(master.back_width_mm)
   const front = num(master.front_width_mm)
@@ -61,8 +68,19 @@ export default function CoverCanvas({
     master.placeholders as Array<RenderPlaceholder & { zone?: 'back' | 'spine' | 'front' }>,
   )
 
-  let width = laid.width_mm
-  let height = heightMm
+  // ТЗ 19.06.2026: адаптация обложки под формат заказа (страницы под формат,
+  // корешок физический). Без формата/семейства — родной формат (laid).
+  const adaptedCover =
+    targetFormat && designFamily
+      ? adaptCoverToFormat(
+          { backWidthMm: back, frontWidthMm: front, heightMm, spineWidthMm: real, family: designFamily, placeholders: laid.placeholders },
+          targetFormat,
+        )
+      : null
+  const laidPlaceholders = adaptedCover ? adaptedCover.placeholders : laid.placeholders
+
+  let width = adaptedCover ? adaptedCover.widthMm : laid.width_mm
+  let height = adaptedCover ? adaptedCover.heightMm : heightMm
   if (width <= 0 || height <= 0) {
     for (const p of master.placeholders) {
       width = Math.max(width, (p.x_mm ?? 0) + (p.width_mm ?? 0))
@@ -77,7 +95,7 @@ export default function CoverCanvas({
     is_spread: true,
     width_mm: width || 100,
     height_mm: height || 100,
-    placeholders: laid.placeholders,
+    placeholders: laidPlaceholders,
     rules: null,
     sort_order: 0,
     applies_to_configs: [],
@@ -91,14 +109,14 @@ export default function CoverCanvas({
 
   // Глобальные стили текстов обложки — нижний слой служебных ключей (точечные
   // правки в data их перекрывают внутри applyCoverTextStyles).
-  const dataWithStyles = applyCoverTextStyles(data, laid.placeholders, coverTextStyles)
+  const dataWithStyles = applyCoverTextStyles(data, laidPlaceholders, coverTextStyles)
   const instance: SpreadInstance = { spread_index: 0, template_id: 'cover', template_name: 'cover', data: dataWithStyles }
 
   // Пустые ФОТО-слоты скрываем на холсте (как в превью): на задней обложке
   // рамки общего фото/QR не нужны, пока туда ничего не подставлено. Текстовые
   // слоты не трогаем (их можно заполнить). Ручное скрытие — через __hidden__.
   const overrides: Record<string, { hidden?: boolean }> = { ...hiddenOverridesFromData(data) }
-  for (const p of laid.placeholders) {
+  for (const p of laidPlaceholders) {
     if (p.type === 'photo' && !data[p.label]) overrides[p.label] = { hidden: true }
   }
 

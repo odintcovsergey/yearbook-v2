@@ -9,6 +9,8 @@ import {
   type SpreadBackgroundInput,
   type BackgroundPoolRow,
 } from '@/lib/backgrounds/resolve-background'
+import type { PrinterFormat } from '@/lib/printers/types'
+import { adaptTemplateToFormat, resolveDesignFamily } from '@/lib/format-adapt'
 
 // Dynamic import: AlbumSpreadCanvas использует window.Image (Konva), SSR-incompatible.
 const AlbumSpreadCanvas = dynamic(
@@ -39,16 +41,25 @@ type Props = {
    * не нажмёт «Пересобрать».
    */
   albumPrintType?: 'hard' | 'soft' | null
+  /**
+   * ТЗ 19.06.2026: формат заказа (PrinterFormat) для адаптации превью под формат
+   * типографии. null/undefined → родной формат дизайна (как было).
+   */
+  targetFormat?: PrinterFormat | null
 }
 
 type TemplateDetailResponse = {
   template_set: {
     id: string
+    page_width_mm: number
+    page_height_mm: number
     spread_width_mm: number
     spread_height_mm: number
     default_background_url: string | null
     /** Модель «поля»: отступ контента от корешка (мм). null = legacy зеркало. */
     spine_margin_mm: number | null
+    /** Семейство пропорций дизайна (ТЗ 19.06.2026). null → авто по пропорции. */
+    format_family: 'vertical_rect' | 'square' | 'horizontal' | null
   }
   spread_templates: SpreadTemplate[]
   /** Пул категорийных фонов набора (для ротации). */
@@ -181,7 +192,7 @@ function groupIntoVisualSpreads(
   return result
 }
 
-export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintType }: Props) {
+export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintType, targetFormat }: Props) {
   const [detail, setDetail] = useState<TemplateDetailResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -214,6 +225,32 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
   }, [detail])
 
   const spreads = layout.spreads as SpreadInstance[]
+
+  // ТЗ 19.06.2026: адаптация под формат заказа. Для каждого мастера считаем
+  // адаптированный template (размеры + слоты под целевой формат) ОДИН раз.
+  // Группировку (is_spread) делаем по ОРИГИНАЛЬНым мастерам — она не меняется.
+  const adaptById = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof adaptTemplateToFormat>>()
+    if (!detail) return m
+    const ts = detail.template_set
+    const source = {
+      pageWidthMm: ts.page_width_mm,
+      pageHeightMm: ts.page_height_mm,
+      family: resolveDesignFamily(ts),
+    }
+    for (const t of detail.spread_templates) {
+      m.set(t.id, adaptTemplateToFormat(t, source, targetFormat ?? null))
+    }
+    return m
+  }, [detail, targetFormat])
+  const renderTmpl = (id: string): SpreadTemplate | null =>
+    adaptById.get(id)?.template ?? templateById.get(id) ?? null
+  const scaleOf = (id: string): number => adaptById.get(id)?.scale ?? 1
+  // Предупреждение о несовместимом семействе (показываем один раз).
+  const incompatibleWarning = useMemo(() => {
+    const found = Array.from(adaptById.values()).find((r) => r.status === 'incompatible')
+    return found && found.status === 'incompatible' ? found.warning : null
+  }, [adaptById])
 
   // Визуальные развороты — пересчитываются когда обновляются spreads или шаблоны.
   // РЭ.43.B.3: sheet_type приоритетно из summary (свежие layout'ы) с
@@ -270,6 +307,12 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
         </button>
       </div>
 
+      {incompatibleWarning && (
+        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-2">
+          ⚠️ {incompatibleWarning}
+        </div>
+      )}
+
       {loading && (
         <div className="text-xs text-muted-foreground py-4">Загружаем шаблон…</div>
       )}
@@ -283,7 +326,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
           {visualSpreads.map((vs, idx) => {
             // Рендер двухстраничного мастера — одна клетка с одним canvas
             if (vs.kind === 'full_spread') {
-              const tmpl = templateById.get(vs.instance.template_id)
+              const tmpl = renderTmpl(vs.instance.template_id)
               if (!tmpl) {
                 return (
                   <div
@@ -305,7 +348,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       mode="preview"
                       backgroundUrl={bgUrls[idx] ?? null}
                       pageSide="spread"
-                      spineMarginMm={spineMarginMm}
+                      spineMarginMm={spineMarginMm == null ? null : spineMarginMm * scaleOf(vs.instance.template_id)}
                     />
                   </div>
                   <div className="text-[10px] text-center text-muted-foreground mt-1">
@@ -316,8 +359,8 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
             }
 
             // Рендер пары одностраничных мастеров (или одиночки с пустой стороной)
-            const leftTmpl = vs.left ? templateById.get(vs.left.template_id) : null
-            const rightTmpl = vs.right ? templateById.get(vs.right.template_id) : null
+            const leftTmpl = vs.left ? renderTmpl(vs.left.template_id) : null
+            const rightTmpl = vs.right ? renderTmpl(vs.right.template_id) : null
 
             // Ширина каждой половины — на основании первого доступного шаблона
             const refTmpl = leftTmpl ?? rightTmpl
@@ -337,7 +380,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       mode="preview"
                       backgroundUrl={bgUrls[idx] ?? null}
                       pageSide="left"
-                      spineMarginMm={spineMarginMm}
+                      spineMarginMm={spineMarginMm == null || !vs.left ? spineMarginMm : spineMarginMm * scaleOf(vs.left.template_id)}
                     />
                   ) : (
                     <ForzacOrEmptySlot
@@ -358,7 +401,7 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
                       mode="preview"
                       backgroundUrl={bgUrls[idx] ?? null}
                       pageSide="right"
-                      spineMarginMm={spineMarginMm}
+                      spineMarginMm={spineMarginMm == null || !vs.right ? spineMarginMm : spineMarginMm * scaleOf(vs.right.template_id)}
                     />
                   ) : (
                     <ForzacOrEmptySlot

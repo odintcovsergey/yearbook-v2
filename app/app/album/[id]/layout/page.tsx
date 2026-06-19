@@ -22,6 +22,13 @@ import {
   type SpreadBackgroundInput,
   type BackgroundPoolRow,
 } from '@/lib/backgrounds/resolve-background'
+import {
+  adaptTemplateToFormat,
+  resolveDesignFamily,
+  resolveFormat,
+  type AdaptSource,
+} from '@/lib/format-adapt'
+import type { PrinterConfig, PrinterFormat } from '@/lib/printers/types'
 import { pageRoleToCategory } from '@/lib/backgrounds/page-role-to-category'
 import SpreadBackgroundPicker from '../../../_components/SpreadBackgroundPicker'
 import PhotoPalette from '../../../_components/PhotoPalette'
@@ -289,6 +296,10 @@ function LayoutEditorPageInner({
   // Модель «поля» (template_sets.spine_margin_mm): отступ контента от корешка
   // в мм. null = legacy авто-зеркало. Прокидывается в AlbumSpreadCanvas.
   const [spineMarginMm, setSpineMarginMm] = useState<number | null>(null)
+  // ТЗ 19.06.2026: адаптация холста под формат заказа. designSource — родной
+  // формат дизайна (размеры страницы + семейство); targetFormat — формат заказа.
+  const [designSource, setDesignSource] = useState<AdaptSource | null>(null)
+  const [targetFormat, setTargetFormat] = useState<PrinterFormat | null>(null)
   // Пул категорийных фонов набора (template_set_backgrounds) для ротации.
   const [categoryBackgrounds, setCategoryBackgrounds] = useState<BackgroundPoolRow[]>([])
   // Открыта ли модалка «Сменить фон» текущего разворота (Этап 6).
@@ -586,8 +597,13 @@ function LayoutEditorPageInner({
         let title = ''
         let printType: 'layflat' | 'soft' = 'layflat'
         let textStyleOv: AlbumTextStyleOverrides = {}
+        let albumPrinterId: string | null = null
+        let albumFormatId: string | null = null
         if (albumRes.ok) {
           const albumJson = await albumRes.json()
+          const albumRow = Array.isArray(albumJson) ? albumJson[0] : albumJson
+          albumPrinterId = albumRow?.printer_id ?? null
+          albumFormatId = albumRow?.format_id ?? null
           title = (Array.isArray(albumJson) ? albumJson[0]?.title : albumJson?.title) ?? ''
           // РЭ.27.4: effective_print_type вычислен на сервере.
           const ept = Array.isArray(albumJson)
@@ -610,6 +626,28 @@ function LayoutEditorPageInner({
         setSpineMarginMm(
           (templateJson.template_set?.spine_margin_mm ?? null) as number | null,
         )
+        // ТЗ 19.06.2026: родной формат дизайна (для адаптации под формат заказа).
+        const tset = templateJson.template_set
+        if (tset && typeof tset.page_width_mm === 'number' && typeof tset.page_height_mm === 'number') {
+          setDesignSource({
+            pageWidthMm: tset.page_width_mm,
+            pageHeightMm: tset.page_height_mm,
+            family: resolveDesignFamily(tset),
+          })
+        }
+        // Формат заказа: printer_id + format_id → printers_list → PrinterFormat.
+        if (albumPrinterId && albumFormatId) {
+          api(`/api/tenant?action=printers_list${va}`)
+            .then((r) => (r.ok ? r.json() : { printers: [] }))
+            .then((d: { printers?: Array<{ id: string; config: PrinterConfig | null }> }) => {
+              if (cancelled) return
+              const printer = (d.printers ?? []).find((p) => p.id === albumPrinterId)
+              setTargetFormat(resolveFormat(printer?.config ?? null, albumFormatId))
+            })
+            .catch(() => { if (!cancelled) setTargetFormat(null) })
+        } else {
+          setTargetFormat(null)
+        }
         setBackgroundUrl(
           bgPath
             ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${bgPath}`
@@ -1697,10 +1735,39 @@ function LayoutEditorPageInner({
     currentPair?.leftIdx !== undefined ? spreads[currentPair.leftIdx] : null
   const rightPage =
     currentPair?.rightIdx !== undefined ? spreads[currentPair.rightIdx] : null
-  const leftTemplate = leftPage ? templatesById.get(leftPage.template_id) : null
-  const rightTemplate = rightPage
-    ? templatesById.get(rightPage.template_id)
-    : null
+  // ТЗ 19.06.2026: адаптация мастера под формат заказа (uniform-масштаб +
+  // центрирование). Без designSource или формата — мастер как есть.
+  const adaptResultFor = (t: SpreadTemplate | null | undefined) => {
+    if (!t) return null
+    if (!designSource) return { status: 'native' as const, template: t, scale: 1 }
+    return adaptTemplateToFormat(t, designSource, targetFormat)
+  }
+  const leftAdapt = adaptResultFor(leftPage ? templatesById.get(leftPage.template_id) : null)
+  const rightAdapt = adaptResultFor(rightPage ? templatesById.get(rightPage.template_id) : null)
+  const leftTemplate = leftAdapt?.template ?? null
+  const rightTemplate = rightAdapt?.template ?? null
+  // Масштаб формата (для отступа корешка) и предупреждение о чужом семействе.
+  const formatScale = leftAdapt?.scale ?? rightAdapt?.scale ?? 1
+  const formatIncompatible =
+    leftAdapt?.status === 'incompatible'
+      ? leftAdapt
+      : rightAdapt?.status === 'incompatible'
+        ? rightAdapt
+        : null
+  const formatWarning =
+    formatIncompatible && formatIncompatible.status === 'incompatible'
+      ? formatIncompatible.warning
+      : null
+  const effSpineMarginMm = spineMarginMm == null ? null : spineMarginMm * formatScale
+
+  // Адаптированные коллекции мастеров для прочих поверхностей редактора (полоса
+  // разворотов, полноэкранный «Вид») — те же id/is_spread, геометрия под формат.
+  const adaptedTemplates: SpreadTemplate[] =
+    designSource && targetFormat
+      ? templates.map((t) => adaptTemplateToFormat(t, designSource, targetFormat).template)
+      : templates
+  const adaptedTemplatesById = new Map<string, SpreadTemplate>()
+  for (const t of adaptedTemplates) adaptedTemplatesById.set(t.id, t)
 
   // ─── Категорийные фоны: фон текущего разворота ──────────────────────────
   // Ротация считается по ВСЕМ визуальным разворотам (зависит от позиции внутри
@@ -1967,6 +2034,11 @@ function LayoutEditorPageInner({
               место, оставшееся после плашек (сверху) и навигации (снизу):
               flex-1 + min-h-0, без вертикального скролла. Размер зоны меряет
               ResizeObserver (setCanvasAreaRef) → из него canvasContainerWidth. */}
+          {formatWarning && (
+            <div className="mx-auto mb-2 max-w-3xl text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+              ⚠️ {formatWarning}
+            </div>
+          )}
           <div
             ref={setCanvasAreaRef}
             className="flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden"
@@ -2026,7 +2098,7 @@ function LayoutEditorPageInner({
                           textStyleOverrides={textStyleOverrides}
                           backgroundUrl={currentSpreadBgUrl}
                           pageSide="spread"
-                          spineMarginMm={spineMarginMm}
+                          spineMarginMm={effSpineMarginMm}
                           croppingLabel={
                             leftPage && cropEditor?.spreadIndex === leftPage.spread_index
                               ? cropEditor.label
@@ -2072,7 +2144,7 @@ function LayoutEditorPageInner({
                           textStyleOverrides={textStyleOverrides}
                           backgroundUrl={currentSpreadBgUrl}
                           pageSide="left"
-                          spineMarginMm={spineMarginMm}
+                          spineMarginMm={effSpineMarginMm}
                           croppingLabel={
                             leftPage && cropEditor?.spreadIndex === leftPage.spread_index
                               ? cropEditor.label
@@ -2152,7 +2224,7 @@ function LayoutEditorPageInner({
                           textStyleOverrides={textStyleOverrides}
                           backgroundUrl={currentSpreadBgUrl}
                           pageSide="right"
-                          spineMarginMm={spineMarginMm}
+                          spineMarginMm={effSpineMarginMm}
                           croppingLabel={
                             rightPage && cropEditor?.spreadIndex === rightPage.spread_index
                               ? cropEditor.label
@@ -2375,7 +2447,7 @@ function LayoutEditorPageInner({
                 </button>
                 <SpreadOrderStrip
                   spreads={spreads}
-                  templates={templates}
+                  templates={adaptedTemplates}
                   currentIdx={currentIdx}
                   onSelect={setCurrentIdx}
                   onReorder={handleReorderSpreads}
@@ -2385,7 +2457,7 @@ function LayoutEditorPageInner({
                   softShift={isSoftAlbum}
                   backgroundUrl={backgroundUrl}
                   pageBackgroundUrl={(idx) => bgUrlByPageIdx.get(idx) ?? null}
-                  spineMarginMm={spineMarginMm}
+                  spineMarginMm={effSpineMarginMm}
                 />
               </div>
             </div>
@@ -2543,13 +2615,13 @@ function LayoutEditorPageInner({
         <LayoutPreviewFullscreen
           visualSpreads={visualSpreads}
           spreads={spreads}
-          templatesById={templatesById}
+          templatesById={adaptedTemplatesById}
           isSoftAlbum={isSoftAlbum}
           bgUrlByPairIdx={bgPaths.map(toBgPublicUrl)}
           textStyleOverrides={textStyleOverrides}
           initialPairIdx={currentPairIdx >= 0 ? currentPairIdx : 0}
           onClose={() => setFullscreenOpen(false)}
-          spineMarginMm={spineMarginMm}
+          spineMarginMm={effSpineMarginMm}
         />
       )}
 

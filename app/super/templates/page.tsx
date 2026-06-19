@@ -6,6 +6,7 @@ import { Ruler } from 'lucide-react'
 import TemplateSetCard, { type CardAction } from './_components/TemplateSetCard'
 import UploadModal from './_components/UploadModal'
 import type { TemplateSet } from './_components/types'
+import { resolveDesignFamily, FAMILY_LABELS } from '@/lib/format-adapt'
 
 type AuthData = {
   authenticated: boolean
@@ -44,6 +45,7 @@ export default function TemplatesPage() {
   const [renameFor, setRenameFor] = useState<TemplateSet | null>(null)
   const [deleteFor, setDeleteFor] = useState<TemplateSet | null>(null)
   const [spineMarginFor, setSpineMarginFor] = useState<TemplateSet | null>(null)
+  const [formatFamilyFor, setFormatFamilyFor] = useState<TemplateSet | null>(null)
 
   useEffect(() => {
     api('/api/auth')
@@ -121,6 +123,9 @@ export default function TemplatesPage() {
         break
       case 'spine_margin':
         setSpineMarginFor(t)
+        break
+      case 'format_family':
+        setFormatFamilyFor(t)
         break
       case 'delete':
         setDeleteFor(t)
@@ -250,6 +255,22 @@ export default function TemplatesPage() {
                 spine_margin_mm: value,
               })
               if (res.ok) setSpineMarginFor(null)
+              return res
+            }}
+          />
+        )}
+
+        {formatFamilyFor && (
+          <FormatFamilyModal
+            template={formatFamilyFor}
+            onClose={() => setFormatFamilyFor(null)}
+            onSubmit={async (value) => {
+              const res = await runAction(formatFamilyFor.id, {
+                action: 'template_set_update',
+                template_set_id: formatFamilyFor.id,
+                format_family: value,
+              })
+              if (res.ok) setFormatFamilyFor(null)
               return res
             }}
           />
@@ -506,6 +527,68 @@ function SpineMarginModal({
         className="input"
         placeholder="напр. 10 (пусто = выключено)"
       />
+      {err && <div className="text-sm text-red-600 mt-3">{err}</div>}
+      <div className="flex justify-end gap-2 mt-4">
+        <button onClick={onClose} disabled={saving} className="btn-secondary">
+          Отмена
+        </button>
+        <button onClick={submit} disabled={saving} className="btn-primary">
+          {saving ? 'Сохранение…' : 'Сохранить'}
+        </button>
+      </div>
+    </ModalShell>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Модалка «Семейство формата» (ТЗ 19.06.2026)
+// ──────────────────────────────────────────────────────────────────────────
+function FormatFamilyModal({
+  template,
+  onClose,
+  onSubmit,
+}: {
+  template: TemplateSet
+  onClose: () => void
+  onSubmit: (value: string | null) => Promise<{ ok: boolean; error?: string }>
+}) {
+  // '' = авто (по пропорции). Иначе явное семейство.
+  const [value, setValue] = useState<string>(template.format_family ?? '')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const computed = resolveDesignFamily({ ...template, format_family: null })
+
+  const submit = async () => {
+    setSaving(true)
+    setErr(null)
+    const res = await onSubmit(value === '' ? null : value)
+    setSaving(false)
+    if (!res.ok) setErr(res.error ?? 'Ошибка')
+  }
+
+  return (
+    <ModalShell onClose={onClose} title="Семейство формата">
+      <p className="text-sm text-muted-foreground mb-3">
+        Семейство пропорций дизайна. Адаптация макета под формат заказа работает
+        только ВНУТРИ одного семейства (вертикальные ↔ вертикальные и т.д.).
+        Чужое семейство (квадрат ↔ прямоугольник) не адаптируется.
+      </p>
+      <p className="text-sm text-muted-foreground mb-3">
+        «Авто» — система определяет по пропорции страницы ({Math.round(template.page_width_mm)}×
+        {Math.round(template.page_height_mm)} мм → <b>{FAMILY_LABELS[computed]}</b>).
+      </p>
+      <label className="text-sm text-foreground block mb-1">Семейство</label>
+      <select
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="input"
+      >
+        <option value="">Авто (по пропорции: {FAMILY_LABELS[computed]})</option>
+        <option value="vertical_rect">{FAMILY_LABELS.vertical_rect}</option>
+        <option value="square">{FAMILY_LABELS.square}</option>
+        <option value="horizontal">{FAMILY_LABELS.horizontal}</option>
+      </select>
       {err && <div className="text-sm text-red-600 mt-3">{err}</div>}
       <div className="flex justify-end gap-2 mt-4">
         <button onClick={onClose} disabled={saving} className="btn-secondary">
