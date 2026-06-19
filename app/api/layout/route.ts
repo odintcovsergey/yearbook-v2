@@ -36,6 +36,18 @@ import {
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+// Явный максимум времени синхронной функции на Vercel (сек). Экспорт PDF
+// рендерит все развороты в одном запросе — даём максимум headroom (Pro = 300с).
+// Без этой строки Vercel применяет дефолт плана (может быть НИЖЕ), и большие
+// альбомы рвутся раньше времени. Настоящее лечение размера — async-очередь
+// (см. память project_load_readiness), это пока обход.
+export const maxDuration = 300
+
+// Потолок разворотов для синхронного экспорта PDF. Подобран под время функции
+// maxDuration: рендер должен уложиться до таймаута, иначе экспорт оборвётся
+// (битых файлов не остаётся — upload/запись в БД идут ПОСЛЕ рендера). 19.06.2026
+// поднят 80→120 как обход под альбомы крупнее 80 разворотов.
+const MAX_SYNC_SPREADS = 120
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -1751,7 +1763,7 @@ async function handleGetAlbumLayout(
 // Авторизация: owner/manager/viewer тенанта, или superadmin/staff main
 // с view_as. Тот же паттерн что в handleBuildAlbum.
 //
-// Лимиты: spreads.length <= 80 (Vercel sync timeout 60-300 сек).
+// Лимиты: spreads.length <= MAX_SYNC_SPREADS (Vercel sync timeout, maxDuration=300с).
 // Для большего размера — async pipeline с polling, фаза 3.X.
 //
 // Profile.pages_mode != 'all_common' → 501. Per-student pipeline = фаза 3.A.
@@ -2056,10 +2068,10 @@ async function handleExportPdf(
       { status: 400 },
     )
   }
-  if (spreads.length > 80) {
+  if (spreads.length > MAX_SYNC_SPREADS) {
     return NextResponse.json(
       {
-        error: `Альбом слишком большой для синхронного экспорта: ${spreads.length} разворотов (лимит 80). Обратитесь в поддержку.`,
+        error: `Альбом слишком большой для синхронного экспорта: ${spreads.length} разворотов (лимит ${MAX_SYNC_SPREADS}). Обратитесь в поддержку.`,
         code: 'too_many_spreads',
       },
       { status: 400 },
