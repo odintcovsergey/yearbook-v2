@@ -13,16 +13,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
-import { ChevronLeft, PanelRightClose, PanelRightOpen, Eye, Type } from 'lucide-react'
+import { ChevronLeft, PanelRightClose, PanelRightOpen, Eye, Type, Image as ImageIcon, Layers } from 'lucide-react'
 import { layoutCover } from '@/lib/cover/layout'
 import { renderCoverPreviewSvg } from '@/lib/cover/preview-svg'
 import { parseFontSizeMult, parseColor, parseHAlign, parseVAlign, parseFontFamily } from '@/lib/text-style'
-import { mergeCoverData, PER_STUDENT_COVER_LABELS } from '@/lib/cover/editor-merge'
+import { mergeCoverData, PER_STUDENT_COVER_LABELS, COVER_BG_KEY } from '@/lib/cover/editor-merge'
 import type { CoverTextStyleOverrides } from '@/lib/cover/text-styles'
 import type { RenderPlaceholder } from '@/lib/album-builder/types'
+import { elementLabelName } from './elementLabels'
 import TextStylePanel from '../../../_components/TextStylePanel'
 import CoverPreviewFullscreen, { type CoverPreviewItem } from '../../../_components/CoverPreviewFullscreen'
 import CoverTextStylesModal from '../../../_components/CoverTextStylesModal'
+import CoverBackgroundPanel from '../../../_components/CoverBackgroundPanel'
+import CoverVisibilityPanel, { type CoverElement } from '../../../_components/CoverVisibilityPanel'
 import type { AlbumPhoto } from '../../../_components/PhotoPalette'
 import type { CropHandlers } from '../../../_components/AlbumSpreadCanvas'
 import type { CoverCanvasMaster } from '../../../_components/CoverCanvas'
@@ -49,6 +52,7 @@ type EditorData = {
   editsByChild: Record<string, Record<string, string | null>>
   coverTextStyles: CoverTextStyleOverrides
   common_photos: Array<{ id: string; url: string }>
+  available_backgrounds: Array<{ url: string; name: string }>
   warnings: string[]
 }
 
@@ -88,6 +92,12 @@ export default function CoverEditorPage() {
   const [coverTextStyles, setCoverTextStyles] = useState<CoverTextStyleOverrides>({})
   const [textStylesModalOpen, setTextStylesModalOpen] = useState(false)
 
+  // Панели «Фон» и «Видимость элементов» + список доступных фонов дизайна
+  // (пополняется при загрузке нового фона прямо в редакторе).
+  const [bgPanelOpen, setBgPanelOpen] = useState(false)
+  const [visibilityPanelOpen, setVisibilityPanelOpen] = useState(false)
+  const [availableBgs, setAvailableBgs] = useState<Array<{ url: string; name: string }>>([])
+
   // ── Undo/Redo: история снимков правок (typePatches + studentPatches) ──────
   type Snapshot = {
     typePatches: Record<string, Record<string, string | null>>
@@ -121,6 +131,7 @@ export default function CoverEditorPage() {
         setTypePatches(cleanByType)
         setStudentPatches(ed.editsByChild ?? {})
         setCoverTextStyles(ed.coverTextStyles ?? {})
+        setAvailableBgs(ed.available_backgrounds ?? [])
         setHistory({ past: [], future: [] })
         setPhotos(Array.isArray(ph) ? ph : (ph.photos ?? []))
       })
@@ -300,6 +311,54 @@ export default function CoverEditorPage() {
     else setTypeKey(item.cover_type, label, photo.url)
   }, [item, setStudentKeys, setTypeKey])
 
+  // ── Фон обложки (__bg__): по контексту открытой обложки ──────────────────
+  // bgValue: url | 'none' (без фона) | null (вернуть фон дизайна).
+  // applyToAll → шаблонно на весь тип (а поштучный фон ученика снимаем).
+  const applyBg = useCallback((bgValue: string | null, applyToAll: boolean) => {
+    if (!item) return
+    if (item.child_id && !applyToAll) {
+      setStudentKeys(item.child_id, { [COVER_BG_KEY]: bgValue })
+    } else {
+      setTypeKey(item.cover_type, COVER_BG_KEY, bgValue)
+      if (item.child_id && applyToAll) setStudentKeys(item.child_id, { [COVER_BG_KEY]: null })
+    }
+  }, [item, setStudentKeys, setTypeKey])
+
+  // ── Ручное скрытие/показ элемента (__hidden__<label>) ────────────────────
+  const toggleHidden = useCallback((label: string, hidden: boolean, applyToAll: boolean) => {
+    if (!item) return
+    const key = `__hidden__${label}`
+    const val = hidden ? '1' : null
+    if (item.child_id && !applyToAll) {
+      setStudentKeys(item.child_id, { [key]: val })
+    } else {
+      setTypeKey(item.cover_type, key, val)
+      if (item.child_id && applyToAll) setStudentKeys(item.child_id, { [key]: null })
+    }
+  }, [item, setStudentKeys, setTypeKey])
+
+  // Элементы открытой обложки для панели видимости: те, что сейчас на обложке
+  // (есть контент) либо вручную скрыты (чтобы вернуть). Пустые авто-скрытые — нет.
+  const coverElements: CoverElement[] = useMemo(() => {
+    if (!item?.master) return []
+    const seen = new Set<string>()
+    const out: CoverElement[] = []
+    for (const p of item.master.placeholders) {
+      const label = p.label
+      if (!label || seen.has(label)) continue
+      seen.add(label)
+      const hiddenManually = !!data[`__hidden__${label}`]
+      let hasContent: boolean
+      if (p.type === 'photo') hasContent = !!data[label]
+      else if (p.type === 'text') hasContent = !!(data[label] && String(data[label]).trim())
+      else if (p.type === 'decoration') hasContent = !!(p as { url?: string | null }).url
+      else hasContent = true
+      if (!hasContent && !hiddenManually) continue
+      out.push({ label, name: elementLabelName(label), hidden: hiddenManually })
+    }
+    return out
+  }, [item, data])
+
   // ── Размер холста ────────────────────────────────────────────────────────
   const canvasRef = useRef<HTMLDivElement>(null)
   const [canvasWidth, setCanvasWidth] = useState(800)
@@ -359,6 +418,24 @@ export default function CoverEditorPage() {
           </span>
         </div>
         <div className="flex items-center gap-3">
+          {/* Фон открытой обложки. */}
+          <button
+            type="button"
+            onClick={() => setBgPanelOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted text-foreground transition-colors"
+            title="Сменить фон обложки (выбрать из дизайна или загрузить свой)"
+          >
+            <ImageIcon size={16} /> Фон
+          </button>
+          {/* Видимость элементов обложки (ручное скрытие/показ). */}
+          <button
+            type="button"
+            onClick={() => setVisibilityPanelOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted text-foreground transition-colors"
+            title="Скрыть или вернуть элементы обложки (QR, логотип, фото, текст)"
+          >
+            <Layers size={16} /> Элементы
+          </button>
           {/* Глобальные стили текстов всех обложек. */}
           <button
             type="button"
@@ -557,6 +634,32 @@ export default function CoverEditorPage() {
           onPreview={setCoverTextStyles}
           onSave={handleSaveCoverTextStyles}
           onClose={() => setTextStylesModalOpen(false)}
+        />
+      )}
+
+      {/* Панель «Фон» открытой обложки. */}
+      {bgPanelOpen && item && (
+        <CoverBackgroundPanel
+          albumId={albumId}
+          currentOverride={data[COVER_BG_KEY]}
+          masterBg={item.master?.background_url ?? null}
+          backgrounds={availableBgs}
+          isPerStudent={!!item.child_id}
+          typeLabel={TYPE_LABEL[item.cover_type]}
+          onApply={applyBg}
+          onUploaded={(bg) => setAvailableBgs((prev) => (prev.some((b) => b.url === bg.url) ? prev : [...prev, bg]))}
+          onClose={() => setBgPanelOpen(false)}
+        />
+      )}
+
+      {/* Панель «Видимость элементов» открытой обложки. */}
+      {visibilityPanelOpen && item && (
+        <CoverVisibilityPanel
+          elements={coverElements}
+          isPerStudent={!!item.child_id}
+          typeLabel={TYPE_LABEL[item.cover_type]}
+          onToggle={toggleHidden}
+          onClose={() => setVisibilityPanelOpen(false)}
         />
       )}
     </div>

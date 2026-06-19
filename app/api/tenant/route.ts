@@ -5418,6 +5418,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  // cover_bg_sign — подписанная ссылка на заливку НОВОГО фона обложки прямо в
+  // storage (обход лимита тела Vercel ~4.5 МБ). Файл идёт мимо сервера. Фон
+  // кладётся в публичный bucket template-backgrounds под префикс заказа и
+  // НЕ трогает эталон обложки в библиотеке — URL сохраняется в cover_edits.__bg__.
+  if (body.action === 'cover_bg_sign') {
+    const { album_id } = body
+    if (!album_id || !(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const ext = String(body.ext ?? '').toLowerCase()
+    if (ext !== 'jpg' && ext !== 'jpeg' && ext !== 'png') {
+      return NextResponse.json({ error: 'Допустимы только JPG и PNG' }, { status: 400 })
+    }
+    const cleanExt = ext === 'jpeg' ? 'jpg' : ext
+    const path = `album-covers/${album_id}/${crypto.randomUUID()}.${cleanExt}`
+    const { data, error } = await supabaseAdmin.storage
+      .from('template-backgrounds')
+      .createSignedUploadUrl(path)
+    if (error || !data) {
+      return NextResponse.json({ error: error?.message ?? 'sign failed' }, { status: 500 })
+    }
+    const public_url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${path}`
+    return NextResponse.json({ ok: true, path, token: data.token, public_url })
+  }
+
   // clear_cover_qr — убрать QR заказа (back_qr станет пустым).
   if (body.action === 'clear_cover_qr') {
     const { album_id } = body
