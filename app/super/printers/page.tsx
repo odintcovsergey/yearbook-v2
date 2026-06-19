@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Printer } from 'lucide-react'
+import { Printer, ChevronRight } from 'lucide-react'
 
 type AuthData = { authenticated: boolean; user?: { role: string }; isLegacy?: boolean }
 
@@ -153,6 +153,11 @@ function PrinterCard({ printer, onChanged }: { printer: PrinterRow; onChanged: (
   const [coverTb, setCoverTb] = useState<number | undefined>(cfg.cover?.flap_tb_mm)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)                       // вся типография свёрнута по умолчанию
+  const [openFmts, setOpenFmts] = useState<Set<string>>(new Set())  // какие форматы развёрнуты
+  const toggleFmt = (id: string) => setOpenFmts((s) => {
+    const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
 
   // ── Типы листов ──
   const addSheet = () => setSheets((s) => [...s, { id: crypto.randomUUID(), name: '', spine: { mode: 'ranges', ranges: [] } }])
@@ -216,48 +221,86 @@ function PrinterCard({ printer, onChanged }: { printer: PrinterRow; onChanged: (
   }
 
   const SectionTitle = ({ children }: { children: React.ReactNode }) => (
-    <div className="text-sm font-medium mt-4 mb-2">{children}</div>
+    <div className="text-sm font-medium mt-5 mb-2">{children}</div>
   )
 
+  // Сводка для свёрнутого заголовка типографии.
+  const spineModes = Array.from(new Set(sheets.map((st) => SPINE_MODE_LABEL[normalizeSheet(st).mode])))
+  const summary = [
+    `${formats.length} форм.`,
+    acceptMode === 'spread' ? 'разворотами' : 'постранично',
+    fileFormat.toUpperCase(),
+    `корешок: ${spineModes.join('/') || '—'}`,
+  ].join(' · ')
+
   return (
-    <div className="card p-4">
-      <div className="flex items-center gap-2 mb-1">
+    <div className="card overflow-hidden">
+      {/* ── Заголовок-строка (клик сворачивает/разворачивает) ── */}
+      <div
+        className="flex items-center gap-2 p-4 cursor-pointer hover:bg-muted/40 select-none"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <ChevronRight size={18} className={`transition-transform shrink-0 ${open ? 'rotate-90' : ''}`} />
+        <span className="font-medium">{name || 'Без названия'}</span>
+        <span className="text-xs text-muted-foreground ml-auto truncate">{summary}</span>
+      </div>
+
+      {!open ? null : (
+      <div className="p-4 pt-0 border-t border-border">
+      <div className="flex items-center gap-2 mt-3 mb-1">
+        <label className="text-xs text-muted-foreground w-20 shrink-0">Название</label>
         <input className="input flex-1 font-medium" value={name} onChange={(e) => setName(e.target.value)} />
         <button className="text-xs text-red-600 hover:underline" onClick={remove} disabled={busy}>удалить типографию</button>
       </div>
 
       {/* ── Форматы ── */}
       <SectionTitle>Форматы блока</SectionTitle>
-      <div className="space-y-3">
-        {formats.map((fmt) => (
-          <div key={fmt.id} className="border border-border rounded-lg p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <input className="input w-32" placeholder="Имя (21x30)" value={fmt.name}
-                onChange={(e) => patchFormat(fmt.id, { name: e.target.value })} />
-              <select className="input w-56" value={fmt.family}
-                onChange={(e) => patchFormat(fmt.id, { family: e.target.value as FormatFamily })}>
-                {(Object.keys(FAMILY_LABEL) as FormatFamily[]).map((f) => (
-                  <option key={f} value={f}>{FAMILY_LABEL[f]}</option>
-                ))}
-              </select>
-              <button className="text-xs text-red-600 hover:underline ml-auto" onClick={() => removeFormat(fmt.id)}>удалить</button>
+      <div className="space-y-2">
+        {formats.map((fmt) => {
+          const fo = openFmts.has(fmt.id)
+          return (
+          <div key={fmt.id} className="border border-border rounded-lg overflow-hidden">
+            <div className="flex items-center gap-2 p-2.5 cursor-pointer hover:bg-muted/40 select-none"
+              onClick={() => toggleFmt(fmt.id)}>
+              <ChevronRight size={15} className={`transition-transform shrink-0 ${fo ? 'rotate-90' : ''}`} />
+              <span className="text-sm font-medium">{fmt.name || 'без имени'}</span>
+              <span className="text-xs text-muted-foreground truncate">
+                · {FAMILY_LABEL[fmt.family]} · {fmt.page_w_mm || 0}×{fmt.page_h_mm || 0} мм
+              </span>
+              <button className="text-xs text-red-600 hover:underline ml-auto shrink-0"
+                onClick={(e) => { e.stopPropagation(); removeFormat(fmt.id) }}>удалить</button>
             </div>
-            <div className="grid grid-cols-4 gap-2 text-xs">
-              {([
-                ['page_w_mm', 'стр. Ш, мм'], ['page_h_mm', 'стр. В, мм'],
-                ['spread_w_px', 'разв. Ш, px'], ['spread_h_px', 'разв. В, px'],
-                ['work_w_mm', 'раб. Ш, мм'], ['work_h_mm', 'раб. В, мм'],
-                ['bleed_mm', 'bleed, мм'], ['safe_mm', 'safe, мм'],
-              ] as [keyof PrinterFormat, string][]).map(([k, label]) => (
-                <label key={k} className="flex flex-col gap-1">
-                  <span className="text-muted-foreground">{label}</span>
-                  <input className="input" type="number" step="0.1" value={numVal(fmt[k] as number)}
-                    onChange={(e) => patchFormat(fmt.id, { [k]: NUM(e.target.value) } as Partial<PrinterFormat>)} />
-                </label>
-              ))}
-            </div>
+            {fo && (
+              <div className="p-3 pt-0 border-t border-border">
+                <div className="flex items-center gap-2 my-2">
+                  <input className="input w-32" placeholder="Имя (21x30)" value={fmt.name}
+                    onChange={(e) => patchFormat(fmt.id, { name: e.target.value })} />
+                  <select className="input w-56" value={fmt.family}
+                    onChange={(e) => patchFormat(fmt.id, { family: e.target.value as FormatFamily })}>
+                    {(Object.keys(FAMILY_LABEL) as FormatFamily[]).map((f) => (
+                      <option key={f} value={f}>{FAMILY_LABEL[f]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-xs">
+                  {([
+                    ['page_w_mm', 'стр. Ш, мм'], ['page_h_mm', 'стр. В, мм'],
+                    ['spread_w_px', 'разв. Ш, px'], ['spread_h_px', 'разв. В, px'],
+                    ['work_w_mm', 'раб. Ш, мм'], ['work_h_mm', 'раб. В, мм'],
+                    ['bleed_mm', 'bleed, мм'], ['safe_mm', 'safe, мм'],
+                  ] as [keyof PrinterFormat, string][]).map(([k, label]) => (
+                    <label key={k} className="flex flex-col gap-1">
+                      <span className="text-muted-foreground">{label}</span>
+                      <input className="input" type="number" step="0.1" value={numVal(fmt[k] as number)}
+                        onChange={(e) => patchFormat(fmt.id, { [k]: NUM(e.target.value) } as Partial<PrinterFormat>)} />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        ))}
+          )
+        })}
         <button className="text-sm text-brand hover:underline" onClick={addFormat}>+ добавить формат</button>
       </div>
 
@@ -379,6 +422,8 @@ function PrinterCard({ printer, onChanged }: { printer: PrinterRow; onChanged: (
       <div className="mt-4">
         <button className="btn-primary text-sm" onClick={save} disabled={busy}>{busy ? 'Сохраняю…' : 'Сохранить'}</button>
       </div>
+      </div>
+      )}
     </div>
   )
 }
