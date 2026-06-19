@@ -32,6 +32,8 @@ import CRMModal from './CRMModal'
 import IdeasModal from './_components/IdeasModal'
 import { confirmDestructive } from '@/lib/impersonation-client'
 import { subscribeModal } from '@/lib/cabinet-nav'
+import { resolveFormat } from '@/lib/format-adapt'
+import type { PrinterConfig, PrinterFormat } from '@/lib/printers/types'
 // РЭ.21.7.3: drag-and-drop секций в редакторе пресета.
 
 const LayoutPreviewStrip = dynamic(
@@ -1924,6 +1926,9 @@ function AlbumDetailModal({
   const [presets, setPresets] = useState<PresetOption[]>([])
   const [layout, setLayout] = useState<SmartFillLayout | null>(null)
   const [smartFillBusy, setSmartFillBusy] = useState(false)
+  // ТЗ 19.06.2026: формат заказа для адаптации превью/редактора под формат
+  // типографии. Догружаем printers_list и резолвим формат по printer_id/format_id.
+  const [targetFormat, setTargetFormat] = useState<PrinterFormat | null>(null)
   const [loading, setLoading] = useState(true)
   const [backdropStart, setBackdropStart] = useState(false)
   const [tab, setTab] = useState<'overview' | 'children' | 'teachers' | 'responsible' | 'photos' | 'surcharges' | 'spread' | 'production'>('overview')
@@ -1937,6 +1942,24 @@ function AlbumDetailModal({
   const [selectedChild, setSelectedChild] = useState<Child | null>(null)
   const [childDetails, setChildDetails] = useState<Record<string, any>>({})
   const [loadingDetail, setLoadingDetail] = useState<string | null>(null)
+
+  // Резолвим формат заказа (printer_id + format_id → PrinterFormat) для адаптации.
+  useEffect(() => {
+    const pid = (album as any).printer_id ?? null
+    const fid = (album as any).format_id ?? null
+    if (!pid || !fid) { setTargetFormat(null); return }
+    let cancelled = false
+    apiVA('/api/tenant?action=printers_list')
+      .then((r) => (r.ok ? r.json() : { printers: [] }))
+      .then((d: { printers?: Array<{ id: string; config: PrinterConfig | null }> }) => {
+        if (cancelled) return
+        const printer = (d.printers ?? []).find((p) => p.id === pid)
+        setTargetFormat(resolveFormat(printer?.config ?? null, fid))
+      })
+      .catch(() => { if (!cancelled) setTargetFormat(null) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(album as any).printer_id, (album as any).format_id])
 
   const loadChildDetails = async (childId: string) => {
     if (childDetails[childId]) return
@@ -2439,6 +2462,7 @@ function AlbumDetailModal({
                             ? 'hard'
                             : null
                       }
+                      targetFormat={targetFormat}
                       onOpenEditor={() => {
                         router.push(`/app/album/${album.id}/layout`)
                       }}
@@ -3405,10 +3429,7 @@ function AlbumFormModal({
   // Типографии (формат + корешок): id, name, config.formats/sheet_types.
   const [printers, setPrinters] = useState<Array<{
     id: string; name: string
-    config: {
-      sheet_types?: Array<{ id: string; name: string }>
-      formats?: Array<{ id: string; name: string }>
-    } | null
+    config: PrinterConfig | null
   }>>([])
   // Превью собранной обложки на альбом (edit mode).
   const [coverPreviewOpen, setCoverPreviewOpen] = useState(false)
