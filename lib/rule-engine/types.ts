@@ -485,8 +485,14 @@ export interface TransitionCustomScenario {
  */
 export type StudentsSectionConfig =
   | { mode: 'grid'; per_page: number }
-  | { mode: 'page'; friends: number; quote: boolean }
-  | { mode: 'spread'; friends_min: number; friends_max: number; quote: boolean }
+  | { mode: 'page'; friends: number; quote: boolean; is_personal?: boolean }
+  | {
+      mode: 'spread';
+      friends_min: number;
+      friends_max: number;
+      quote: boolean;
+      is_personal?: boolean;
+    }
   | {
       mode: 'multi_spread';
       spreads_per_student: number;
@@ -496,7 +502,25 @@ export type StudentsSectionConfig =
        * null/отсутствует → авто-режим. Чётная длина (целые развороты).
        */
       manual_pages?: string[] | null;
+      is_personal?: boolean;
     };
+
+/**
+ * ТЗ 19.06.2026 «персональный раздел»: `is_personal=true` помечает students-секцию
+ * как ЛИЧНУЮ — её развороты вычленяются в тонкую книгу конкретного ученика
+ * (другие ученики туда не попадают), а корешок такой книги считается по её
+ * собственному числу разворотов. `is_personal=false`/отсутствует — секция общая,
+ * идёт в книгу 000 (как сетка портретов).
+ *
+ * Поддерживается только в режимах, где на одном печатном листе ОДИН ребёнок:
+ * `page` (1 на страницу), `spread` (1 на разворот), `multi_spread` (несколько
+ * разворотов на одного). В режиме `grid` (несколько детей на странице) флаг
+ * не предусмотрен — сетку физически нельзя разнести по разным книгам.
+ *
+ * Разнесение по книгам выполняет lib/album-split (на этапе подготовки к
+ * экспорту), читая метку PageInstance.personal, которую движок проставляет
+ * на личные страницы. Сама раскладка секции при этом НЕ меняется.
+ */
 
 export type SectionStructureEntry =
   | { type: 'teachers' | 'vignette' }
@@ -880,6 +904,15 @@ export interface PageInstance {
    * старое поведение (обрезка с конца без защиты).
    */
   section_type?: SectionStructureEntry['type'];
+  /**
+   * ТЗ 19.06.2026 «персональный раздел»: метка принадлежности страницы
+   * ЛИЧНОЙ книге конкретного ученика. Проставляется движком только для
+   * страниц students-секции с `config.is_personal=true` (режимы page/spread/
+   * multi_spread). По этой метке lib/album-split разносит развороты по книгам
+   * 00X на этапе подготовки к экспорту. Отсутствие метки → страница общая
+   * (книга 000). Вёрстку не меняет — чистая метаинформация.
+   */
+  personal?: { section_index: number; student_index: number };
 }
 
 export interface SpreadInstance {

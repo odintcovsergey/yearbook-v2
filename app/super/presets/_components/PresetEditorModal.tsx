@@ -91,14 +91,21 @@ export interface Preset {
  */
 export type StudentsSectionConfig =
   | { mode: 'grid'; per_page: number }
-  | { mode: 'page'; friends: number; quote: boolean }
-  | { mode: 'spread'; friends_min: number; friends_max: number; quote: boolean }
+  | { mode: 'page'; friends: number; quote: boolean; is_personal?: boolean }
+  | {
+      mode: 'spread'
+      friends_min: number
+      friends_max: number
+      quote: boolean
+      is_personal?: boolean
+    }
   | {
       mode: 'multi_spread'
       spreads_per_student: number
       quote: boolean
       /** Ручной сценарий: имена мастеров по страницам (чётная длина). null = авто. */
       manual_pages?: string[] | null
+      is_personal?: boolean
     }
 
 export type Section =
@@ -164,11 +171,11 @@ function defaultStudentsConfig(mode: StudentsSectionConfig['mode']): StudentsSec
     case 'grid':
       return { mode: 'grid', per_page: 6 }
     case 'page':
-      return { mode: 'page', friends: 0, quote: false }
+      return { mode: 'page', friends: 0, quote: false, is_personal: false }
     case 'spread':
-      return { mode: 'spread', friends_min: 0, friends_max: 4, quote: true }
+      return { mode: 'spread', friends_min: 0, friends_max: 4, quote: true, is_personal: false }
     case 'multi_spread':
-      return { mode: 'multi_spread', spreads_per_student: 2, quote: true }
+      return { mode: 'multi_spread', spreads_per_student: 2, quote: true, is_personal: false }
   }
 }
 
@@ -1077,6 +1084,23 @@ function StudentsConfigEditor({
     </div>
   )
 
+  // ТЗ 19.06.2026: галочка «персональный раздел» — секция вычленяется в тонкую
+  // книгу ученика. Только для режимов, где на печатном листе ОДИН ребёнок
+  // (page/spread/multi_spread); в режиме grid не показываем (нельзя нарезать).
+  const personalField = (value: boolean, apply: (v: boolean) => void) => (
+    <label className="flex items-center gap-2 cursor-pointer text-xs">
+      <input
+        type="checkbox"
+        checked={value}
+        onChange={(e) => apply(e.target.checked)}
+        className="rounded"
+      />
+      <span className="text-muted-foreground">
+        Персональный раздел (сохранять отдельно по ученику)
+      </span>
+    </label>
+  )
+
   return (
     <div className="mt-2 space-y-2">
       <div>
@@ -1156,6 +1180,14 @@ function StudentsConfigEditor({
           </>
         )}
       </div>
+
+      {cfg.mode !== 'grid' && (
+        <div className="pt-1">
+          {personalField(cfg.is_personal ?? false, (v) =>
+            onChange({ ...cfg, is_personal: v }),
+          )}
+        </div>
+      )}
 
       {cfg.mode === 'multi_spread' && cfg.manual_pages && cfg.manual_pages.length > 0 && (
         <div className="mt-2">

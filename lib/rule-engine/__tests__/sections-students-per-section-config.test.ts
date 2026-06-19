@@ -13,6 +13,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { buildFromSectionStructure } from '../build-from-section-structure';
+import { splitIntoBooks } from '@/lib/album-split';
 import type { Preset, RulesAlbumInput } from '../types';
 import type { RuleEngineBundle } from '../loaders';
 import type {
@@ -476,6 +477,80 @@ describe('per-section config личного раздела (ТЗ 17.06.2026)', (
       r.spreads.flatMap((s) => [s.left?.master_id, s.right?.master_id].filter(Boolean));
     expect(ids(a)).toEqual(ids(b));
     expect(ids(a).length).toBe(2);
+  });
+});
+
+// ─── ТЗ 19.06.2026: признак is_personal + нарезка на per-student книги ───────
+
+describe('is_personal: движок метит личные страницы, нарезка разносит по книгам', () => {
+  it('spread + is_personal=true → у личных страниц метка personal с индексом ученика', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        section_structure: [
+          {
+            type: 'students',
+            config: { mode: 'spread', friends_min: 0, friends_max: 4, quote: true, is_personal: true },
+          },
+        ],
+      }),
+      masters: [E_LEFT, E_RIGHT_2, E_RIGHT_3, E_RIGHT_4],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput([2, 2]));
+    const pages = result.spreads.flatMap((s) => [s.left, s.right].filter(Boolean));
+    // 2 ученика × 2 страницы — у каждой метка personal с её student_index.
+    expect(pages).toHaveLength(4);
+    expect(pages[0]!.personal).toEqual({ section_index: 0, student_index: 0 });
+    expect(pages[1]!.personal).toEqual({ section_index: 0, student_index: 0 });
+    expect(pages[2]!.personal).toEqual({ section_index: 0, student_index: 1 });
+    expect(pages[3]!.personal).toEqual({ section_index: 0, student_index: 1 });
+
+    // Нарезка: книга 000 (пустая — общих страниц нет) + 001 + 002.
+    const books = splitIntoBooks(result.spreads);
+    expect(books.has_personal).toBe(true);
+    expect(books.books.map((b) => b.book_id)).toEqual(['000', '001', '002']);
+    expect(books.books[1].spreads.map((s) => s.file_name)).toEqual(['001-01']);
+    expect(books.books[2].spreads.map((s) => s.file_name)).toEqual(['002-01']);
+  });
+
+  it('spread без is_personal (по умолчанию) → метки нет, всё в общую книгу 000', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        section_structure: [
+          { type: 'students', config: { mode: 'spread', friends_min: 0, friends_max: 4, quote: true } },
+        ],
+      }),
+      masters: [E_LEFT, E_RIGHT_2, E_RIGHT_3, E_RIGHT_4],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput([2, 2]));
+    const pages = result.spreads.flatMap((s) => [s.left, s.right].filter(Boolean));
+    expect(pages.every((p) => p!.personal === undefined)).toBe(true);
+
+    const books = splitIntoBooks(result.spreads);
+    expect(books.has_personal).toBe(false);
+    expect(books.books).toHaveLength(1);
+    expect(books.books[0].book_id).toBe('000');
+  });
+
+  it('page + is_personal=true → каждый ученик на своей странице метится своим индексом', () => {
+    const bundle = makeBundle({
+      preset: makePreset({
+        id: 'p',
+        section_structure: [
+          { type: 'students', config: { mode: 'page', friends: 0, quote: true, is_personal: true } },
+        ],
+      }),
+      masters: [makePageMaster('left'), makePageMaster('right')],
+    });
+    const result = buildFromSectionStructure(bundle, makeInput([0, 0, 0]));
+    const pages = result.spreads.flatMap((s) => [s.left, s.right].filter(Boolean));
+    expect(pages).toHaveLength(3);
+    expect(pages.map((p) => p!.personal?.student_index)).toEqual([0, 1, 2]);
+
+    // 3 ученика по 1 странице → 3 личные книги, у каждой по одному (полу)развороту.
+    const books = splitIntoBooks(result.spreads);
+    expect(books.books.map((b) => b.book_id)).toEqual(['000', '001', '002', '003']);
   });
 });
 

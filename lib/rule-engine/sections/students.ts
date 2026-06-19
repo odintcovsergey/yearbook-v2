@@ -47,16 +47,39 @@ import {
 
 /** Нормализованный режим личного раздела (после сворачивания config/глобалок). */
 type ResolvedStudents =
-  | { mode: 'page'; friends: number; quote: boolean }
-  | { mode: 'spread'; friendsMin: number; friendsMax: number; quote: boolean }
+  | { mode: 'page'; friends: number; quote: boolean; isPersonal: boolean }
+  | {
+      mode: 'spread';
+      friendsMin: number;
+      friendsMax: number;
+      quote: boolean;
+      isPersonal: boolean;
+    }
   | { mode: 'grid'; perPage: number | null | undefined; quote: boolean }
   | {
       mode: 'multi_spread';
       spreadsPerStudent: number;
       quote: boolean;
       manualPages: string[] | null;
+      isPersonal: boolean;
     }
   | { mode: 'legacy' };
+
+/**
+ * Метка личной страницы (ТЗ 19.06.2026 «персональный раздел»). Возвращает
+ * объект `{ personal }` для spread'а в PageInstance, либо `undefined` (секция
+ * общая) — тогда `...personalTag(...)` ничего не добавляет. По этой метке
+ * lib/album-split разносит развороты по книгам ученика.
+ */
+function personalTag(
+  ctx: SectionFillContext,
+  isPersonal: boolean,
+  studentIndex: number,
+): { personal: { section_index: number; student_index: number } } | undefined {
+  return isPersonal
+    ? { personal: { section_index: ctx.sectionIndex, student_index: studentIndex } }
+    : undefined;
+}
 
 /**
  * Сворачивает настройки личного раздела в единый вид. Приоритет:
@@ -75,13 +98,19 @@ function resolveStudentsConfig(
   if (config) {
     switch (config.mode) {
       case 'page':
-        return { mode: 'page', friends: config.friends, quote: config.quote };
+        return {
+          mode: 'page',
+          friends: config.friends,
+          quote: config.quote,
+          isPersonal: config.is_personal ?? false,
+        };
       case 'spread':
         return {
           mode: 'spread',
           friendsMin: config.friends_min,
           friendsMax: config.friends_max,
           quote: config.quote,
+          isPersonal: config.is_personal ?? false,
         };
       case 'grid':
         return {
@@ -98,18 +127,20 @@ function resolveStudentsConfig(
             config.manual_pages && config.manual_pages.length > 0
               ? config.manual_pages
               : null,
+          isPersonal: config.is_personal ?? false,
         };
     }
   }
 
-  // Legacy-фолбэк на глобальные поля пресета (РЭ.22.1).
+  // Legacy-фолбэк на глобальные поля пресета (РЭ.22.1). is_personal —
+  // только для per-section config; legacy-путь всегда общий (isPersonal=false).
   const friends = preset.student_friend_photos ?? 0;
   const quote = preset.student_has_quote ?? false;
   if (preset.student_layout_mode === 'page') {
-    return { mode: 'page', friends, quote };
+    return { mode: 'page', friends, quote, isPersonal: false };
   }
   if (preset.student_layout_mode === 'spread') {
-    return { mode: 'spread', friendsMin: friends, friendsMax: friends, quote };
+    return { mode: 'spread', friendsMin: friends, friendsMax: friends, quote, isPersonal: false };
   }
   if (preset.student_layout_mode === 'grid') {
     return { mode: 'grid', perPage: preset.student_grid_size, quote };
@@ -128,7 +159,11 @@ export function fillStudentsSection(
   // пресета. mode='legacy' → старый путь по density / preset.id (ниже).
   const resolved = resolveStudentsConfig(preset, config);
   if (resolved.mode === 'page') {
-    buildPageSemantic(ctx, { friends: resolved.friends, hasQuote: resolved.quote });
+    buildPageSemantic(ctx, {
+      friends: resolved.friends,
+      hasQuote: resolved.quote,
+      isPersonal: resolved.isPersonal,
+    });
     return;
   }
   if (resolved.mode === 'spread') {
@@ -136,6 +171,7 @@ export function fillStudentsSection(
       friendsMin: resolved.friendsMin,
       friendsMax: resolved.friendsMax,
       hasQuote: resolved.quote,
+      isPersonal: resolved.isPersonal,
     });
     return;
   }
@@ -145,11 +181,16 @@ export function fillStudentsSection(
   }
   if (resolved.mode === 'multi_spread') {
     if (resolved.manualPages) {
-      buildMultiSpreadManual(ctx, { pages: resolved.manualPages, hasQuote: resolved.quote });
+      buildMultiSpreadManual(ctx, {
+        pages: resolved.manualPages,
+        hasQuote: resolved.quote,
+        isPersonal: resolved.isPersonal,
+      });
     } else {
       buildMultiSpreadSemantic(ctx, {
         spreadsPerStudent: resolved.spreadsPerStudent,
         hasQuote: resolved.quote,
+        isPersonal: resolved.isPersonal,
       });
     }
     return;
@@ -343,7 +384,7 @@ function buildAlternatingLR(
  */
 function buildPageSemantic(
   ctx: SectionFillContext,
-  params: { friends: number; hasQuote: boolean },
+  params: { friends: number; hasQuote: boolean; isPersonal: boolean },
 ): void {
   const preset = ctx.bundle.preset;
   const photosFriend = params.friends;
@@ -380,6 +421,7 @@ function buildPageSemantic(
     ctx.pageInstances.push({
       master_id: result.master.id,
       bindings,
+      ...personalTag(ctx, params.isPersonal, i),
     });
 
     // Warning о потерянных фото, если мастер вместил меньше friend_photos.
@@ -447,7 +489,7 @@ function buildPageSemantic(
  */
 function buildSpreadSemantic(
   ctx: SectionFillContext,
-  params: { friendsMin: number; friendsMax: number; hasQuote: boolean },
+  params: { friendsMin: number; friendsMax: number; hasQuote: boolean; isPersonal: boolean },
 ): void {
   const preset = ctx.bundle.preset;
   const hasQuote = params.hasQuote;
@@ -503,13 +545,16 @@ function buildSpreadSemantic(
     const leftBindings = bindSingleStudent(leftResult.master, student);
     const rightBindings = bindSingleStudent(rightResult.master, student);
 
+    const pTag = personalTag(ctx, params.isPersonal, i);
     ctx.pageInstances.push({
       master_id: leftResult.master.id,
       bindings: leftBindings,
+      ...pTag,
     });
     ctx.pageInstances.push({
       master_id: rightResult.master.id,
       bindings: rightBindings,
+      ...pTag,
     });
 
     // Warning о потерянных фото, если правый мастер вместил меньше.
@@ -915,7 +960,7 @@ function pickCollageByTarget(collageMasters: CollageMaster[], target: number): C
  */
 function buildMultiSpreadSemantic(
   ctx: SectionFillContext,
-  params: { spreadsPerStudent: number; hasQuote: boolean },
+  params: { spreadsPerStudent: number; hasQuote: boolean; isPersonal: boolean },
 ): void {
   const preset = ctx.bundle.preset;
   const students = ctx.input.students;
@@ -928,6 +973,7 @@ function buildMultiSpreadSemantic(
     const student = students[i];
     const friends = student.friend_photos ?? [];
     const startPages = ctx.pageInstances.length;
+    const pTag = personalTag(ctx, params.isPersonal, i);
 
     // Парадная ЛЕВАЯ страница: портрет + ФИО + цитата.
     const leftResult = findStudentMaster(ctx.bundle.mastersByName, {
@@ -948,6 +994,7 @@ function buildMultiSpreadSemantic(
     ctx.pageInstances.push({
       master_id: leftResult.master.id,
       bindings: bindSingleStudent(leftResult.master, student),
+      ...pTag,
     });
     // Парадный мастер может сам содержать фото-слоты (например E-Universal-Left) —
     // тогда часть фото уже легла на парад, коллажи стартуют с этого смещения.
@@ -966,6 +1013,7 @@ function buildMultiSpreadSemantic(
         ctx.pageInstances.push({
           master_id: rightResult.master.id,
           bindings: bindCollagePhotos(rightResult.master, student, cursor),
+          ...pTag,
         });
       }
       ctx.warnings.push(
@@ -1012,6 +1060,7 @@ function buildMultiSpreadSemantic(
       ctx.pageInstances.push({
         master_id: pick.master.id,
         bindings: bindCollagePhotos(pick.master, student, cursor),
+        ...pTag,
       });
       cursor += pick.capacity; // смещение на ёмкость страницы (лишние слоты скрыты)
     }
@@ -1128,7 +1177,7 @@ function bindStudentPageWithOffset(
  */
 function buildMultiSpreadManual(
   ctx: SectionFillContext,
-  params: { pages: string[]; hasQuote: boolean },
+  params: { pages: string[]; hasQuote: boolean; isPersonal: boolean },
 ): void {
   const students = ctx.input.students;
 
@@ -1136,6 +1185,7 @@ function buildMultiSpreadManual(
     const student = students[i];
     const friends = student.friend_photos ?? [];
     const startPages = ctx.pageInstances.length;
+    const pTag = personalTag(ctx, params.isPersonal, i);
     let cursor = 0;
     let pagesBuilt = 0;
 
@@ -1153,6 +1203,7 @@ function buildMultiSpreadManual(
       ctx.pageInstances.push({
         master_id: master.id,
         bindings: bindStudentPageWithOffset(master, student, cursor, params.hasQuote),
+        ...pTag,
       });
       cursor += countFriendPhotoSlots(master);
       pagesBuilt++;

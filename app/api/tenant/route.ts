@@ -261,6 +261,13 @@ function validateStudentsConfig(
     typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi
   const mode = (raw as { mode?: unknown }).mode
   const quote = (raw as { quote?: unknown }).quote
+  // ТЗ 19.06.2026: «персональный раздел» — опциональный boolean. Допустим только
+  // для режимов page/spread/multi_spread (в grid игнорируется — не включаем).
+  const isPersonalRaw = (raw as { is_personal?: unknown }).is_personal
+  if (isPersonalRaw !== undefined && typeof isPersonalRaw !== 'boolean') {
+    return { ok: false, error: `Секция #${idx + 1} (students): is_personal — boolean` }
+  }
+  const isPersonal = isPersonalRaw === true
   if (mode === 'grid') {
     const perPage = (raw as { per_page?: unknown }).per_page
     if (!intIn(perPage, 2, 16)) {
@@ -276,7 +283,10 @@ function validateStudentsConfig(
     if (typeof quote !== 'boolean') {
       return { ok: false, error: `Секция #${idx + 1} (students/page): quote — boolean` }
     }
-    return { ok: true, value: { mode: 'page', friends: friends as number, quote } }
+    return {
+      ok: true,
+      value: { mode: 'page', friends: friends as number, quote, is_personal: isPersonal },
+    }
   }
   if (mode === 'spread') {
     const fmin = (raw as { friends_min?: unknown }).friends_min
@@ -292,7 +302,13 @@ function validateStudentsConfig(
     }
     return {
       ok: true,
-      value: { mode: 'spread', friends_min: fmin as number, friends_max: fmax as number, quote },
+      value: {
+        mode: 'spread',
+        friends_min: fmin as number,
+        friends_max: fmax as number,
+        quote,
+        is_personal: isPersonal,
+      },
     }
   }
   if (mode === 'multi_spread') {
@@ -342,6 +358,7 @@ function validateStudentsConfig(
         spreads_per_student: sps as number,
         quote,
         ...(manualPages ? { manual_pages: manualPages } : {}),
+        is_personal: isPersonal,
       },
     }
   }
