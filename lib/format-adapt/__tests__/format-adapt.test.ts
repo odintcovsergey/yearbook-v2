@@ -6,6 +6,7 @@ import {
   resolveDesignFamily,
   resolveFormat,
   adaptTemplateToFormat,
+  adaptCoverToFormat,
 } from '../index';
 
 // ─── Фикстуры ────────────────────────────────────────────────────────────────
@@ -152,3 +153,51 @@ describe('adaptTemplateToFormat', () => {
     expect(r.scale).toBeCloseTo(Math.min(210 / 205, 300 / 296), 5);
   });
 });
+
+// ─── Адаптация обложки ───────────────────────────────────────────────────────
+
+describe('adaptCoverToFormat', () => {
+  type CP = Parameters<typeof adaptCoverToFormat>[0]['placeholders'][number]
+  const backPhoto: CP = { label: 'b', type: 'photo', zone: 'back', x_mm: 10, y_mm: 20, width_mm: 50, height_mm: 60, fit: 'fill_proportional', required: false }
+  const spineText: CP = { label: 's', type: 'text', zone: 'spine', x_mm: 100, y_mm: 0, width_mm: 10, height_mm: 300, font_family: 'A', font_size_pt: 12, font_weight: 'regular', color: '#000', align: 'center', vertical_align: 'top', auto_fit: false }
+  const frontPhoto: CP = { label: 'f', type: 'photo', zone: 'front', x_mm: 110, y_mm: 20, width_mm: 50, height_mm: 60, fit: 'fill_proportional', required: false }
+  // back=100, spine=10, front=100 → frontStartNative = 110.
+  const input = { backWidthMm: 100, frontWidthMm: 100, heightMm: 300, spineWidthMm: 10, family: 'vertical_rect' as const, placeholders: [backPhoto, spineText, frontPhoto] }
+
+  it('формат не выбран → native, как есть', () => {
+    const r = adaptCoverToFormat(input, null)
+    expect(r.status).toBe('native')
+    expect(r.widthMm).toBe(210) // 100+10+100
+    expect(r.placeholders).toBe(input.placeholders)
+  })
+
+  it('чужое семейство → incompatible + предупреждение', () => {
+    const sq = fmt({ id: 's', name: '20x20', family: 'square', page_w_mm: 200, page_h_mm: 200 })
+    const r = adaptCoverToFormat(input, sq)
+    expect(r.status).toBe('incompatible')
+    if (r.status === 'incompatible') expect(r.warning).toContain('квадратный')
+  })
+
+  it('адаптация: страницы под формат, корешок физический, центрирование', () => {
+    // Формат: страница 90×300, work 80×270. s = min(80/100, 270/300) = 0.8.
+    const f = fmt({ id: 'a', name: '21x30', family: 'vertical_rect', page_w_mm: 90, page_h_mm: 300, work_w_mm: 80, work_h_mm: 270 })
+    const r = adaptCoverToFormat(input, f)
+    expect(r.status).toBe('adapted')
+    if (r.status !== 'adapted') return
+    expect(r.scale).toBeCloseTo(0.8, 5)
+    // Полная ширина = page_w + корешок + page_w = 90+10+90 = 190.
+    expect(r.widthMm).toBeCloseTo(190, 5)
+    expect(r.heightMm).toBeCloseTo(300, 5)
+    const [b, sp, fr] = r.placeholders
+    // back: offXback = (90 - 100*0.8)/2 = 5; offY = (300-300*0.8)/2 = 30.
+    expect(b.x_mm).toBeCloseTo(5 + 10 * 0.8, 4)
+    expect(b.y_mm).toBeCloseTo(30 + 20 * 0.8, 4)
+    expect(b.width_mm).toBeCloseTo(50 * 0.8, 4)
+    // spine: физический — x = page_w + (x - back) = 90 + 0 = 90; ширина не масштабируется.
+    expect(sp.x_mm).toBeCloseTo(90, 4)
+    expect(sp.width_mm).toBeCloseTo(10, 4)
+    // front: newFrontStart=90+10=100; offXfront=(90-100*0.8)/2=5; (110-110)*0.8=0 → 105.
+    expect(fr.x_mm).toBeCloseTo(105, 4)
+    expect(fr.width_mm).toBeCloseTo(50 * 0.8, 4)
+  })
+})

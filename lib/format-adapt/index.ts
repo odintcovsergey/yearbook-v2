@@ -90,6 +90,12 @@ function scalePlaceholder<T extends RenderPlaceholder>(
     width_mm: p.width_mm * s,
     height_mm: p.height_mm * s,
   };
+  scaleEffects(out, s);
+  return out as T;
+}
+
+/** Масштабирует кегль/эффекты/смещение декора (НЕ трогает x/y/width/height). */
+function scaleEffects(out: RenderPlaceholder, s: number): void {
   if (out.type === 'text') {
     out.font_size_pt = out.font_size_pt * s;
     if (typeof out.min_size_pt === 'number') out.min_size_pt = out.min_size_pt * s;
@@ -102,7 +108,6 @@ function scalePlaceholder<T extends RenderPlaceholder>(
     out.offset_x_mm *= s;
     out.offset_y_mm *= s;
   }
-  return out as T;
 }
 
 export type FormatAdaptResult =
@@ -198,5 +203,114 @@ export function adaptTemplateToFormat(
       height_mm: tgtCanvasH,
       placeholders,
     },
+  };
+}
+
+// ─── Обложка ──────────────────────────────────────────────────────────────
+//
+// Обложка = задняя зона | КОРЕШОК | передняя зона. Корешок — физическая толщина
+// книги (от числа листов), форматом НЕ масштабируется. Поэтому обложке нужна своя
+// адаптация: каждая СТРАНИЦА (задняя/передняя) приводится к целевому формату
+// (контент uniform-масштаб s + центрирование в странице), корешок сохраняется,
+// контент корешка остаётся на физической позиции (по высоте масштабируется).
+
+/** Плейсхолдер обложки с зоной (из layoutCover). */
+type CoverPlaceholder = RenderPlaceholder & { zone?: 'back' | 'spine' | 'front' };
+
+export type AdaptCoverInput = {
+  /** Ширина задней зоны (мм, родная). */
+  backWidthMm: number;
+  /** Ширина передней зоны (мм, родная). */
+  frontWidthMm: number;
+  /** Высота полотна (мм, родная). */
+  heightMm: number;
+  /** Реальная ширина корешка (мм) — после layoutCover. Не масштабируется. */
+  spineWidthMm: number;
+  /** Семейство дизайна. */
+  family: FormatFamily;
+  /** Плейсхолдеры ПОСЛЕ layoutCover (зоны проставлены, координаты под реальный корешок). */
+  placeholders: CoverPlaceholder[];
+};
+
+export type CoverAdaptResult =
+  | { status: 'native'; widthMm: number; heightMm: number; placeholders: CoverPlaceholder[]; scale: 1 }
+  | { status: 'incompatible'; widthMm: number; heightMm: number; placeholders: CoverPlaceholder[]; scale: 1; warning: string }
+  | { status: 'adapted'; widthMm: number; heightMm: number; placeholders: CoverPlaceholder[]; scale: number };
+
+/**
+ * Адаптирует обложку под формат заказа.
+ *
+ * @param input — геометрия обложки + плейсхолдеры после layoutCover.
+ * @param target — формат заказа или null (формат не выбран → как есть).
+ *
+ * Логика (внутри одного семейства):
+ *  - масштаб s = min(work_w/front, work_h/height) по СТРАНИЦЕ;
+ *  - задняя/передняя зоны → целевая страница формата, контент центрируется;
+ *  - корешок сохраняет реальную ширину, его контент держится на физической X;
+ *  - полная ширина = page_w + корешок + page_w.
+ */
+export function adaptCoverToFormat(
+  input: AdaptCoverInput,
+  target: PrinterFormat | null,
+): CoverAdaptResult {
+  const nativeWidth = input.backWidthMm + input.spineWidthMm + input.frontWidthMm;
+  if (!target) {
+    return { status: 'native', widthMm: nativeWidth, heightMm: input.heightMm, placeholders: input.placeholders, scale: 1 };
+  }
+  if (input.family !== target.family) {
+    return {
+      status: 'incompatible',
+      widthMm: nativeWidth,
+      heightMm: input.heightMm,
+      placeholders: input.placeholders,
+      scale: 1,
+      warning:
+        `Дизайн обложки ${FAMILY_LABELS[input.family]} не подходит под формат ` +
+        `${target.name} (${FAMILY_LABELS[target.family]}) — нужен отдельный дизайн. ` +
+        `Показан родной формат дизайна.`,
+    };
+  }
+
+  const srcPageW = pos(input.frontWidthMm, input.backWidthMm || 1);
+  const srcPageH = pos(input.heightMm, 1);
+  const PW = pos(target.page_w_mm, srcPageW);
+  const H = pos(target.page_h_mm, srcPageH);
+  const workW = pos(target.work_w_mm, PW);
+  const workH = pos(target.work_h_mm, H);
+  const s = Math.min(workW / srcPageW, workH / srcPageH);
+  const spine = input.spineWidthMm;
+
+  const offY = (H - input.heightMm * s) / 2;
+  const offXback = (PW - input.backWidthMm * s) / 2;
+  const offXfront = (PW - input.frontWidthMm * s) / 2;
+  const frontStartNative = input.backWidthMm + spine; // левая граница передней зоны (после layoutCover)
+  const newFrontStart = PW + spine;
+
+  const placeholders = input.placeholders.map((p) => {
+    const out: CoverPlaceholder = { ...p };
+    const zone = p.zone ?? 'back';
+    out.height_mm = p.height_mm * s;
+    out.y_mm = offY + p.y_mm * s;
+    if (zone === 'spine') {
+      // Корешок физический: X и ширина не масштабируются, держим относительно корешка.
+      out.x_mm = PW + (p.x_mm - input.backWidthMm);
+      // width_mm не трогаем (узкий корешок)
+    } else if (zone === 'front') {
+      out.width_mm = p.width_mm * s;
+      out.x_mm = newFrontStart + offXfront + (p.x_mm - frontStartNative) * s;
+    } else {
+      out.width_mm = p.width_mm * s;
+      out.x_mm = offXback + p.x_mm * s;
+    }
+    scaleEffects(out, s);
+    return out;
+  });
+
+  return {
+    status: 'adapted',
+    widthMm: PW + spine + PW,
+    heightMm: H,
+    placeholders,
+    scale: s,
   };
 }
