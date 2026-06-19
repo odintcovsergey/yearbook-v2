@@ -160,6 +160,10 @@ create index if not exists idx_printers_tenant on printers(tenant_id);
 alter table albums
   add column if not exists printer_id uuid references printers(id) on delete set null;
 
+-- Выбранный формат блока: id из printers.config.formats[] (ТЗ tz-printer-profile).
+alter table albums
+  add column if not exists format_id text;
+
 -- QR-код задней обложки (картинка в bucket photos), ТЗ tz-cover-editor.
 alter table albums
   add column if not exists cover_qr_url text;

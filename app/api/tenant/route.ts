@@ -4710,6 +4710,7 @@ export async function POST(req: NextRequest) {
         cover_available_ids: Array.isArray(body.cover_available_ids) ? body.cover_available_ids : [],
         print_preset_id: body.print_preset_id ?? null,
         printer_id: body.printer_id ?? null,
+        format_id: body.format_id ?? null,
         sheet_type_id: body.sheet_type_id ?? null,
         deadline: body.deadline ?? null,
         group_enabled: body.group_enabled ?? true,
@@ -5652,6 +5653,7 @@ export async function POST(req: NextRequest) {
       'cover_available_ids',   // uuid[] — какие обложки показывать родителю
       'print_preset_id',       // uuid|null — legacy пресет печати (не используется для корешка)
       'printer_id',            // uuid|null — типография (расчёт корешка по диапазонам)
+      'format_id',             // string|null — формат блока внутри типографии (config.formats)
       'sheet_type_id',         // string|null — тип листа внутри типографии
     ]
     const updates: Record<string, unknown> = {}
