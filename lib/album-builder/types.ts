@@ -442,6 +442,12 @@ export type TemplateSet = {
    * корешка на каждой стороне (заменяет зеркало). См. resolvePlaceholdersForSide.
    */
   spine_margin_mm?: number | null;
+  /**
+   * Семейство пропорций дизайна (ТЗ 19.06.2026): 'vertical_rect'|'square'|
+   * 'horizontal'. NULL/undefined → вычисляется из пропорции page_width/height
+   * (см. lib/format-adapt). Адаптация под формат заказа — только внутри семейства.
+   */
+  format_family?: 'vertical_rect' | 'square' | 'horizontal' | null;
   spreads: SpreadTemplate[];
 };
 

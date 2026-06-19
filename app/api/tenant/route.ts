@@ -4184,6 +4184,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // format_family (ТЗ 19.06.2026): семейство пропорций дизайна для адаптации
+    // под формат заказа. null/'' = авто-расчёт по пропорции (см. lib/format-adapt).
+    if (body.format_family !== undefined) {
+      const raw = body.format_family
+      if (raw === null || raw === '') {
+        patch.format_family = null
+      } else if (
+        raw === 'vertical_rect' ||
+        raw === 'square' ||
+        raw === 'horizontal'
+      ) {
+        patch.format_family = raw
+      } else {
+        return NextResponse.json(
+          { error: "format_family: 'vertical_rect' | 'square' | 'horizontal' или пусто" },
+          { status: 400 },
+        )
+      }
+    }
+
     // make_global (смена tenant_id) — только superadmin
     if (body.make_global !== undefined) {
       if (auth.role !== 'superadmin') {

@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Pencil, Copy, Lock, Globe, Download, Upload, Trash2, Ruler } from 'lucide-react'
+import { Pencil, Copy, Lock, Globe, Download, Upload, Trash2, Ruler, Shapes } from 'lucide-react'
 import type { TemplateSet } from './types'
+import { resolveDesignFamily, FAMILY_LABELS } from '@/lib/format-adapt'
 
 function formatDate(iso: string): string {
   try {
@@ -22,6 +23,7 @@ export type CardAction =
   | 'toggle_global'
   | 'toggle_published'
   | 'spine_margin'
+  | 'format_family'
   | 'delete'
 
 export default function TemplateSetCard({
@@ -100,6 +102,12 @@ export default function TemplateSetCard({
             >
               <Ruler size={14} /> Отступ от корешка
             </button>
+            <button
+              onClick={() => pick('format_family')}
+              className="w-full text-left px-3 py-2 hover:bg-muted"
+            >
+              <Shapes size={14} /> Семейство формата
+            </button>
             <div className="border-t my-1" />
             <button
               onClick={() => pick('delete')}
@@ -157,6 +165,10 @@ export default function TemplateSetCard({
             {template.spread_count} разворотов · {Math.round(template.page_width_mm)}×
             {Math.round(template.page_height_mm)} мм ·{' '}
             {template.facing_pages ? 'разворот' : 'одиночные'}
+          </div>
+          <div>
+            Семейство: {FAMILY_LABELS[resolveDesignFamily(template)]}
+            {template.format_family == null && ' (авто)'}
           </div>
           <div>Создан {formatDate(template.created_at)}</div>
         </div>
