@@ -207,6 +207,9 @@ function pageToLegacy(
     // использует это чтобы распознать soft_final и нарисовать форзац
     // справа на последнем визуальном развороте при soft binding.
     ...(page.section_type ? { section_type: page.section_type } : {}),
+    // ТЗ экспорта 20.06.2026: метка личной книги ученика. Нужна типографской
+    // выгрузке (нарезка per-student); сохраняется в album_layouts.spreads.
+    ...(page.personal ? { personal: page.personal } : {}),
   };
 }
 
