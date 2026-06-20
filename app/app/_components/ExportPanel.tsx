@@ -65,6 +65,19 @@ type ExportError = {
   code?: string
 }
 
+// Ответ типографской выгрузки (zip по книгам под профиль типографии заказа).
+type TypographyResponse = {
+  download_url: string
+  filename: string
+  file_count: number
+  total_spreads: number
+  has_personal: boolean
+  accept_mode: 'spread' | 'page'
+  adapt_status: 'native' | 'adapted' | 'incompatible'
+  adapt_warning?: string
+  warnings: { code: string; detail: string }[]
+}
+
 type Props = {
   albumId: string
   hasLayout: boolean // true если album_layouts.spreads.length > 0
@@ -148,6 +161,10 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
   const [exporting, setExporting] = useState(false)
   const [lastResult, setLastResult] = useState<ExportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Типографская выгрузка (zip) — отдельное состояние.
+  const [exportingZip, setExportingZip] = useState(false)
+  const [zipResult, setZipResult] = useState<TypographyResponse | null>(null)
+  const [zipError, setZipError] = useState<string | null>(null)
 
   // Загружаем профили при mount (один раз)
   useEffect(() => {
@@ -215,8 +232,28 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
     }
   }
 
+  async function handleExportZip() {
+    if (exportingZip || !hasLayout) return
+    setExportingZip(true)
+    setZipError(null)
+    setZipResult(null)
+    try {
+      const res = await apiPost<TypographyResponse>(
+        buildUrl('/api/layout?action=export_typography', viewAsTenantId),
+        { album_id: albumId },
+      )
+      setZipResult(res)
+      window.open(res.download_url, '_blank', 'noopener,noreferrer')
+    } catch (e) {
+      setZipError((e as Error).message)
+    } finally {
+      setExportingZip(false)
+    }
+  }
+
   // Если layout не собран — кнопка disabled с подсказкой
   const exportDisabled = !hasLayout || !selectedSlug || exporting
+  const zipDisabled = !hasLayout || exportingZip || exporting
 
   return (
     <div className="bg-card border border-border rounded-xl p-5 mb-6">
@@ -263,6 +300,15 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
         >
           {exporting ? 'Экспорт…' : '📄 Экспортировать'}
         </button>
+        <button
+          type="button"
+          onClick={handleExportZip}
+          disabled={zipDisabled}
+          title="Файлы по книгам (000/00X) под профиль типографии заказа, в zip"
+          className="px-5 py-2 bg-card border border-border text-foreground text-sm font-medium rounded-lg hover:bg-muted disabled:bg-muted disabled:cursor-not-allowed transition whitespace-nowrap"
+        >
+          {exportingZip ? 'Сборка…' : '🗂 В типографию (zip)'}
+        </button>
       </div>
 
       {/* Прогресс / результат / ошибка */}
@@ -303,6 +349,53 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
               className="px-3 py-1.5 bg-card border border-green-600 text-green-700 text-xs font-medium rounded hover:bg-green-100"
             >
               Скачать
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Типографская выгрузка: прогресс / результат / ошибка */}
+      {exportingZip && (
+        <div className="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-3">
+          <div className="flex items-center gap-2">
+            <Spinner />
+            <span>Собираем файлы по книгам и пакуем в zip…</span>
+          </div>
+        </div>
+      )}
+
+      {zipError && !exportingZip && (
+        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-3">
+          ⚠ {zipError}
+        </div>
+      )}
+
+      {zipResult && !exportingZip && !zipError && (
+        <div className="text-sm text-green-800 bg-green-50 border border-green-200 rounded-lg px-4 py-3 mb-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="font-medium">✓ Архив для типографии готов</div>
+              <div className="text-xs text-green-700 mt-0.5">
+                {zipResult.file_count} файлов ·{' '}
+                {zipResult.accept_mode === 'spread' ? 'разворотами' : 'постранично'}
+                {zipResult.has_personal && ' · с личными книгами'}
+              </div>
+              {zipResult.adapt_status === 'incompatible' && zipResult.adapt_warning && (
+                <div className="text-xs text-amber-700 mt-1">⚠ {zipResult.adapt_warning}</div>
+              )}
+              {zipResult.warnings.length > 0 && (
+                <div className="text-xs text-amber-700 mt-1">
+                  ⚠ {zipResult.warnings.length} предупреждений
+                </div>
+              )}
+            </div>
+            <a
+              href={zipResult.download_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-card border border-green-600 text-green-700 text-xs font-medium rounded hover:bg-green-100 whitespace-nowrap"
+            >
+              Скачать zip
             </a>
           </div>
         </div>
