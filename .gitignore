@@ -14,3 +14,7 @@ out/
 
 # macOS
 .DS_Store
+
+# Сертификаты/секреты переезда (Timeweb SSL и т.п.) — не коммитим
+*.crt
+*.dump
