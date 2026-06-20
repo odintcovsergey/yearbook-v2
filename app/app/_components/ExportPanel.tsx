@@ -70,6 +70,7 @@ type TypographyResponse = {
   download_url: string
   filename: string
   file_count: number
+  cover_count: number
   total_spreads: number
   has_personal: boolean
   accept_mode: 'spread' | 'page'
@@ -379,6 +380,7 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
                 {zipResult.file_count} файлов ·{' '}
                 {zipResult.accept_mode === 'spread' ? 'разворотами' : 'постранично'}
                 {zipResult.has_personal && ' · с личными книгами'}
+                {zipResult.cover_count > 0 && ` · обложек: ${zipResult.cover_count}`}
               </div>
               {zipResult.adapt_status === 'incompatible' && zipResult.adapt_warning && (
                 <div className="text-xs text-amber-700 mt-1">⚠ {zipResult.adapt_warning}</div>

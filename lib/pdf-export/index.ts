@@ -23,6 +23,7 @@ import { loadFonts } from './font-loader';
 import { renderAllSpreads, renderTypographyUnits } from './pipeline';
 import { adaptTemplateSetToFormat } from '@/lib/export-typography/adapt';
 import type { AcceptMode } from '@/lib/export-typography/plan';
+import type { CoverRenderUnit } from '@/lib/export-typography/covers';
 import type { PrinterFormat } from '@/lib/printers/types';
 import type {
   AlbumExportInput,
@@ -124,6 +125,8 @@ export type TypographyExportResult = {
   /** Суммарно визуальных разворотов (для лимита/диагностики). */
   totalSpreads: number;
   hasPersonal: boolean;
+  /** Сколько файлов-обложек попало в выгрузку. */
+  coverCount: number;
   /** Статус адаптации под формат заказа. */
   adaptStatus: 'native' | 'adapted' | 'incompatible';
   adaptWarning?: string;
@@ -143,7 +146,11 @@ export type TypographyExportResult = {
  */
 export async function exportAlbumTypography(
   input: AlbumExportInput,
-  opts: { acceptMode: AcceptMode; targetFormat: PrinterFormat | null },
+  opts: {
+    acceptMode: AcceptMode;
+    targetFormat: PrinterFormat | null;
+    coverUnits?: CoverRenderUnit[];
+  },
 ): Promise<TypographyExportResult> {
   const warnings: PdfWarning[] = [];
 
@@ -159,12 +166,13 @@ export async function exportAlbumTypography(
   pdfDoc.setCreationDate(new Date());
   const fontRegistry = await loadFonts(pdfDoc);
 
-  // 3. Рендер юнитов (по странице на файл, в порядке книг/файлов).
+  // 3. Рендер юнитов (по странице на файл, в порядке книг/файлов) + обложки.
   const rendered = await renderTypographyUnits(
     pdfDoc,
     fontRegistry,
     adaptedInput,
     opts.acceptMode,
+    opts.coverUnits ?? [],
   );
   warnings.push(...fontRegistry.warnings, ...rendered.warnings);
 
@@ -183,6 +191,7 @@ export async function exportAlbumTypography(
     warnings,
     totalSpreads: rendered.plan.total_spreads,
     hasPersonal: rendered.plan.has_personal,
+    coverCount: (opts.coverUnits ?? []).length,
     adaptStatus: adapt.status,
     adaptWarning: adapt.warning,
   };

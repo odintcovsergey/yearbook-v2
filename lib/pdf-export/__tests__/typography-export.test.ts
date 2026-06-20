@@ -158,6 +158,40 @@ describe('exportAlbumTypography (smoke)', () => {
     expect(byBook['002']).toBe(1);
   });
 
+  it('обложки рендерятся как файлы 000-00/00X-00, валидные PDF', async () => {
+    const res = await exportAlbumTypography(input([page(0), page(1)]), {
+      acceptMode: 'spread',
+      targetFormat: null,
+      coverUnits: [
+        {
+          file_name: '000-00',
+          width_mm: 212,
+          height_mm: 100,
+          placeholders: [],
+          data: {},
+          background_url: null,
+        },
+        {
+          file_name: '001-00',
+          width_mm: 212,
+          height_mm: 100,
+          placeholders: [],
+          data: {},
+          background_url: null,
+        },
+      ],
+    });
+    expect(res.coverCount).toBe(2);
+    const names = res.files.map((f) => f.name);
+    expect(names).toContain('000-00');
+    expect(names).toContain('001-00');
+    // Обложки идут отдельными валидными PDF-файлами.
+    for (const cn of ['000-00', '001-00']) {
+      const f = res.files.find((x) => x.name === cn)!;
+      expect(isPdf(f.bytes)).toBe(true);
+    }
+  });
+
   it('адаптация под формат: совместимое семейство → adapted', async () => {
     const res = await exportAlbumTypography(input([page(0), page(1)]), {
       acceptMode: 'spread',

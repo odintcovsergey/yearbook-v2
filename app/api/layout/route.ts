@@ -35,8 +35,15 @@ import {
   type OriginalPhoto,
 } from '@/lib/pdf-export'
 import JSZip from 'jszip'
-import { resolveFormat } from '@/lib/format-adapt'
+import { resolveFormat, resolveDesignFamily } from '@/lib/format-adapt'
 import { planTypographyExport, type AcceptMode } from '@/lib/export-typography/plan'
+import {
+  buildCoverRenderUnits,
+  type CoverMasterGeometry,
+} from '@/lib/export-typography/covers'
+import { loadAlbumCovers } from '@/lib/cover/load-covers'
+import { indexCoverEdits, type CoverEditRow } from '@/lib/cover/editor-merge'
+import { filterChildrenByPurchase } from '@/lib/smart-fill/filter-by-purchase'
 import type { PrinterConfig } from '@/lib/printers/types'
 
 export const dynamic = 'force-dynamic'
@@ -2367,7 +2374,7 @@ async function handleExportTypography(
   const { data: album, error: albumErr } = await supabaseAdmin
     .from('albums')
     .select(
-      'id, title, tenant_id, print_type, section_structure_preset_id, config_preset_id, printer_id, format_id, sheet_type_id',
+      'id, title, tenant_id, print_type, section_structure_preset_id, config_preset_id, printer_id, format_id, sheet_type_id, include_non_purchasers',
     )
     .eq('id', albumId)
     .single()
@@ -2553,10 +2560,79 @@ async function handleExportTypography(
     effectivePrintType,
   }
 
-  // 8. Рендер файлов под формат + приём.
+  // 7б. Обложки (000-00 / 00X-00) — собираем единицы рендера обложек.
+  // Номер личной обложки 00X согласуем с внутренними книгами: нумеруем учеников
+  // тем же порядком (class, full_name) + фильтр покупки, что и движок (= student_index).
+  // NB: согласованность точна для типового случая (один личный раздел, все ученики);
+  // крайние случаи (несколько личных секций) — проверить вживую.
+  let coverUnits: Awaited<ReturnType<typeof buildCoverRenderUnits>>['units'] = []
+  try {
+    const assembled = await loadAlbumCovers(supabaseAdmin, albumId)
+    if (assembled.covers.length > 0) {
+      // Геометрия мастеров обложек.
+      const coverIds = Array.from(
+        new Set(assembled.covers.map((c) => c.cover_id).filter(Boolean)),
+      ) as string[]
+      const masters = new Map<string, CoverMasterGeometry>()
+      if (coverIds.length > 0) {
+        const { data: masterRows } = await supabaseAdmin
+          .from('covers')
+          .select(
+            'id, placeholders, back_width_mm, front_width_mm, height_mm, nominal_spine_width_mm, background_url',
+          )
+          .in('id', coverIds)
+        for (const m of (masterRows ?? []) as CoverMasterGeometry[]) masters.set(m.id, m)
+      }
+
+      // Правки редактора обложек.
+      const { data: editRows } = await supabaseAdmin
+        .from('cover_edits')
+        .select('cover_type, child_id, data')
+        .eq('album_id', albumId)
+      const { byType, byChild } = indexCoverEdits((editRows ?? []) as CoverEditRow[])
+
+      // Номер ученика (1-based) тем же порядком/фильтром, что движок.
+      const { data: kids } = await supabaseAdmin
+        .from('children')
+        .select('id, is_purchased')
+        .eq('album_id', albumId)
+        .order('class')
+        .order('full_name')
+      const includeAll = Boolean(
+        (album as { include_non_purchasers?: boolean }).include_non_purchasers,
+      )
+      const orderedKids = filterChildrenByPurchase(
+        (kids ?? []) as Array<{ id: string; is_purchased?: boolean | null }>,
+        includeAll,
+      )
+      const childNumber = new Map<string, number>()
+      orderedKids.forEach((c, i) => childNumber.set(c.id, i + 1))
+
+      const built = buildCoverRenderUnits({
+        covers: assembled.covers,
+        masters,
+        editsByType: byType,
+        editsByChild: byChild,
+        spineWidthMm: assembled.spine_width_mm,
+        family: resolveDesignFamily(templateSet),
+        targetFormat,
+        childNumber,
+      })
+      coverUnits = built.units
+    }
+  } catch {
+    // Обложки не критичны для выгрузки разворотов — при ошибке просто без них.
+    coverUnits = []
+  }
+
+  // 8. Рендер файлов под формат + приём + обложки.
   let result: Awaited<ReturnType<typeof exportAlbumTypography>>
   try {
-    result = await exportAlbumTypography(exportInput, { acceptMode, targetFormat })
+    result = await exportAlbumTypography(exportInput, {
+      acceptMode,
+      targetFormat,
+      coverUnits,
+    })
   } catch (e) {
     return NextResponse.json(
       { error: `typography render failed: ${(e as Error).message}` },
@@ -2598,6 +2674,7 @@ async function handleExportTypography(
   await logAction(auth, 'album_export.typography', 'album', albumId, {
     files: result.files.length,
     total_spreads: result.totalSpreads,
+    cover_count: result.coverCount,
     accept_mode: acceptMode,
     has_personal: result.hasPersonal,
     adapt_status: result.adaptStatus,
@@ -2609,6 +2686,7 @@ async function handleExportTypography(
     download_url: await getPhotoSignedUrl(storagePath),
     filename: `${safeTitle || 'album'}_типография.zip`,
     file_count: result.files.length,
+    cover_count: result.coverCount,
     total_spreads: result.totalSpreads,
     has_personal: result.hasPersonal,
     accept_mode: acceptMode,

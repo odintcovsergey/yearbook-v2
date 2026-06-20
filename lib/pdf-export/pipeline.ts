@@ -56,6 +56,7 @@ import {
   type ExportUnit,
   type TypographyExportPlan,
 } from '@/lib/export-typography/plan';
+import type { CoverRenderUnit } from '@/lib/export-typography/covers';
 import type {
   AlbumExportInput,
   PageBoxes,
@@ -320,6 +321,7 @@ export async function renderTypographyUnits(
   fontRegistry: FontRegistry,
   input: AlbumExportInput,
   acceptMode: AcceptMode,
+  coverUnits: CoverRenderUnit[] = [],
 ): Promise<{
   files: TypographyRenderedFile[];
   warnings: PdfWarning[];
@@ -351,7 +353,87 @@ export async function renderTypographyUnits(
     }
   }
 
+  // Обложки (000-00 / 00X-00) — каждая отдельной страницей-файлом.
+  for (const cover of coverUnits) {
+    const pageIndexBefore = pdfDoc.getPageCount();
+    await renderCoverPage(ctx, cover);
+    files.push({
+      file_name: cover.file_name,
+      // book_id из префикса имени ("000-00" → "000").
+      book_id: cover.file_name.split('-')[0],
+      page_index: pageIndexBefore,
+    });
+  }
+
   return { files, warnings, plan };
+}
+
+/**
+ * Рендер одной обложки на отдельную страницу. Полотно = задняя|корешок|передняя
+ * (плейсхолдеры уже разложены layoutCover + adaptCoverToFormat — абсолютные
+ * координаты по всему полотну). Фон — первым слоем во всю страницу, поверх —
+ * плейсхолдеры через общий drawPlaceholder (фото/текст/декор).
+ *
+ * Вылеты пока не добавляем (рендерим обрезной размер полотна) — bleed/overhang
+ * обложки уточним отдельно. Глобальные стили текстов обложки (по группам) тоже
+ * пока не применяются — только пер-плейсхолдер правки из data.
+ */
+async function renderCoverPage(
+  ctx: RenderContext,
+  cover: CoverRenderUnit,
+): Promise<void> {
+  const trim_w_mm = cover.width_mm;
+  const trim_h_mm = cover.height_mm;
+  const coverBoxes: PageBoxes = {
+    trim_width_mm: trim_w_mm,
+    trim_height_mm: trim_h_mm,
+    bleed_mm: 0,
+    media_width_mm: trim_w_mm,
+    media_height_mm: trim_h_mm,
+  };
+
+  const page = ctx.pdfDoc.addPage([mmToPt(trim_w_mm), mmToPt(trim_h_mm)]);
+
+  // Фон обложки — одна картинка во всё полотно (не категорийная 3-версии).
+  if (cover.background_url) {
+    try {
+      const res = await fetch(cover.background_url, { cache: 'no-store' });
+      if (res.ok) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        const isPng =
+          cover.background_url.toLowerCase().endsWith('.png') || buf[0] === 0x89;
+        const img = isPng
+          ? await ctx.pdfDoc.embedPng(buf)
+          : await ctx.pdfDoc.embedJpg(buf);
+        page.drawImage(img, {
+          x: 0,
+          y: 0,
+          width: mmToPt(trim_w_mm),
+          height: mmToPt(trim_h_mm),
+        });
+      }
+    } catch (e) {
+      ctx.warnings.push({
+        code: 'photo_not_found',
+        detail: `фон обложки ${cover.file_name}: ${(e as Error).message}`,
+      });
+    }
+  }
+
+  const localCtx: RenderContext = {
+    ...ctx,
+    pageBoxes: coverBoxes,
+    photoCtx: { ...ctx.photoCtx, pageBoxes: coverBoxes },
+  };
+  const instance: SpreadInstance = {
+    spread_index: 0,
+    template_id: '__cover__',
+    template_name: 'cover',
+    data: cover.data,
+  };
+  for (const ph of cover.placeholders) {
+    await drawPlaceholder(localCtx, page, ph, instance, 'single');
+  }
 }
 
 /**
