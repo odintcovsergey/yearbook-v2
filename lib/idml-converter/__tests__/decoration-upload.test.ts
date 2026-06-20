@@ -118,7 +118,9 @@ describe('decoration upload (Этап 2б)', () => {
       .filter((p): p is DecorationPlaceholder => p.type === 'decoration');
     expect(decors.length).toBeGreaterThanOrEqual(2);
     for (const d of decors) {
-      expect(d.url).toMatch(/^https:\/\/stub\.local\/template-decorations\//);
+      // url строится через storedValue (тот же публичный путь, что и Supabase
+      // getPublicUrl) — проверяем bucket+путь, без привязки к хосту.
+      expect(d.url).toContain('/template-decorations/');
       expect(d._embedded).toBeUndefined();
     }
   });

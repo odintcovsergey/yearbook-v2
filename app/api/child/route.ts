@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
+import { resolveReadUrl } from '@/lib/blob-storage'
 import { buildCoverGallery } from '@/lib/cover/parent-gallery'
 
 export const dynamic = 'force-dynamic'
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
     if (prog && (prog as any).is_active) {
       referralProgram = {
         referrer_reward_text: (prog as any).referrer_reward_text ?? null,
-        referrer_image_url: (prog as any).referrer_image_url ?? null,
+        referrer_image_url: await resolveReadUrl('referral-images', (prog as any).referrer_image_url ?? null),
       }
     }
   }

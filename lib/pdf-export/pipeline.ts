@@ -33,6 +33,7 @@ import { PDFDocument, PDFImage, PDFPage, degrees } from 'pdf-lib';
 import sharp from 'sharp';
 import { computePageBoxes, mmToPt, placeholderToPdfBox } from './units';
 import { orderPlaceholdersForRender } from '@/lib/decorations/render-order';
+import { resolveReadUrl } from '@/lib/blob-storage';
 import type { FontRegistry } from './font-loader';
 import {
   embedPhotoOnPage,
@@ -880,8 +881,8 @@ async function drawDecoration(
   ph: DecorationPlaceholder,
   instance: SpreadInstance,
 ): Promise<void> {
-  const url = ph.url;
-  if (!url) return; // декор без url (не загрузился на Этапе 2б) — пропускаем
+  if (!ph.url) return; // декор без url (не загрузился на Этапе 2б) — пропускаем
+  const url = await resolveReadUrl('template-decorations', ph.url);
 
   let buffer: Buffer;
   try {
@@ -1034,15 +1035,14 @@ async function loadBackground(
   warnings: PdfWarning[]
 ): Promise<BackgroundImages | null> {
   if (!path) return null;
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!supabaseUrl) {
+  const url = await resolveReadUrl('template-backgrounds', path);
+  if (!url) {
     warnings.push({
       code: 'image_decode_failed',
-      detail: 'background skipped: NEXT_PUBLIC_SUPABASE_URL env not set',
+      detail: `background skipped: cannot resolve url for ${path}`,
     });
     return null;
   }
-  const url = `${supabaseUrl}/storage/v1/object/public/template-backgrounds/${path}`;
   try {
     const response = await fetch(url);
     if (!response.ok) {

@@ -23,6 +23,7 @@ import { uploadCoversToSupabase } from '@/lib/cover/upload-covers'
 import { layoutCover } from '@/lib/cover/layout'
 import { renderCoverPreviewSvg } from '@/lib/cover/preview-svg'
 import { ycGetObjectBuffer, ycDelete, stripYcPrefix } from '@/lib/storage'
+import { createUploadTarget, resolveReadUrl, storedValue } from '@/lib/blob-storage'
 import type { RenderPlaceholder } from '@/lib/album-builder/types'
 
 export const dynamic = 'force-dynamic'
@@ -30,12 +31,8 @@ export const revalidate = 0
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-// Фон обложки — тот же публичный bucket, что у фонов внутрянки.
-const BG_BUCKET = 'template-backgrounds'
+// Фон обложки — тот же bucket, что у фонов внутрянки (template-backgrounds).
 const BG_ALLOWED_EXT = new Set(['jpg', 'png'])
-function bgPublicUrl(path: string): string {
-  return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${BG_BUCKET}/${path}`
-}
 
 // ─── GET: список обложек с превью ───────────────────────────────────────────
 export async function GET(req: NextRequest) {
@@ -69,7 +66,7 @@ export async function GET(req: NextRequest) {
     return serverError(error, 'covers')
   }
 
-  const covers = (data ?? []).map((row: Record<string, unknown>) => ({
+  const covers = await Promise.all((data ?? []).map(async (row: Record<string, unknown>) => ({
     id: row.id,
     name: row.name,
     slug: row.slug,
@@ -83,9 +80,9 @@ export async function GET(req: NextRequest) {
     front_width_mm: row.front_width_mm,
     height_mm: row.height_mm,
     nominal_spine_width_mm: row.nominal_spine_width_mm,
-    background_url: row.background_url,
+    background_url: await resolveReadUrl('template-backgrounds', row.background_url as string | null),
     preview_svg: coverPreviewSvg(row),
-  }))
+  })))
 
   return NextResponse.json({ covers })
 }
@@ -261,11 +258,12 @@ async function handleBgSign(req: NextRequest): Promise<NextResponse> {
   if (!cover) return NextResponse.json({ error: 'not found' }, { status: 404 })
 
   const path = `covers/${id}/${crypto.randomUUID()}.${ext}`
-  const { data, error } = await supabaseAdmin.storage.from(BG_BUCKET).createSignedUploadUrl(path)
-  if (error || !data) {
-    return NextResponse.json({ error: error?.message ?? 'sign failed' }, { status: 500 })
+  try {
+    const target = await createUploadTarget('template-backgrounds', path, `image/${ext === 'jpg' ? 'jpeg' : ext}`)
+    return NextResponse.json({ ok: true, ...target })
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'sign failed' }, { status: 500 })
   }
-  return NextResponse.json({ ok: true, path, token: data.token })
 }
 
 /** Шаг 2: зафиксировать background_url после заливки. */
@@ -279,11 +277,11 @@ async function handleBgCommit(req: NextRequest, auth: AuthContext): Promise<Next
   if (!path.startsWith(`covers/${id}/`)) {
     return NextResponse.json({ error: 'invalid path' }, { status: 400 })
   }
-  const url = bgPublicUrl(path)
-  const { error } = await supabaseAdmin.from('covers').update({ background_url: url }).eq('id', id)
+  const stored = storedValue('template-backgrounds', path)
+  const { error } = await supabaseAdmin.from('covers').update({ background_url: stored }).eq('id', id)
   if (error) return serverError(error, 'covers')
   await logAction(auth, 'cover.set_background', 'cover', id, { path })
-  return NextResponse.json({ ok: true, background_url: url })
+  return NextResponse.json({ ok: true, background_url: await resolveReadUrl('template-backgrounds', stored) })
 }
 
 /** Снять фон у обложки. */

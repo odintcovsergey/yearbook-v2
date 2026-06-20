@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { resolveReadUrl } from '@/lib/blob-storage'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
       program = {
         reward_text: (prog as any).invitee_reward_text ?? null,
         description: (prog as any).invitee_description ?? null,
-        image_url: (prog as any).invitee_image_url ?? null,
+        image_url: await resolveReadUrl('referral-images', (prog as any).invitee_image_url ?? null),
       }
     }
   }

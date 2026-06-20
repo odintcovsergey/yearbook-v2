@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabaseBrowser } from '@/lib/supabase-browser'
+import { uploadViaSignedTarget } from '@/lib/blob-upload-client'
 
 // ============================================================
 // Общий конструктор реферальных программ (ТЗ docs/tz-referral-programs.md).
@@ -425,10 +425,7 @@ function ProgramForm({
     setErr(null)
     try {
       const signed = await post({ action: 'sign', program_id: program.id, side, ext })
-      const { error: upErr } = await supabaseBrowser.storage
-        .from('referral-images')
-        .uploadToSignedUrl(signed.path, signed.token, file, { contentType: file.type })
-      if (upErr) throw new Error(upErr.message)
+      await uploadViaSignedTarget('referral-images', signed, file)
       const d = await post({ action: 'commit', program_id: program.id, side, path: signed.path })
       if (side === 'referrer') setReferrerImg(d.program?.referrer_image_url ?? null)
       else setInviteeImg(d.program?.invitee_image_url ?? null)

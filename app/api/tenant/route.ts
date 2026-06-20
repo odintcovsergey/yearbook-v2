@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { serverError } from '@/lib/api-error'
 import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
+import { createUploadTarget, resolveReadUrl, removeBlobs, copyBlob, storedValue } from '@/lib/blob-storage'
 import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, createImpersonationToken, setImpersonationCookie, clearImpersonationCookie, type AuthContext } from '@/lib/auth'
 import { ycUpload, ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
 import { renderPreviewSvg } from '@/lib/album-builder/render-preview-svg'
@@ -800,7 +801,12 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await query
     if (error) return serverError(error, 'tenant')
-    return NextResponse.json({ programs: data ?? [] })
+    const programs = await Promise.all(((data ?? []) as unknown as Record<string, unknown>[]).map(async (p) => ({
+      ...p,
+      referrer_image_url: await resolveReadUrl('referral-images', p.referrer_image_url as string | null),
+      invitee_image_url: await resolveReadUrl('referral-images', p.invitee_image_url as string | null),
+    })))
+    return NextResponse.json({ programs })
   }
 
   // ----------------------------------------------------------
@@ -4348,7 +4354,6 @@ export async function POST(req: NextRequest) {
     // 4) Копируем категорийные фоны + их файлы в storage (best-effort).
     //    Файлы лежат в bucket template-backgrounds по пути <ts>/<category>/<bgId>.<ext>.
     //    url в БД хранится как путь внутри bucket (см. backgrounds route).
-    const BG_BUCKET = 'template-backgrounds'
     const { data: srcBgs } = await supabaseAdmin
       .from('template_set_backgrounds')
       .select('id, category, url, sort_order, side')
@@ -4363,11 +4368,10 @@ export async function POST(req: NextRequest) {
       const ext = (b.url.split('.').pop() ?? 'jpg').split('?')[0]
       const oldPath = b.url
       const newPath = `${newSetId}/${b.category}/${newBgId}.${ext}`
-      const { error: copyErr } = await supabaseAdmin.storage
-        .from(BG_BUCKET)
-        .copy(oldPath, newPath)
-      if (copyErr) {
-        bgWarnings.push(`bg ${b.id}: ${copyErr.message}`)
+      try {
+        await copyBlob('template-backgrounds', oldPath, newPath)
+      } catch (e) {
+        bgWarnings.push(`bg ${b.id}: ${e instanceof Error ? e.message : 'copy failed'}`)
         continue
       }
       const { error: insBgErr } = await supabaseAdmin
@@ -4512,7 +4516,6 @@ export async function POST(req: NextRequest) {
     // (<ts>/<category>/<uuid>.ext), поэтому берём пути из строк БД, а не
     // через storage.list (он не рекурсит в подпапки категорий).
     // Best-effort: ошибки storage не блокируют удаление дизайна.
-    const BG_BUCKET = 'template-backgrounds'
     const { data: bgRows } = await supabaseAdmin
       .from('template_set_backgrounds')
       .select('url')
@@ -4522,7 +4525,7 @@ export async function POST(req: NextRequest) {
       .filter(Boolean)
     if (bgPaths.length > 0) {
       try {
-        await supabaseAdmin.storage.from(BG_BUCKET).remove(bgPaths)
+        await removeBlobs('template-backgrounds', bgPaths)
       } catch (e) {
         console.warn('[template_set_delete] storage cleanup failed:', e)
       }
@@ -5471,14 +5474,14 @@ export async function POST(req: NextRequest) {
     }
     const cleanExt = ext === 'jpeg' ? 'jpg' : ext
     const path = `album-covers/${album_id}/${crypto.randomUUID()}.${cleanExt}`
-    const { data, error } = await supabaseAdmin.storage
-      .from('template-backgrounds')
-      .createSignedUploadUrl(path)
-    if (error || !data) {
-      return NextResponse.json({ error: error?.message ?? 'sign failed' }, { status: 500 })
+    try {
+      const target = await createUploadTarget('template-backgrounds', path, `image/${cleanExt === 'jpg' ? 'jpeg' : cleanExt}`)
+      // public_url кладётся клиентом в cover_edits.__bg__; storedValue = полный URL
+      // в supabase-режиме (как раньше) или относительный ключ в timeweb (подпишут при чтении).
+      return NextResponse.json({ ok: true, ...target, public_url: storedValue('template-backgrounds', path) })
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : 'sign failed' }, { status: 500 })
     }
-    const public_url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${path}`
-    return NextResponse.json({ ok: true, path, token: data.token, public_url })
   }
 
   // clear_cover_qr — убрать QR заказа (back_qr станет пустым).

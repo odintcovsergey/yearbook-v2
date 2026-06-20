@@ -31,6 +31,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import sharp from 'sharp';
 import { getFamilyMapping } from './family-mapping';
+import { serverUpload, storedValue } from '@/lib/blob-storage';
 import type {
   DecorationPlaceholder,
   ParsedTemplateSet,
@@ -395,19 +396,8 @@ async function uploadDecorationImages(
       const path = `${templateSetId}/${sanitizePart(spread.name)}/${sanitizePart(decor.label)}.${ext}`;
       const buffer = Buffer.from(embedded.base64, 'base64');
 
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from(DECORATIONS_BUCKET)
-        .upload(path, buffer, { contentType, upsert: true });
-      if (uploadError) {
-        throw new Error(
-          `Failed to upload decoration image ${path}: ${uploadError.message}`,
-        );
-      }
-
-      const { data } = supabaseAdmin.storage
-        .from(DECORATIONS_BUCKET)
-        .getPublicUrl(path);
-      decor.url = data.publicUrl;
+      await serverUpload('template-decorations', path, buffer, contentType, supabaseAdmin);
+      decor.url = storedValue('template-decorations', path);
 
       // Доминирующий цвет картинки декора для свечения фото-фрейма (6б).
       // Best-effort: ошибка sharp не должна валить загрузку набора.

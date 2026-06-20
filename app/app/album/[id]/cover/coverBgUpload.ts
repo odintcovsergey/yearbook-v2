@@ -1,6 +1,6 @@
 'use client'
 
-import { supabaseBrowser } from '@/lib/supabase-browser'
+import { uploadViaSignedTarget } from '@/lib/blob-upload-client'
 
 // Фон обложки заказа — тот же публичный bucket, что у фонов внутрянки и
 // эталонных обложек. Загруженный фон НЕ трогает эталон в библиотеке: его URL
@@ -25,14 +25,11 @@ export async function uploadAlbumCoverBackground(albumId: string, file: File): P
     body: JSON.stringify({ action: 'cover_bg_sign', album_id: albumId, ext }),
   })
   const sign = await signRes.json().catch(() => ({}))
-  if (!signRes.ok || !sign.path || !sign.token || !sign.public_url) {
+  if (!signRes.ok || !sign.public_url) {
     throw new Error(sign.error || `Ошибка подписи (HTTP ${signRes.status})`)
   }
 
-  const { error: upErr } = await supabaseBrowser.storage
-    .from(BUCKET)
-    .uploadToSignedUrl(sign.path, sign.token, file, { contentType: file.type })
-  if (upErr) throw new Error(upErr.message)
+  await uploadViaSignedTarget(BUCKET, sign, file)
 
   return sign.public_url as string
 }

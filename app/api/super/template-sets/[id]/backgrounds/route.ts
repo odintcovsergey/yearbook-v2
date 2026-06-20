@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction } from '@/lib/auth'
+import { createUploadTarget, resolveReadUrl, removeBlobs, type UploadTarget } from '@/lib/blob-storage'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -19,13 +20,8 @@ export const revalidate = 0
 // чтобы не конфликтовать с default.jpg/png.
 // ============================================================
 
-const BUCKET = 'template-backgrounds'
 const ALLOWED_EXT = new Set(['jpg', 'png'])
 const ALLOWED_SIDES = new Set(['spread', 'left', 'right', 'any'])
-
-function publicUrl(path: string): string {
-  return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`
-}
 
 async function loadSet(templateSetId: string) {
   const { data } = await supabaseAdmin
@@ -62,10 +58,10 @@ export async function GET(
     return serverError(error, 'super/template-sets/[id]/backgrounds')
   }
 
-  const backgrounds = (data ?? []).map((row) => ({
+  const backgrounds = await Promise.all((data ?? []).map(async (row) => ({
     ...row,
-    public_url: publicUrl(row.url),
-  }))
+    public_url: await resolveReadUrl('template-backgrounds', row.url),
+  })))
 
   return NextResponse.json({ ok: true, backgrounds })
 }
@@ -118,23 +114,21 @@ export async function POST(
       return NextResponse.json({ error: 'Нет файлов' }, { status: 400 })
     }
 
-    const uploads: Array<{ path: string; token: string }> = []
+    const uploads: UploadTarget[] = []
     for (const f of files) {
       const ext = String((f as { ext?: unknown })?.ext ?? '')
       if (!ALLOWED_EXT.has(ext)) {
         return NextResponse.json({ error: 'Допустимы только JPG и PNG' }, { status: 400 })
       }
       const path = `${templateSetId}/${category}/${crypto.randomUUID()}.${ext}`
-      const { data, error } = await supabaseAdmin.storage
-        .from(BUCKET)
-        .createSignedUploadUrl(path)
-      if (error || !data) {
+      try {
+        uploads.push(await createUploadTarget('template-backgrounds', path, `image/${ext === 'jpg' ? 'jpeg' : ext}`))
+      } catch (e) {
         return NextResponse.json(
-          { error: error?.message ?? 'Не удалось подписать загрузку' },
+          { error: e instanceof Error ? e.message : 'Не удалось подписать загрузку' },
           { status: 500 },
         )
       }
-      uploads.push({ path, token: data.token })
     }
 
     return NextResponse.json({ ok: true, uploads })
@@ -189,7 +183,7 @@ export async function POST(
           { status: 500 },
         )
       }
-      created.push({ ...row, public_url: publicUrl(row.url) })
+      created.push({ ...row, public_url: await resolveReadUrl('template-backgrounds', row.url) })
       nextOrder += 1
     }
 
@@ -298,7 +292,7 @@ export async function DELETE(
     return NextResponse.json({ error: 'Фон не найден' }, { status: 404 })
   }
 
-  await supabaseAdmin.storage.from(BUCKET).remove([row.url])
+  await removeBlobs('template-backgrounds', [row.url])
 
   const { error: dbErr } = await supabaseAdmin
     .from('template_set_backgrounds')

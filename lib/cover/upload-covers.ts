@@ -17,9 +17,9 @@ import type {
   ParsedTemplateSet,
 } from '../idml-converter/types';
 import type { CoverGenderHint, CoverType } from './types';
+import { serverUpload, storedValue } from '@/lib/blob-storage';
 
 /** Bucket для embedded-картинок декора (общий с шаблонами). */
-const DECORATIONS_BUCKET = 'template-decorations';
 
 export type CoverUploadMeta = {
   /** null = глобальная обложка (видна всем). UUID = обложка тенанта. */
@@ -140,14 +140,8 @@ async function uploadCoverDecor(
     const path = `${pathPrefix}/${sanitizePart(decor.label)}.${ext}`;
     const buffer = Buffer.from(embedded.base64, 'base64');
 
-    const { error } = await supabase.storage
-      .from(DECORATIONS_BUCKET)
-      .upload(path, buffer, { contentType, upsert: true });
-    if (error) {
-      throw new Error(`Failed to upload cover decor ${path}: ${error.message}`);
-    }
-    const { data } = supabase.storage.from(DECORATIONS_BUCKET).getPublicUrl(path);
-    decor.url = data.publicUrl;
+    await serverUpload('template-decorations', path, buffer, contentType, supabase);
+    decor.url = storedValue('template-decorations', path);
     delete decor._embedded;
   }
 }

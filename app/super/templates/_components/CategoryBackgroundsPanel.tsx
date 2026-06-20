@@ -32,7 +32,7 @@ import {
   BACKGROUND_CATEGORIES,
   BACKGROUND_CATEGORY_LABELS,
 } from '@/lib/backgrounds/page-role-to-category'
-import { supabaseBrowser } from '@/lib/supabase-browser'
+import { uploadViaSignedTarget } from '@/lib/blob-upload-client'
 
 const BUCKET = 'template-backgrounds'
 const MAX_SIZE = 50 * 1024 * 1024 // 50 МБ — совпадает с лимитом bucket'а
@@ -199,17 +199,15 @@ function CategorySection({
           onError(signData.error ?? `Ошибка подписи (HTTP ${signRes.status})`)
           return
         }
-        const uploads: Array<{ path: string; token: string }> = signData.uploads
+        const uploads: Array<Record<string, unknown>> = signData.uploads
 
         // Шаг 2 — залить файлы НАПРЯМУЮ в Storage (мимо нашего сервера,
         // поэтому лимит тела Vercel не действует).
         for (let i = 0; i < files.length; i++) {
-          const { path, token } = uploads[i]
-          const { error: upErr } = await supabaseBrowser.storage
-            .from(BUCKET)
-            .uploadToSignedUrl(path, token, files[i], { contentType: files[i].type })
-          if (upErr) {
-            onError(`Не удалось загрузить файл: ${upErr.message}`)
+          try {
+            await uploadViaSignedTarget(BUCKET, uploads[i], files[i])
+          } catch (e) {
+            onError(`Не удалось загрузить файл: ${e instanceof Error ? e.message : ''}`)
             return
           }
         }

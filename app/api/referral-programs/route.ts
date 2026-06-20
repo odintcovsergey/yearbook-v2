@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
+import { createUploadTarget, resolveReadUrl, removeBlobs, listBlobs, storedValue } from '@/lib/blob-storage'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,7 +24,6 @@ export const revalidate = 0
 // двухшаговая загрузка sign/commit (файл мимо сервера).
 // ============================================================
 
-const BUCKET = 'referral-images'
 const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png'])
 const SIDES = new Set(['referrer', 'invitee'])
 
@@ -48,8 +48,15 @@ type ProgramRow = {
   created_at: string
 }
 
-function publicUrl(path: string): string {
-  return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`
+/** Подписать обе картинки программы перед отдачей на фронт (timeweb → signed). */
+async function resolveProgramImages<T extends { referrer_image_url: string | null; invitee_image_url: string | null }>(
+  p: T,
+): Promise<T> {
+  return {
+    ...p,
+    referrer_image_url: await resolveReadUrl('referral-images', p.referrer_image_url),
+    invitee_image_url: await resolveReadUrl('referral-images', p.invitee_image_url),
+  }
 }
 
 // Внутренний tenant Сергея (slug 'okeybook') — куда привязываем
@@ -235,11 +242,11 @@ export async function GET(req: NextRequest) {
   }
 
   const rows = (data ?? []) as unknown as ProgramRow[]
-  const programs = rows.map((p) => ({
-    ...p,
+  const programs = await Promise.all(rows.map(async (p) => ({
+    ...(await resolveProgramImages(p)),
     album_count: albumCount[p.id] ?? 0,
     editable: canManage(auth, p),
-  }))
+  })))
 
   return NextResponse.json({ ok: true, programs, canSetGlobal: auth.role === 'superadmin' })
 }
@@ -423,11 +430,12 @@ export async function POST(req: NextRequest) {
     if (guard instanceof NextResponse) return guard
 
     const path = `${programId}/${side}/${crypto.randomUUID()}.${ext}`
-    const { data, error } = await supabaseAdmin.storage.from(BUCKET).createSignedUploadUrl(path)
-    if (error || !data) {
-      return NextResponse.json({ error: error?.message ?? 'Не удалось подписать загрузку' }, { status: 500 })
+    try {
+      const target = await createUploadTarget('referral-images', path, `image/${ext === 'png' ? 'png' : 'jpeg'}`)
+      return NextResponse.json({ ok: true, ...target })
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : 'Не удалось подписать загрузку' }, { status: 500 })
     }
-    return NextResponse.json({ ok: true, path, token: data.token })
   }
 
   // ── Картинка: зафиксировать URL ──────────────────────────────────────────────
@@ -446,7 +454,7 @@ export async function POST(req: NextRequest) {
     const column = side === 'referrer' ? 'referrer_image_url' : 'invitee_image_url'
     const { data, error } = await supabaseAdmin
       .from('referral_programs')
-      .update({ [column]: publicUrl(path) })
+      .update({ [column]: storedValue('referral-images', path) })
       .eq('id', programId)
       .select(PROGRAM_FIELDS)
       .single()
@@ -454,7 +462,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error?.message ?? 'Программа не найдена' }, { status: 404 })
     }
     await logAction(auth, 'referral_program.upload_image', 'referral_program', programId, { side })
-    return NextResponse.json({ ok: true, program: data })
+    return NextResponse.json({ ok: true, program: await resolveProgramImages(data as unknown as ProgramRow) })
   }
 
   // ── Удалить картинку ─────────────────────────────────────────────────────────
@@ -476,7 +484,7 @@ export async function POST(req: NextRequest) {
     if (error || !data) {
       return NextResponse.json({ error: error?.message ?? 'Программа не найдена' }, { status: 404 })
     }
-    return NextResponse.json({ ok: true, program: data })
+    return NextResponse.json({ ok: true, program: await resolveProgramImages(data as unknown as ProgramRow) })
   }
 
   return NextResponse.json({ error: 'Неизвестное действие' }, { status: 400 })
@@ -495,10 +503,8 @@ export async function DELETE(req: NextRequest) {
   if (guard instanceof NextResponse) return guard
 
   for (const side of ['referrer', 'invitee']) {
-    const { data: files } = await supabaseAdmin.storage.from(BUCKET).list(`${id}/${side}`)
-    if (files && files.length > 0) {
-      await supabaseAdmin.storage.from(BUCKET).remove(files.map((f) => `${id}/${side}/${f.name}`))
-    }
+    const keys = await listBlobs('referral-images', `${id}/${side}`)
+    if (keys.length > 0) await removeBlobs('referral-images', keys)
   }
 
   const { error } = await supabaseAdmin.from('referral_programs').delete().eq('id', id)
