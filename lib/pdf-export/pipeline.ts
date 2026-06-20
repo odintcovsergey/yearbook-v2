@@ -34,7 +34,12 @@ import sharp from 'sharp';
 import { computePageBoxes, mmToPt, placeholderToPdfBox } from './units';
 import { orderPlaceholdersForRender } from '@/lib/decorations/render-order';
 import type { FontRegistry } from './font-loader';
-import { embedPhotoOnPage, type PhotoEmbedContext } from './photo-embed';
+import {
+  embedPhotoOnPage,
+  collectPhotoUrlsFromSpreads,
+  prefetchPhotoSources,
+  type PhotoEmbedContext,
+} from './photo-embed';
 import { drawTextShaped } from './text-shaping';
 import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform';
 import { parseFontSizeMult, parseColor } from '@/lib/text-style';
@@ -136,6 +141,9 @@ export async function renderAllSpreads(
     originals: input.originals,
     urlToFilename: input.urlToFilename,
     warnings,
+    // Кэш сетевых загрузок исходников на время экспорта (дедуп + база под
+    // параллельный префетч ниже).
+    sourceCache: new Map(),
   };
 
   // Индекс мастеров для O(1) lookup'а (вместо .find() на каждый разворот).
@@ -230,6 +238,17 @@ export async function renderAllSpreads(
     sideByIndex,
     spineMarginMm: templateSet.spine_margin_mm ?? null,
   };
+
+  // ── Параллельная предзагрузка фото ──────────────────────────────────────
+  //
+  // Раньше каждое фото грузилось последовательно внутри рендера (узкое место —
+  // сетевой fetch, не sharp), из-за чего большие альбомы падали по таймауту.
+  // Здесь собираем ВСЕ URL фото альбома и грузим их пулом (~8 одновременно) в
+  // photoCtx.sourceCache ДО цикла. Сам рендер остаётся последовательным (RAM),
+  // но теперь каждое фото уже в кэше — сеть не блокирует. Логика выбора
+  // источника (оригинал/selection) и ресэмплинг не меняются → вид PDF тот же.
+  const photoUrls = collectPhotoUrlsFromSpreads(layout.spreads);
+  await prefetchPhotoSources(photoCtx, photoUrls, 8);
 
   let pageCount = 0;
 

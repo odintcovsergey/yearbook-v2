@@ -67,7 +67,36 @@ export type PhotoEmbedContext = {
   originals: OriginalPhoto[];
   urlToFilename: Record<string, string>;
   warnings: PdfWarning[];
+  /**
+   * Кэш сетевых загрузок исходников фото на время одного экспорта.
+   * Ключ — `orig:<storage_path>` (оригинал из приватного бакета) или
+   * `sel:<photoUrl>` (selection WebP). Значение — Promise с буфером (или null
+   * при ошибке). Хранение именно Promise дедуплицирует параллельные запросы:
+   * префетч и рендер одного и того же портрета (встречается и в блоке, и на
+   * обложке) грузят его ровно один раз. Опционально — если не задан, загрузка
+   * идёт без кэша (старое поведение). См. prefetchPhotoSources.
+   */
+  sourceCache?: Map<string, Promise<Buffer | null>>;
 };
+
+/**
+ * Загрузка с кэшем по ключу. Если кэш есть и ключ уже грузится/загружен —
+ * возвращаем тот же Promise (дедуп). Иначе запускаем loader, кладём Promise в
+ * кэш сразу (до await), чтобы конкурентные вызовы подхватили его, а не
+ * запустили второй сетевой запрос.
+ */
+function cachedLoad(
+  cache: Map<string, Promise<Buffer | null>> | undefined,
+  key: string,
+  loader: () => Promise<Buffer | null>,
+): Promise<Buffer | null> {
+  if (!cache) return loader();
+  const existing = cache.get(key);
+  if (existing) return existing;
+  const p = loader();
+  cache.set(key, p);
+  return p;
+}
 
 /**
  * Результат поиска фото для embed'а — буфер байт + метаданные источника.
@@ -382,6 +411,107 @@ function drawImageInRoundedRect(
 }
 
 /**
+ * Собирает все URL фото из развёрстки (instance.data) для предзагрузки.
+ *
+ * Значения фото лежат в `instance.data[label]` как публичные/signed URL
+ * (начинаются с `http`). Служебные ключи (`__scale__`, `__offset__`,
+ * `__bg__`, `__hidden__` и т.п.) начинаются с `__` — пропускаем. Текстовые
+ * значения (имена/цитаты) не начинаются с `http` — тоже отсеиваются. Декор
+ * (template.url) сюда не попадает (его немного, грузится по ходу). Результат
+ * дедуплицирован.
+ */
+export function collectPhotoUrlsFromSpreads(
+  spreads: ReadonlyArray<{ data?: Record<string, string | null> | null }>,
+): string[] {
+  const urls = new Set<string>();
+  for (const sp of spreads) {
+    const data = sp.data;
+    if (!data) continue;
+    for (const key of Object.keys(data)) {
+      if (key.startsWith('__')) continue;
+      const value = data[key];
+      if (typeof value === 'string' && value.startsWith('http')) {
+        urls.add(value);
+      }
+    }
+  }
+  return Array.from(urls);
+}
+
+/**
+ * Запускает задачи с ограничением одновременности (пул воркеров). Задачи —
+ * thunk'и, возвращающие Promise; ошибки внутри проглатываются на уровне самих
+ * задач (loader'ы возвращают null). Завершается, когда все задачи отработали.
+ */
+async function runPool(
+  tasks: ReadonlyArray<() => Promise<unknown>>,
+  limit: number,
+): Promise<void> {
+  let next = 0;
+  const workerCount = Math.min(Math.max(1, limit), tasks.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (next < tasks.length) {
+      const idx = next++;
+      await tasks[idx]();
+    }
+  });
+  await Promise.all(workers);
+}
+
+/**
+ * Предзагрузка исходников фото ПАРАЛЛЕЛЬНО (пул ~8-10) в кэш ctx.sourceCache
+ * ДО последовательного цикла рендера. Раньше каждое фото грузилось по одному
+ * внутри рендера (узкое место — сеть, не sharp), из-за чего большие альбомы
+ * падали по таймауту. Здесь мы только наполняем кэш (сеть), ресэмплинг
+ * остаётся пофото в рендере. Логика выбора источника (оригинал vs selection)
+ * та же, что в fetchPhotoSource, поэтому рендер попадает в кэш.
+ *
+ * Не пушит warning'и (это делает fetchPhotoSource при реальном embed'е, чтобы
+ * не задвоить). Если sourceCache не задан — no-op.
+ */
+export async function prefetchPhotoSources(
+  ctx: PhotoEmbedContext,
+  photoUrls: ReadonlyArray<string>,
+  concurrency: number = 8,
+): Promise<void> {
+  if (!ctx.sourceCache || photoUrls.length === 0) return;
+  const tasks = photoUrls.map((url) => () => primePhotoSource(ctx, url));
+  await runPool(tasks, concurrency);
+}
+
+/**
+ * Наполняет кэш для одного URL тем же ключом, который запросит рендер.
+ * Зеркалит решение fetchPhotoSource: для не-preview профиля при наличии
+ * оригинала грузим оригинал; если оригинала нет или он упал — selection.
+ */
+async function primePhotoSource(
+  ctx: PhotoEmbedContext,
+  photoUrl: string,
+): Promise<void> {
+  const filename =
+    ctx.urlToFilename[storageKeyFromUrl(photoUrl)] ??
+    extractFilenameFromUrl(photoUrl);
+
+  if (ctx.profile.quality !== 'preview' && filename) {
+    const original = ctx.originals.find((o) => o.filename === filename);
+    if (original) {
+      const buffer = await cachedLoad(
+        ctx.sourceCache,
+        `orig:${original.storage_path}`,
+        () => fetchObjectBuffer(original.storage_path),
+      );
+      // Оригинал загружен — selection не понадобится, выходим.
+      if (buffer) return;
+      // Оригинал упал — грузим selection как fallback (рендер пойдёт туда же).
+    }
+  }
+
+  await cachedLoad(ctx.sourceCache, `sel:${photoUrl}`, () =>
+    fetchBuffer(photoUrl),
+  );
+}
+
+/**
  * Поиск фото для embed'а: оригинал → fallback на selection.
  *
  * Возвращает Buffer + метаданные source ('original' / 'selection').
@@ -402,8 +532,13 @@ async function fetchPhotoSource(
     const original = ctx.originals.find((o) => o.filename === filename);
     if (original) {
       // Бакет приватный — читаем байты напрямую через S3 (креды сервера),
-      // без публичного HTTP-фетча.
-      const buffer = await fetchObjectBuffer(original.storage_path);
+      // без публичного HTTP-фетча. Через кэш: тот же оригинал (например, один
+      // портрет в блоке и на обложке) грузится один раз.
+      const buffer = await cachedLoad(
+        ctx.sourceCache,
+        `orig:${original.storage_path}`,
+        () => fetchObjectBuffer(original.storage_path),
+      );
       if (buffer) {
         return { buffer, source: 'original', filename };
       }
@@ -419,8 +554,12 @@ async function fetchPhotoSource(
     }
   }
 
-  // 2. Fallback: selection WebP по photoUrl
-  const buffer = await fetchBuffer(photoUrl);
+  // 2. Fallback: selection WebP по photoUrl (через кэш — дедуп повторов).
+  const buffer = await cachedLoad(
+    ctx.sourceCache,
+    `sel:${photoUrl}`,
+    () => fetchBuffer(photoUrl),
+  );
   if (!buffer) {
     ctx.warnings.push({
       code: 'photo_not_found',
