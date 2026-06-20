@@ -8,7 +8,13 @@ module.exports = {
       { protocol: 'https', hostname: 'bnotiyhamfyllcrqwquq.supabase.co' },
     ],
   },
-  experimental: { serverComponentsExternalPackages: [] },
+  // @napi-rs/canvas — нативный бинарник (.node), pdfjs-dist — тяжёлый legacy-бандл:
+  // оба используются ТОЛЬКО на сервере (растеризация PDF→JPG в типографском
+  // экспорте). Внешние — чтобы webpack не пытался их бандлить (иначе падает на
+  // .node) и они require'ились в рантайме.
+  experimental: {
+    serverComponentsExternalPackages: ['@napi-rs/canvas', 'pdfjs-dist'],
+  },
   // Увеличиваем лимит тела запроса для загрузки фото личного разворота (до 10 МБ)
   api: {
     bodyParser: {

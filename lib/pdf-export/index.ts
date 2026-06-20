@@ -22,6 +22,7 @@ import { PDFDocument } from 'pdf-lib';
 import { loadFonts } from './font-loader';
 import { renderAllSpreads, renderTypographyUnits } from './pipeline';
 import { adaptTemplateSetToFormat } from '@/lib/export-typography/adapt';
+import { rasterizePdfToJpegSafe } from './rasterize';
 import type { AcceptMode } from '@/lib/export-typography/plan';
 import type { CoverRenderUnit } from '@/lib/export-typography/covers';
 import type { PrinterFormat } from '@/lib/printers/types';
@@ -110,11 +111,11 @@ export async function exportAlbumPdf(
 
 // ─── Типографская выгрузка (ТЗ экспорта 20.06.2026) ──────────────────────────
 
-/** Один готовый файл выгрузки (одностраничный PDF под именем КНИГА-НОМЕР). */
+/** Один готовый файл выгрузки (PDF или JPEG под именем КНИГА-НОМЕР). */
 export type TypographyExportFile = {
   /** Имя без расширения, напр. "000-01". */
   name: string;
-  ext: 'pdf';
+  ext: 'pdf' | 'jpg';
   bytes: Uint8Array;
   book_id: string;
 };
@@ -127,6 +128,8 @@ export type TypographyExportResult = {
   hasPersonal: boolean;
   /** Сколько файлов-обложек попало в выгрузку. */
   coverCount: number;
+  /** Фактический формат файлов выгрузки. */
+  fileFormat: 'pdf' | 'jpeg';
   /** Статус адаптации под формат заказа. */
   adaptStatus: 'native' | 'adapted' | 'incompatible';
   adaptWarning?: string;
@@ -150,6 +153,12 @@ export async function exportAlbumTypography(
     acceptMode: AcceptMode;
     targetFormat: PrinterFormat | null;
     coverUnits?: CoverRenderUnit[];
+    /** Формат файлов: 'pdf' (дефолт) или 'jpeg' (растеризация по профилю). */
+    fileFormat?: 'pdf' | 'jpeg';
+    /** dpi для JPG (из профиля типографии). */
+    dpi?: number;
+    /** Качество JPEG 1..100. */
+    jpegQuality?: number;
   },
 ): Promise<TypographyExportResult> {
   const warnings: PdfWarning[] = [];
@@ -177,13 +186,33 @@ export async function exportAlbumTypography(
   warnings.push(...fontRegistry.warnings, ...rendered.warnings);
 
   // 4. Режем общий документ на одностраничные PDF по именам файлов.
+  // При fileFormat='jpeg' каждую страницу растеризуем (тот же рендер → картинка,
+  // совпадает 1:1 с PDF). При ошибке растеризации — мягкий fallback на PDF.
+  const wantJpeg = opts.fileFormat === 'jpeg';
+  const dpi = opts.dpi ?? 300;
+  const jpegQuality = opts.jpegQuality ?? 92;
   const files: TypographyExportFile[] = [];
   for (const rf of rendered.files) {
     const single = await PDFDocument.create();
     const [pg] = await single.copyPages(pdfDoc, [rf.page_index]);
     single.addPage(pg);
-    const bytes = await single.save();
-    files.push({ name: rf.file_name, ext: 'pdf', bytes, book_id: rf.book_id });
+    const pdfBytes = await single.save();
+
+    if (wantJpeg) {
+      const jpg = await rasterizePdfToJpegSafe(
+        pdfBytes,
+        dpi,
+        jpegQuality,
+        rf.file_name,
+        warnings,
+      );
+      if (jpg) {
+        files.push({ name: rf.file_name, ext: 'jpg', bytes: jpg, book_id: rf.book_id });
+        continue;
+      }
+      // fallback: оставляем PDF этого файла (warning уже записан).
+    }
+    files.push({ name: rf.file_name, ext: 'pdf', bytes: pdfBytes, book_id: rf.book_id });
   }
 
   return {
@@ -192,6 +221,7 @@ export async function exportAlbumTypography(
     totalSpreads: rendered.plan.total_spreads,
     hasPersonal: rendered.plan.has_personal,
     coverCount: (opts.coverUnits ?? []).length,
+    fileFormat: wantJpeg ? 'jpeg' : 'pdf',
     adaptStatus: adapt.status,
     adaptWarning: adapt.warning,
   };

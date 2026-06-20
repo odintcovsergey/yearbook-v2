@@ -99,6 +99,10 @@ function isPdf(bytes: Uint8Array): boolean {
   return bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
 }
 
+function isJpeg(bytes: Uint8Array): boolean {
+  return bytes[0] === 0xff && bytes[1] === 0xd8;
+}
+
 describe('exportAlbumTypography (smoke)', () => {
   it('разворотами: 4 общие страницы → 2 файла-разворота, валидные PDF', async () => {
     const res = await exportAlbumTypography(
@@ -191,6 +195,23 @@ describe('exportAlbumTypography (smoke)', () => {
       expect(isPdf(f.bytes)).toBe(true);
     }
   });
+
+  it('JPG-вывод: fileFormat=jpeg → файлы .jpg, валидные JPEG', async () => {
+    const res = await exportAlbumTypography(input([page(0), page(1)]), {
+      acceptMode: 'spread',
+      targetFormat: null,
+      fileFormat: 'jpeg',
+      dpi: 150, // ниже для скорости теста
+      jpegQuality: 85,
+    });
+    expect(res.fileFormat).toBe('jpeg');
+    expect(res.files.length).toBe(1);
+    for (const f of res.files) {
+      expect(f.ext).toBe('jpg');
+      expect(isJpeg(f.bytes)).toBe(true);
+      expect(f.bytes.length).toBeGreaterThan(500);
+    }
+  }, 30000);
 
   it('адаптация под формат: совместимое семейство → adapted', async () => {
     const res = await exportAlbumTypography(input([page(0), page(1)]), {

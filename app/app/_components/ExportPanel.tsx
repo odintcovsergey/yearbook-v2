@@ -71,6 +71,7 @@ type TypographyResponse = {
   filename: string
   file_count: number
   cover_count: number
+  file_format: 'pdf' | 'jpeg'
   total_spreads: number
   has_personal: boolean
   accept_mode: 'spread' | 'page'
@@ -378,6 +379,7 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
               <div className="font-medium">✓ Архив для типографии готов</div>
               <div className="text-xs text-green-700 mt-0.5">
                 {zipResult.file_count} файлов ·{' '}
+                {zipResult.file_format === 'jpeg' ? 'JPG' : 'PDF'} ·{' '}
                 {zipResult.accept_mode === 'spread' ? 'разворотами' : 'постранично'}
                 {zipResult.has_personal && ' · с личными книгами'}
                 {zipResult.cover_count > 0 && ` · обложек: ${zipResult.cover_count}`}

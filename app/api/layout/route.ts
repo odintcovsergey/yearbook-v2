@@ -2394,6 +2394,9 @@ async function handleExportTypography(
   }
   const targetFormat = resolveFormat(printerConfig, album.format_id as string | null)
   const acceptMode: AcceptMode = printerConfig?.accept_mode ?? 'spread'
+  // Формат файлов из профиля: 'jpeg' (300 dpi, sRGB) или 'pdf' (дефолт 'pdf' —
+  // если профиля/поля нет, безопасно отдаём PDF).
+  const fileFormat: 'pdf' | 'jpeg' = printerConfig?.file_format === 'jpeg' ? 'jpeg' : 'pdf'
 
   // 3. Сохранённая вёрстка.
   const { data: layoutRow, error: layoutErr } = await supabaseAdmin
@@ -2632,6 +2635,9 @@ async function handleExportTypography(
       acceptMode,
       targetFormat,
       coverUnits,
+      fileFormat,
+      dpi: 300,
+      jpegQuality: 92,
     })
   } catch (e) {
     return NextResponse.json(
@@ -2687,6 +2693,7 @@ async function handleExportTypography(
     filename: `${safeTitle || 'album'}_типография.zip`,
     file_count: result.files.length,
     cover_count: result.coverCount,
+    file_format: result.fileFormat,
     total_spreads: result.totalSpreads,
     has_personal: result.hasPersonal,
     accept_mode: acceptMode,
