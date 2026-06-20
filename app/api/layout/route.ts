@@ -29,10 +29,15 @@ import { adaptAlbumLayoutToBuildResult } from '@/lib/rule-engine/layout-to-build
 import { buildAlbumInput, type SmartFillWarning } from '@/lib/smart-fill'
 import {
   exportAlbumPdf,
+  exportAlbumTypography,
   type AlbumExportInput,
   type ExportProfile,
   type OriginalPhoto,
 } from '@/lib/pdf-export'
+import JSZip from 'jszip'
+import { resolveFormat } from '@/lib/format-adapt'
+import { planTypographyExport, type AcceptMode } from '@/lib/export-typography/plan'
+import type { PrinterConfig } from '@/lib/printers/types'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -339,6 +344,9 @@ export async function POST(req: NextRequest) {
 
   if (action === 'export') {
     return handleExportPdf(req, auth)
+  }
+  if (action === 'export_typography') {
+    return handleExportTypography(req, auth)
   }
 
   if (action === 'build_album_test') {
@@ -2313,5 +2321,299 @@ async function handleExportPdf(
     file_size: pdfResult.pdfBytes.length,
     page_count: pdfResult.pageCount,
     warnings: pdfResult.warnings,
+  })
+}
+
+// ============================================================
+// Типографская выгрузка (ТЗ экспорта 20.06.2026): zip из файлов по книгам
+// (000 общая / 00X личные) под профиль типографии заказа (формат, приём
+// разворотами/постранично). Отдельно от handleExportPdf (тот остаётся для
+// цельного PDF/превью). JPG-вывод по профилю — отдельный заход.
+// ============================================================
+async function handleExportTypography(
+  req: NextRequest,
+  auth: AuthContext,
+): Promise<NextResponse> {
+  // Потолок синхронного рендера (ТЗ): альбомы крупнее остаются на фоновую
+  // очередь YC — здесь честное сообщение вместо зависания по таймауту.
+  const MAX_SPREADS = 50
+
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
+  }
+  if (typeof body !== 'object' || body === null) {
+    return NextResponse.json({ error: 'body must be object' }, { status: 400 })
+  }
+  const albumId = (body as Record<string, unknown>).album_id
+  if (typeof albumId !== 'string' || !UUID_REGEX.test(albumId)) {
+    return NextResponse.json({ error: 'album_id (uuid) required' }, { status: 400 })
+  }
+
+  // view_as + доступ (как в handleExportPdf).
+  const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+  const { data: currentTenantData } = viewAsTenantId
+    ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+    : { data: null }
+  const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
+  const tid = canViewAs && viewAsTenantId ? viewAsTenantId : auth.tenantId
+  if (!(await assertAlbumAccessLocal(auth, albumId, tid))) {
+    return NextResponse.json({ error: 'access denied' }, { status: 403 })
+  }
+
+  // 1. Альбом + привязка к типографии (printer/format/sheet).
+  const { data: album, error: albumErr } = await supabaseAdmin
+    .from('albums')
+    .select(
+      'id, title, tenant_id, print_type, section_structure_preset_id, config_preset_id, printer_id, format_id, sheet_type_id',
+    )
+    .eq('id', albumId)
+    .single()
+  if (albumErr || !album) {
+    return NextResponse.json({ error: 'album not found' }, { status: 404 })
+  }
+
+  // 2. Профиль типографии (printers.config) → формат + приём файлов.
+  let printerConfig: PrinterConfig | null = null
+  if (album.printer_id) {
+    const { data: printer } = await supabaseAdmin
+      .from('printers')
+      .select('config')
+      .eq('id', album.printer_id)
+      .maybeSingle()
+    printerConfig = (printer?.config ?? null) as PrinterConfig | null
+  }
+  const targetFormat = resolveFormat(printerConfig, album.format_id as string | null)
+  const acceptMode: AcceptMode = printerConfig?.accept_mode ?? 'spread'
+
+  // 3. Сохранённая вёрстка.
+  const { data: layoutRow, error: layoutErr } = await supabaseAdmin
+    .from('album_layouts')
+    .select('id, spreads, has_user_edits, template_set_id')
+    .eq('album_id', albumId)
+    .maybeSingle()
+  if (layoutErr) {
+    return NextResponse.json(
+      { error: `layout load failed: ${layoutErr.message}` },
+      { status: 500 },
+    )
+  }
+  if (!layoutRow) {
+    return NextResponse.json(
+      {
+        error:
+          'Вёрстка альбома не собрана. Сначала нажмите «Собрать автоматически» в Обзоре альбома.',
+      },
+      { status: 404 },
+    )
+  }
+  const spreads = (layoutRow.spreads ?? []) as Array<Record<string, unknown>>
+  if (spreads.length === 0) {
+    return NextResponse.json({ error: 'Вёрстка пустая. Пересоберите её.' }, { status: 400 })
+  }
+
+  // 4. template_set (тот же, на котором собрана вёрстка) — нужен и для лимита,
+  // и для рендера.
+  const layoutTemplateSetId =
+    typeof layoutRow.template_set_id === 'string' && layoutRow.template_set_id.length > 0
+      ? layoutRow.template_set_id
+      : null
+  let templateSet: TemplateSet
+  try {
+    templateSet = layoutTemplateSetId
+      ? await loadTemplateSetById(supabaseAdmin, layoutTemplateSetId)
+      : await loadTemplateSet(supabaseAdmin)
+  } catch (e) {
+    return NextResponse.json(
+      { error: `template_set load failed: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  // 5. Тип переплёта (softShift) — тот же резолв, что у редактора/PDF.
+  const effectivePrintType = await resolveAlbumEffectivePrintType(
+    supabaseAdmin,
+    album as {
+      print_type?: string | null
+      section_structure_preset_id?: string | null
+      config_preset_id?: string | null
+    },
+  )
+
+  // 6. Лимит: считаем визуальные развороты ДО рендера — честное сообщение.
+  const templateById = new Map(templateSet.spreads.map((t) => [t.id, t]))
+  const preflightPlan = planTypographyExport(
+    spreads as unknown as AlbumExportInput['layout']['spreads'],
+    templateById,
+    { acceptMode, softShift: effectivePrintType === 'soft' },
+  )
+  if (preflightPlan.total_spreads > MAX_SPREADS) {
+    return NextResponse.json(
+      {
+        error:
+          `Альбом большой (${preflightPlan.total_spreads} разворотов, лимит ${MAX_SPREADS}). ` +
+          'Такой объём пока не выгружается в один заход — это делается фоновой очередью ' +
+          '(в работе вместе с переездом на свои серверы). Напишите в поддержку.',
+        code: 'too_many_spreads',
+      },
+      { status: 400 },
+    )
+  }
+
+  // 7. Сборка входа экспорта (smart-fill + originals + urlToFilename + фоны) —
+  // те же источники, что у handleExportPdf.
+  let smartFillResult: { input: AlbumInput; warnings: SmartFillWarning[] }
+  try {
+    smartFillResult = await buildAlbumInput(supabaseAdmin, albumId)
+  } catch (e) {
+    return NextResponse.json(
+      { error: `smart-fill failed: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  const { data: legacyOriginalsData } = await supabaseAdmin
+    .from('original_photos')
+    .select('id, filename, storage_path')
+    .eq('album_id', albumId)
+  const legacyOriginals: OriginalPhoto[] = (legacyOriginalsData ?? []).map((row) => ({
+    id: String(row.id),
+    filename: String(row.filename),
+    storage_path: String(row.storage_path),
+  }))
+
+  const { data: photosData } = await supabaseAdmin
+    .from('photos')
+    .select('id, filename, storage_path, original_path')
+    .eq('album_id', albumId)
+  const urlToFilename: Record<string, string> = {}
+  const inlineOriginals: OriginalPhoto[] = []
+  for (const p of photosData ?? []) {
+    const row = p as Record<string, unknown>
+    const storagePath = String(row.storage_path)
+    const filename = String(row.filename)
+    urlToFilename[stripYcPrefix(storagePath)] = filename
+    const originalPath = row.original_path
+    if (typeof originalPath === 'string' && originalPath.length > 0) {
+      inlineOriginals.push({
+        id: String(row.id),
+        filename,
+        storage_path: originalPath.startsWith('yc:') ? originalPath.slice(3) : originalPath,
+      })
+    }
+  }
+  const originals: OriginalPhoto[] = [...inlineOriginals, ...legacyOriginals]
+
+  const { data: bgPool } = await supabaseAdmin
+    .from('template_set_backgrounds')
+    .select('category, url, sort_order')
+    .eq('template_set_id', templateSet.id)
+    .order('category', { ascending: true })
+    .order('sort_order', { ascending: true })
+
+  // Синтетический профиль рендера: типография = 300 dpi, с вылетами, оригиналы.
+  const typographyProfile: ExportProfile = {
+    id: 'typography',
+    tenant_id: null,
+    slug: 'typography',
+    name: 'Типография',
+    is_default: false,
+    purpose: 'typography',
+    format: 'pdf',
+    quality: 'high',
+    include_bleed: true,
+    color_mode: 'rgb',
+    dpi: 300,
+    jpeg_quality: 92,
+    filename_template: '',
+    pages_mode: 'all_common',
+    target_size_mb: null,
+    enabled: true,
+    spread_export: false,
+  }
+
+  const exportInput: AlbumExportInput = {
+    album: {
+      id: String(album.id),
+      name: String(album.title),
+      tenant_id: String(album.tenant_id),
+    },
+    layout: {
+      spreads: spreads as unknown as AlbumExportInput['layout']['spreads'],
+      has_user_edits: Boolean(layoutRow.has_user_edits),
+    },
+    templateSet,
+    albumInput: smartFillResult.input,
+    originals,
+    urlToFilename,
+    profile: typographyProfile,
+    backgrounds: bgPool ?? [],
+    effectivePrintType,
+  }
+
+  // 8. Рендер файлов под формат + приём.
+  let result: Awaited<ReturnType<typeof exportAlbumTypography>>
+  try {
+    result = await exportAlbumTypography(exportInput, { acceptMode, targetFormat })
+  } catch (e) {
+    return NextResponse.json(
+      { error: `typography render failed: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  if (result.files.length === 0) {
+    return NextResponse.json(
+      { error: 'Не получилось ни одного файла (проверьте вёрстку и мастера).' },
+      { status: 500 },
+    )
+  }
+
+  // 9. ZIP всех файлов с правильными именами.
+  const zip = new JSZip()
+  for (const f of result.files) {
+    zip.file(`${f.name}.${f.ext}`, Buffer.from(f.bytes))
+  }
+  const zipBuffer = await zip.generateAsync({
+    type: 'nodebuffer',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 1 },
+  })
+
+  // 10. Upload в YC + signed url.
+  const now = new Date()
+  const ts = Math.floor(now.getTime() / 1000)
+  const storagePath = `${albumId}/exports/${ts}_typography.zip`
+  try {
+    await ycUpload(storagePath, zipBuffer, 'application/zip')
+  } catch (e) {
+    return NextResponse.json(
+      { error: `yc upload failed: ${(e as Error).message}` },
+      { status: 500 },
+    )
+  }
+
+  await logAction(auth, 'album_export.typography', 'album', albumId, {
+    files: result.files.length,
+    total_spreads: result.totalSpreads,
+    accept_mode: acceptMode,
+    has_personal: result.hasPersonal,
+    adapt_status: result.adaptStatus,
+    warnings_count: result.warnings.length,
+  })
+
+  const safeTitle = slugifyForFilename(String(album.title))
+  return NextResponse.json({
+    download_url: await getPhotoSignedUrl(storagePath),
+    filename: `${safeTitle || 'album'}_типография.zip`,
+    file_count: result.files.length,
+    total_spreads: result.totalSpreads,
+    has_personal: result.hasPersonal,
+    accept_mode: acceptMode,
+    adapt_status: result.adaptStatus,
+    adapt_warning: result.adaptWarning,
+    warnings: result.warnings,
   })
 }
