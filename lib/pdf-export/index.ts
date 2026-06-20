@@ -20,7 +20,10 @@
 
 import { PDFDocument } from 'pdf-lib';
 import { loadFonts } from './font-loader';
-import { renderAllSpreads } from './pipeline';
+import { renderAllSpreads, renderTypographyUnits } from './pipeline';
+import { adaptTemplateSetToFormat } from '@/lib/export-typography/adapt';
+import type { AcceptMode } from '@/lib/export-typography/plan';
+import type { PrinterFormat } from '@/lib/printers/types';
 import type {
   AlbumExportInput,
   ExportResult,
@@ -101,5 +104,86 @@ export async function exportAlbumPdf(
     pdfBytes,
     pageCount: renderResult.pageCount,
     warnings,
+  };
+}
+
+// ─── Типографская выгрузка (ТЗ экспорта 20.06.2026) ──────────────────────────
+
+/** Один готовый файл выгрузки (одностраничный PDF под именем КНИГА-НОМЕР). */
+export type TypographyExportFile = {
+  /** Имя без расширения, напр. "000-01". */
+  name: string;
+  ext: 'pdf';
+  bytes: Uint8Array;
+  book_id: string;
+};
+
+export type TypographyExportResult = {
+  files: TypographyExportFile[];
+  warnings: PdfWarning[];
+  /** Суммарно визуальных разворотов (для лимита/диагностики). */
+  totalSpreads: number;
+  hasPersonal: boolean;
+  /** Статус адаптации под формат заказа. */
+  adaptStatus: 'native' | 'adapted' | 'incompatible';
+  adaptWarning?: string;
+};
+
+/**
+ * Главный entry point типографской выгрузки.
+ *
+ *  1. Адаптирует набор под формат заказа (uniform-масштаб; native если формат
+ *     не выбран; incompatible-семейство → как есть + warning).
+ *  2. Рендерит все файлы (по книгам 000/00X; разворотами/постранично) в один
+ *     PDFDocument — по странице на файл.
+ *  3. Режет на одностраничные PDF под именами КНИГА-НОМЕР.
+ *
+ * Возвращает массив именованных файлов — endpoint пакует их в zip и
+ * выкладывает в хранилище. JPG-вывод (по профилю) — отдельный заход.
+ */
+export async function exportAlbumTypography(
+  input: AlbumExportInput,
+  opts: { acceptMode: AcceptMode; targetFormat: PrinterFormat | null },
+): Promise<TypographyExportResult> {
+  const warnings: PdfWarning[] = [];
+
+  // 1. Адаптация набора под формат заказа.
+  const adapt = adaptTemplateSetToFormat(input.templateSet, opts.targetFormat);
+  const adaptedInput: AlbumExportInput = { ...input, templateSet: adapt.templateSet };
+
+  // 2. Документ + шрифты.
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.setTitle(input.album.name);
+  pdfDoc.setCreator('OkeyBook');
+  pdfDoc.setProducer('OkeyBook Typography Export (pdf-lib)');
+  pdfDoc.setCreationDate(new Date());
+  const fontRegistry = await loadFonts(pdfDoc);
+
+  // 3. Рендер юнитов (по странице на файл, в порядке книг/файлов).
+  const rendered = await renderTypographyUnits(
+    pdfDoc,
+    fontRegistry,
+    adaptedInput,
+    opts.acceptMode,
+  );
+  warnings.push(...fontRegistry.warnings, ...rendered.warnings);
+
+  // 4. Режем общий документ на одностраничные PDF по именам файлов.
+  const files: TypographyExportFile[] = [];
+  for (const rf of rendered.files) {
+    const single = await PDFDocument.create();
+    const [pg] = await single.copyPages(pdfDoc, [rf.page_index]);
+    single.addPage(pg);
+    const bytes = await single.save();
+    files.push({ name: rf.file_name, ext: 'pdf', bytes, book_id: rf.book_id });
+  }
+
+  return {
+    files,
+    warnings,
+    totalSpreads: rendered.plan.total_spreads,
+    hasPersonal: rendered.plan.has_personal,
+    adaptStatus: adapt.status,
+    adaptWarning: adapt.warning,
   };
 }

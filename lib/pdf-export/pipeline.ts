@@ -50,6 +50,12 @@ import {
   resolveBackgrounds,
   type SpreadBackgroundInput,
 } from '@/lib/backgrounds/resolve-background';
+import {
+  planTypographyExport,
+  type AcceptMode,
+  type ExportUnit,
+  type TypographyExportPlan,
+} from '@/lib/export-typography/plan';
 import type {
   AlbumExportInput,
   PageBoxes,
@@ -122,6 +128,50 @@ export async function renderAllSpreads(
   fontRegistry: FontRegistry,
   input: AlbumExportInput
 ): Promise<{ pageCount: number; warnings: PdfWarning[] }> {
+  const { ctx, templateById } = await buildRenderContext(pdfDoc, fontRegistry, input);
+  const { layout } = input;
+  const warnings = ctx.warnings;
+
+  // ── Параллельная предзагрузка фото ──────────────────────────────────────
+  //
+  // Раньше каждое фото грузилось последовательно внутри рендера (узкое место —
+  // сетевой fetch, не sharp), из-за чего большие альбомы падали по таймауту.
+  // Здесь собираем ВСЕ URL фото альбома и грузим их пулом (~8 одновременно) в
+  // photoCtx.sourceCache ДО цикла. Сам рендер остаётся последовательным (RAM),
+  // но теперь каждое фото уже в кэше — сеть не блокирует. Логика выбора
+  // источника (оригинал/selection) и ресэмплинг не меняются → вид PDF тот же.
+  const photoUrls = collectPhotoUrlsFromSpreads(layout.spreads);
+  await prefetchPhotoSources(ctx.photoCtx, photoUrls, 8);
+
+  let pageCount = 0;
+
+  for (const instance of layout.spreads) {
+    const template = templateById.get(instance.template_id);
+    if (!template) {
+      warnings.push({
+        code: 'template_not_found',
+        detail: `template_id=${instance.template_id} (${instance.template_name}) для spread_index=${instance.spread_index} не найден в template_set; разворот пропущен`,
+        context: { spread_index: instance.spread_index },
+      });
+      continue;
+    }
+    pageCount += await renderSpread(ctx, instance, template);
+  }
+
+  return { pageCount, warnings };
+}
+
+/**
+ * Строит общий RenderContext (pageBoxes, photoCtx с кэшем, карты фонов и сторон,
+ * индекс мастеров). Вынесено из renderAllSpreads, чтобы типографский рендер
+ * (renderTypographyUnits) переиспользовал ровно ту же подготовку — те же фоны,
+ * стороны и зеркало page-any, что и обычный экспорт/превью.
+ */
+async function buildRenderContext(
+  pdfDoc: PDFDocument,
+  fontRegistry: FontRegistry,
+  input: AlbumExportInput,
+): Promise<{ ctx: RenderContext; templateById: Map<string, SpreadTemplate> }> {
   const { layout, templateSet, profile } = input;
   const warnings: PdfWarning[] = [];
 
@@ -239,33 +289,247 @@ export async function renderAllSpreads(
     spineMarginMm: templateSet.spine_margin_mm ?? null,
   };
 
-  // ── Параллельная предзагрузка фото ──────────────────────────────────────
-  //
-  // Раньше каждое фото грузилось последовательно внутри рендера (узкое место —
-  // сетевой fetch, не sharp), из-за чего большие альбомы падали по таймауту.
-  // Здесь собираем ВСЕ URL фото альбома и грузим их пулом (~8 одновременно) в
-  // photoCtx.sourceCache ДО цикла. Сам рендер остаётся последовательным (RAM),
-  // но теперь каждое фото уже в кэше — сеть не блокирует. Логика выбора
-  // источника (оригинал/selection) и ресэмплинг не меняются → вид PDF тот же.
-  const photoUrls = collectPhotoUrlsFromSpreads(layout.spreads);
-  await prefetchPhotoSources(photoCtx, photoUrls, 8);
+  return { ctx, templateById };
+}
 
-  let pageCount = 0;
+// ─── Типографская выгрузка (ТЗ экспорта 20.06.2026) ──────────────────────────
+//
+// Рендерит сохранённую вёрстку в ОТДЕЛЬНЫЕ файлы под профиль типографии:
+// нарезка по книгам (000/00X), приём разворотами/постранично, имена
+// КНИГА-НОМЕР. Каждый ExportUnit добавляет РОВНО ОДНУ страницу в pdfDoc
+// (постранично — обычная страница / половина is_spread-мастера; разворотами —
+// широкая страница с двумя сторонами). Дальше endpoint режет pdfDoc на
+// одностраничные файлы по этим именам и пакует в zip.
+//
+// Формат заказа применяется на уровне набора (adaptTemplateSetToFormat) ДО
+// вызова — здесь input.templateSet уже в размерах формата, рендер не меняется.
 
-  for (const instance of layout.spreads) {
-    const template = templateById.get(instance.template_id);
-    if (!template) {
-      warnings.push({
-        code: 'template_not_found',
-        detail: `template_id=${instance.template_id} (${instance.template_name}) для spread_index=${instance.spread_index} не найден в template_set; разворот пропущен`,
-        context: { spread_index: instance.spread_index },
+export type TypographyRenderedFile = {
+  /** Имя файла без расширения, напр. "000-01". */
+  file_name: string;
+  book_id: string;
+  /** Индекс соответствующей страницы в pdfDoc. */
+  page_index: number;
+};
+
+/** Группа «мастер + его данные» для отрисовки одной стороны разворота. */
+type RenderGroup = { instance: SpreadInstance; template: SpreadTemplate };
+
+export async function renderTypographyUnits(
+  pdfDoc: PDFDocument,
+  fontRegistry: FontRegistry,
+  input: AlbumExportInput,
+  acceptMode: AcceptMode,
+): Promise<{
+  files: TypographyRenderedFile[];
+  warnings: PdfWarning[];
+  plan: TypographyExportPlan;
+}> {
+  const { ctx, templateById } = await buildRenderContext(pdfDoc, fontRegistry, input);
+  const warnings = ctx.warnings;
+
+  // Та же параллельная предзагрузка фото, что и в обычном экспорте.
+  const photoUrls = collectPhotoUrlsFromSpreads(input.layout.spreads);
+  await prefetchPhotoSources(ctx.photoCtx, photoUrls, 8);
+
+  const plan = planTypographyExport(input.layout.spreads, templateById, {
+    acceptMode,
+    softShift: input.effectivePrintType === 'soft',
+  });
+
+  const files: TypographyRenderedFile[] = [];
+  for (const book of plan.books) {
+    for (const unit of book.units) {
+      const pageIndexBefore = pdfDoc.getPageCount();
+      const added = await renderTypographyUnit(ctx, templateById, unit);
+      if (!added) continue; // мастер не найден — страница не добавлена, файл пропускаем
+      files.push({
+        file_name: unit.file_name,
+        book_id: book.book_id,
+        page_index: pageIndexBefore,
       });
-      continue;
     }
-    pageCount += await renderSpread(ctx, instance, template);
   }
 
-  return { pageCount, warnings };
+  return { files, warnings, plan };
+}
+
+/**
+ * Рендерит один ExportUnit как РОВНО одну страницу. Возвращает false, если
+ * мастер не найден (страница не добавлена — warning уже записан).
+ */
+async function renderTypographyUnit(
+  ctx: RenderContext,
+  templateById: Map<string, SpreadTemplate>,
+  unit: ExportUnit,
+): Promise<boolean> {
+  const left = unit.left;
+  if (!left) return false;
+  const leftTpl = templateById.get(left.template_id);
+  if (!leftTpl) {
+    ctx.warnings.push({
+      code: 'template_not_found',
+      detail: `template_id=${left.template_id} (${left.template_name}) для файла ${unit.file_name} не найден; файл пропущен`,
+      context: { spread_index: left.spread_index },
+    });
+    return false;
+  }
+
+  if (unit.mode === 'page') {
+    if (unit.is_spread_master && unit.spread_half) {
+      // Половина широкого мастера на отдельной странице (постранично).
+      await renderSpreadHalfPage(ctx, left, leftTpl, unit.spread_half);
+    } else {
+      await renderPage(
+        ctx,
+        left,
+        leftTpl,
+        resolveEffectivePlaceholders(ctx, left, leftTpl),
+        'single',
+      );
+    }
+    return true;
+  }
+
+  // mode === 'spread' (разворотами).
+  if (unit.is_spread_master) {
+    // Широкий мастер целиком — одна широкая страница (готовый spread-режим).
+    await renderPage(
+      ctx,
+      left,
+      leftTpl,
+      resolveEffectivePlaceholders(ctx, left, leftTpl),
+      'spread',
+    );
+    return true;
+  }
+
+  // Обычная пара (два разных мастера) или висящая страница → широкий холст с
+  // двумя сторонами и вылетами ТОЛЬКО по внешним краям.
+  const right = unit.right;
+  let rightGroup: RenderGroup | undefined;
+  if (right) {
+    const rightTpl = templateById.get(right.template_id);
+    if (rightTpl) {
+      rightGroup = { instance: right, template: rightTpl };
+    } else {
+      ctx.warnings.push({
+        code: 'template_not_found',
+        detail: `template_id=${right.template_id} (${right.template_name}) для правой стороны ${unit.file_name} не найден; сторона пропущена`,
+        context: { spread_index: right.spread_index },
+      });
+    }
+  }
+  await renderCombinedWidePage(ctx, { instance: left, template: leftTpl }, rightGroup);
+  return true;
+}
+
+/**
+ * Постранично: рендерит ОДНУ половину (left/right) широкого is_spread-мастера
+ * как обычную страницу. Та же логика деления по середине, что у renderSpread
+ * в pages-режиме, но рендерит ровно одну из половин.
+ */
+async function renderSpreadHalfPage(
+  ctx: RenderContext,
+  instance: SpreadInstance,
+  template: SpreadTemplate,
+  half: 'left' | 'right',
+): Promise<void> {
+  const eff = resolveEffectivePlaceholders(ctx, instance, template);
+  const page_w_mm = ctx.pageBoxes.trim_width_mm;
+  const placeholders: Placeholder[] =
+    half === 'left'
+      ? eff.filter((ph) => ph.x_mm < page_w_mm)
+      : eff
+          .filter((ph) => ph.x_mm >= page_w_mm)
+          .map((ph) => ({ ...ph, x_mm: ph.x_mm - page_w_mm }) as Placeholder);
+  await renderPage(ctx, instance, template, placeholders, half);
+}
+
+/**
+ * Разворотами: рендерит широкую страницу (2 страницы по ширине) с двумя
+ * сторонами от РАЗНЫХ мастеров. Вылеты — только по внешним краям (по центру,
+ * в корешке, лишних вылетов нет — это и есть правильный разворотный файл).
+ *
+ * Фон берём у левой страницы (у визуального разворота источник один) и рисуем
+ * как 'spread'. Плейсхолдеры правой стороны сдвигаются на ширину страницы.
+ * Зеркало page-any у каждой стороны уже учтено (resolveEffectivePlaceholders
+ * берёт сторону из sideByIndex).
+ */
+async function renderCombinedWidePage(
+  ctx: RenderContext,
+  left: RenderGroup,
+  right: RenderGroup | undefined,
+): Promise<void> {
+  const { pdfDoc, pageBoxes } = ctx;
+  const page_w_mm = pageBoxes.trim_width_mm;
+  const trim_w_mm = page_w_mm * 2;
+  const trim_h_mm = pageBoxes.trim_height_mm;
+  const media_w_mm = trim_w_mm + pageBoxes.bleed_mm * 2;
+  const media_h_mm = pageBoxes.media_height_mm;
+
+  const page = pdfDoc.addPage([mmToPt(media_w_mm), mmToPt(media_h_mm)]);
+  if (pageBoxes.bleed_mm > 0) {
+    page.setTrimBox(
+      mmToPt(pageBoxes.bleed_mm),
+      mmToPt(pageBoxes.bleed_mm),
+      mmToPt(trim_w_mm),
+      mmToPt(trim_h_mm),
+    );
+    page.setBleedBox(0, 0, mmToPt(media_w_mm), mmToPt(media_h_mm));
+  }
+
+  // Фон разворота (целая версия) — первый слой.
+  const bg = ctx.bgByPageIndex.get(left.instance.spread_index) ?? null;
+  if (bg) drawBackground(page, bg, pageBoxes, trim_w_mm, 'spread');
+
+  // localCtx с расширенной шириной — чтобы placeholderToPdfBox/проверки границ
+  // работали на широкий холст (как в renderPage spread-режиме).
+  const localPageBoxes = {
+    ...pageBoxes,
+    trim_width_mm: trim_w_mm,
+    media_width_mm: media_w_mm,
+  };
+  const localCtx: RenderContext = {
+    ...ctx,
+    pageBoxes: localPageBoxes,
+    photoCtx: { ...ctx.photoCtx, pageBoxes: localPageBoxes },
+  };
+
+  for (const ph of resolveEffectivePlaceholders(ctx, left.instance, left.template)) {
+    await drawPlaceholder(localCtx, page, ph, left.instance, 'left');
+  }
+  if (right) {
+    const rightPh = resolveEffectivePlaceholders(ctx, right.instance, right.template).map(
+      (ph) => ({ ...ph, x_mm: ph.x_mm + page_w_mm }) as Placeholder,
+    );
+    for (const ph of rightPh) {
+      await drawPlaceholder(localCtx, page, ph, right.instance, 'right');
+    }
+  }
+}
+
+/**
+ * Разрешает финальные плейсхолдеры страницы: балансировка (hidden/pos) →
+ * z-порядок декора → авто-зеркало page-any по стороне (из sideByIndex). Та же
+ * цепочка, что в канвасе/превью, — гарантирует совпадение PDF ↔ редактор.
+ * Вынесено из renderSpread, чтобы типографский рендер использовал ту же логику.
+ */
+function resolveEffectivePlaceholders(
+  ctx: RenderContext,
+  instance: SpreadInstance,
+  template: SpreadTemplate,
+): Placeholder[] {
+  const side = ctx.sideByIndex.get(instance.spread_index) ?? 'single';
+  return resolvePlaceholdersForSide(
+    orderPlaceholdersForRender(
+      applyBalanceFromData(template.placeholders, instance.data) as RenderPlaceholder[],
+    ),
+    side,
+    template.page_type,
+    template.width_mm,
+    ctx.spineMarginMm,
+  ) as Placeholder[];
 }
 
 /**
@@ -297,16 +561,7 @@ async function renderSpread(
   // Сторона берётся из того же sideByIndex (segmentToSpreads), что и фоны, —
   // редактор и PDF видят одно и то же. pageWidthMm = template.width_mm (то же
   // координатное пространство, что у плейсхолдеров мастера).
-  const side = ctx.sideByIndex.get(instance.spread_index) ?? 'single';
-  const effectivePlaceholders = resolvePlaceholdersForSide(
-    orderPlaceholdersForRender(
-      applyBalanceFromData(template.placeholders, instance.data) as RenderPlaceholder[],
-    ),
-    side,
-    template.page_type,
-    template.width_mm,
-    ctx.spineMarginMm,
-  ) as Placeholder[];
+  const effectivePlaceholders = resolveEffectivePlaceholders(ctx, instance, template);
 
   if (!template.is_spread) {
     await renderPage(ctx, instance, template, effectivePlaceholders, 'single');
