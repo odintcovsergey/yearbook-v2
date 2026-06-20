@@ -111,6 +111,24 @@ export async function exportAlbumPdf(
 
 // ─── Типографская выгрузка (ТЗ экспорта 20.06.2026) ──────────────────────────
 
+/** Пул воркеров с ограничением одновременности (для растеризации). */
+async function runPool(
+  tasks: ReadonlyArray<() => Promise<unknown>>,
+  limit: number,
+): Promise<void> {
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(Math.max(1, limit), tasks.length) },
+    async () => {
+      while (next < tasks.length) {
+        const idx = next++;
+        await tasks[idx]();
+      }
+    },
+  );
+  await Promise.all(workers);
+}
+
 /** Один готовый файл выгрузки (PDF или JPEG под именем КНИГА-НОМЕР). */
 export type TypographyExportFile = {
   /** Имя без расширения, напр. "000-01". */
@@ -186,33 +204,37 @@ export async function exportAlbumTypography(
   warnings.push(...fontRegistry.warnings, ...rendered.warnings);
 
   // 4. Режем общий документ на одностраничные PDF по именам файлов.
-  // При fileFormat='jpeg' каждую страницу растеризуем (тот же рендер → картинка,
-  // совпадает 1:1 с PDF). При ошибке растеризации — мягкий fallback на PDF.
+  // Нарезка (copyPages) — последовательно (быстро). При fileFormat='jpeg'
+  // растеризация (тяжёлая, независимая по файлам) идёт ПАРАЛЛЕЛЬНО пулом.
+  // При ошибке растеризации — мягкий fallback на PDF этого файла.
   const wantJpeg = opts.fileFormat === 'jpeg';
   const dpi = opts.dpi ?? 300;
   const jpegQuality = opts.jpegQuality ?? 92;
-  const files: TypographyExportFile[] = [];
+
+  const singlePdfs: Array<{ rf: (typeof rendered.files)[number]; pdfBytes: Uint8Array }> = [];
   for (const rf of rendered.files) {
     const single = await PDFDocument.create();
     const [pg] = await single.copyPages(pdfDoc, [rf.page_index]);
     single.addPage(pg);
-    const pdfBytes = await single.save();
+    singlePdfs.push({ rf, pdfBytes: await single.save() });
+  }
 
-    if (wantJpeg) {
-      const jpg = await rasterizePdfToJpegSafe(
-        pdfBytes,
-        dpi,
-        jpegQuality,
-        rf.file_name,
-        warnings,
-      );
-      if (jpg) {
-        files.push({ name: rf.file_name, ext: 'jpg', bytes: jpg, book_id: rf.book_id });
-        continue;
-      }
-      // fallback: оставляем PDF этого файла (warning уже записан).
-    }
-    files.push({ name: rf.file_name, ext: 'pdf', bytes: pdfBytes, book_id: rf.book_id });
+  const files: TypographyExportFile[] = new Array(singlePdfs.length);
+  if (wantJpeg) {
+    // Растеризуем параллельно (пул ~4 — баланс скорости и памяти на 300dpi).
+    await runPool(
+      singlePdfs.map(({ rf, pdfBytes }, i) => async () => {
+        const jpg = await rasterizePdfToJpegSafe(pdfBytes, dpi, jpegQuality, rf.file_name, warnings);
+        files[i] = jpg
+          ? { name: rf.file_name, ext: 'jpg', bytes: jpg, book_id: rf.book_id }
+          : { name: rf.file_name, ext: 'pdf', bytes: pdfBytes, book_id: rf.book_id };
+      }),
+      4,
+    );
+  } else {
+    singlePdfs.forEach(({ rf, pdfBytes }, i) => {
+      files[i] = { name: rf.file_name, ext: 'pdf', bytes: pdfBytes, book_id: rf.book_id };
+    });
   }
 
   return {

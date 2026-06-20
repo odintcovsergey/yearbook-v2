@@ -38,7 +38,9 @@ import {
   embedPhotoOnPage,
   collectPhotoUrlsFromSpreads,
   prefetchPhotoSources,
+  prefetchResampledPhotos,
   type PhotoEmbedContext,
+  type ResampleRequest,
 } from './photo-embed';
 import { drawTextShaped } from './text-shaping';
 import { parseScale, parseOffset, parseRotate } from '@/lib/photo-transform';
@@ -143,6 +145,12 @@ export async function renderAllSpreads(
   // источника (оригинал/selection) и ресэмплинг не меняются → вид PDF тот же.
   const photoUrls = collectPhotoUrlsFromSpreads(layout.spreads);
   await prefetchPhotoSources(ctx.photoCtx, photoUrls, 8);
+  // Параллельный ресэмпл всех фото в кэш — главный ускоритель (sharp по ядрам).
+  await prefetchResampledPhotos(
+    ctx.photoCtx,
+    collectResampleRequests(ctx, templateById, layout.spreads),
+    4,
+  );
 
   let pageCount = 0;
 
@@ -195,6 +203,8 @@ async function buildRenderContext(
     // Кэш сетевых загрузок исходников на время экспорта (дедуп + база под
     // параллельный префетч ниже).
     sourceCache: new Map(),
+    // Кэш готовых ресэмплов (параллельный sharp до рендера).
+    resampledCache: new Map(),
   };
 
   // Индекс мастеров для O(1) lookup'а (вместо .find() на каждый разворот).
@@ -333,6 +343,15 @@ export async function renderTypographyUnits(
   // Та же параллельная предзагрузка фото, что и в обычном экспорте.
   const photoUrls = collectPhotoUrlsFromSpreads(input.layout.spreads);
   await prefetchPhotoSources(ctx.photoCtx, photoUrls, 8);
+  // Параллельный ресэмпл фото (внутренних + обложек) в кэш — основной ускоритель.
+  await prefetchResampledPhotos(
+    ctx.photoCtx,
+    [
+      ...collectResampleRequests(ctx, templateById, input.layout.spreads),
+      ...collectCoverResampleRequests(coverUnits),
+    ],
+    4,
+  );
 
   const plan = planTypographyExport(input.layout.spreads, templateById, {
     acceptMode,
@@ -612,6 +631,61 @@ function resolveEffectivePlaceholders(
     template.width_mm,
     ctx.spineMarginMm,
   ) as Placeholder[];
+}
+
+/**
+ * Собирает запросы на ресэмпл всех фото развёрстки (для параллельного префетча).
+ * Резолвит плейсхолдеры так же, как рендер, и для каждого photo-плейсхолдера с
+ * URL извлекает трансформ из служебных ключей data. is_spread-мастер отдаёт оба
+ * полукадра — оба нужны (постранично) либо склейка (разворотами).
+ */
+function collectResampleRequests(
+  ctx: RenderContext,
+  templateById: Map<string, SpreadTemplate>,
+  spreads: SpreadInstance[],
+): ResampleRequest[] {
+  const reqs: ResampleRequest[] = [];
+  for (const instance of spreads) {
+    const tpl = templateById.get(instance.template_id);
+    if (!tpl) continue;
+    for (const ph of resolveEffectivePlaceholders(ctx, instance, tpl)) {
+      if (ph.type !== 'photo') continue;
+      const url = instance.data[ph.label];
+      if (!url) continue;
+      const [offsetX, offsetY] = parseOffset(instance.data[`__offset__${ph.label}`]);
+      reqs.push({
+        photoUrl: url,
+        ph: ph as PhotoPlaceholder,
+        scale: parseScale(instance.data[`__scale__${ph.label}`]),
+        offsetX,
+        offsetY,
+        rotateDeg: parseRotate(instance.data[`__rotate__${ph.label}`]),
+      });
+    }
+  }
+  return reqs;
+}
+
+/** Запросы ресэмпла фото обложек (плейсхолдеры обложки + её data). */
+function collectCoverResampleRequests(coverUnits: CoverRenderUnit[]): ResampleRequest[] {
+  const reqs: ResampleRequest[] = [];
+  for (const cover of coverUnits) {
+    for (const ph of cover.placeholders) {
+      if (ph.type !== 'photo') continue;
+      const url = cover.data[ph.label];
+      if (!url) continue;
+      const [offsetX, offsetY] = parseOffset(cover.data[`__offset__${ph.label}`]);
+      reqs.push({
+        photoUrl: url,
+        ph: ph as PhotoPlaceholder,
+        scale: parseScale(cover.data[`__scale__${ph.label}`]),
+        offsetX,
+        offsetY,
+        rotateDeg: parseRotate(cover.data[`__rotate__${ph.label}`]),
+      });
+    }
+  }
+  return reqs;
 }
 
 /**

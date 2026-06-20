@@ -77,6 +77,39 @@ export type PhotoEmbedContext = {
    * идёт без кэша (старое поведение). См. prefetchPhotoSources.
    */
   sourceCache?: Map<string, Promise<Buffer | null>>;
+  /**
+   * Кэш ГОТОВЫХ ресэмплов (JPEG-буфер под целевой размер+трансформ). Заполняется
+   * параллельным префетчем (prefetchResampledPhotos) ДО последовательного
+   * рендера, чтобы тяжёлый sharp-ресэмплинг шёл на нескольких ядрах, а рендер
+   * только встраивал готовые буферы. Ключ — resampleKey. Опционально.
+   */
+  resampledCache?: Map<string, Buffer>;
+};
+
+/**
+ * Ключ кэша ресэмпла: url + целевой размер (мм×dpi) + трансформ. Позиция и форма
+ * рамки (circle/corner/rotation_deg) на ресэмпл НЕ влияют — это draw-time.
+ */
+export function resampleKey(
+  photoUrl: string,
+  ph: PhotoPlaceholder,
+  dpi: number,
+  scale: number,
+  offsetX: number,
+  offsetY: number,
+  rotateDeg: number,
+): string {
+  return `${photoUrl}|${ph.width_mm}x${ph.height_mm}|${dpi}|${scale}|${offsetX},${offsetY}|${rotateDeg}`;
+}
+
+/** Запрос на предварительный ресэмпл одного фото. */
+export type ResampleRequest = {
+  photoUrl: string;
+  ph: PhotoPlaceholder;
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+  rotateDeg: number;
 };
 
 /**
@@ -150,192 +183,55 @@ export async function embedPhotoOnPage(
   // тонкий бордер, но в фазе 3.4 — пусто.
   if (!photoUrl) return;
 
-  const photoSource = await fetchPhotoSource(ctx, photoUrl, ph, spread_index);
-  if (!photoSource) {
-    // Все попытки упали — серый прямоугольник как visual fallback.
-    page.drawRectangle({
-      x: box.x_pt,
-      y: box.y_pt,
-      width: box.width_pt,
-      height: box.height_pt,
-      color: rgb(0.92, 0.92, 0.92),
-      rotate: degrees(ph.rotation_deg ?? 0),
-    });
-    return;
-  }
+  // Ресэмпл через кэш: если фото уже подготовлено в параллельном префетче
+  // (prefetchResampledPhotos), берём готовый JPEG-буфер и не трогаем sharp.
+  // Иначе грузим источник и ресэмплим на месте. Ключ — url+целевой размер+трансформ.
+  const key = resampleKey(photoUrl, ph, ctx.profile.dpi, scale, offsetX, offsetY, rotateDeg);
+  let resampled = ctx.resampledCache?.get(key) ?? null;
 
-  // Resample через sharp к нужному pixel-разрешению.
-  const targetW_px = mmToPixels(ph.width_mm, ctx.profile.dpi);
-  const targetH_px = mmToPixels(ph.height_mm, ctx.profile.dpi);
-
-  // КЭ.7 — определяем custom transform.
-  // hasCustom=false → используем старую fast-path sharp.resize fit:'cover'
-  //                   (regression-safe для всех существующих PDF)
-  // hasCustom=true  → вычисляем CropParams через computeCrop, применяем
-  //                   через sharp.extract + sharp.resize fit:'fill'
-  // Р.2 — отдельная ветка с поворотом, выше custom: если rotateDeg≠0,
-  //       расширяем crop до auto-zoom × и вращаем после resize.
-  const hasRotate = rotateDeg !== 0;
-  const hasCustom = scale !== 1 || offsetX !== 0 || offsetY !== 0 || hasRotate;
-
-  let resampled: Buffer;
-  try {
-    if (!hasCustom) {
-      // FAST PATH: исходное поведение для default crop. Байт-в-байт
-      // идентично PDF до КЭ — никаких сюрпризов для уже-экспортированных
-      // альбомов.
-      resampled = await sharp(photoSource.buffer)
-        .rotate() // авто-ориентация по EXIF
-        .resize(targetW_px, targetH_px, {
-          fit: 'cover',
-          position: 'centre',
-        })
-        .jpeg({
-          quality: ctx.profile.jpeg_quality,
-          mozjpeg: true,
-        })
-        .toBuffer();
-    } else if (!hasRotate) {
-      // CUSTOM PATH: применяем computeCrop для извлечения пользовательского
-      // crop, потом resize до целевого pixel-разрешения.
-      //
-      // Алгоритм:
-      //   1. sharp().rotate() — авто-ориентация по EXIF (важно! делать ДО
-      //      metadata чтобы получить ориентированные размеры)
-      //   2. metadata() — натуральные width/height после EXIF rotate
-      //   3. computeCrop(natW, natH, targetRatio, scale, offsetX, offsetY)
-      //   4. sharp().extract({ left, top, width, height }) — округление
-      //      до целых px (sharp требование). На практике незаметно при
-      //      300dpi, но фиксируем как известный compromise (см. ТЗ КЭ.4).
-      //   5. resize fit:'fill' — мы УЖЕ извлекли крошку, остаётся
-      //      просто отресемплить до targetW_px × targetH_px.
-      const rotated = sharp(photoSource.buffer).rotate();
-      const meta = await rotated.metadata();
-      const natW = meta.width ?? 0;
-      const natH = meta.height ?? 0;
-      if (natW <= 0 || natH <= 0) {
-        throw new Error(`invalid image dimensions: ${natW}x${natH}`);
-      }
-      const targetRatio = ph.width_mm / ph.height_mm;
-      const crop = computeCrop(natW, natH, targetRatio, scale, offsetX, offsetY);
-      // Округление до целых px (требование sharp.extract).
-      const extLeft = Math.max(0, Math.round(crop.cropX));
-      const extTop = Math.max(0, Math.round(crop.cropY));
-      const extW = Math.max(1, Math.round(crop.cropW));
-      const extH = Math.max(1, Math.round(crop.cropH));
-      // Защита от выхода за границы (округление вверх могло прибавить):
-      const safeW = Math.min(extW, natW - extLeft);
-      const safeH = Math.min(extH, natH - extTop);
-      resampled = await rotated
-        .extract({
-          left: extLeft,
-          top: extTop,
-          width: safeW,
-          height: safeH,
-        })
-        .resize(targetW_px, targetH_px, {
-          fit: 'fill',
-        })
-        .jpeg({
-          quality: ctx.profile.jpeg_quality,
-          mozjpeg: true,
-        })
-        .toBuffer();
-    } else {
-      // ROTATE PATH (Р.2): тот же base crop, но расширенный на auto-zoom
-      // factor вокруг центра crop'а. После поворота sharp.resize'ом
-      // 'cover' обрезаем центральную часть до targetW × targetH —
-      // background по углам не виден (auto-zoom гарантирует покрытие).
-      //
-      // Шаги:
-      //   1. EXIF-rotate + metadata (как в CUSTOM PATH)
-      //   2. computeCrop → base crop
-      //   3. authZoom = computeAutoZoomForRotation(rotateDeg, aspect)
-      //   4. enlargedCrop = base crop, расширенный в authZoom вокруг
-      //      центра, clamp до [0, natW/H]
-      //   5. extract enlargedCrop
-      //   6. resize до (targetW_px*authZoom, targetH_px*authZoom)
-      //      fit:'fill' — единая ось масштаба перед вращением
-      //   7. rotate(rotateDeg, {background: white}) — повернёт картинку
-      //      с белым фоном на углах bounding box'а
-      //   8. resize(targetW_px, targetH_px, fit:'cover', position:'centre')
-      //      — выйдет центральная часть нужного размера; background
-      //      отрезается, поскольку authZoom рассчитан так чтобы
-      //      повёрнутая картинка покрывала target.
-      const rotated = sharp(photoSource.buffer).rotate();
-      const meta = await rotated.metadata();
-      const natW = meta.width ?? 0;
-      const natH = meta.height ?? 0;
-      if (natW <= 0 || natH <= 0) {
-        throw new Error(`invalid image dimensions: ${natW}x${natH}`);
-      }
-      const targetRatio = ph.width_mm / ph.height_mm;
-      const baseCrop = computeCrop(natW, natH, targetRatio, scale, offsetX, offsetY);
-      const authZoom = computeAutoZoomForRotation(rotateDeg, targetRatio);
-      // Центр base crop'а.
-      const cx = baseCrop.cropX + baseCrop.cropW / 2;
-      const cy = baseCrop.cropY + baseCrop.cropH / 2;
-      // Расширенный crop. Может выйти за границы оригинала —
-      // обрезаем по фактическим границам (это даст более узкую часть,
-      // но не вернёт ошибку sharp.extract).
-      const enlW = baseCrop.cropW * authZoom;
-      const enlH = baseCrop.cropH * authZoom;
-      let enlLeft = cx - enlW / 2;
-      let enlTop = cy - enlH / 2;
-      // Clamp к границам оригинала.
-      enlLeft = Math.max(0, enlLeft);
-      enlTop = Math.max(0, enlTop);
-      const maxW = natW - enlLeft;
-      const maxH = natH - enlTop;
-      const safeW = Math.max(1, Math.min(Math.round(enlW), Math.round(maxW)));
-      const safeH = Math.max(1, Math.min(Math.round(enlH), Math.round(maxH)));
-      const safeLeft = Math.max(0, Math.round(enlLeft));
-      const safeTop = Math.max(0, Math.round(enlTop));
-      // Промежуточный размер до вращения. Сохраняем aspect рамки.
-      const interW = Math.max(1, Math.round(targetW_px * authZoom));
-      const interH = Math.max(1, Math.round(targetH_px * authZoom));
-      resampled = await rotated
-        .extract({
-          left: safeLeft,
-          top: safeTop,
-          width: safeW,
-          height: safeH,
-        })
-        .resize(interW, interH, {
-          fit: 'fill',
-        })
-        .rotate(rotateDeg, {
-          // Белый фон может выйти в видимой области если auto-zoom
-          // оказался мал (на edge случаях). Чтобы не было видимых
-          // артефактов на печати, выбираем фон под цвет страницы.
-          background: { r: 255, g: 255, b: 255, alpha: 1 },
-        })
-        .resize(targetW_px, targetH_px, {
-          fit: 'cover',
-          position: 'centre',
-        })
-        .jpeg({
-          quality: ctx.profile.jpeg_quality,
-          mozjpeg: true,
-        })
-        .toBuffer();
+  if (!resampled) {
+    const photoSource = await fetchPhotoSource(ctx, photoUrl, ph, spread_index);
+    if (!photoSource) {
+      // Все попытки упали — серый прямоугольник как visual fallback.
+      page.drawRectangle({
+        x: box.x_pt,
+        y: box.y_pt,
+        width: box.width_pt,
+        height: box.height_pt,
+        color: rgb(0.92, 0.92, 0.92),
+        rotate: degrees(ph.rotation_deg ?? 0),
+      });
+      return;
     }
-  } catch (e) {
-    ctx.warnings.push({
-      code: 'image_decode_failed',
-      detail: `sharp decode error на ${photoSource.filename}: ${(e as Error).message}`,
-      context: { spread_index, label: ph.label, filename: photoSource.filename },
-    });
-    // Серый прямоугольник как visual fallback
-    page.drawRectangle({
-      x: box.x_pt,
-      y: box.y_pt,
-      width: box.width_pt,
-      height: box.height_pt,
-      color: rgb(0.92, 0.92, 0.92),
-      rotate: degrees(ph.rotation_deg ?? 0),
-    });
-    return;
+    try {
+      resampled = await resamplePhotoBuffer(
+        photoSource.buffer,
+        ph,
+        ctx.profile.dpi,
+        ctx.profile.jpeg_quality,
+        scale,
+        offsetX,
+        offsetY,
+        rotateDeg,
+      );
+      ctx.resampledCache?.set(key, resampled);
+    } catch (e) {
+      ctx.warnings.push({
+        code: 'image_decode_failed',
+        detail: `sharp decode error на ${photoSource.filename}: ${(e as Error).message}`,
+        context: { spread_index, label: ph.label, filename: photoSource.filename },
+      });
+      // Серый прямоугольник как visual fallback
+      page.drawRectangle({
+        x: box.x_pt,
+        y: box.y_pt,
+        width: box.width_pt,
+        height: box.height_pt,
+        color: rgb(0.92, 0.92, 0.92),
+        rotate: degrees(ph.rotation_deg ?? 0),
+      });
+      return;
+    }
   }
 
   // Embed в pdf-lib
@@ -345,8 +241,8 @@ export async function embedPhotoOnPage(
   } catch (e) {
     ctx.warnings.push({
       code: 'image_decode_failed',
-      detail: `pdf-lib embedJpg error на ${photoSource.filename}: ${(e as Error).message}`,
-      context: { spread_index, label: ph.label, filename: photoSource.filename },
+      detail: `pdf-lib embedJpg error на ${ph.label}: ${(e as Error).message}`,
+      context: { spread_index, label: ph.label },
     });
     return;
   }
@@ -509,6 +405,151 @@ async function primePhotoSource(
   await cachedLoad(ctx.sourceCache, `sel:${photoUrl}`, () =>
     fetchBuffer(photoUrl),
   );
+}
+
+/**
+ * Ресэмпл исходного буфера фото в JPEG под целевой размер+трансформ. Чистая
+ * sharp-логика (3 пути: fast/custom/rotate), вынесена из embedPhotoOnPage, чтобы
+ * её можно было прогнать ПАРАЛЛЕЛЬНО в префетче. Бросает при ошибке декода.
+ */
+export async function resamplePhotoBuffer(
+  sourceBuffer: Buffer,
+  ph: PhotoPlaceholder,
+  dpi: number,
+  jpegQuality: number,
+  scale: number,
+  offsetX: number,
+  offsetY: number,
+  rotateDeg: number,
+): Promise<Buffer> {
+  const targetW_px = mmToPixels(ph.width_mm, dpi);
+  const targetH_px = mmToPixels(ph.height_mm, dpi);
+  const hasRotate = rotateDeg !== 0;
+  const hasCustom = scale !== 1 || offsetX !== 0 || offsetY !== 0 || hasRotate;
+
+  if (!hasCustom) {
+    // FAST PATH: default crop (fit:'cover'). Байт-в-байт как раньше.
+    return await sharp(sourceBuffer)
+      .rotate()
+      .resize(targetW_px, targetH_px, { fit: 'cover', position: 'centre' })
+      .jpeg({ quality: jpegQuality, mozjpeg: true })
+      .toBuffer();
+  }
+
+  if (!hasRotate) {
+    // CUSTOM PATH: computeCrop + extract + resize fit:'fill'.
+    const rotated = sharp(sourceBuffer).rotate();
+    const meta = await rotated.metadata();
+    const natW = meta.width ?? 0;
+    const natH = meta.height ?? 0;
+    if (natW <= 0 || natH <= 0) {
+      throw new Error(`invalid image dimensions: ${natW}x${natH}`);
+    }
+    const targetRatio = ph.width_mm / ph.height_mm;
+    const crop = computeCrop(natW, natH, targetRatio, scale, offsetX, offsetY);
+    const extLeft = Math.max(0, Math.round(crop.cropX));
+    const extTop = Math.max(0, Math.round(crop.cropY));
+    const extW = Math.max(1, Math.round(crop.cropW));
+    const extH = Math.max(1, Math.round(crop.cropH));
+    const safeW = Math.min(extW, natW - extLeft);
+    const safeH = Math.min(extH, natH - extTop);
+    return await rotated
+      .extract({ left: extLeft, top: extTop, width: safeW, height: safeH })
+      .resize(targetW_px, targetH_px, { fit: 'fill' })
+      .jpeg({ quality: jpegQuality, mozjpeg: true })
+      .toBuffer();
+  }
+
+  // ROTATE PATH (Р.2): base crop расширяем на auto-zoom, вращаем, обрезаем.
+  const rotated = sharp(sourceBuffer).rotate();
+  const meta = await rotated.metadata();
+  const natW = meta.width ?? 0;
+  const natH = meta.height ?? 0;
+  if (natW <= 0 || natH <= 0) {
+    throw new Error(`invalid image dimensions: ${natW}x${natH}`);
+  }
+  const targetRatio = ph.width_mm / ph.height_mm;
+  const baseCrop = computeCrop(natW, natH, targetRatio, scale, offsetX, offsetY);
+  const authZoom = computeAutoZoomForRotation(rotateDeg, targetRatio);
+  const cx = baseCrop.cropX + baseCrop.cropW / 2;
+  const cy = baseCrop.cropY + baseCrop.cropH / 2;
+  const enlW = baseCrop.cropW * authZoom;
+  const enlH = baseCrop.cropH * authZoom;
+  let enlLeft = cx - enlW / 2;
+  let enlTop = cy - enlH / 2;
+  enlLeft = Math.max(0, enlLeft);
+  enlTop = Math.max(0, enlTop);
+  const maxW = natW - enlLeft;
+  const maxH = natH - enlTop;
+  const safeW = Math.max(1, Math.min(Math.round(enlW), Math.round(maxW)));
+  const safeH = Math.max(1, Math.min(Math.round(enlH), Math.round(maxH)));
+  const safeLeft = Math.max(0, Math.round(enlLeft));
+  const safeTop = Math.max(0, Math.round(enlTop));
+  const interW = Math.max(1, Math.round(targetW_px * authZoom));
+  const interH = Math.max(1, Math.round(targetH_px * authZoom));
+  return await rotated
+    .extract({ left: safeLeft, top: safeTop, width: safeW, height: safeH })
+    .resize(interW, interH, { fit: 'fill' })
+    .rotate(rotateDeg, { background: { r: 255, g: 255, b: 255, alpha: 1 } })
+    .resize(targetW_px, targetH_px, { fit: 'cover', position: 'centre' })
+    .jpeg({ quality: jpegQuality, mozjpeg: true })
+    .toBuffer();
+}
+
+/**
+ * Параллельный ПРЕДВАРИТЕЛЬНЫЙ ресэмпл всех фото (пул ~4-6 — sharp использует
+ * нативный threadpool) в ctx.resampledCache ДО последовательного рендера. Это
+ * убирает основное замедление экспорта (sharp-ресэмплинг в 300dpi был serial).
+ * Источники берёт из sourceCache (предзагружены сетью). Дедуп по resampleKey.
+ * Ошибки декода глотаются — рендер сам нарисует серую заглушку + warning.
+ */
+export async function prefetchResampledPhotos(
+  ctx: PhotoEmbedContext,
+  requests: ReadonlyArray<ResampleRequest>,
+  concurrency: number = 4,
+): Promise<void> {
+  if (!ctx.resampledCache || requests.length === 0) return;
+  const cache = ctx.resampledCache;
+
+  // Дедуп по ключу (одно фото в нескольких книгах ресэмплим один раз).
+  const seen = new Set<string>();
+  const unique: Array<{ key: string; req: ResampleRequest }> = [];
+  for (const req of requests) {
+    const key = resampleKey(
+      req.photoUrl,
+      req.ph,
+      ctx.profile.dpi,
+      req.scale,
+      req.offsetX,
+      req.offsetY,
+      req.rotateDeg,
+    );
+    if (seen.has(key) || cache.has(key)) continue;
+    seen.add(key);
+    unique.push({ key, req });
+  }
+
+  const tasks = unique.map(({ key, req }) => async () => {
+    // Источник (оригинал/selection) — через тот же fetchPhotoSource (кэш буферов).
+    const source = await fetchPhotoSource(ctx, req.photoUrl, req.ph, 0);
+    if (!source) return; // рендер нарисует заглушку + photo_not_found
+    try {
+      const buf = await resamplePhotoBuffer(
+        source.buffer,
+        req.ph,
+        ctx.profile.dpi,
+        ctx.profile.jpeg_quality,
+        req.scale,
+        req.offsetX,
+        req.offsetY,
+        req.rotateDeg,
+      );
+      cache.set(key, buf);
+    } catch {
+      // оставляем рендеру (он повторит и запишет warning)
+    }
+  });
+  await runPool(tasks, concurrency);
 }
 
 /**

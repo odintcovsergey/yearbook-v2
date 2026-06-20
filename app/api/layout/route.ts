@@ -48,6 +48,11 @@ import type { PrinterConfig } from '@/lib/printers/types'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+// Экспорт (PDF + типография) — тяжёлый рендер фото в 300dpi. Без явного лимита
+// функция Vercel рубится по короткому дефолту → клиент видит «Failed to fetch» /
+// 500 даже на небольших альбомах. Ставим максимум (Vercel приведёт к лимиту
+// тарифа: Hobby 60с / Pro 300с).
+export const maxDuration = 300
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
