@@ -8,11 +8,18 @@ import { uploadViaSignedTarget } from '@/lib/blob-upload-client'
 const BUCKET = 'template-backgrounds'
 
 /**
- * Загружает новый фон обложки в заказ: sign → прямой PUT в storage → возвращает
- * публичный URL для сохранения в `__bg__`. Файл идёт мимо нашего сервера, лимит
- * тела Vercel (HTTP 413) не действует. Бросает Error с человекочитаемым текстом.
+ * Загружает новый фон обложки в заказ: sign → прямой PUT в storage. Возвращает:
+ *   - url     — значение для сохранения в `__bg__` (полный публичный URL в
+ *               supabase-режиме / относительный ключ в timeweb);
+ *   - readUrl — ссылка для НЕМЕДЛЕННОГО показа в редакторе (в timeweb это signed
+ *               URL: ключ из `url` ещё не попал в карту bg_signed редактора).
+ * Файл идёт мимо нашего сервера, лимит тела Vercel (HTTP 413) не действует.
+ * Бросает Error с человекочитаемым текстом.
  */
-export async function uploadAlbumCoverBackground(albumId: string, file: File): Promise<string> {
+export async function uploadAlbumCoverBackground(
+  albumId: string,
+  file: File,
+): Promise<{ url: string; readUrl: string }> {
   if (!['image/jpeg', 'image/png'].includes(file.type)) {
     throw new Error('Допустимы только JPG и PNG')
   }
@@ -31,5 +38,8 @@ export async function uploadAlbumCoverBackground(albumId: string, file: File): P
 
   await uploadViaSignedTarget(BUCKET, sign, file)
 
-  return sign.public_url as string
+  return {
+    url: sign.public_url as string,
+    readUrl: (sign.read_url as string) || (sign.public_url as string),
+  }
 }

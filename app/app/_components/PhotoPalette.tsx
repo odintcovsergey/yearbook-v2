@@ -44,13 +44,33 @@ type Props = {
 }
 
 // ─── Найти все spread_index'ы где фото используется ──────────────────────
+// Сопоставляем по СТАБИЛЬНОМУ ключу хранилища (storage_path), а не по signed
+// URL: подписанные ссылки нестабильны (срок 24ч, query-подпись меняется по
+// окнам) и различаются между хранилищами (старый разворот — Yandex, палитра —
+// Timeweb после переезда). Сравнение по URL давало ложное «не используется».
+// Ключ (UUID-путь) уникален, поэтому ищем его как подстроку в вшитом URL.
+function stripYc(s: string): string {
+  return s.startsWith('yc:') ? s.slice(3) : s
+}
+function valueMatchesPhoto(value: unknown, photo: AlbumPhoto): boolean {
+  if (typeof value !== 'string' || !value) return false
+  if (value === photo.url) return true
+  const key = stripYc(photo.storage_path || '')
+  if (!key) return false
+  if (value.includes(key)) return true
+  try {
+    return decodeURIComponent(value).includes(key)
+  } catch {
+    return false
+  }
+}
 function findUsage(
   photo: AlbumPhoto,
   spreads: SpreadInstance[],
 ): number[] {
   const used: number[] = []
   for (const spread of spreads) {
-    if (Object.values(spread.data).some((v) => v === photo.url)) {
+    if (Object.values(spread.data).some((v) => valueMatchesPhoto(v, photo))) {
       used.push(spread.spread_index)
     }
   }

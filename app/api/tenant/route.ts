@@ -5478,7 +5478,15 @@ export async function POST(req: NextRequest) {
       const target = await createUploadTarget('template-backgrounds', path, `image/${cleanExt === 'jpg' ? 'jpeg' : cleanExt}`)
       // public_url кладётся клиентом в cover_edits.__bg__; storedValue = полный URL
       // в supabase-режиме (как раньше) или относительный ключ в timeweb (подпишут при чтении).
-      return NextResponse.json({ ok: true, ...target, public_url: storedValue('template-backgrounds', path) })
+      // read_url — подписанная ссылка для НЕМЕДЛЕННОГО показа только что залитого фона
+      // в редакторе (в timeweb ключ из public_url ещё не попал в карту bg_signed).
+      // Presigned-GET валиден и до фактической заливки (PUT завершится раньше показа).
+      return NextResponse.json({
+        ok: true,
+        ...target,
+        public_url: storedValue('template-backgrounds', path),
+        read_url: await resolveReadUrl('template-backgrounds', path),
+      })
     } catch (e) {
       return NextResponse.json({ error: e instanceof Error ? e.message : 'sign failed' }, { status: 500 })
     }

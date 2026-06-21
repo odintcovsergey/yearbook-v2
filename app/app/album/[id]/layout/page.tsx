@@ -114,6 +114,28 @@ type AlbumPhoto = {
   created_at: string
 }
 
+// Опознать фото по вшитому в разворот значению. Сначала точное совпадение URL,
+// затем — по СТАБИЛЬНОМУ ключу хранилища (storage_path) как подстроке: signed
+// URL нестабильны (срок 24ч, разные хранилища после переезда), сравнение только
+// по URL ломало drag-swap, контекст-меню и пометки палитры.
+function stripYcPrefixClient(s: string): string {
+  return s.startsWith('yc:') ? s.slice(3) : s
+}
+function matchPhoto(
+  photos: AlbumPhoto[],
+  value: string | null | undefined,
+): AlbumPhoto | undefined {
+  if (!value) return undefined
+  const exact = photos.find((p) => p.url === value)
+  if (exact) return exact
+  let dec = value
+  try { dec = decodeURIComponent(value) } catch { /* keep raw */ }
+  return photos.find((p) => {
+    const key = stripYcPrefixClient(p.storage_path || '')
+    return !!key && (value.includes(key) || dec.includes(key))
+  })
+}
+
 // ─── Refresh-aware api() — копия из app/app/page.tsx ─────────────────────
 //
 // При 401 пытается отрефрешить access token через /api/auth и
@@ -911,7 +933,7 @@ function LayoutEditorPageInner({
       // Konva-копию фото и избежать двойного отображения. РЭ.35.Е.3:
       // вместе с label передаётся instanceKey — какой spread_index
       // страницы является источником.
-      const photo = photos.find((p) => p.url === sourceData.url)
+      const photo = matchPhoto(photos, sourceData.url)
       if (!photo) return
       const sIK =
         typeof (sourceData as { instanceKey?: number }).instanceKey === 'number'
@@ -1550,7 +1572,7 @@ function LayoutEditorPageInner({
   // может перенастроить через PhotoTab если нужно.
   async function handleReplaceFullPhoto(label: string, currentUrl: string | null) {
     // Определяем type для нового photo по текущему в слоте
-    const currentPhoto = currentUrl ? photos.find((p) => p.url === currentUrl) : null
+    const currentPhoto = currentUrl ? matchPhoto(photos, currentUrl) ?? null : null
     const photoType =
       (currentPhoto?.type as 'portrait' | 'group' | 'teacher' | null) || 'portrait'
 
@@ -2549,7 +2571,7 @@ function LayoutEditorPageInner({
             // чтобы PhotoContextMenu знал can-do для каждого action'a
             // (например «Заменить оригинал» disabled если нет original).
             if (!photoContextMenu.url) return null
-            const p = photos.find((ph) => ph.url === photoContextMenu.url)
+            const p = matchPhoto(photos, photoContextMenu.url)
             if (!p) return null
             return {
               id: p.id,
@@ -2562,7 +2584,7 @@ function LayoutEditorPageInner({
             handleReplaceFullPhoto(photoContextMenu.label, photoContextMenu.url)
           }
           onReplaceOriginal={() => {
-            const p = photos.find((ph) => ph.url === photoContextMenu.url)
+            const p = matchPhoto(photos, photoContextMenu.url)
             if (p) void handleReplaceOriginal(p.id)
           }}
           onClose={() => setPhotoContextMenu(null)}

@@ -103,6 +103,10 @@ export default function CoverEditorPage() {
   const [bgPanelOpen, setBgPanelOpen] = useState(false)
   const [visibilityPanelOpen, setVisibilityPanelOpen] = useState(false)
   const [availableBgs, setAvailableBgs] = useState<Array<{ url: string; name: string }>>([])
+  // Карта «ключ фона → signed URL» (timeweb). Инициализируется из ответа сервера
+  // и ПОПОЛНЯЕТСЯ при загрузке нового фона (его ключа ещё нет в серверной карте),
+  // чтобы только что залитый фон сразу отрисовался на холсте/превью.
+  const [bgSigned, setBgSigned] = useState<Record<string, string> | null>(null)
 
   // ── Undo/Redo: история снимков правок (typePatches + studentPatches) ──────
   type Snapshot = {
@@ -138,6 +142,7 @@ export default function CoverEditorPage() {
         setStudentPatches(ed.editsByChild ?? {})
         setCoverTextStyles(ed.coverTextStyles ?? {})
         setAvailableBgs(ed.available_backgrounds ?? [])
+        setBgSigned(ed.bgSigned ?? null)
         setHistory({ past: [], future: [] })
         setPhotos(Array.isArray(ph) ? ph : (ph.photos ?? []))
       })
@@ -534,7 +539,7 @@ export default function CoverEditorPage() {
                   spineWidthMm={editor?.spine_width_mm ?? null}
                   containerWidth={canvasWidth}
                   mode="edit"
-                  bgSigned={editor?.bgSigned ?? null}
+                  bgSigned={bgSigned}
                   targetFormat={targetFormat}
                   designFamily={designFamily}
                   coverTextStyles={coverTextStyles}
@@ -615,7 +620,7 @@ export default function CoverEditorPage() {
                 style={{ width: 110 }}
               >
                 <div className="w-full bg-muted rounded overflow-hidden" style={{ aspectRatio: '3 / 2' }}
-                  dangerouslySetInnerHTML={{ __html: it.master ? coverThumb(it, editor?.spine_width_mm ?? null, typePatches, studentPatches, targetFormat, editor?.bgSigned ?? null) : '' }} />
+                  dangerouslySetInnerHTML={{ __html: it.master ? coverThumb(it, editor?.spine_width_mm ?? null, typePatches, studentPatches, targetFormat, bgSigned) : '' }} />
                 <div className="text-[10px] truncate mt-0.5">{it.child_name ?? TYPE_LABEL[it.cover_type]}</div>
               </button>
             ))}
@@ -663,7 +668,7 @@ export default function CoverEditorPage() {
           spineWidthMm={editor?.spine_width_mm ?? null}
           initialIdx={currentIdx}
           coverTextStyles={coverTextStyles}
-          bgSigned={editor?.bgSigned ?? null}
+          bgSigned={bgSigned}
           targetFormat={targetFormat}
           designFamily={designFamily}
           onClose={() => setFullscreenOpen(false)}
@@ -687,11 +692,16 @@ export default function CoverEditorPage() {
           currentOverride={data[COVER_BG_KEY]}
           masterBg={item.master?.background_url ?? null}
           backgrounds={availableBgs}
-          bgSigned={editor?.bgSigned ?? null}
+          bgSigned={bgSigned}
           isPerStudent={!!item.child_id}
           typeLabel={TYPE_LABEL[item.cover_type]}
           onApply={applyBg}
-          onUploaded={(bg) => setAvailableBgs((prev) => (prev.some((b) => b.url === bg.url) ? prev : [...prev, bg]))}
+          onUploaded={(bg) => {
+            setAvailableBgs((prev) => (prev.some((b) => b.url === bg.url) ? prev : [...prev, { url: bg.url, name: bg.name }]))
+            // timeweb: добавить signed-ссылку нового фона в карту, иначе по ключу
+            // он не подпишется и не отрисуется до перезагрузки редактора.
+            if (bg.readUrl) setBgSigned((prev) => ({ ...(prev ?? {}), [bg.url]: bg.readUrl! }))
+          }}
           onClose={() => setBgPanelOpen(false)}
         />
       )}

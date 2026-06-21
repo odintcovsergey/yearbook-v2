@@ -37,8 +37,8 @@ type Props = {
   typeLabel: string
   /** bgValue: url | 'none' (без фона) | null (вернуть фон дизайна). */
   onApply: (bgValue: string | null, applyToAll: boolean) => void
-  /** Новый загруженный фон — добавить в список доступных. */
-  onUploaded: (bg: Bg) => void
+  /** Новый загруженный фон — добавить в список доступных (+ signed для показа). */
+  onUploaded: (bg: { url: string; name: string; readUrl?: string }) => void
   onClose: () => void
 }
 
@@ -60,8 +60,8 @@ export default function CoverBackgroundPanel({
     setUploading(true)
     setError(null)
     try {
-      const url = await uploadAlbumCoverBackground(albumId, file)
-      onUploaded({ url, name: 'Загруженный фон' })
+      const { url, readUrl } = await uploadAlbumCoverBackground(albumId, file)
+      onUploaded({ url, name: 'Загруженный фон', readUrl })
       onApply(url, applyToAll)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось загрузить фон')
