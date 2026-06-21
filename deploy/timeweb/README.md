@@ -46,9 +46,48 @@
 
 - **`/rest/v1` срезается trailing-слэшем** в `proxy_pass http://127.0.0.1:3001/;`
   — без него PostgREST получит несуществующий путь `/rest/v1/...`.
-- **`jwt-secret` у PostgREST НЕ задаём** — всё идёт под `web_app` (= нынешний
-  service_role). Авторизация остаётся в коде приложения.
+- **`jwt-secret` у PostgREST НЕ задаём** — всё идёт под `web_app`/`gen_user`
+  (= нынешний service_role). Авторизация остаётся в коде приложения. **НО:**
+  supabase-js ВСЕГДА шлёт `Authorization: Bearer`, а PostgREST без `jwt-secret`
+  отвечает на это `500 PGRST300 "Server lacks JWT secret"` → весь доступ к БД из
+  приложения падает. **Обязательно срезать заголовок в nginx**:
+  `proxy_set_header Authorization "";` (см. `nginx-yearbook.conf`). Curl без
+  заголовка отдаёт 200 — поэтому smoke без supabase-js эту дыру НЕ ловит.
 - **После каждой миграции** — reload схемы (`scripts/db-migrate.mjs` шлёт
   `NOTIFY pgrst,'reload schema'`); иначе новые колонки → 400.
 - **Сервер этих действий требует обязательно** — с ноутбука Claude их выполнить
   не может, только подготовить (эти шаблоны).
+
+## Грабли развёртывания (проверено в бою 21.06.2026 на 5.42.103.168)
+
+- **Swap обязателен.** VDS 3.8 ГБ RAM без swap → `npm run build` падает по OOM и
+  рвёт SSH-сессию. Добавить 2 ГБ: `fallocate -l 2G /swapfile && chmod 600 /swapfile
+  && mkswap /swapfile && swapon /swapfile` + строка в `/etc/fstab`.
+- **`next start` не читает env `HOST`** — слушает `0.0.0.0`. Чтобы только локально
+  (наружу через nginx): `npm run start -- -H 127.0.0.1 -p 3000` (см. `yearbook.service`).
+- **Сборку запускать от юзера `yearbook`** (не root), иначе `.next` будет root'ом.
+  `runuser -u yearbook -- env HOME=/srv/yearbook-v2 npm_config_cache=… npm run build`.
+- **`NEXT_PUBLIC_*` впекаются в бандл на `build`** — домен/anon-ключ задавать в
+  `.env.production` ДО сборки; смена → пересборка.
+
+## HTTPS: ⚠ HTTP-01 из РФ НЕ работает — только DNS-01
+
+Серверы Let's Encrypt **физически не достукиваются до РФ-IP** (международный
+сетевой стык; в access-логе nginx запросов валидаторов с токенами НЕТ вообще —
+проверено). `certbot --nginx`/`--webroot` падают с `error:connection`. nginx/MTU/
+firewall тут НИ ПРИ ЧЁМ — это сеть выше сервера. **Выпуск только через DNS-01.**
+
+Делается через **acme.sh + dns_regru** (DNS okeybook.ru на ns1/ns2.reg.ru; certbot
+reg.ru не умеет):
+1. В личном кабинете reg.ru → Настройки → API: включить, задать пароль API,
+   **whitelist IP сервера** (обязательно, иначе API отклонит).
+2. `git clone https://github.com/acmesh-official/acme.sh` (github.com отвечает,
+   CDN-обход не нужен) → `./acme.sh --install -m <email>` (ставит cron автопродления)
+   → `acme.sh --set-default-ca --server letsencrypt`.
+3. `REGRU_API_Username=… REGRU_API_Password=… acme.sh --issue --dns dns_regru -d <DOMAIN>`
+   (acme.sh сам создаёт TXT через API, ждёт, проверяет; креды сохраняет в
+   `account.conf` для автопродления).
+4. `acme.sh --install-cert -d <DOMAIN> --ecc --key-file … --fullchain-file …
+   --reloadcmd "systemctl reload nginx"` → прописать пути в `nginx-yearbook.conf`.
+
+Outbound с сервера к LE и reg.ru API работает — блокируется только INBOUND от LE.
