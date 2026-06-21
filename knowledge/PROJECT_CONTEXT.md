@@ -23,11 +23,22 @@
 > ТОЛЬКО дрейф данных** (`albums.archived` true/false: альбом заархивирован в проде после снимка
 > 20.06), структура/статусы совпадают → PostgREST ведёт себя идентично. Грабли: с РФ-сервера
 > CDN релизов GitHub недоступен → бинарники качаем на Мак и шлём `scp`.
-> 🔜 **Осталось до cutover:** (1) боевые роли `authenticator`/`web_app` (нужен суперюзер/поддержка
-> Timeweb), (2) развернуть приложение на VDS (`.env.production`, тот же `JWT_SECRET`,
-> `STORAGE_BACKEND=timeweb`), (3) nginx `/rest/v1`→PostgREST + домен + HTTPS, (4) cutover с
-> финальной дельта-синхронизацией БД+storage. Подробно — `sessions/2026-06-21.md`, память
-> [[project_migration_to_ru]]. Шаблоны: `deploy/timeweb/`.
+> ✅ **Шаг 4 / часть B ВЫПОЛНЕНА (21.06, коммит `cbddb2f`): стенд `https://app.okeybook.ru` ЖИВ**
+> (читает КОПИЮ базы Timeweb; прод не тронут; вход в кабинет проверен Сергеем). Приложение в
+> `/srv/yearbook-v2` (юзер `yearbook`), под systemd (`127.0.0.1:3000`), `.env.production` (тот же
+> `JWT_SECRET`, `STORAGE_BACKEND=timeweb`, домен впечён). nginx: 80→301 https, 443 ssl,
+> `/rest/v1`→PostgREST, остальное→приложение. HTTPS — сертификат Let's Encrypt через **DNS-01
+> reg.ru** (acme.sh + dns_regru, автопродление), т.к. **HTTP-01 из РФ не работает** (LE не
+> достукивается до РФ-IP). 🛑 Две пойманные засады: +2 ГБ swap (без него build OOM); **в nginx
+> срезан `Authorization`** — supabase-js шлёт Bearer, PostgREST без jwt-secret отвечал 500
+> PGRST300 и ломал ВЕСЬ доступ к БД (логин не находил юзера).
+> 🔴 **БЛОКЕР CUTOVER:** из-за среза Authorization путь `/rest/v1` сейчас открыт наружу как
+> привилегир. роль — закрыть боевыми ролями least-privilege (`scripts/step4-postgrest-roles.sql`)
+> + настоящими JWT перед боем.
+> 🔜 **Осталось до cutover:** (1) боевые роли + JWT (см. блокер выше); (2) cutover: финальная
+> дельта-синхронизация БД+storage (rclone) → снять дрейф → переключить домен/ENV пользователей →
+> smoke → откат наготове. Подробно — `sessions/2026-06-21.md`, память [[project_migration_to_ru]].
+> Шаблоны/грабли: `deploy/timeweb/` (README обновлён).
 
 > **🛑 Экспорт ОСТАНОВЛЕН до переезда (20.06.2026).** Ветка
 > `feat/export-acceleration-naming` (НЕ в main): типографская выгрузка целиком
