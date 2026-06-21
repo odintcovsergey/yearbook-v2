@@ -74,6 +74,22 @@ JSON; есть self-test против самого Supabase). Покрыть:
 - **pgcrypto-вставки:** создание ребёнка/учителя/приглашения (токены).
 - Проверить, что **reload схемы** после миграции подхватывает новые колонки.
 
+### A4-bis. Локальная проверка на Mac (ВЫПОЛНЕНО 21.06.2026 — 9/9 PASS)
+Рецепт (повторяемо), PostgREST против КОПИИ Timeweb, только чтение:
+1. `brew install postgrest` (поставлен v14.13; для боевого закрепить версию ближе
+   к Supabase v12 — v14 это надмножество, для валидации годится).
+2. Запуск PostgREST как `gen_user` (CREATEROLE не нужен; владелец таблиц обходит
+   RLS): переменные `PGRST_DB_URI` = строка Timeweb + `?sslmode=verify-ca&sslrootcert=<путь>/ca.crt`,
+   `PGRST_DB_ANON_ROLE=gen_user`, `PGRST_DB_SCHEMAS=public`,
+   `PGRST_DB_EXTRA_SEARCH_PATH=public,extensions`, `PGRST_SERVER_HOST=127.0.0.1`,
+   `PGRST_SERVER_PORT=3001`. (Секреты — из .env.local, не в файлах.)
+3. Сверка: `TIMEWEB_REST_URL=http://127.0.0.1:3001 node --env-file=.env.local scripts/compare-rest-backends.mjs`.
+4. Результат 21.06: **9/9 PASS** — Supabase и self-hosted PostgREST отвечают
+   идентично (эмбеды, `!inner`, `!fk`, вложенный count, `.or()`, count=exact,
+   многоуровневый эмбед). nginx для этой проверки НЕ нужен (идём прямо в PostgREST).
+- 🔜 Перед боевым cutover: РАСШИРИТЬ набор запросов в скрипте (добавить реальные
+  эмбеды из CRM и др. — сейчас покрыты классы фич, не все 37 эмбедов).
+
 ### A5. Чек-лист переключения (cutover)
 - [ ] Гранты + DEFAULT PRIVILEGES проставлены; pgcrypto-права выданы.
 - [ ] PostgREST поднят, версия зафиксирована, schema-reload в процедуре миграций.
