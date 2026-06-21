@@ -1,0 +1,29 @@
+# systemd unit для Next.js приложения (ТЗ B1). /etc/systemd/system/yearbook.service
+# systemctl daemon-reload && systemctl enable --now yearbook
+[Unit]
+Description=yearbook-v2 (Next.js)
+After=network.target postgrest.service
+Wants=postgrest.service
+
+[Service]
+WorkingDirectory=/srv/yearbook-v2
+# Прод-старт после `npm ci && npm run build` (см. CI deploy-timeweb.yml).
+ExecStart=/usr/bin/npm run start
+# Next слушает локально, наружу — nginx.
+Environment=PORT=3000
+Environment=HOST=127.0.0.1
+Environment=NODE_ENV=production
+# Боевые переменные окружения — в /srv/yearbook-v2/.env.production (НЕ в репо!).
+# Главное при cutover (ТЗ A5):
+#   NEXT_PUBLIC_SUPABASE_URL = https://<DOMAIN>   (supabase-js добавит /rest/v1 → nginx → PostgREST)
+#   SUPABASE_SERVICE_ROLE_KEY / ANON_KEY = непустые заглушки (PostgREST их не использует)
+#   STORAGE_BACKEND = timeweb
+#   JWT_SECRET = ТОТ ЖЕ, что в текущем проде (иначе разлогинит всех)
+EnvironmentFile=/srv/yearbook-v2/.env.production
+User=yearbook
+Group=yearbook
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# GitHub Actions — авто-деплой на VDS Timeweb по push в main (ТЗ B3)
+# ─────────────────────────────────────────────────────────────────────────────
+# ШАБЛОН. Это НЕ активный workflow (лежит в deploy/, а не в .github/workflows/).
+# Активировать: скопировать в .github/workflows/deploy-timeweb.yml ПОСЛЕ cutover,
+# когда боевой деплой переедет на Timeweb (сейчас прод на Vercel — не трогаем).
+#
+# Секреты задать в GitHub → Settings → Secrets and variables → Actions:
+#   TIMEWEB_SSH_HOST, TIMEWEB_SSH_USER, TIMEWEB_SSH_KEY (приватный ключ).
+# В РЕПО СЕКРЕТЫ НЕ КОММИТИТЬ.
+#
+# Модель: сервер сам тянет git + ставит зависимости + билдит + рестартит сервис.
+# Просто, без артефактов/реестров. На слабом VDS билд можно вынести на раннер и
+# слать готовый .next — но для старта достаточно сборки на сервере.
+# ─────────────────────────────────────────────────────────────────────────────
+name: deploy-timeweb
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}   # ручной запуск из вкладки Actions
+
+concurrency:
+  group: deploy-timeweb
+  cancel-in-progress: false   # не обрывать идущий деплой
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.TIMEWEB_SSH_HOST }}
+          username: ${{ secrets.TIMEWEB_SSH_USER }}
+          key: ${{ secrets.TIMEWEB_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -e
+            cd /srv/yearbook-v2
+            git fetch --all
+            git reset --hard origin/main
+            npm ci
+            npm run build
+            sudo systemctl restart yearbook
+            # PostgREST перезапускать НЕ нужно — миграции схемы применяются
+            # отдельно через scripts/db-migrate.mjs (он шлёт NOTIFY pgrst reload).
+            echo "deploy ok: $(git rev-parse --short HEAD)"

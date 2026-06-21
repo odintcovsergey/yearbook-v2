@@ -1,0 +1,18 @@
+# systemd unit для PostgREST (ТЗ B1). Положить в /etc/systemd/system/postgrest.service
+# Затем: systemctl daemon-reload && systemctl enable --now postgrest
+[Unit]
+Description=PostgREST (yearbook self-host REST для Timeweb Postgres)
+After=network.target
+
+[Service]
+# Бинарь PostgREST (закреплённая версия ≥ v12). Конфиг с db-uri/ролями.
+ExecStart=/usr/local/bin/postgrest /etc/postgrest/postgrest.conf
+User=postgrest
+Group=postgrest
+Restart=always
+RestartSec=3
+# reload схемы без перезапуска: systemctl kill -s SIGUSR1 postgrest
+# (равнозначно NOTIFY pgrst,'reload schema' — что делает scripts/db-migrate.mjs)
+
+[Install]
+WantedBy=multi-user.target
