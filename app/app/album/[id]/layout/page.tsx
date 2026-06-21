@@ -302,6 +302,10 @@ function LayoutEditorPageInner({
   const [targetFormat, setTargetFormat] = useState<PrinterFormat | null>(null)
   // Пул категорийных фонов набора (template_set_backgrounds) для ротации.
   const [categoryBackgrounds, setCategoryBackgrounds] = useState<BackgroundPoolRow[]>([])
+  // Переезд на Timeweb: карта «ключ фона → signed URL» (приходит с сервера только
+  // в режиме STORAGE_BACKEND=timeweb; в режиме supabase undefined и URL строится
+  // публично, как раньше). Покрывает пул, default-фон и фон-оверрайды мастеров.
+  const [bgSigned, setBgSigned] = useState<Record<string, string> | null>(null)
   // Открыта ли модалка «Сменить фон» текущего разворота (Этап 6).
   const [bgPickerOpen, setBgPickerOpen] = useState(false)
   const [photos, setPhotos] = useState<AlbumPhoto[]>([])
@@ -648,9 +652,12 @@ function LayoutEditorPageInner({
         } else {
           setTargetFormat(null)
         }
+        const signedMap = (templateJson.bg_signed ?? null) as Record<string, string> | null
+        setBgSigned(signedMap)
         setBackgroundUrl(
           bgPath
-            ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${bgPath}`
+            ? signedMap?.[bgPath] ??
+                `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${bgPath}`
             : null
         )
         setCategoryBackgrounds((templateJson.backgrounds ?? []) as BackgroundPoolRow[])
@@ -1791,6 +1798,9 @@ function LayoutEditorPageInner({
   const toBgPublicUrl = (p: string | null): string | null => {
     if (!p) return null
     if (p.startsWith('http')) return p
+    // timeweb: подписанная ссылка по ключу (включая album-override __bg__ — он
+    // всегда выбран из пула). supabase: публичный URL как раньше.
+    if (bgSigned?.[p]) return bgSigned[p]
     return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${p}`
   }
   // Фон текущего разворота. Если индекс не найден — старый общий backgroundUrl.
@@ -2469,6 +2479,7 @@ function LayoutEditorPageInner({
       {bgPickerOpen && (
         <SpreadBackgroundPicker
           backgrounds={categoryBackgrounds}
+          bgSigned={bgSigned}
           category={currentSpreadCategory}
           currentOverride={currentBgOverride}
           onSelect={(path) => applyBgOverride(path)}

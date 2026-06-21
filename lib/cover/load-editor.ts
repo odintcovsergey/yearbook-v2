@@ -8,11 +8,13 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getPhotoUrl } from '@/lib/supabase';
+import { storageBackend, resolveReadUrl, signDecorPlaceholders } from '@/lib/blob-storage';
 import type { RenderPlaceholder } from '../album-builder/types';
 import { loadAlbumCovers } from './load-covers';
 import {
   indexCoverEdits,
   mergeCoverEditsInto,
+  COVER_BG_KEY,
   type CoverEditRow,
 } from './editor-merge';
 import { parseCoverTextStyleOverrides, type CoverTextStyleOverrides } from './text-styles';
@@ -58,6 +60,14 @@ export type CoverEditorResult = {
    * для панели «Фон» в редакторе. Уникальны по URL.
    */
   available_backgrounds: Array<{ url: string; name: string }>;
+  /**
+   * Переезд на Timeweb: карта «ключ фона → signed URL» (только режим timeweb;
+   * иначе undefined → клиент строит/использует URL как раньше). Покрывает
+   * available_backgrounds, фоны мастеров и значения правок __bg__. Сами ключи
+   * (available_backgrounds[].url, master.background_url, __bg__) НЕ меняем —
+   * сохранение/сравнение работают на ключах, подпись только для показа.
+   */
+  bgSigned?: Record<string, string>;
   warnings: string[];
 };
 
@@ -136,6 +146,34 @@ export async function loadCoverEditor(
   }
   const available_backgrounds = Array.from(bgMap.entries()).map(([url, name]) => ({ url, name }));
 
+  // Переезд на Timeweb: подпись картинок обложки для приватного бакета.
+  // Декор мастеров (статичен) подписываем на месте; для фонов отдаём карту
+  // ключ→signed (клиент конвертирует при показе, сохраняет ключ).
+  let bgSigned: Record<string, string> | undefined;
+  if (storageBackend() === 'timeweb') {
+    // 1. Декор-картинки в плейсхолдерах мастеров.
+    for (const m of Array.from(masters.values())) {
+      m.placeholders = (await signDecorPlaceholders(
+        m.placeholders as Array<{ type?: string; url?: string | null }>,
+      )) as RenderPlaceholder[];
+    }
+    // 2. Карта подписей фонов: available + фоны мастеров + значения правок __bg__.
+    const bgKeys = new Set<string>();
+    for (const b of available_backgrounds) if (b.url) bgKeys.add(b.url);
+    for (const m of Array.from(masters.values())) if (m.background_url) bgKeys.add(m.background_url);
+    for (const edits of [...Object.values(byType), ...Object.values(byChild)]) {
+      const ov = edits[COVER_BG_KEY];
+      // 'none'/'' — сентинелы «без фона», подписывать нечего.
+      if (typeof ov === 'string' && ov && ov !== 'none') bgKeys.add(ov);
+    }
+    const keys = Array.from(bgKeys);
+    const signed = await Promise.all(
+      keys.map((k) => resolveReadUrl('template-backgrounds', k)),
+    );
+    bgSigned = {};
+    keys.forEach((k, i) => { bgSigned![k] = signed[i]; });
+  }
+
   // Галерея общих фото класса (для замены).
   const { data: commonsRaw } = await supabase
     .from('photos')
@@ -177,6 +215,7 @@ export async function loadCoverEditor(
     coverTextStyles,
     common_photos,
     available_backgrounds,
+    bgSigned,
     warnings: assembled.warnings,
   };
 }

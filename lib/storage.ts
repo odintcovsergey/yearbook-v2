@@ -9,6 +9,21 @@
 
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import {
+  getTwcSignedUrl,
+  twcGetObjectBuffer,
+  getTwcUploadUrl,
+  twcUpload,
+  twcDelete,
+} from '@/lib/storage-twc'
+
+// Переключатель фото-хранилища: тот же флаг STORAGE_BACKEND, что и у блобов
+// (см. lib/blob-storage.ts). Читаем env напрямую, чтобы не тянуть blob-storage
+// и не словить цикл импортов (storage → blob-storage → supabase → storage).
+// Фото в Timeweb лежат под ТЕМИ ЖЕ ключами, что в Yandex (stripYcPrefix).
+function storageBackend(): 'supabase' | 'timeweb' {
+  return process.env.STORAGE_BACKEND === 'timeweb' ? 'timeweb' : 'supabase'
+}
 
 const YC_ENDPOINT = 'https://storage.yandexcloud.net'
 const YC_REGION = 'ru-central1'
@@ -30,6 +45,9 @@ export async function ycUpload(
   body: Buffer,
   contentType = 'image/webp'
 ): Promise<void> {
+  if (storageBackend() === 'timeweb') {
+    return twcUpload(stripYcPrefix(storagePath), body, contentType)
+  }
   await ycStorage.send(new PutObjectCommand({
     Bucket: BUCKET(),
     Key: storagePath,
@@ -40,6 +58,9 @@ export async function ycUpload(
 
 // Удалить файл из YC Storage
 export async function ycDelete(storagePath: string): Promise<void> {
+  if (storageBackend() === 'timeweb') {
+    return twcDelete(stripYcPrefix(storagePath))
+  }
   try {
     await ycStorage.send(new DeleteObjectCommand({
       Bucket: BUCKET(),
@@ -77,6 +98,9 @@ const SIGN_WINDOW_MS = 6 * 60 * 60 * 1000
  */
 export async function getPhotoSignedUrl(storagePath: string, expiresIn = 86400): Promise<string> {
   if (!storagePath) return ''
+  if (storageBackend() === 'timeweb') {
+    return getTwcSignedUrl(stripYcPrefix(storagePath), expiresIn)
+  }
   const windowStart = new Date(Math.floor(Date.now() / SIGN_WINDOW_MS) * SIGN_WINDOW_MS)
   const cmd = new GetObjectCommand({
     Bucket: BUCKET(),
@@ -94,6 +118,9 @@ export async function getPhotoSignedUrl(storagePath: string, expiresIn = 86400):
  * не нужен, работает на приватном бакете. Бросает ошибку при отсутствии объекта.
  */
 export async function ycGetObjectBuffer(storagePath: string): Promise<Buffer> {
+  if (storageBackend() === 'timeweb') {
+    return twcGetObjectBuffer(stripYcPrefix(storagePath))
+  }
   const res = await ycStorage.send(new GetObjectCommand({
     Bucket: BUCKET(),
     Key: stripYcPrefix(storagePath),
@@ -105,6 +132,9 @@ export async function ycGetObjectBuffer(storagePath: string): Promise<Buffer> {
 // Presigned URL для прямой загрузки в YC с клиента (обход лимита Vercel 4.5 МБ).
 // Бакет приватный — без public-read ACL.
 export async function getYcUploadUrl(key: string, contentType: string, expiresIn = 3600): Promise<string> {
+  if (storageBackend() === 'timeweb') {
+    return getTwcUploadUrl(stripYcPrefix(key), contentType, expiresIn)
+  }
   const cmd = new PutObjectCommand({
     Bucket: BUCKET(),
     Key: key,

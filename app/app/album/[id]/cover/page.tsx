@@ -17,7 +17,7 @@ import { ChevronLeft, PanelRightClose, PanelRightOpen, Eye, Type, Image as Image
 import { layoutCover } from '@/lib/cover/layout'
 import { renderCoverPreviewSvg } from '@/lib/cover/preview-svg'
 import { parseFontSizeMult, parseColor, parseHAlign, parseVAlign, parseFontFamily } from '@/lib/text-style'
-import { mergeCoverData, PER_STUDENT_COVER_LABELS, COVER_BG_KEY } from '@/lib/cover/editor-merge'
+import { mergeCoverData, PER_STUDENT_COVER_LABELS, COVER_BG_KEY, resolveCoverBackground, signCoverBg } from '@/lib/cover/editor-merge'
 import type { CoverTextStyleOverrides } from '@/lib/cover/text-styles'
 import type { RenderPlaceholder } from '@/lib/album-builder/types'
 import { elementLabelName } from './elementLabels'
@@ -55,6 +55,8 @@ type EditorData = {
   coverTextStyles: CoverTextStyleOverrides
   common_photos: Array<{ id: string; url: string }>
   available_backgrounds: Array<{ url: string; name: string }>
+  /** Переезд на Timeweb: карта «ключ фона → signed URL» (только режим timeweb). */
+  bgSigned?: Record<string, string>
   warnings: string[]
 }
 
@@ -532,6 +534,7 @@ export default function CoverEditorPage() {
                   spineWidthMm={editor?.spine_width_mm ?? null}
                   containerWidth={canvasWidth}
                   mode="edit"
+                  bgSigned={editor?.bgSigned ?? null}
                   targetFormat={targetFormat}
                   designFamily={designFamily}
                   coverTextStyles={coverTextStyles}
@@ -612,7 +615,7 @@ export default function CoverEditorPage() {
                 style={{ width: 110 }}
               >
                 <div className="w-full bg-muted rounded overflow-hidden" style={{ aspectRatio: '3 / 2' }}
-                  dangerouslySetInnerHTML={{ __html: it.master ? coverThumb(it, editor?.spine_width_mm ?? null, typePatches, studentPatches, targetFormat) : '' }} />
+                  dangerouslySetInnerHTML={{ __html: it.master ? coverThumb(it, editor?.spine_width_mm ?? null, typePatches, studentPatches, targetFormat, editor?.bgSigned ?? null) : '' }} />
                 <div className="text-[10px] truncate mt-0.5">{it.child_name ?? TYPE_LABEL[it.cover_type]}</div>
               </button>
             ))}
@@ -660,6 +663,7 @@ export default function CoverEditorPage() {
           spineWidthMm={editor?.spine_width_mm ?? null}
           initialIdx={currentIdx}
           coverTextStyles={coverTextStyles}
+          bgSigned={editor?.bgSigned ?? null}
           targetFormat={targetFormat}
           designFamily={designFamily}
           onClose={() => setFullscreenOpen(false)}
@@ -683,6 +687,7 @@ export default function CoverEditorPage() {
           currentOverride={data[COVER_BG_KEY]}
           masterBg={item.master?.background_url ?? null}
           backgrounds={availableBgs}
+          bgSigned={editor?.bgSigned ?? null}
           isPerStudent={!!item.child_id}
           typeLabel={TYPE_LABEL[item.cover_type]}
           onApply={applyBg}
@@ -712,11 +717,18 @@ function coverThumb(
   typePatches: Record<string, Record<string, string | null>>,
   studentPatches: Record<string, Record<string, string | null>>,
   targetFormat: PrinterFormat | null,
+  bgSigned: Record<string, string> | null,
 ): string {
   const m = it.master
   if (!m) return ''
   const n = (v: number | null) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
-  const data = mergeCoverData(it.base, typePatches[it.cover_type] ?? {}, it.child_id ? studentPatches[it.child_id] ?? {} : {})
+  const rawData = mergeCoverData(it.base, typePatches[it.cover_type] ?? {}, it.child_id ? studentPatches[it.child_id] ?? {} : {})
+  // Переезд на Timeweb: резолвим эффективный фон (__bg__ перекрывает мастер) и
+  // подписываем; __bg__ из data убираем, чтобы preview-svg взял уже подписанный
+  // background_url, а не сырой ключ. Декор мастера подписан на сервере.
+  const finalBg = signCoverBg(resolveCoverBackground(rawData, m.background_url), bgSigned)
+  const data = { ...rawData }
+  delete data[COVER_BG_KEY]
   const back = n(m.back_width_mm), front = n(m.front_width_mm), heightMm = n(m.height_mm)
   const real = spine ?? n(m.nominal_spine_width_mm)
   const laid = layoutCover(
@@ -734,6 +746,6 @@ function coverThumb(
     spine_left_mm: adapted ? adapted.spineLeftMm : laid.spine_left_mm,
     spine_right_mm: adapted ? adapted.spineRightMm : laid.spine_right_mm,
     placeholders: adapted ? adapted.placeholders : laid.placeholders,
-    data, background_url: m.background_url, hide_empty_slots: true,
+    data, background_url: finalBg, hide_empty_slots: true,
   })
 }

@@ -15,7 +15,7 @@
 
 import { useState } from 'react'
 import { X, Upload, Loader2, Check } from 'lucide-react'
-import { COVER_BG_NONE } from '@/lib/cover/editor-merge'
+import { COVER_BG_NONE, signCoverBg } from '@/lib/cover/editor-merge'
 import { uploadAlbumCoverBackground } from '../album/[id]/cover/coverBgUpload'
 
 type Bg = { url: string; name: string }
@@ -27,6 +27,11 @@ type Props = {
   /** Фон мастера (для плитки «Фон дизайна»). */
   masterBg: string | null
   backgrounds: Bg[]
+  /**
+   * Переезд на Timeweb: карта «ключ фона → signed URL» (только режим timeweb).
+   * Превью показываем подписанным; выбор/сохранение остаются на ключах bg.url.
+   */
+  bgSigned?: Record<string, string> | null
   /** Открыта обложка ученика (портретная) — доступен выбор «ко всем такого типа». */
   isPerStudent: boolean
   typeLabel: string
@@ -38,7 +43,7 @@ type Props = {
 }
 
 export default function CoverBackgroundPanel({
-  albumId, currentOverride, masterBg, backgrounds, isPerStudent, typeLabel,
+  albumId, currentOverride, masterBg, backgrounds, bgSigned, isPerStudent, typeLabel,
   onApply, onUploaded, onClose,
 }: Props) {
   const [applyToAll, setApplyToAll] = useState(false)
@@ -107,7 +112,7 @@ export default function CoverBackgroundPanel({
           {/* Фон дизайна (вернуть фон мастера). */}
           <Tile selected={isDesign} onClick={() => onApply(null, applyToAll)} title="Вернуть фон дизайна">
             {masterBg
-              ? <img src={masterBg} alt="" className="absolute inset-0 w-full h-full object-cover" />
+              ? <img src={signCoverBg(masterBg, bgSigned) ?? masterBg} alt="" className="absolute inset-0 w-full h-full object-cover" />
               : <span>Фон дизайна</span>}
             <span className="absolute bottom-0 inset-x-0 bg-black/40 text-white text-[10px] py-0.5 text-center">Фон дизайна</span>
           </Tile>
@@ -120,7 +125,7 @@ export default function CoverBackgroundPanel({
           {/* Доступные фоны дизайна. */}
           {backgrounds.map((bg) => (
             <Tile key={bg.url} selected={selectedUrl === bg.url} onClick={() => onApply(bg.url, applyToAll)} title={bg.name}>
-              <img src={bg.url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <img src={signCoverBg(bg.url, bgSigned) ?? bg.url} alt="" className="absolute inset-0 w-full h-full object-cover" />
             </Tile>
           ))}
         </div>

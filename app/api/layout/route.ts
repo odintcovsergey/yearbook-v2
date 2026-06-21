@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
 import { ycUpload, getPhotoSignedUrl, stripYcPrefix, ycGetObjectBuffer, ycDelete } from '@/lib/storage'
+import { storageBackend, resolveReadUrl, signDecorPlaceholders } from '@/lib/blob-storage'
 import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
 import { parseIdml } from '@/lib/idml-converter/parse'
 import { uploadTemplateSetToSupabase, type UploadResult } from '@/lib/idml-converter/upload'
@@ -300,10 +301,55 @@ export async function GET(req: NextRequest) {
       return serverError(bgError, 'layout')
     }
 
+    // ─── Переезд на Timeweb: подпись картинок редактора (только режим timeweb) ──
+    // В режиме supabase отдаём данные как раньше (клиент строит публичный URL из
+    // относительного ключа сам) — нулевой риск для прода. В режиме timeweb бакет
+    // приватный: подписываем здесь, на сервере.
+    //   - bg_signed: карта «ключ фона → signed URL» для всех фонов, которые
+    //     редактор может показать (пул ротации, default-фон набора, фон-оверрайды
+    //     мастеров, а значит и album-override __bg__, который всегда выбран из пула).
+    //     Сами относительные ключи в данных НЕ меняем — ротация/сравнение/сохранение
+    //     в __bg__ работают на ключах (signed протух бы за 24ч).
+    //   - декор шаблонов (placeholders type:'decoration') подписываем на месте.
+    let bgSigned: Record<string, string> | undefined
+    let outSpreadTemplates: Array<Record<string, unknown>> =
+      (spreadTemplates ?? []) as unknown as Array<Record<string, unknown>>
+    if (storageBackend() === 'timeweb') {
+      const bgKeys = new Set<string>()
+      for (const row of backgrounds ?? []) {
+        if (typeof row.url === 'string' && row.url) bgKeys.add(row.url)
+      }
+      const defaultBg = (templateSet as { default_background_url?: string | null }).default_background_url
+      if (typeof defaultBg === 'string' && defaultBg) bgKeys.add(defaultBg)
+      for (const t of spreadTemplates ?? []) {
+        const ov = (t as { background_override_url?: string | null }).background_override_url
+        if (typeof ov === 'string' && ov) bgKeys.add(ov)
+      }
+      const keys = Array.from(bgKeys)
+      const signedList = await Promise.all(
+        keys.map((k) => resolveReadUrl('template-backgrounds', k)),
+      )
+      bgSigned = {}
+      keys.forEach((k, i) => { bgSigned![k] = signedList[i] })
+
+      // Декор шаблонов — подписываем url у placeholder'ов type:'decoration'.
+      outSpreadTemplates = await Promise.all(
+        ((spreadTemplates ?? []) as unknown as Array<Record<string, unknown>>).map(async (t) => {
+          const phs = t.placeholders
+          if (!Array.isArray(phs)) return t
+          const signed = await signDecorPlaceholders(
+            phs as Array<{ type?: string; url?: string | null }>,
+          )
+          return { ...t, placeholders: signed }
+        }),
+      )
+    }
+
     return NextResponse.json({
       template_set: templateSet,
-      spread_templates: spreadTemplates ?? [],
+      spread_templates: outSpreadTemplates,
       backgrounds: backgrounds ?? [],
+      bg_signed: bgSigned,
     })
   }
 

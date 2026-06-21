@@ -23,7 +23,7 @@ import { uploadCoversToSupabase } from '@/lib/cover/upload-covers'
 import { layoutCover } from '@/lib/cover/layout'
 import { renderCoverPreviewSvg } from '@/lib/cover/preview-svg'
 import { ycGetObjectBuffer, ycDelete, stripYcPrefix } from '@/lib/storage'
-import { createUploadTarget, resolveReadUrl, storedValue } from '@/lib/blob-storage'
+import { createUploadTarget, resolveReadUrl, storedValue, storageBackend, signDecorPlaceholders } from '@/lib/blob-storage'
 import type { RenderPlaceholder } from '@/lib/album-builder/types'
 
 export const dynamic = 'force-dynamic'
@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
     height_mm: row.height_mm,
     nominal_spine_width_mm: row.nominal_spine_width_mm,
     background_url: await resolveReadUrl('template-backgrounds', row.background_url as string | null),
-    preview_svg: coverPreviewSvg(row),
+    preview_svg: await coverPreviewSvg(row),
   })))
 
   return NextResponse.json({ covers })
@@ -298,14 +298,23 @@ async function handleBgClear(req: NextRequest, auth: AuthContext): Promise<NextR
 }
 
 // ─── Превью обложки из строки covers ────────────────────────────────────────
-function coverPreviewSvg(row: Record<string, unknown>): string {
+async function coverPreviewSvg(row: Record<string, unknown>): Promise<string> {
   const back = num(row.back_width_mm)
   const front = num(row.front_width_mm)
   const nominal = num(row.nominal_spine_width_mm)
   let height = num(row.height_mm)
-  const placeholders = (Array.isArray(row.placeholders) ? row.placeholders : []) as Array<
+  let placeholders = (Array.isArray(row.placeholders) ? row.placeholders : []) as Array<
     RenderPlaceholder & { zone?: 'back' | 'spine' | 'front' }
   >
+  // Переезд на Timeweb: приватный бакет — подписываем фон и декор для <image>.
+  // В режиме supabase значения не меняются (publicURL/passthrough).
+  let bgUrl = typeof row.background_url === 'string' ? (row.background_url as string) : null
+  if (storageBackend() === 'timeweb') {
+    bgUrl = await resolveReadUrl('template-backgrounds', bgUrl)
+    placeholders = (await signDecorPlaceholders(
+      placeholders as Array<{ type?: string; url?: string | null }>,
+    )) as typeof placeholders
+  }
 
   // Превью библиотечной обложки рисуем «как нарисовано»: реальный корешок =
   // номинальному (нет альбома → нет числа листов).
@@ -335,7 +344,7 @@ function coverPreviewSvg(row: Record<string, unknown>): string {
     spine_left_mm: laid.spine_left_mm,
     spine_right_mm: laid.spine_right_mm,
     placeholders: laid.placeholders,
-    background_url: typeof row.background_url === 'string' ? row.background_url : null,
+    background_url: bgUrl,
   })
 }
 

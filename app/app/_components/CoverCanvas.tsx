@@ -9,7 +9,7 @@
 
 import dynamic from 'next/dynamic'
 import { layoutCover } from '@/lib/cover/layout'
-import { hiddenOverridesFromData, resolveCoverBackground } from '@/lib/cover/editor-merge'
+import { hiddenOverridesFromData, resolveCoverBackground, signCoverBg } from '@/lib/cover/editor-merge'
 import { applyCoverTextStyles, type CoverTextStyleOverrides } from '@/lib/cover/text-styles'
 import type { SpreadInstance, SpreadTemplate, RenderPlaceholder } from '@/lib/album-builder/types'
 import type { CropHandlers } from './AlbumSpreadCanvas'
@@ -46,6 +46,12 @@ type Props = {
   targetFormat?: PrinterFormat | null
   /** Семейство дизайна обложки (для проверки совместимости с форматом). */
   designFamily?: FormatFamily | null
+  /**
+   * Переезд на Timeweb: карта «ключ фона → signed URL». В режиме timeweb фон
+   * (мастер/__bg__) хранится ключом — подписываем для показа. В supabase
+   * null/undefined → фон уже публичный URL, конвертация no-op.
+   */
+  bgSigned?: Record<string, string> | null
 }
 
 function num(v: number | null): number {
@@ -55,7 +61,7 @@ function num(v: number | null): number {
 export default function CoverCanvas({
   master, data, spineWidthMm, containerWidth, mode = 'edit', coverTextStyles,
   editingTextLabel, onTextClick, onTextSubmit, onTextCancel, onPhotoClick, croppingLabel, cropHandlers,
-  targetFormat, designFamily,
+  targetFormat, designFamily, bgSigned,
 }: Props) {
   const back = num(master.back_width_mm)
   const front = num(master.front_width_mm)
@@ -126,7 +132,7 @@ export default function CoverCanvas({
       template={template}
       containerWidth={containerWidth}
       mode={mode}
-      backgroundUrl={resolveCoverBackground(data, master.background_url)}
+      backgroundUrl={signCoverBg(resolveCoverBackground(data, master.background_url), bgSigned)}
       pageSide="spread"
       spineMarginMm={null}
       placeholderOverrides={overrides}

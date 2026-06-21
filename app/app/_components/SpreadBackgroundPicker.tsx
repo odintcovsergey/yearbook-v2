@@ -21,6 +21,11 @@ import type { BackgroundPoolRow } from '@/lib/backgrounds/resolve-background'
 type Props = {
   /** Пул всех категорийных фонов набора. */
   backgrounds: BackgroundPoolRow[]
+  /**
+   * Переезд на Timeweb: карта «ключ фона → signed URL» (только режим timeweb;
+   * в supabase null/undefined → превью строится публичным URL как раньше).
+   */
+  bgSigned?: Record<string, string> | null
   /** Категория текущего разворота (по его ведущей странице). null = неизвестна. */
   category: string | null
   /** Текущий ручной override (путь фона) или null, если работает авторотация. */
@@ -38,6 +43,7 @@ function publicUrl(path: string): string {
 
 export default function SpreadBackgroundPicker({
   backgrounds,
+  bgSigned,
   category,
   currentOverride,
   onSelect,
@@ -143,7 +149,7 @@ export default function SpreadBackgroundPicker({
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={publicUrl(bg.url)}
+                      src={bgSigned?.[bg.url] ?? publicUrl(bg.url)}
                       alt="Фон"
                       className="w-full h-20 object-cover bg-muted"
                     />

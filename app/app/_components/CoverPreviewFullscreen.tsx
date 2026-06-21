@@ -34,13 +34,15 @@ type Props = {
   /** ТЗ 19.06.2026: формат заказа + семейство дизайна для адаптации обложки. */
   targetFormat?: PrinterFormat | null
   designFamily?: FormatFamily | null
+  /** Переезд на Timeweb: карта «ключ фона → signed URL» (только режим timeweb). */
+  bgSigned?: Record<string, string> | null
 }
 
 function num(v: number | null): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : 0
 }
 
-export default function CoverPreviewFullscreen({ items, spineWidthMm, initialIdx, coverTextStyles, onClose, targetFormat, designFamily }: Props) {
+export default function CoverPreviewFullscreen({ items, spineWidthMm, initialIdx, coverTextStyles, onClose, targetFormat, designFamily, bgSigned }: Props) {
   const total = items.length
   const clampIdx = useCallback((i: number) => Math.max(0, Math.min(total - 1, i)), [total])
   const [idx, setIdx] = useState(() => clampIdx(initialIdx))
@@ -144,6 +146,7 @@ export default function CoverPreviewFullscreen({ items, spineWidthMm, initialIdx
               spineWidthMm={spineWidthMm}
               containerWidth={containerWidth}
               mode="preview"
+              bgSigned={bgSigned}
               targetFormat={targetFormat}
               designFamily={designFamily}
               coverTextStyles={coverTextStyles}

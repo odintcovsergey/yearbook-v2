@@ -117,6 +117,22 @@ export function resolveCoverBackground(
 }
 
 /**
+ * Переезд на Timeweb: превратить ключ фона в показываемый URL.
+ *  - пусто → null;
+ *  - уже http(s) URL (supabase public / готовая подпись) → как есть;
+ *  - относительный ключ → signed URL из карты bgSigned (timeweb), иначе ключ
+ *    как есть (supabase: клиент сам строит публичный URL выше по стеку).
+ */
+export function signCoverBg(
+  url: string | null,
+  bgSigned: Record<string, string> | null | undefined,
+): string | null {
+  if (!url) return null;
+  if (/^https?:\/\//.test(url)) return url;
+  return bgSigned?.[url] ?? url;
+}
+
+/**
  * Из data достаёт placeholderOverrides для холста: ключ `__hidden__<label>`='1'
  * → { [label]: { hidden: true } }. Остальные служебные ключи холст читает сам.
  */
