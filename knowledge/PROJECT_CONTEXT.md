@@ -13,14 +13,21 @@
 > на Timeweb за флагом `STORAGE_BACKEND`. Прокликано Сергеем; из живой проверки починены: CORS
 > бакета (загрузка фона), показ залитого фона обложки (`read_url`), опознание фото по стабильному
 > ключу `storage_path` (бейджи/swap/контекст-меню). tsc/1113/build зелёные.
-> ✅ **Шаг 4 — АНАЛИЗ + A4 ДОКАЗАНА (21.06, коммиты `651e1ef`, `4528582`):** выбран **Вариант 1 —
-> self-host PostgREST** (приложение остаётся на `supabase.from()`, меняется endpoint+роль БД, не
-> 868 запросов). Замеры: ~868 `.from()`/0 `.rpc()`/только PostgREST/server-only/RLS не рантайм/auth
-> своя. Поднял PostgREST локально против КОПИИ Timeweb → сверка `scripts/compare-rest-backends.mjs`:
-> **Supabase vs self-hosted = 9/9 PASS** (эмбеды/!inner/!fk/count/.or). Артефакты: ТЗ
-> `docs/tz-step4-deployment.md` + 3 скрипта (сверка/миграции/роли).
-> 🔜 **Шаг 4 реализация — требует сервера** (панель Timeweb/SSH): боевые роли БД, PostgREST на
-> сервере, VDS+HTTPS+CI/CD, cutover. Подробно — `sessions/2026-06-21.md`, память [[project_migration_to_ru]].
+> ⚡ **Шаг 4 — РЕАЛИЗАЦИЯ ИДЁТ (21.06, коммиты `651e1ef`,`4528582`,`23467ca`,`3c20a61`):** выбран
+> **Вариант 1 — self-host PostgREST** (приложение остаётся на `supabase.from()`, меняется
+> endpoint+роль БД). **Сервер Timeweb поднят** (VDS, IP `5.42.103.168`, Ubuntu 24.04, root по
+> SSH-ключу): установлены **Node 20.20.2 + nginx 1.24 + PostgREST v12.2.3** (та же major, что у
+> Supabase). PostgREST заведён под systemd на `127.0.0.1:3001` против КОПИИ базы Timeweb
+> (как `gen_user`, SSL verify-ca). **Сверка A4 на БОЕВЫХ данных** (Supabase vs новый PostgREST
+> через SSH-туннель, 33 запроса = 9 синтетических + 24 реальных из кода): **30/33 PASS; 3 FAIL —
+> ТОЛЬКО дрейф данных** (`albums.archived` true/false: альбом заархивирован в проде после снимка
+> 20.06), структура/статусы совпадают → PostgREST ведёт себя идентично. Грабли: с РФ-сервера
+> CDN релизов GitHub недоступен → бинарники качаем на Мак и шлём `scp`.
+> 🔜 **Осталось до cutover:** (1) боевые роли `authenticator`/`web_app` (нужен суперюзер/поддержка
+> Timeweb), (2) развернуть приложение на VDS (`.env.production`, тот же `JWT_SECRET`,
+> `STORAGE_BACKEND=timeweb`), (3) nginx `/rest/v1`→PostgREST + домен + HTTPS, (4) cutover с
+> финальной дельта-синхронизацией БД+storage. Подробно — `sessions/2026-06-21.md`, память
+> [[project_migration_to_ru]]. Шаблоны: `deploy/timeweb/`.
 
 > **🛑 Экспорт ОСТАНОВЛЕН до переезда (20.06.2026).** Ветка
 > `feat/export-acceleration-naming` (НЕ в main): типографская выгрузка целиком
