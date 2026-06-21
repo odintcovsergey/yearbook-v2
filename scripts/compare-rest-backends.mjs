@@ -96,10 +96,58 @@ async function discover() {
   }
 }
 
+// ─── РЕАЛЬНЫЕ эмбеды из рантайм-кода (app/ + lib/) ───────────────────────────
+// Дедуплицированный список из живого кода: точные строки select со встроенными
+// эмбедами, какие supabase-js реально шлёт в PostgREST. Каждый прогоняется как
+// чтение с детерминированным порядком (order по PK/составному ключу + limit),
+// без рантайм-фильтров — нам важна ЭКВИВАЛЕНТНОСТЬ формы эмбеда на двух бэкендах,
+// а не воспроизведение бизнес-фильтра. `order` указывается отдельно (стыковочные
+// таблицы photo_children/photo_teachers без id — по составному ключу).
+// Поле `where` (опц.) — нашёл место в коде, чтобы при падении было видно откуда.
+const REAL_EMBEDS = [
+  // albums
+  { table: 'albums', order: 'id', select: '*,config_presets!config_preset_id(slug,name)', where: 'tenant/route.ts:823' },
+  // children
+  { table: 'children', order: 'id', select: 'albums!inner(tenant_id)', where: 'tenant/route.ts:604,619,651,1141' },
+  { table: 'children', order: 'id', select: 'album_id,submitted_at,started_at,is_purchased,albums!inner(tenant_id)', where: 'tenant/route.ts:828' },
+  { table: 'children', order: 'id', select: 'id,full_name,class,access_token,submitted_at,started_at,is_purchased,config_preset_id,config_presets(slug,name)', where: 'tenant/route.ts:1090' },
+  { table: 'children', order: 'id', select: 'album_id,submitted_at,started_at,albums!inner(id,title,city,year,archived,tenant_id,deadline)', where: 'tenant/route.ts:2317' },
+  { table: 'children', order: 'id', select: 'id,album_id,albums(personal_spread_enabled,personal_spread_min,personal_spread_max,personal_spread_price,tenant_id,archived)', where: 'personal-spread/route.ts:21' },
+  // cover_selections
+  { table: 'cover_selections', order: 'id', select: 'surcharge,child_id,children!inner(album_id)', where: 'tenant/route.ts:968' },
+  { table: 'cover_selections', order: 'id', select: 'photo_id,children!inner(album_id)', where: 'workflow/originals-zip/route.ts:122' },
+  // deals
+  { table: 'deals', order: 'id', select: '*,deal_stages(name,color),albums(title,city,year)', where: 'crm/route.ts:79' },
+  { table: 'deals', order: 'id', select: '*,deal_stages(name,color),clients(name,city),albums(title,city,year)', where: 'crm/route.ts:106,246,268,285' },
+  // personal_spread_photos
+  { table: 'personal_spread_photos', order: 'id', select: 'child_id,filename,storage_path,sort_order,id,children(full_name,class)', where: 'tenant/route.ts:2281; spread-download/route.ts:32' },
+  // photo_children (составной ключ)
+  { table: 'photo_children', order: 'photo_id,child_id', select: 'photo_id,children(full_name)', where: 'tenant/route.ts:1896; originals-zip/route.ts:217' },
+  // photo_teachers (составной ключ)
+  { table: 'photo_teachers', order: 'photo_id,teacher_id', select: 'teacher_id,photos(filename,storage_path)', where: 'tenant/route.ts:1823,2510' },
+  { table: 'photo_teachers', order: 'photo_id,teacher_id', select: 'teacher_id,photos(storage_path)', where: 'build-album-input.ts:146' },
+  // presets
+  { table: 'presets', order: 'id', select: '*,template_sets!inner(is_published)', where: 'tenant/route.ts:1627' },
+  // quote_selections
+  { table: 'quote_selections', order: 'id', select: 'quote_id,albums!inner(tenant_id)', where: 'tenant/route.ts:2153' },
+  // responsible_parents
+  { table: 'responsible_parents', order: 'id', select: 'album_id,access_token,albums!inner(tenant_id)', where: 'tenant/route.ts:832' },
+  // selections
+  { table: 'selections', order: 'id', select: 'child_id,photos(thumb_path,storage_path)', where: 'tenant/route.ts:1027' },
+  { table: 'selections', order: 'id', select: 'photo_id,selection_type,photos(filename,storage_path,thumb_path)', where: 'tenant/route.ts:1149' },
+  { table: 'selections', order: 'id', select: 'child_id,photo_id,selection_type,photos(filename)', where: 'tenant/route.ts:2428' },
+  { table: 'selections', order: 'id', select: 'child_id,selection_type,photos(storage_path)', where: 'cover/load-covers.ts:93' },
+  { table: 'selections', order: 'id', select: 'photos(storage_path)', where: 'cover/parent-gallery.ts:174' },
+  // teachers
+  { table: 'teachers', order: 'id', select: 'album_id,submitted_at,albums!inner(tenant_id)', where: 'tenant/route.ts:836' },
+  // tasks
+  { table: 'tasks', order: 'id', select: '*,deals(title),clients(name)', where: 'crm/route.ts:117,314' },
+]
+
 // ─── Набор сверочных запросов (читаются, детерминированы) ────────────────────
 function buildQueries(a) {
   const tid = a.tenantId ?? '00000000-0000-0000-0000-000000000000'
-  return [
+  const synthetic = [
     // Простые / стандартный SQL
     { name: 'simple: albums select+order+limit', path: '/albums?select=id,title,city,year&order=id&limit=5' },
     { name: 'eq: albums by tenant', path: `/albums?select=id,tenant_id&tenant_id=eq.${tid}&order=id&limit=5` },
@@ -117,6 +165,12 @@ function buildQueries(a) {
     // count=exact (сравниваем заголовок content-range)
     { name: 'count=exact: albums total', path: '/albums?select=id&limit=1', headers: { Prefer: 'count=exact' }, compareContentRange: true },
   ]
+  // Реальные эмбеды из кода → детерминированные read-запросы.
+  const real = REAL_EMBEDS.map((e) => ({
+    name: `real[${e.table}]: ${e.select}  (${e.where})`,
+    path: `/${e.table}?select=${encodeURIComponent(e.select)}&order=${e.order}&limit=5`,
+  }))
+  return [...synthetic, ...real]
 }
 
 // ─── Прогон ──────────────────────────────────────────────────────────────────
