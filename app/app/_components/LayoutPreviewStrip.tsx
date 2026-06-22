@@ -64,6 +64,13 @@ type TemplateDetailResponse = {
   spread_templates: SpreadTemplate[]
   /** Пул категорийных фонов набора (для ротации). */
   backgrounds?: BackgroundPoolRow[]
+  /**
+   * timeweb: карта «ключ фона → signed URL» (пул + default + оверрайды мастеров,
+   * а значит и album-override __bg__). На supabase отсутствует (клиент строит
+   * публичный URL сам). Без неё на timeweb фон превью «Обзора» не грузится —
+   * бакет приватный. Та же карта, что использует редактор разворота (page.tsx).
+   */
+  bg_signed?: Record<string, string> | null
 }
 
 const TARGET_HEIGHT_PX = 175  // см. инструкцию 2.3 «Размер миниатюр»
@@ -283,11 +290,14 @@ export default function LayoutPreviewStrip({ layout, onOpenEditor, albumPrintTyp
       }
     })
     const paths = resolveBackgrounds(inputs, pool, defaultPath)
+    const signed = detail.bg_signed ?? null
     return paths.map((p) =>
       p
         ? p.startsWith('http')
           ? p
-          : `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${p}`
+          // timeweb: подписанная ссылка по ключу (как в редакторе, toBgPublicUrl).
+          // supabase: signed нет → публичный URL как раньше.
+          : (signed?.[p] ?? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/template-backgrounds/${p}`)
         : null,
     )
   }, [detail, visualSpreads, templateById])
