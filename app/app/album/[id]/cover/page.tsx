@@ -227,6 +227,12 @@ export default function CoverEditorPage() {
     pushHistory()
     setStudentPatches((prev) => {
       const cur = { ...(prev[childId] ?? {}), ...patch }
+      // null = снять студенческий override (как setTypeKey удаляет ключ). Без
+      // этого ключ со значением null перекрывал бы типовой при merge — из-за
+      // чего «применить ко всем» применялось ко всем обложкам КРОМЕ текущей.
+      for (const k of Object.keys(patch)) {
+        if (patch[k] === null) delete cur[k]
+      }
       saveDebounced(`student:${childId}`, { action: 'cover_save_edit', album_id: albumId, scope: 'student', child_id: childId, data: cur })
       return { ...prev, [childId]: cur }
     })
@@ -397,17 +403,38 @@ export default function CoverEditorPage() {
   }, [item, data])
 
   // ── Размер холста ────────────────────────────────────────────────────────
+  // Вписываем по ширине И высоте рабочей зоны (как в редакторе разворотов),
+  // чтобы холст адаптировался под окно без скролла. Раньше мерили только
+  // ширину (clientWidth-32) → у широкой обложки вылезали оба ползунка.
   const canvasRef = useRef<HTMLDivElement>(null)
-  const [canvasWidth, setCanvasWidth] = useState(800)
+  const [canvasArea, setCanvasArea] = useState({ width: 800, height: 600 })
   useEffect(() => {
     const el = canvasRef.current
     if (!el) return
-    const update = () => setCanvasWidth(Math.max(320, el.clientWidth - 32))
+    const update = () => setCanvasArea({ width: el.clientWidth, height: el.clientHeight })
     update()
     const ro = new ResizeObserver(update)
     ro.observe(el)
     return () => ro.disconnect()
   }, [loading, paletteCollapsed])
+  // Пропорция обложки = (задняя + корешок + передняя) / высота. Корешок —
+  // реальный из профиля, иначе номинальный мастера.
+  const coverAspect = useMemo(() => {
+    const m = item?.master
+    if (!m) return null
+    const n = (v: number | null | undefined) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+    const spine = editor?.spine_width_mm ?? n(m.nominal_spine_width_mm)
+    const w = n(m.back_width_mm) + n(m.front_width_mm) + n(spine)
+    const h = n(m.height_mm)
+    return w > 0 && h > 0 ? w / h : null
+  }, [item, editor])
+  const canvasWidth = useMemo(() => {
+    const availW = Math.max(320, canvasArea.width - 32)
+    const availH = Math.max(200, canvasArea.height - 32)
+    if (!coverAspect) return availW
+    // Ширина, при которой высота холста (= ширина/пропорция) влезает в availH.
+    return Math.min(availW, availH * coverAspect)
+  }, [canvasArea, coverAspect])
 
   // Переход к обложке N со сбросом активных режимов (кроп/текст/панель).
   const goToIdx = useCallback((i: number) => {

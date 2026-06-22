@@ -100,7 +100,21 @@ export default function CoverBackgroundPanel({
 
         {isPerStudent && (
           <label className="flex items-center gap-2 mb-3 text-sm cursor-pointer">
-            <input type="checkbox" checked={applyToAll} onChange={(e) => setApplyToAll(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={applyToAll}
+              onChange={(e) => {
+                const checked = e.target.checked
+                setApplyToAll(checked)
+                // Поток «выбрал фон → нажал галочку»: при включении сразу
+                // применяем уже выбранный на этой обложке фон ко всему типу
+                // (включая текущую — см. setStudentKeys, снимающий override).
+                if (checked) {
+                  const current = isNone ? COVER_BG_NONE : isDesign ? null : (currentOverride ?? null)
+                  onApply(current, true)
+                }
+              }}
+            />
             Применить ко всем обложкам типа «{typeLabel}»
           </label>
         )}
