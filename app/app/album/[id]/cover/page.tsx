@@ -430,7 +430,9 @@ export default function CoverEditorPage() {
   }, [item, editor])
   const canvasWidth = useMemo(() => {
     const availW = Math.max(320, canvasArea.width - 32)
-    const availH = Math.max(200, canvasArea.height - 32)
+    // Чуть больший запас по высоте (−40), чтобы рандинг/тени не давали остаточный
+    // вертикальный скролл — холст должен полностью влезать без ползунков.
+    const availH = Math.max(200, canvasArea.height - 40)
     if (!coverAspect) return availW
     // Ширина, при которой высота холста (= ширина/пропорция) влезает в availH.
     return Math.min(availW, availH * coverAspect)
@@ -593,11 +595,6 @@ export default function CoverEditorPage() {
                 />
               )}
             </div>
-            {item?.child_id && (
-              <div className="shrink-0 text-center text-xs text-muted-foreground pb-2">
-                Имя и класс — индивидуальны для ученика; кроп портрета тоже. Остальные тексты (заголовок, год, школа…) — общие для всех обложек типа «{TYPE_LABEL[item.cover_type]}».
-              </div>
-            )}
             {/* Навигация между обложками. */}
             <div className="shrink-0 flex items-center justify-center gap-3 pb-3">
               <button
