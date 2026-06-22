@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — текущее состояние yearbook-v2
 
-> Снимок на **21.06.2026**. Источники: свежий `yearbook-context-v199.md` + `MEMORY.md` +
+> Снимок на **22.06.2026**. Источники: свежий `yearbook-context-v199.md` + `MEMORY.md` +
 > `CLAUDE.md`. Обновляется в конце каждой сессии Claude Code.
 
 > **⚡ ПЕРЕЕЗД НА TIMEWEB ИДЁТ по шагам (ветка `feat/migrate-storage-timeweb`, НЕ в main, прод не тронут).**
@@ -124,6 +124,10 @@
    файлы, таймаут больших альбомов / фоновая очередь).
 2. **Готовность к нагрузке** (`docs/tz-load-readiness.md`): очередь render_jobs на
    чистом Postgres + воркер на YC.
-3. **Переезд на российские серверы** (Vercel+Supabase → Yandex Cloud), триггеры
-   152-ФЗ/школы/масштаб.
+3. **Переезд на российские серверы** (Vercel+Supabase → **Timeweb**), триггеры
+   152-ФЗ/школы/масштаб. ⚡ ИДЁТ в ветке `feat/migrate-storage-timeweb` (НЕ в main):
+   БД+storage скопированы, стенд `https://app.okeybook.ru` жив (self-host PostgREST).
+   ✅ 22.06.2026 закрыт блокер cutover — `/rest/v1` защищён jwt-secret (без
+   суперюзера). Осталось: дельта-синхронизация → переключение домена/ENV → smoke.
+   Детали — память `project_migration_to_ru` + `knowledge/sessions/2026-06-22.md`.
 4. **AI-помощник для партнёров** — отдельный большой проект.
