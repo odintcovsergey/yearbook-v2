@@ -46,13 +46,19 @@
 
 - **`/rest/v1` срезается trailing-слэшем** в `proxy_pass http://127.0.0.1:3001/;`
   — без него PostgREST получит несуществующий путь `/rest/v1/...`.
-- **`jwt-secret` у PostgREST НЕ задаём** — всё идёт под `web_app`/`gen_user`
-  (= нынешний service_role). Авторизация остаётся в коде приложения. **НО:**
-  supabase-js ВСЕГДА шлёт `Authorization: Bearer`, а PostgREST без `jwt-secret`
-  отвечает на это `500 PGRST300 "Server lacks JWT secret"` → весь доступ к БД из
-  приложения падает. **Обязательно срезать заголовок в nginx**:
-  `proxy_set_header Authorization "";` (см. `nginx-yearbook.conf`). Curl без
-  заголовка отдаёт 200 — поэтому smoke без supabase-js эту дыру НЕ ловит.
+- **✅ `/rest/v1` ЗАКРЫТ через `jwt-secret` (22.06.2026, без суперюзера Timeweb).**
+  PostgREST подключается под `gen_user` (владелец = как service_role), но требует
+  валидный JWT: задан `jwt-secret` (отдельный случайный секрет, только в
+  `postgrest.conf`), `db-anon-role` УБРАН → запрос без токена = `401 "Anonymous
+  access is disabled"`. Приложение шлёт служебный токен
+  (`SUPABASE_SERVICE_ROLE_KEY` в `.env.production` = HS256 `{"role":"gen_user"}`,
+  подписан тем секретом; server-only). В nginx срез `Authorization`/`apikey`
+  УБРАН (иначе токен не доедет). Секрет PostgREST НЕ равен `JWT_SECRET`
+  приложения (вход пользователей) — слой независим. Anon-ключ к БД не ходит
+  (браузер только через серверные API-роуты) → пересборка не нужна.
+  **Историческая грабля (решена):** раньше `jwt-secret` НЕ задавали и срезали
+  `Authorization` в nginx — из-за этого `/rest/v1` был открыт наружу как
+  привилегированная роль (curl без заголовка отдавал 200, smoke это не ловил).
 - **После каждой миграции** — reload схемы (`scripts/db-migrate.mjs` шлёт
   `NOTIFY pgrst,'reload schema'`); иначе новые колонки → 400.
 - **Сервер этих действий требует обязательно** — с ноутбука Claude их выполнить
