@@ -10,8 +10,9 @@
  *
  * Решение Сергея (ТЗ №2): ориентир ~30, уточняется по реальному поведению.
  * Считаем по СЫРОМУ числу разворотов layout (album_layouts.spreads.length).
+ * Тюнится без передеплоя через env EXPORT_SYNC_SPREAD_THRESHOLD.
  */
-export const SYNC_SPREAD_THRESHOLD = 30
+export const SYNC_SPREAD_THRESHOLD = Number(process.env.EXPORT_SYNC_SPREAD_THRESHOLD) || 30
 
 export type ExportKind = 'pdf' | 'typography'
 
