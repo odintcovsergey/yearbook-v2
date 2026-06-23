@@ -1,7 +1,17 @@
 # PROJECT_CONTEXT — текущее состояние yearbook-v2
 
-> Снимок на **22.06.2026**. Источники: свежий `yearbook-context-v199.md` + `MEMORY.md` +
+> Снимок на **23.06.2026**. Источники: свежий `yearbook-context-v199.md` + `MEMORY.md` +
 > `CLAUDE.md`. Обновляется в конце каждой сессии Claude Code.
+
+> **✅ ПЕРЕЕЗД ЗАКРЕПЛЁН В MAIN + CI/CD АВТО-ДЕПЛОЙ РАБОТАЕТ (23.06.2026).**
+> Боевой `app.okeybook.ru` на Timeweb (VDS, IP `5.129.221.197`, Ubuntu 24.04). Ветка
+> `feat/migrate-storage-timeweb` влита в `main` (fast-forward). Деплой — **pull-модель**:
+> сервер по таймеру (2 мин) опрашивает GitHub `main`, собирает релиз офлайн (общий
+> `shared/node_modules` — реестр npm с РФ-сервера недоступен), переключает симлинк
+> `current`, рестартит, health-check (`/login`+`/api/health`) с авто-откатом. Раскладка
+> `/srv/yearbook/{repo,shared,releases,current}`; старый `/srv/yearbook-v2` оставлен как
+> откат. Артефакты — `deploy/timeweb/`. **Как выкатить: `git push` в main.** Подробности —
+> `knowledge/sessions/2026-06-23.md`. Следующее ТЗ — фоновая очередь экспорта PDF.
 
 > **⚡ ПЕРЕЕЗД НА TIMEWEB ИДЁТ по шагам (ветка `feat/migrate-storage-timeweb`, НЕ в main, прод не тронут).**
 > ✅ **Шаг 1 — БД (20.06):** Timeweb Managed PostgreSQL 18.4 (Москва, SSL), полная копия Supabase
@@ -125,9 +135,13 @@
 2. **Готовность к нагрузке** (`docs/tz-load-readiness.md`): очередь render_jobs на
    чистом Postgres + воркер на YC.
 3. **Переезд на российские серверы** (Vercel+Supabase → **Timeweb**), триггеры
-   152-ФЗ/школы/масштаб. ⚡ ИДЁТ в ветке `feat/migrate-storage-timeweb` (НЕ в main):
-   БД+storage скопированы, стенд `https://app.okeybook.ru` жив (self-host PostgREST).
-   ✅ 22.06.2026 закрыт блокер cutover — `/rest/v1` защищён jwt-secret (без
-   суперюзера). Осталось: дельта-синхронизация → переключение домена/ENV → smoke.
-   Детали — память `project_migration_to_ru` + `knowledge/sessions/2026-06-22.md`.
+   152-ФЗ/школы/масштаб. ⚡ ветка `feat/migrate-storage-timeweb` (НЕ в main).
+   ✅ **CUTOVER ВЫПОЛНЕН 22.06.2026**: `app.okeybook.ru` боевой на Timeweb (БД-
+   переснимок 52 табл./0 расхождений, хранилище в синхроне, `/rest/v1` закрыт
+   jwt-secret, пароль gen_user сменён, Vercel уведён). 🟡 БЛОКЕР доступности: старый
+   IP `5.42.103.168` режется ТСПУ (РФ-DPI, подтвердил Timeweb) → сменили на новый
+   доп.IP `5.129.221.197` (с телефона без VPN открывается). A-запись переключена,
+   **ЖДЁМ распространения DNS**. След.шаг: `dig app.okeybook.ru` → ждём новый IP, затем
+   телефон по домену без VPN. Vercel+Supabase — резерв, не гасить; пользователей пока
+   не звать. Детали — память `project_migration_to_ru` + `knowledge/sessions/2026-06-22.md`.
 4. **AI-помощник для партнёров** — отдельный большой проект.
