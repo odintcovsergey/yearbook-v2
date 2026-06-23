@@ -13,6 +13,14 @@
 > откат. Артефакты — `deploy/timeweb/`. **Как выкатить: `git push` в main.** Подробности —
 > `knowledge/sessions/2026-06-23.md`. Следующее ТЗ — фоновая очередь экспорта PDF.
 
+> **✅ НОЧНОЙ OFF-SITE БЭКАП БД — НА VDS (23.06.2026).** GitHub Actions до РФ-базы Timeweb
+> НЕ доходит (timeout 5432 с заграничного раннера) → ночной дамп перенесён на сам сервер:
+> `yearbook-backup.timer` (ежедневно 03:00 UTC), `pg_dump` боевой базы → off-site в приватный
+> `github.com/odintcovsergey/yearbook-backups` по SSH deploy-key (храним 30 дней). Это 2-й слой
+> поверх встроенных бэкапов Timeweb. `pg_dump 18` ставился через зеркало Яндекса. Старый
+> `backup.yml` (Supabase) — расписание отключено, только ручной запуск. Пароль `gen_user` сменён
+> (засветился при отладке). Детали — `knowledge/sessions/2026-06-23.md`, память `project_offsite_db_backup`.
+
 > **⚡ ПЕРЕЕЗД НА TIMEWEB ИДЁТ по шагам (ветка `feat/migrate-storage-timeweb`, НЕ в main, прод не тронут).**
 > ✅ **Шаг 1 — БД (20.06):** Timeweb Managed PostgreSQL 18.4 (Москва, SSL), полная копия Supabase
 > `public` — 52 таблицы / 14060 строк, 0 расхождений. ✅ **Шаг 2 — хранилище (21.06):** все файлы
