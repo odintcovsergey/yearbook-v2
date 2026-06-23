@@ -4,7 +4,7 @@ on:
   schedule:
     # БД — каждый день в 03:00 UTC (06:00 по Москве)
     - cron: '0 3 * * *'
-    # Storage metadata — каждое воскресенье в 04:00 UTC
+    # Storage inventory — каждое воскресенье в 04:00 UTC
     - cron: '0 4 * * 0'
   workflow_dispatch:
     inputs:
@@ -15,7 +15,7 @@ on:
 
 jobs:
   # ─────────────────────────────────────────────
-  # Бэкап БД — ежедневно
+  # Бэкап БД (Timeweb managed Postgres) — ежедневно
   # ─────────────────────────────────────────────
   backup-database:
     name: PostgreSQL dump
@@ -25,23 +25,43 @@ jobs:
       github.event.schedule == '0 3 * * *'
 
     steps:
-      - name: Install postgresql-client 17
+      - name: Install postgresql-client 18
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y curl ca-certificates
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
           echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq
-          sudo apt-get install -y postgresql-client-17
+          sudo apt-get install -y postgresql-client-18
+
+      # Проба связи: достаёт ли раннер GitHub до РФ-базы Timeweb.
+      # Если упрётся в сетевой фильтр — упадёт здесь с понятным сообщением,
+      # и тогда переходим на бэкап с самого сервера (он до базы ходит).
+      - name: Check connectivity to Timeweb DB
+        env:
+          DB_URL: ${{ secrets.TIMEWEB_DATABASE_URL }}
+          PGSSLMODE: require
+          PGCONNECT_TIMEOUT: '15'
+        run: |
+          echo "Проверяю доступ к базе Timeweb из GitHub Actions…"
+          if /usr/lib/postgresql/18/bin/psql "$DB_URL" -tAc "select 'ok', version();"; then
+            echo "✅ База Timeweb доступна из GitHub Actions."
+          else
+            echo "❌ GitHub Actions НЕ дошёл до базы Timeweb (сетевой фильтр/таймаут)."
+            echo "   Переходим на запасной вариант — бэкап с самого сервера по расписанию."
+            exit 1
+          fi
 
       - name: Dump database
         env:
-          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          DB_URL: ${{ secrets.TIMEWEB_DATABASE_URL }}
+          PGSSLMODE: require
+          PGCONNECT_TIMEOUT: '15'
         run: |
           DATE=$(date +%Y-%m-%d)
           mkdir -p dump
-          /usr/lib/postgresql/17/bin/pg_dump \
-            "postgresql://postgres.bnotiyhamfyllcrqwquq:${PGPASSWORD}@aws-1-eu-west-2.pooler.supabase.com:5432/postgres" \
+          /usr/lib/postgresql/18/bin/pg_dump \
+            "$DB_URL" \
             --no-owner --no-acl \
             --schema=public \
             -Fc \
@@ -65,38 +85,32 @@ jobs:
           git push
 
   # ─────────────────────────────────────────────
-  # Список файлов Storage — еженедельно
+  # Опись файлов Storage (Timeweb S3) — еженедельно
   # ─────────────────────────────────────────────
   backup-storage:
-    name: Storage file list
+    name: Storage file inventory
     runs-on: ubuntu-latest
     if: >
       github.event.schedule == '0 4 * * 0' ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run_storage == 'yes')
 
     steps:
-      - name: Fetch storage file list
+      - name: List Timeweb S3 bucket
         env:
-          SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.TWC_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TWC_S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.TWC_S3_REGION }}
+          S3_ENDPOINT: ${{ secrets.TWC_S3_ENDPOINT }}
+          S3_BUCKET: ${{ secrets.TWC_S3_BUCKET }}
         run: |
           DATE=$(date +%Y-%m-%d)
           mkdir -p storage-meta
-
-          curl -s \
-            -H "apikey: ${SERVICE_ROLE_KEY}" \
-            -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
-            "https://bnotiyhamfyllcrqwquq.supabase.co/storage/v1/bucket" \
-            -o storage-meta/buckets.json
-
-          curl -s -X POST \
-            -H "apikey: ${SERVICE_ROLE_KEY}" \
-            -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
-            -H "Content-Type: application/json" \
-            -d '{"prefix":"","limit":10000,"offset":0}' \
-            "https://bnotiyhamfyllcrqwquq.supabase.co/storage/v1/object/list/yearbook-photos" \
-            -o "storage-meta/files-${DATE}.json"
-
-          echo "Files listed: $(grep -o '"name"' storage-meta/files-${DATE}.json | wc -l)"
+          # Полная опись (с пагинацией) — путь, размер, дата каждого объекта.
+          aws s3 ls "s3://${S3_BUCKET}" --recursive \
+            --endpoint-url "${S3_ENDPOINT}" \
+            > "storage-meta/files-${DATE}.txt"
+          echo "Files listed: $(wc -l < storage-meta/files-${DATE}.txt)"
+          echo "Total size: $(awk '{s+=$3} END {printf "%.1f MB\n", s/1048576}' storage-meta/files-${DATE}.txt)"
 
       - name: Push to yearbook-backups
         env:
@@ -108,9 +122,8 @@ jobs:
           git config user.email "backup@yearbook.app"
           git config user.name "Backup Bot"
           mkdir -p storage
-          cp ../storage-meta/buckets.json storage/buckets.json
-          cp "../storage-meta/files-${DATE}.json" "storage/files-${DATE}.json"
-          find storage/ -name "files-*.json" -mtime +28 -delete
+          cp "../storage-meta/files-${DATE}.txt" "storage/files-${DATE}.txt"
+          find storage/ -name "files-*.txt" -mtime +28 -delete
           git add -A
-          git commit -m "backup: storage meta ${DATE}" || echo "Nothing new"
+          git commit -m "backup: storage inventory ${DATE}" || echo "Nothing new"
           git push
