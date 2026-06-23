@@ -1,11 +1,12 @@
 name: Daily Backup
 
+# ВНИМАНИЕ: раннеры GitHub (за границей) НЕ доходят до базы Timeweb в РФ
+# (TCP 5432 timeout — проверено 2026-06-23). Поэтому ночной бэкап перенесён
+# НА САМ СЕРВЕР (VDS 5.129.221.197): systemd-таймер yearbook-backup.timer,
+# дамп уходит off-site по SSH deploy-key в репозиторий yearbook-backups.
+# Здесь ночное расписание ОТКЛЮЧЕНО — оставлен только ручной запуск
+# (на случай, если когда-нибудь база станет доступна снаружи).
 on:
-  schedule:
-    # БД — каждый день в 03:00 UTC (06:00 по Москве)
-    - cron: '0 3 * * *'
-    # Storage inventory — каждое воскресенье в 04:00 UTC
-    - cron: '0 4 * * 0'
   workflow_dispatch:
     inputs:
       run_storage:
