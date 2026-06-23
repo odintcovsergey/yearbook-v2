@@ -672,13 +672,22 @@ function storageKeyFromUrl(url: string): string {
   try {
     const u = new URL(url);
     const segments = u.pathname.split('/').filter(Boolean);
-    // YC отдаёт signed URL в virtual-hosted стиле: имя бакета в ДОМЕНЕ
-    // (yearbook-photos.storage.yandexcloud.net/<storage_path>) — тогда весь
-    // путь и есть ключ. В path-style (storage.yandexcloud.net/<bucket>/<path>)
-    // первый сегмент — имя бакета, его отбрасываем. Раньше код всегда резал
-    // первый сегмент и в virtual-hosted терял id альбома → ключ не совпадал
-    // с urlToFilename → оригинал не находился.
-    if (u.hostname.startsWith('storage.')) {
+    // S3 отдаёт signed URL двумя стилями:
+    //  • virtual-hosted — имя бакета в ДОМЕНЕ
+    //    (yearbook-photos.storage.yandexcloud.net/<storage_path>) → весь путь
+    //    и есть ключ.
+    //  • path-style — имя бакета ПЕРВЫМ сегментом пути
+    //    (storage.yandexcloud.net/<bucket>/<path> — Яндекс;
+    //     s3.twcstorage.ru/<bucket>/<path> — Timeweb) → первый сегмент
+    //    (бакет) отбрасываем, иначе ключ не совпадёт с urlToFilename
+    //    (ключуется по storage_path БЕЗ бакета) и оригинал не находится.
+    // ВАЖНО (Timeweb): хост `s3.twcstorage.ru` НЕ начинается с `storage.`,
+    // поэтому раньше бакет не срезался → на Timeweb оригиналы НИКОГДА не
+    // находились (no_original), экспорт падал на протухающий selection-WebP
+    // (серые фото + низкое качество печати).
+    const isPathStyle =
+      u.hostname.startsWith('storage.') || u.hostname.endsWith('twcstorage.ru');
+    if (isPathStyle) {
       return segments.slice(1).join('/');
     }
     return segments.join('/');
