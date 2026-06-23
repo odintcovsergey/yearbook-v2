@@ -1,0 +1,25 @@
+# Pull-деплой yearbook-v2: oneshot, запускается таймером yearbook-deploy.timer.
+# Тянет main с GitHub, собирает релиз, переключает симлинк, health-check + откат.
+# Ставится в /etc/systemd/system/yearbook-deploy.service
+[Unit]
+Description=yearbook-v2 pull deploy (poll GitHub main, build, switch, health-check)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=yearbook
+Group=yearbook
+WorkingDirectory=/srv/yearbook
+# deploy.sh лежит в выкаченном репо (current/deploy/timeweb), но для устойчивости
+# (на случай битого релиза) запускаем копию из repo-источника.
+ExecStart=/srv/yearbook/repo/deploy/timeweb/deploy.sh
+# Сборка тяжёлая — даём время и ограничиваем, чтобы не висло вечно
+TimeoutStartSec=1200
+Nice=10
+# npm пишет в $HOME — у yearbook это /srv/yearbook-v2; зададим явно
+Environment=HOME=/srv/yearbook
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

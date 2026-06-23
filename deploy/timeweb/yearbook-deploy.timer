@@ -1,0 +1,16 @@
+# Таймер pull-деплоя: опрашивает GitHub main каждые 2 минуты.
+# Ставится в /etc/systemd/system/yearbook-deploy.timer
+# Включить:  systemctl enable --now yearbook-deploy.timer
+# Выключить (заморозить авто-деплой): systemctl disable --now yearbook-deploy.timer
+[Unit]
+Description=Опрос GitHub main и авто-деплой yearbook-v2 каждые 2 минуты
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=false
+Unit=yearbook-deploy.service
+
+[Install]
+WantedBy=timers.target

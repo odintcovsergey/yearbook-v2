@@ -13,7 +13,58 @@
 | `postgrest.service` | `/etc/systemd/system/postgrest.service` | автозапуск PostgREST — B1 |
 | `nginx-yearbook.conf` | `/etc/nginx/sites-available/yearbook` | `/rest/v1` → PostgREST + фронт Next + HTTPS — A3/B2 |
 | `yearbook.service` | `/etc/systemd/system/yearbook.service` | автозапуск Next — B1 |
-| `deploy-timeweb.yml` | `.github/workflows/` (после cutover) | авто-деплой по push в main — B3 |
+| `deploy.sh` | `/srv/yearbook/repo/deploy/timeweb/` (в репо) | **pull-деплой**: fetch→build→switch→health→rollback |
+| `health-check.sh` | рядом с `deploy.sh` | проба `/login`=200 + `/api/health`=200 (БД) |
+| `yearbook-deploy.service` | `/etc/systemd/system/` | oneshot-запуск `deploy.sh` |
+| `yearbook-deploy.timer` | `/etc/systemd/system/` | опрос GitHub каждые 2 мин |
+| ~~`deploy-timeweb.yml`~~ | — | ⚠️ **ЗАМЕНЁН pull-моделью** (см. ниже), не используется |
+
+## ⭐ Авто-деплой (pull-модель) — АКТУАЛЬНАЯ СХЕМА (ТЗ №1, 23.06.2026)
+
+**Почему pull, а не GitHub Actions push.** С РФ-сервера **исходящий** git до GitHub
+работает (`git ls-remote` → OK, проверено 23.06), а **входящие** соединения из-за
+рубежа до сервера ненадёжны (та же фильтрация, что убила HTTP-01 Let's Encrypt).
+Поэтому раннер GitHub, который SSH-ится внутрь сервера (входящее), и self-hosted
+раннер (тянет бинарь/control-plane с заблокированного `githubusercontent.com`) —
+оба хрупкие. Надёжно: **сервер сам опрашивает GitHub** (только исходящее).
+GitFlic с сервера НЕ тянется (`ls-remote` → FAIL) — primary remote = GitHub.
+
+**Раскладка на сервере (capistrano-стиль, аддитивно к старому `/srv/yearbook-v2`):**
+```
+/srv/yearbook/
+├── repo/                      git clone main (источник; fetch исходящий)
+├── shared/.env.production     секреты (НЕ в git, копия со старого стенда)
+├── releases/<sha>/            релиз = git archive + npm ci + npm run build
+├── current -> releases/<sha>  активный релиз (симлинк)
+└── .deploy.lock               flock от параллельных запусков
+```
+
+**Цикл деплоя** (`deploy.sh`, по таймеру каждые 2 мин под юзером `yearbook`):
+1. `git fetch origin main`; если sha == текущий — выходим (ничего не делаем).
+2. Новый коммит → `git archive` в `releases/<sha>`, симлинк `.env.production`,
+   `npm ci`, `npm run build`.
+3. Переключить `current` → новый релиз, `sudo systemctl restart yearbook`.
+4. `health-check.sh` (локально: `/login`=200 + `/api/health`=200). Провал →
+   симлинк назад на прошлый релиз + restart = **авто-откат**.
+5. Чистка: оставить 3 последних релиза.
+
+**Установка (один раз, делается на сервере):**
+1. `setup-pull-deploy.sh` (или вручную): создать `/srv/yearbook/{repo,shared,releases}`,
+   `git clone https://github.com/odintcovsergey/yearbook-v2.git repo`,
+   скопировать `.env.production` со старого стенда в `shared/`.
+2. Первый релиз руками: `deploy.sh` → соберёт `releases/<sha>`, поставит `current`.
+3. **sudoers** для `yearbook` (рестарт без пароля), файл `/etc/sudoers.d/yearbook-deploy`:
+   `yearbook ALL=(root) NOPASSWD: /usr/bin/systemctl restart yearbook, /usr/bin/systemctl is-active yearbook`
+4. **Тест на отдельном порту 3001** ДО переключения боевого (см. ТЗ-чеклист).
+5. **Cutover:** в `yearbook.service` сменить `WorkingDirectory=/srv/yearbook/current`
+   и `EnvironmentFile=/srv/yearbook/current/.env.production`, `daemon-reload`,
+   `restart`, health. Старый `/srv/yearbook-v2` остаётся как мгновенный откат.
+6. **Вооружить авто-деплой:** скопировать `yearbook-deploy.{service,timer}` в
+   `/etc/systemd/system/`, `systemctl enable --now yearbook-deploy.timer`.
+
+**Как Сергею выкатить изменение:** просто `git push` в `main` (через обычный коммит).
+Через ≤2 минуты сервер сам соберёт и выкатит, при поломке откатится сам.
+Заморозить авто-деплой: `systemctl disable --now yearbook-deploy.timer` на сервере.
 
 Связанные артефакты (уже в репо):
 - `scripts/step4-postgrest-roles.sql` — роли `authenticator`/`web_app` + гранты (A1).
