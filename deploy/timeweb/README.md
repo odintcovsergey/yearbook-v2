@@ -62,8 +62,24 @@ GitFlic с сервера НЕ тянется (`ls-remote` → FAIL) — primary
 6. **Вооружить авто-деплой:** скопировать `yearbook-deploy.{service,timer}` в
    `/etc/systemd/system/`, `systemctl enable --now yearbook-deploy.timer`.
 
+**⚠️ Реестр npm с РФ-сервера НЕДОСТУПЕН** (`registry.npmjs.org` → ETIMEDOUT,
+проверено 23.06). Поэтому `npm ci` на деплое НЕ делаем: `node_modules` общий
+(`shared/node_modules`, засеян из рабочего стенда), сборка `next build` идёт офлайн.
+`deploy.sh` сверяет `package-lock.json` релиза с `shared/` — если зависимости
+**изменились**, деплой прерывается (текущий релиз цел) с инструкцией обновить
+`shared/node_modules` вручную:
+```
+# на Mac (где реестр доступен):
+npm ci
+rsync -a --delete node_modules/ root@SERVER:/srv/yearbook/shared/node_modules/
+scp package-lock.json root@SERVER:/srv/yearbook/shared/package-lock.json
+# затем деплой пройдёт автоматически на следующем тике
+```
+
 **Как Сергею выкатить изменение:** просто `git push` в `main` (через обычный коммит).
 Через ≤2 минуты сервер сам соберёт и выкатит, при поломке откатится сам.
+Если коммит **добавлял/менял npm-зависимости** — сначала обнови `shared/node_modules`
+(см. выше), иначе деплой намеренно остановится.
 Заморозить авто-деплой: `systemctl disable --now yearbook-deploy.timer` на сервере.
 
 Связанные артефакты (уже в репо):

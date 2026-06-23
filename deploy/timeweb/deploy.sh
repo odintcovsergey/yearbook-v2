@@ -52,13 +52,30 @@ rm -rf "$NEW"
 mkdir -p "$NEW"
 git -C "$REPO" archive "origin/$BRANCH" | tar -x -C "$NEW"
 
-# Секреты и кэш сборки — из shared (НЕ из git)
+# Секреты — из shared (НЕ из git)
 ln -sfn "$SHARED/.env.production" "$NEW/.env.production"
 
+# Зависимости. Реестр npm с РФ-сервера НЕДОСТУПЕН (ETIMEDOUT — проверено), поэтому
+# node_modules НЕ ставим на каждый деплой, а переиспользуем общий shared/node_modules
+# (засеян из рабочего стенда). Сборка идёт офлайн. Если package-lock.json изменился —
+# зависимости поменялись: нужен ручной refresh shared/node_modules (rsync с Mac, где
+# реестр доступен). Тогда деплой прерываем, чтобы не собрать битый релиз.
+if [ ! -d "$SHARED/node_modules" ]; then
+  log "ОШИБКА: нет $SHARED/node_modules — засей его (см. README, раздел Установка)"
+  rm -rf "$NEW"; exit 1
+fi
+if ! cmp -s "$NEW/package-lock.json" "$SHARED/package-lock.json"; then
+  log "package-lock.json отличается от shared — ИЗМЕНИЛИСЬ ЗАВИСИМОСТИ."
+  log "Реестр npm с сервера недоступен. Обнови $SHARED/node_modules вручную:"
+  log "  с Mac: npm ci && rsync -a --delete node_modules/ root@SERVER:$SHARED/node_modules/"
+  log "  и скопируй новый package-lock.json в $SHARED/. Затем повтори деплой."
+  log "Текущий релиз НЕ трогаю."
+  rm -rf "$NEW"; exit 1
+fi
+ln -sfn "$SHARED/node_modules" "$NEW/node_modules"
+
 cd "$NEW"
-log "npm ci…"
-npm ci --no-audit --no-fund
-log "npm run build…"
+log "npm run build (офлайн, node_modules из shared)…"
 npm run build
 
 # 3. Переключаем симлинк (атомарно) и рестартим

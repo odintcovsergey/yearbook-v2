@@ -44,6 +44,22 @@ else
   log "shared/.env.production уже на месте — не трогаю"
 fi
 
+# 3b. Засев node_modules в shared (реестр npm с РФ-сервера недоступен → ставить
+#     на каждый деплой нельзя; переиспользуем общий, собранный из рабочего стенда).
+if [ ! -d "$ROOT/shared/node_modules" ]; then
+  if [ -d "$OLD/node_modules" ]; then
+    log "копирую node_modules ($(du -sh "$OLD/node_modules" | cut -f1)) из $OLD в shared/ — это займёт время…"
+    cp -a "$OLD/node_modules" "$ROOT/shared/node_modules"
+    cp "$OLD/package-lock.json" "$ROOT/shared/package-lock.json"
+    chown -R "$SVC_USER:$SVC_USER" "$ROOT/shared/node_modules" "$ROOT/shared/package-lock.json"
+    log "node_modules + package-lock засеяны в shared"
+  else
+    log "ВНИМАНИЕ: $OLD/node_modules не найден — засей shared/node_modules вручную (rsync с Mac)"
+  fi
+else
+  log "shared/node_modules уже на месте — не трогаю"
+fi
+
 # 4. sudoers: yearbook может рестартить сервис без пароля
 SUDOERS=/etc/sudoers.d/yearbook-deploy
 if [ ! -f "$SUDOERS" ]; then
