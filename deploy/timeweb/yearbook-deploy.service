@@ -11,8 +11,11 @@ Type=oneshot
 User=yearbook
 Group=yearbook
 WorkingDirectory=/srv/yearbook
-# deploy.sh лежит в выкаченном репо (current/deploy/timeweb), но для устойчивости
-# (на случай битого релиза) запускаем копию из repo-источника.
+# Перед деплоем обновляем рабочее дерево репо-источника до origin/main — иначе
+# git fetch обновит только ссылки, а сам deploy.sh останется на старом коммите.
+# ExecStartPre завершается ДО ExecStart, поэтому скрипт не переписывается на ходу.
+ExecStartPre=/usr/bin/git -C /srv/yearbook/repo fetch --quiet origin main
+ExecStartPre=/usr/bin/git -C /srv/yearbook/repo reset --hard --quiet origin/main
 ExecStart=/srv/yearbook/repo/deploy/timeweb/deploy.sh
 # Сборка тяжёлая — даём время и ограничиваем, чтобы не висло вечно
 TimeoutStartSec=1200
