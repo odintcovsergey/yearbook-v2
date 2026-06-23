@@ -164,3 +164,5 @@ reg.ru не умеет):
    --reloadcmd "systemctl reload nginx"` → прописать пути в `nginx-yearbook.conf`.
 
 Outbound с сервера к LE и reg.ru API работает — блокируется только INBOUND от LE.
+
+<!-- авто-деплой (pull-модель) активирован 2026-06-23 -->
