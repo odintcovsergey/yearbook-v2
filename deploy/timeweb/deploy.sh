@@ -87,6 +87,12 @@ sudo -n systemctl restart yearbook
 # 4. Health-check; при сбое — откат
 if "$SCRIPT_DIR/health-check.sh"; then
   log "health OK — релиз $REMOTE_SHA активен"
+  # Перезапускаем воркер фоновой очереди экспорта (ТЗ №2), чтобы он подхватил
+  # новый код рендера из current. || true — если unit ещё не установлен (до
+  # первой настройки воркера), деплой не должен падать.
+  sudo -n systemctl restart yearbook-render-worker 2>/dev/null \
+    && log "yearbook-render-worker перезапущен" \
+    || log "yearbook-render-worker не перезапущен (unit не установлен?) — не критично"
 else
   log "HEALTH FAIL — откат"
   if [ -n "$PREV_TARGET" ] && [ -d "$PREV_TARGET" ]; then

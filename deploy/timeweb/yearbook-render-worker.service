@@ -1,0 +1,35 @@
+# systemd unit для воркера фоновой очереди экспорта (ТЗ №2).
+# Установка (однократно, под root):
+#   cp deploy/timeweb/yearbook-render-worker.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now yearbook-render-worker
+# Плюс разрешить юзеру yearbook рестартить его без пароля (sudoers), чтобы
+# deploy.sh мог перезапускать воркер после выкатки нового кода рендера:
+#   yearbook ALL=(root) NOPASSWD: /usr/bin/systemctl restart yearbook-render-worker
+[Unit]
+Description=yearbook-v2 export render worker (фоновая очередь PDF/типографии)
+After=network-online.target yearbook.service postgrest.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Работает с тем же релизом, что и сайт (current). tsx исполняет TS-воркер,
+# переиспользуя общий код рендера lib/export-run.
+WorkingDirectory=/srv/yearbook/current
+EnvironmentFile=/srv/yearbook/current/.env.production
+Environment=NODE_ENV=production
+# Лимит кучи Node для дочерних рендеров: большой альбом не должен съесть весь
+# VDS. При превышении падает дочерний процесс рендера — задача уходит в retry,
+# воркер и сайт живут. Тюнится при необходимости.
+Environment=NODE_OPTIONS=--max-old-space-size=2048
+ExecStart=/srv/yearbook/current/node_modules/.bin/tsx worker/render-worker.ts
+User=yearbook
+Group=yearbook
+Restart=always
+RestartSec=5
+# Жёсткий потолок памяти на весь воркер (родитель + дочерний рендер) — защита
+# сайта от OOM: при выходе за лимит cgroup убьёт процесс воркера, а не Next.
+# Тюнинг под реальные большие альбомы — на смоук-проверке.
+MemoryMax=2700M
+
+[Install]
+WantedBy=multi-user.target

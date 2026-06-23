@@ -1,24 +1,20 @@
 'use client'
 
 /**
- * ExportPanel — UI компонент для PDF-экспорта (фаза 3.7).
+ * ExportPanel — UI экспорта (фаза 3.7 + ТЗ №2 фоновая очередь).
  *
  * Размещается в Обзоре альбома (AlbumDetailModal), под LayoutPreviewStrip.
- * Виден только если layout альбома собран (caller проверяет layout перед
- * монтированием).
  *
- * UI:
- *   - Dropdown «Профиль экспорта» (3 seed: print / preview / per-student-stub)
- *   - Описание выбранного профиля (info-строка про размер/dpi/bleed)
- *   - Кнопка «Экспортировать PDF»
- *   - Прогресс при экспорте (spinner + текст), sync request 30-60 сек
- *   - После успеха: file_size, page_count, warnings, кнопка «Скачать»
- *   - История последних 10 экспортов с download-кнопками
+ * Малые альбомы (<= порога разворотов) экспортируются СИНХРОННО как раньше
+ * (файл сразу). Большие уходят в ФОНОВУЮ ОЧЕРЕДЬ: сервер отвечает
+ * { queued, job_id }, панель показывает «готовится…», опрашивает статус и по
+ * готовности даёт «Скачать». Можно закрыть вкладку — при возврате состояние
+ * восстанавливается (album_export_state). Упавшую задачу можно «Повторить».
  *
  * Связь со спекой: docs/phase-3-spec.md §4.6.
  */
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { api } from '@/lib/api-client'
 
 // ─── Типы (зеркало серверных ответов) ────────────────────────────────────
@@ -80,6 +76,34 @@ type TypographyResponse = {
   warnings: { code: string; detail: string }[]
 }
 
+// Ответ постановки в очередь (большой альбом).
+type QueuedResponse = {
+  queued: true
+  job_id: string
+  status: ExportJobStatus
+  deduped: boolean
+  spreads: number
+}
+
+type ExportJobStatus = 'queued' | 'processing' | 'done' | 'failed'
+
+// Статус задачи очереди (export_status / album_export_state).
+type ExportJobDto = {
+  job_id: string
+  kind: 'pdf' | 'typography'
+  status: ExportJobStatus
+  progress_stage: string | null
+  filename: string | null
+  file_size: number | null
+  page_count: number | null
+  warnings: { code: string; detail: string }[]
+  error: string | null
+  attempts: number
+  requested_at: string
+  finished_at: string | null
+  download_url: string | null
+}
+
 type Props = {
   albumId: string
   hasLayout: boolean // true если album_layouts.spreads.length > 0
@@ -120,6 +144,14 @@ async function apiPost<T>(url: string, body: unknown): Promise<T> {
     throw err
   }
   return r.json()
+}
+
+function isQueued(res: unknown): res is QueuedResponse {
+  return typeof res === 'object' && res !== null && (res as { queued?: unknown }).queued === true
+}
+
+function jobActive(j: ExportJobDto | null): boolean {
+  return !!j && (j.status === 'queued' || j.status === 'processing')
 }
 
 // ─── Format helpers ──────────────────────────────────────────────────────
@@ -167,6 +199,9 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
   const [exportingZip, setExportingZip] = useState(false)
   const [zipResult, setZipResult] = useState<TypographyResponse | null>(null)
   const [zipError, setZipError] = useState<string | null>(null)
+  // Фоновая очередь (ТЗ №2): текущая задача по виду.
+  const [pdfJob, setPdfJob] = useState<ExportJobDto | null>(null)
+  const [zipJob, setZipJob] = useState<ExportJobDto | null>(null)
 
   // Загружаем профили при mount (один раз)
   useEffect(() => {
@@ -175,7 +210,6 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
       .then((d) => {
         if (cancelled) return
         setProfiles(d.profiles)
-        // Дефолтный профиль выбираем автоматически
         const def = d.profiles.find((p) => p.is_default) ?? d.profiles[0]
         if (def) setSelectedSlug(def.slug)
       })
@@ -207,6 +241,60 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
     loadHistory()
   }, [loadHistory])
 
+  // Восстановление состояния очереди при открытии Обзора (вернулся на страницу).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      for (const kind of ['pdf', 'typography'] as const) {
+        try {
+          const d = await apiGet<{ job: ExportJobDto | null }>(
+            buildUrl(
+              `/api/layout?action=album_export_state&album_id=${albumId}&kind=${kind}`,
+              viewAsTenantId,
+            ),
+          )
+          if (cancelled || !d.job) continue
+          if (kind === 'pdf') setPdfJob(d.job)
+          else setZipJob(d.job)
+        } catch {
+          // тихо — индикатор очереди не критичен
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [albumId, viewAsTenantId])
+
+  // Опрос статуса активных задач (раз в 4с). Останавливается, когда обе не активны.
+  const pdfJobRef = useRef(pdfJob)
+  const zipJobRef = useRef(zipJob)
+  pdfJobRef.current = pdfJob
+  zipJobRef.current = zipJob
+  const polling = jobActive(pdfJob) || jobActive(zipJob)
+  useEffect(() => {
+    if (!polling) return
+    const tick = async () => {
+      for (const [job, setJob] of [
+        [pdfJobRef.current, setPdfJob],
+        [zipJobRef.current, setZipJob],
+      ] as const) {
+        if (!jobActive(job)) continue
+        try {
+          const d = await apiGet<ExportJobDto>(
+            buildUrl(`/api/layout?action=export_status&job_id=${job!.job_id}`, viewAsTenantId),
+          )
+          setJob(d)
+          if (d.status === 'done') loadHistory()
+        } catch {
+          // тихо — повторим на следующем тике
+        }
+      }
+    }
+    const iv = setInterval(tick, 4000)
+    return () => clearInterval(iv)
+  }, [polling, viewAsTenantId, loadHistory])
+
   const selectedProfile = useMemo(
     () => profiles.find((p) => p.slug === selectedSlug) ?? null,
     [profiles, selectedSlug],
@@ -218,15 +306,32 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
     setError(null)
     setLastResult(null)
     try {
-      const res = await apiPost<ExportResponse>(
+      const res = await apiPost<ExportResponse | QueuedResponse>(
         buildUrl('/api/layout?action=export', viewAsTenantId),
         { album_id: albumId, profile_slug: selectedSlug },
       )
-      setLastResult(res)
-      // Авто-открываем PDF в новой вкладке
-      window.open(res.download_url, '_blank', 'noopener,noreferrer')
-      // Обновляем историю
-      loadHistory()
+      if (isQueued(res)) {
+        // Большой альбом — поставлен в очередь; показываем «готовится».
+        setPdfJob({
+          job_id: res.job_id,
+          kind: 'pdf',
+          status: res.status ?? 'queued',
+          progress_stage: null,
+          filename: null,
+          file_size: null,
+          page_count: null,
+          warnings: [],
+          error: null,
+          attempts: 0,
+          requested_at: new Date().toISOString(),
+          finished_at: null,
+          download_url: null,
+        })
+      } else {
+        setLastResult(res)
+        window.open(res.download_url, '_blank', 'noopener,noreferrer')
+        loadHistory()
+      }
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -240,12 +345,30 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
     setZipError(null)
     setZipResult(null)
     try {
-      const res = await apiPost<TypographyResponse>(
+      const res = await apiPost<TypographyResponse | QueuedResponse>(
         buildUrl('/api/layout?action=export_typography', viewAsTenantId),
         { album_id: albumId },
       )
-      setZipResult(res)
-      window.open(res.download_url, '_blank', 'noopener,noreferrer')
+      if (isQueued(res)) {
+        setZipJob({
+          job_id: res.job_id,
+          kind: 'typography',
+          status: res.status ?? 'queued',
+          progress_stage: null,
+          filename: null,
+          file_size: null,
+          page_count: null,
+          warnings: [],
+          error: null,
+          attempts: 0,
+          requested_at: new Date().toISOString(),
+          finished_at: null,
+          download_url: null,
+        })
+      } else {
+        setZipResult(res)
+        window.open(res.download_url, '_blank', 'noopener,noreferrer')
+      }
     } catch (e) {
       setZipError((e as Error).message)
     } finally {
@@ -253,9 +376,23 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
     }
   }
 
+  async function handleRetry(job: ExportJobDto) {
+    try {
+      await apiPost(buildUrl('/api/layout?action=export_retry', viewAsTenantId), {
+        job_id: job.job_id,
+      })
+      const requeued: ExportJobDto = { ...job, status: 'queued', error: null, download_url: null }
+      if (job.kind === 'pdf') setPdfJob(requeued)
+      else setZipJob(requeued)
+    } catch (e) {
+      if (job.kind === 'pdf') setError((e as Error).message)
+      else setZipError((e as Error).message)
+    }
+  }
+
   // Если layout не собран — кнопка disabled с подсказкой
-  const exportDisabled = !hasLayout || !selectedSlug || exporting
-  const zipDisabled = !hasLayout || exportingZip || exporting
+  const exportDisabled = !hasLayout || !selectedSlug || exporting || jobActive(pdfJob)
+  const zipDisabled = !hasLayout || exportingZip || exporting || jobActive(zipJob)
 
   return (
     <div className="bg-card border border-border rounded-xl p-5 mb-6">
@@ -313,7 +450,15 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
         </button>
       </div>
 
-      {/* Прогресс / результат / ошибка */}
+      {/* PDF: очередь — готовится / готово / ошибка */}
+      <QueueStatusBlock
+        job={pdfJob}
+        titleReady="✓ PDF готов (фоновая сборка)"
+        titleWorking="PDF большого альбома готовится в фоне"
+        onRetry={handleRetry}
+      />
+
+      {/* PDF: синхронный прогресс / результат / ошибка */}
       {exporting && (
         <div className="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-3">
           <div className="flex items-center gap-2">
@@ -356,7 +501,15 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
         </div>
       )}
 
-      {/* Типографская выгрузка: прогресс / результат / ошибка */}
+      {/* Типография: очередь — готовится / готово / ошибка */}
+      <QueueStatusBlock
+        job={zipJob}
+        titleReady="✓ Архив для типографии готов (фоновая сборка)"
+        titleWorking="Архив большого альбома готовится в фоне"
+        onRetry={handleRetry}
+      />
+
+      {/* Типографская выгрузка: синхронный прогресс / результат / ошибка */}
       {exportingZip && (
         <div className="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-3">
           <div className="flex items-center gap-2">
@@ -427,17 +580,13 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {formatDate(ex.created_at)}
-                    {ex.export_profiles?.name &&
-                      ` · ${ex.export_profiles.name}`}
+                    {ex.export_profiles?.name && ` · ${ex.export_profiles.name}`}
                     {' · '}
                     {formatFileSize(ex.file_size)}
                     {' · '}
                     {ex.page_count} стр.
                     {ex.warnings && ex.warnings.length > 0 && (
-                      <span className="text-amber-700">
-                        {' '}
-                        · ⚠ {ex.warnings.length}
-                      </span>
+                      <span className="text-amber-700"> · ⚠ {ex.warnings.length}</span>
                     )}
                   </div>
                 </div>
@@ -453,6 +602,88 @@ export default function ExportPanel({ albumId, hasLayout, viewAsTenantId }: Prop
             ))}
           </ul>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Блок статуса фоновой очереди ────────────────────────────────────────
+
+function QueueStatusBlock({
+  job,
+  titleReady,
+  titleWorking,
+  onRetry,
+}: {
+  job: ExportJobDto | null
+  titleReady: string
+  titleWorking: string
+  onRetry: (job: ExportJobDto) => void
+}) {
+  if (!job) return null
+
+  if (job.status === 'queued' || job.status === 'processing') {
+    return (
+      <div className="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-3">
+        <div className="flex items-center gap-2">
+          <Spinner />
+          <div>
+            <div className="font-medium">{titleWorking}</div>
+            <div className="text-xs text-blue-700 mt-0.5">
+              {job.status === 'queued' ? 'В очереди…' : job.progress_stage || 'Рендерится…'} · обычно
+              3–10 минут. Можно закрыть вкладку — соберётся в фоне, ссылка появится здесь.
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (job.status === 'done') {
+    return (
+      <div className="text-sm text-green-800 bg-green-50 border border-green-200 rounded-lg px-4 py-3 mb-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="font-medium">{titleReady}</div>
+            <div className="text-xs text-green-700 mt-0.5">
+              {job.filename ?? 'файл'}
+              {job.file_size != null && ` · ${formatFileSize(job.file_size)}`}
+              {job.page_count != null && ` · ${job.page_count}`}
+            </div>
+            {job.warnings.length > 0 && (
+              <div className="text-xs text-amber-700 mt-1">⚠ {job.warnings.length} предупреждений</div>
+            )}
+          </div>
+          {job.download_url && (
+            <a
+              href={job.download_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-card border border-green-600 text-green-700 text-xs font-medium rounded hover:bg-green-100 whitespace-nowrap"
+            >
+              Скачать
+            </a>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // failed
+  return (
+    <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="font-medium">⚠ Сборка не удалась</div>
+          <div className="text-xs text-red-600 mt-0.5 break-words">{job.error ?? 'Неизвестная ошибка'}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onRetry(job)}
+          className="px-3 py-1.5 bg-card border border-red-500 text-red-600 text-xs font-medium rounded hover:bg-red-100 whitespace-nowrap"
+        >
+          Повторить
+        </button>
       </div>
     </div>
   )
