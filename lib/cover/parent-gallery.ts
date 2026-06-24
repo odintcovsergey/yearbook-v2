@@ -120,7 +120,7 @@ export async function buildCoverGallery(
       gender_hint: c.gender_hint,
       variant_label: c.variant_label,
       // Портрет показываем только на портретных обложках.
-      svg: renderCoverMasterSvg(master, null, c.cover_type === 'portrait_photo' ? data : textOnly(data)),
+      svg: await renderCoverMasterSvg(master, null, c.cover_type === 'portrait_photo' ? data : textOnly(data)),
     });
   }
 

@@ -234,14 +234,17 @@ export async function embedPhotoOnPage(
     }
   }
 
-  // Embed в pdf-lib
+  // Embed в pdf-lib. Формат определяем по magic-байту: PNG (0x89) — для
+  // прозрачных картинок (логотип), иначе JPEG. См. resamplePhotoBuffer.
   let image: PDFImage;
   try {
-    image = await ctx.pdfDoc.embedJpg(resampled);
+    image = resampled[0] === 0x89
+      ? await ctx.pdfDoc.embedPng(resampled)
+      : await ctx.pdfDoc.embedJpg(resampled);
   } catch (e) {
     ctx.warnings.push({
       code: 'image_decode_failed',
-      detail: `pdf-lib embedJpg error на ${ph.label}: ${(e as Error).message}`,
+      detail: `pdf-lib embed error на ${ph.label}: ${(e as Error).message}`,
       context: { spread_index, label: ph.label },
     });
     return;
@@ -427,13 +430,24 @@ export async function resamplePhotoBuffer(
   const hasRotate = rotateDeg !== 0;
   const hasCustom = scale !== 1 || offsetX !== 0 || offsetY !== 0 || hasRotate;
 
+  // Прозрачные PNG (логотип партнёра в back_logo) кодируем как PNG, сохраняя
+  // альфу. JPEG альфы не имеет → sharp заливал бы прозрачность ЧЁРНЫМ (чёрный
+  // квадрат вокруг логотипа). Опаковые фото (портреты) остаются JPEG —
+  // байт-в-байт как раньше. embedJpg/embedPng выбирается по magic-байту буфера.
+  const encode = (p: ReturnType<typeof sharp>, hasAlpha: boolean | undefined): Promise<Buffer> =>
+    hasAlpha
+      ? p.png().toBuffer()
+      : p.jpeg({ quality: jpegQuality, mozjpeg: true }).toBuffer();
+
   if (!hasCustom) {
-    // FAST PATH: default crop (fit:'cover'). Байт-в-байт как раньше.
-    return await sharp(sourceBuffer)
-      .rotate()
-      .resize(targetW_px, targetH_px, { fit: 'cover', position: 'centre' })
-      .jpeg({ quality: jpegQuality, mozjpeg: true })
-      .toBuffer();
+    // FAST PATH: default crop (fit:'cover'). Для опаковых — байт-в-байт как раньше.
+    const meta = await sharp(sourceBuffer).metadata();
+    return await encode(
+      sharp(sourceBuffer)
+        .rotate()
+        .resize(targetW_px, targetH_px, { fit: 'cover', position: 'centre' }),
+      meta.hasAlpha,
+    );
   }
 
   if (!hasRotate) {
@@ -453,11 +467,12 @@ export async function resamplePhotoBuffer(
     const extH = Math.max(1, Math.round(crop.cropH));
     const safeW = Math.min(extW, natW - extLeft);
     const safeH = Math.min(extH, natH - extTop);
-    return await rotated
-      .extract({ left: extLeft, top: extTop, width: safeW, height: safeH })
-      .resize(targetW_px, targetH_px, { fit: 'fill' })
-      .jpeg({ quality: jpegQuality, mozjpeg: true })
-      .toBuffer();
+    return await encode(
+      rotated
+        .extract({ left: extLeft, top: extTop, width: safeW, height: safeH })
+        .resize(targetW_px, targetH_px, { fit: 'fill' }),
+      meta.hasAlpha,
+    );
   }
 
   // ROTATE PATH (Р.2): base crop расширяем на auto-zoom, вращаем, обрезаем.
@@ -487,13 +502,19 @@ export async function resamplePhotoBuffer(
   const safeTop = Math.max(0, Math.round(enlTop));
   const interW = Math.max(1, Math.round(targetW_px * authZoom));
   const interH = Math.max(1, Math.round(targetH_px * authZoom));
-  return await rotated
-    .extract({ left: safeLeft, top: safeTop, width: safeW, height: safeH })
-    .resize(interW, interH, { fit: 'fill' })
-    .rotate(rotateDeg, { background: { r: 255, g: 255, b: 255, alpha: 1 } })
-    .resize(targetW_px, targetH_px, { fit: 'cover', position: 'centre' })
-    .jpeg({ quality: jpegQuality, mozjpeg: true })
-    .toBuffer();
+  return await encode(
+    rotated
+      .extract({ left: safeLeft, top: safeTop, width: safeW, height: safeH })
+      .resize(interW, interH, { fit: 'fill' })
+      // Фон поворота: прозрачный для альфы (логотип), иначе белый (как раньше).
+      .rotate(rotateDeg, {
+        background: meta.hasAlpha
+          ? { r: 0, g: 0, b: 0, alpha: 0 }
+          : { r: 255, g: 255, b: 255, alpha: 1 },
+      })
+      .resize(targetW_px, targetH_px, { fit: 'cover', position: 'centre' }),
+    meta.hasAlpha,
+  );
 }
 
 /**

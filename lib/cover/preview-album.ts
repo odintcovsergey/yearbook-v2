@@ -11,7 +11,8 @@ import type { Placeholder, RenderPlaceholder } from '../album-builder/types';
 import { loadAlbumCovers } from './load-covers';
 import { layoutCover } from './layout';
 import { renderCoverPreviewSvg } from './preview-svg';
-import { indexCoverEdits, mergeCoverEditsInto, type CoverEditRow } from './editor-merge';
+import { indexCoverEdits, mergeCoverEditsInto, resolveCoverBackground, COVER_BG_KEY, type CoverEditRow } from './editor-merge';
+import { resolveReadUrl } from '../blob-storage';
 import type { CoverType } from './types';
 
 export type AlbumCoverPreview = {
@@ -77,22 +78,24 @@ export async function buildAlbumCoverPreviews(
     .eq('album_id', albumId);
   const { byType, byChild } = indexCoverEdits((editRows ?? []) as CoverEditRow[]);
 
-  const previews: AlbumCoverPreview[] = assembled.covers.map((inst) => {
-    const master = inst.cover_id ? masters.get(inst.cover_id) ?? null : null;
-    const merged = mergeCoverEditsInto(
-      { child_id: inst.child_id, cover_type: inst.cover_type, data: inst.data },
-      byType,
-      byChild,
-    );
-    return {
-      child_id: inst.child_id,
-      child_name: inst.child_id ? names.get(inst.child_id) ?? null : null,
-      cover_name: inst.cover_name,
-      cover_type: inst.cover_type,
-      has_cover: !!master,
-      svg: master ? renderCoverMasterSvg(master, assembled.spine_width_mm, merged.data) : '',
-    };
-  });
+  const previews: AlbumCoverPreview[] = await Promise.all(
+    assembled.covers.map(async (inst) => {
+      const master = inst.cover_id ? masters.get(inst.cover_id) ?? null : null;
+      const merged = mergeCoverEditsInto(
+        { child_id: inst.child_id, cover_type: inst.cover_type, data: inst.data },
+        byType,
+        byChild,
+      );
+      return {
+        child_id: inst.child_id,
+        child_name: inst.child_id ? names.get(inst.child_id) ?? null : null,
+        cover_name: inst.cover_name,
+        cover_type: inst.cover_type,
+        has_cover: !!master,
+        svg: master ? await renderCoverMasterSvg(master, assembled.spine_width_mm, merged.data) : '',
+      };
+    }),
+  );
 
   return { previews, spine_width_mm: assembled.spine_width_mm, warnings: assembled.warnings };
 }
@@ -101,11 +104,11 @@ export async function buildAlbumCoverPreviews(
  * Рендерит SVG-превью одного cover-мастера (геометрия + плавающий корешок +
  * данные/заглушки). Переиспользуется родительской галереей обложек (Этап 3).
  */
-export function renderCoverMasterSvg(
+export async function renderCoverMasterSvg(
   m: CoverMasterRow,
   realSpineMm: number | null,
   data: Record<string, string | null>,
-): string {
+): Promise<string> {
   const back = num(m.back_width_mm);
   const front = num(m.front_width_mm);
   let height = num(m.height_mm);
@@ -129,14 +132,25 @@ export function renderCoverMasterSvg(
     }
   }
 
+  // Переезд на Timeweb: эффективный фон (__bg__ перекрывает мастер) подписываем
+  // через resolveReadUrl (относительный ключ ИЛИ полный supabase-URL → signed
+  // Timeweb-URL). Сырой __bg__ из data убираем, иначе preview-svg вставит
+  // относительный ключ в <image href> → битая картинка (ручной фон обложки).
+  const effectiveBg = resolveCoverBackground(data, m.background_url);
+  const signedBg = effectiveBg
+    ? await resolveReadUrl('template-backgrounds', effectiveBg)
+    : null;
+  const cleanData = { ...data };
+  delete cleanData[COVER_BG_KEY];
+
   return renderCoverPreviewSvg({
     width_mm: width || 100,
     height_mm: height || 100,
     spine_left_mm: laid.spine_left_mm,
     spine_right_mm: laid.spine_right_mm,
     placeholders: laid.placeholders,
-    data,
-    background_url: m.background_url,
+    data: cleanData,
+    background_url: signedBg,
     // Превью собранной обложки: пустые слоты скрываем (реальный вид), не серые.
     hide_empty_slots: true,
   });
