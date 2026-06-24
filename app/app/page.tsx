@@ -3504,7 +3504,14 @@ function AlbumFormModal({
           sheet_type_id: form.sheet_type_id,
         }),
       })
-      const r = await api(`/api/tenant?action=cover_album_preview&album_id=${album.id}`)
+      // Анти-кэш: до переезда Обзор отдавал фон западным supabase-адресом (из РФ
+      // без VPN мёртв). Сервер уже конвертит фон в российский Timeweb-URL, но
+      // браузер мог закэшировать старый ответ → синие «?». no-store + метка
+      // времени гарантируют свежий ответ у всех без ручной чистки кэша.
+      const r = await api(
+        `/api/tenant?action=cover_album_preview&album_id=${album.id}&_t=${Date.now()}`,
+        { cache: 'no-store' },
+      )
       const d = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`)
       setCoverPreviewData({ previews: d.previews ?? [], spine_width_mm: d.spine_width_mm ?? null, warnings: d.warnings ?? [] })
