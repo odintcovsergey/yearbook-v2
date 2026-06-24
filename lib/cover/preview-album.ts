@@ -12,8 +12,8 @@ import { loadAlbumCovers } from './load-covers';
 import { layoutCover } from './layout';
 import { renderCoverPreviewSvg } from './preview-svg';
 import { indexCoverEdits, mergeCoverEditsInto, resolveCoverBackground, COVER_BG_KEY, type CoverEditRow } from './editor-merge';
-import { resolveReadUrl } from '../blob-storage';
 import { resignCoverPhotoData } from './resign-photos';
+import { resignCoverBgValue } from './resign-bg';
 import type { CoverType } from './types';
 
 export type AlbumCoverPreview = {
@@ -138,9 +138,7 @@ export async function renderCoverMasterSvg(
   // Timeweb-URL). Сырой __bg__ из data убираем, иначе preview-svg вставит
   // относительный ключ в <image href> → битая картинка (ручной фон обложки).
   const effectiveBg = resolveCoverBackground(data, m.background_url);
-  const signedBg = effectiveBg
-    ? await resolveReadUrl('template-backgrounds', effectiveBg)
-    : null;
+  const signedBg = await resignCoverBgValue(effectiveBg);
   const cleanData = { ...data };
   delete cleanData[COVER_BG_KEY];
   // Пере-подпись фото-меток: в cover_edits мог лежать ПРОТУХШИЙ presigned-URL

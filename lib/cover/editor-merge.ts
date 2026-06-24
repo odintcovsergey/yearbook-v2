@@ -117,19 +117,23 @@ export function resolveCoverBackground(
 }
 
 /**
- * Переезд на Timeweb: превратить ключ фона в показываемый URL.
+ * Переезд на Timeweb: превратить значение фона в показываемый URL.
  *  - пусто → null;
- *  - уже http(s) URL (supabase public / готовая подпись) → как есть;
- *  - относительный ключ → signed URL из карты bgSigned (timeweb), иначе ключ
- *    как есть (supabase: клиент сам строит публичный URL выше по стеку).
+ *  - есть запись в карте bgSigned → она (сервер пере-подписал значение —
+ *    покрывает и относительные ключи, и протухшие полные URL: старый supabase
+ *    или просроченный presigned, которые иначе вернулись бы как есть → 404);
+ *  - иначе значение как есть (supabase-режим: карта пустая, клиент строит
+ *    публичный URL выше по стеку; либо незнакомый ключ — лучше пусть будет он).
+ *
+ * ВАЖНО: карту проверяем ПЕРВОЙ, ДО проверки на http — старые __bg__ хранят
+ * полный supabase-URL, и ранний возврат http-URL отдавал мёртвую ссылку.
  */
 export function signCoverBg(
   url: string | null,
   bgSigned: Record<string, string> | null | undefined,
 ): string | null {
   if (!url) return null;
-  if (/^https?:\/\//.test(url)) return url;
-  return bgSigned?.[url] ?? url;
+  return bgSigned?.[url] || url;
 }
 
 /**

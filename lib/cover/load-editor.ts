@@ -8,8 +8,9 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getPhotoUrl } from '@/lib/supabase';
-import { storageBackend, resolveReadUrl, signDecorPlaceholders } from '@/lib/blob-storage';
+import { storageBackend, signDecorPlaceholders } from '@/lib/blob-storage';
 import { resignCoverPhotoData } from './resign-photos';
+import { resignCoverBgValue } from './resign-bg';
 import type { RenderPlaceholder } from '../album-builder/types';
 import { loadAlbumCovers } from './load-covers';
 import {
@@ -167,12 +168,13 @@ export async function loadCoverEditor(
       // 'none'/'' — сентинелы «без фона», подписывать нечего.
       if (typeof ov === 'string' && ov && ov !== 'none') bgKeys.add(ov);
     }
+    // Пере-подпись из любой формы значения (ключ / старый supabase-URL /
+    // протухший presigned → свежая ссылка), keyed по исходному значению —
+    // клиент ищет в карте именно его (resolveCoverBackground отдаёт сырое __bg__).
     const keys = Array.from(bgKeys);
-    const signed = await Promise.all(
-      keys.map((k) => resolveReadUrl('template-backgrounds', k)),
-    );
+    const signed = await Promise.all(keys.map((k) => resignCoverBgValue(k)));
     bgSigned = {};
-    keys.forEach((k, i) => { bgSigned![k] = signed[i]; });
+    keys.forEach((k, i) => { if (signed[i]) bgSigned![k] = signed[i]!; });
   }
 
   // Галерея общих фото класса (для замены).
