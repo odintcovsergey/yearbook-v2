@@ -156,9 +156,21 @@ export async function loadAlbumCovers(
     if (tenantId) {
       const { data: t } = await supabase.from('tenants').select('logo_url').eq('id', tenantId).single();
       const logoPath = (t as { logo_url?: string | null } | null)?.logo_url ?? null;
-      if (logoPath) backLogoUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${logoPath}`;
+      // Резолвим через getPhotoUrl (уважает STORAGE_BACKEND → подписанная
+      // Timeweb-ссылка), а не клеим публичный Supabase-URL руками: после
+      // переезда NEXT_PUBLIC_SUPABASE_URL указывает на app.okeybook.ru, где
+      // нет /storage/... → серый логотип в экспорте.
+      if (logoPath) backLogoUrl = await getPhotoUrl(logoPath);
     }
   }
+
+  // ── 5г. QR заказа для задней обложки (back_qr). Тот же резолвер, что и
+  // логотип: cover_qr_url — путь в bucket photos, через getPhotoUrl получаем
+  // рабочую (Timeweb-подписанную) ссылку. Раньше клеился публичный Supabase-URL
+  // вручную → после переезда 404 → пустой/серый QR в экспорте.
+  const backQrUrl: string | null = a.cover_qr_url
+    ? await getPhotoUrl(a.cover_qr_url as string)
+    : null;
 
   // ── 6. Вход движка ────────────────────────────────────────────────────────
   const students: CoverStudentInput[] = children.map((c) => ({
@@ -188,9 +200,7 @@ export async function loadAlbumCovers(
     back_common_photo_url: null,           // задняя — пусто по умолчанию (drag в редакторе)
     back_logo_url: backLogoUrl,            // логотип партнёра в back_logo (авто)
     back_contacts: null,
-    back_qr_url: a.cover_qr_url            // QR заказа в back_qr (авто, если загружен)
-      ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${a.cover_qr_url as string}`
-      : null,
+    back_qr_url: backQrUrl,                // QR заказа в back_qr (авто, если загружен)
   };
 
   const covers = assembleCovers(

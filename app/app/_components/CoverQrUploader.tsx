@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 /**
  * Загрузка QR-кода для задней обложки заказа (слот back_qr). Картинка хранится
@@ -12,8 +12,18 @@ export default function CoverQrUploader({
   albumId: string
   initialPath: string | null
 }) {
-  const pub = (path: string) => `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${path}`
-  const [url, setUrl] = useState<string | null>(initialPath ? pub(initialPath) : null)
+  // Начальное превью: запрашиваем подписанную (Timeweb-aware) ссылку у сервера,
+  // а не клеим публичный Supabase-URL руками (после переезда он битый).
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!initialPath) return
+    let alive = true
+    fetch(`/api/tenant?action=sign_cover_qr&album_id=${albumId}`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (alive && d?.url) setUrl(d.url) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [albumId, initialPath])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)

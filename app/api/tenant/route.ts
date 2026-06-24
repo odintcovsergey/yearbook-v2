@@ -2259,7 +2259,13 @@ export async function GET(req: NextRequest) {
 
     if (error) return serverError(error, 'tenant')
 
-    return NextResponse.json(data)
+    // Подписанная (Timeweb-aware) ссылка для превью логотипа в UI — клиент
+    // больше не клеит публичный Supabase-URL сам (после переезда он битый).
+    const logoSigned = (data as any)?.logo_url
+      ? await getPhotoUrl((data as any).logo_url)
+      : null
+
+    return NextResponse.json({ ...data, logo_signed_url: logoSigned })
   }
 
   // Совместим со старым /api/admin?action=export по ключевым колонкам:
@@ -2272,6 +2278,23 @@ export async function GET(req: NextRequest) {
   // personal_spread_stats — статистика по личным разворотам альбома
   // для вкладки "Разворот" в AlbumDetailModal
   // ----------------------------------------------------------
+  // sign_cover_qr — подписанная (Timeweb-aware) ссылка на QR-картинку заказа
+  // для превью в CoverQrUploader. Клиент не клеит публичный Supabase-URL сам
+  // (после переезда он битый). Возвращает { url: null } если QR не загружен.
+  if (action === 'sign_cover_qr' && albumId) {
+    if (!(await assertAlbumAccess(auth, albumId, tid))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const { data, error } = await supabaseAdmin
+      .from('albums')
+      .select('cover_qr_url')
+      .eq('id', albumId)
+      .single()
+    if (error) return serverError(error, 'tenant')
+    const qrPath = (data as any)?.cover_qr_url as string | null
+    return NextResponse.json({ url: qrPath ? await getPhotoUrl(qrPath) : null })
+  }
+
   if (action === 'personal_spread_stats' && albumId) {
     if (!(await assertAlbumAccess(auth, albumId, tid))) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
@@ -2671,19 +2694,16 @@ export async function POST(req: NextRequest) {
         .single()
       const oldPath = (currentTenant as any)?.logo_url
       if (oldPath && oldPath !== logoPath) {
-        await supabaseAdmin.storage.from('photos').remove([oldPath])
+        await ycDelete(oldPath)
       }
 
-      // upsert=true, чтобы перезаписывать
-      const { error: upErr } = await supabaseAdmin.storage
-        .from('photos')
-        .upload(logoPath, processed, {
-          contentType: 'image/webp',
-          upsert: true,
-        })
-
-      if (upErr) {
-        return serverError(upErr, 'tenant')
+      // Льём через слой storage (ycUpload → Timeweb при STORAGE_BACKEND=timeweb),
+      // а не напрямую в Supabase: после переезда supabaseAdmin.storage указывал
+      // на app.okeybook.ru/storage → 404 → «Внутренняя ошибка сервера».
+      try {
+        await ycUpload(logoPath, processed, 'image/webp')
+      } catch (e) {
+        return serverError(e, 'tenant')
       }
 
       const { error: dbErr } = await supabaseAdmin
@@ -2693,8 +2713,9 @@ export async function POST(req: NextRequest) {
 
       if (dbErr) return serverError(dbErr, 'tenant')
 
-      // Public URL (обходим кэш CDN с timestamp'ом, чтобы UI сразу увидел новый логотип)
-      const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${logoPath}?t=${Date.now()}`
+      // Подписанная (Timeweb-aware) ссылка для мгновенного превью в UI.
+      // Presigned GET уникален сам по себе → кэш браузера не залипает на старом.
+      const publicUrl = await getPhotoUrl(logoPath)
 
       await logAction(auth, 'tenant.upload_logo', 'tenant', auth.tenantId, {
         size: file.size,
@@ -2734,16 +2755,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Не удалось обработать изображение' }, { status: 400 })
       }
       const qrPath = `${qrAlbumId}/cover-qr.png`
-      const { error: upErr } = await supabaseAdmin.storage
-        .from('photos')
-        .upload(qrPath, processed, { contentType: 'image/png', upsert: true })
-      if (upErr) return serverError(upErr, 'tenant')
+      // Через слой storage (Timeweb при STORAGE_BACKEND=timeweb), как логотип —
+      // прямой supabaseAdmin.storage после переезда бил в 404 → 500.
+      try {
+        await ycUpload(qrPath, processed, 'image/png')
+      } catch (e) {
+        return serverError(e, 'tenant')
+      }
       const { error: dbErr } = await supabaseAdmin
         .from('albums')
         .update({ cover_qr_url: qrPath })
         .eq('id', qrAlbumId)
       if (dbErr) return serverError(dbErr, 'tenant')
-      const publicUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${qrPath}?t=${Date.now()}`
+      const publicUrl = await getPhotoUrl(qrPath)
       await logAction(auth, 'album.upload_cover_qr', 'album', qrAlbumId, {})
       return NextResponse.json({ ok: true, public_url: publicUrl })
     }
@@ -7381,8 +7405,9 @@ export async function POST(req: NextRequest) {
         .single()
       const oldPath = (tenantRow as any)?.logo_url
       if (oldPath) {
-        // oldPath — это путь в bucket'е photos, удаляем файл
-        await supabaseAdmin.storage.from('photos').remove([oldPath])
+        // oldPath — путь в bucket'е photos; удаляем через слой storage
+        // (Timeweb при STORAGE_BACKEND=timeweb), а не напрямую в Supabase.
+        await ycDelete(oldPath)
       }
       update.logo_url = null
     }

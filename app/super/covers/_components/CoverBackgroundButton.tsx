@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { uploadCoverBackground, clearCoverBackground } from './coverBackground'
+import { confirmBackgroundResolution } from '@/lib/backgrounds/check-resolution'
 
 /**
  * Кнопка «загрузить/заменить фон» при одной обложке + «убрать».
@@ -20,8 +21,13 @@ export default function CoverBackgroundButton({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const pick = (file: File | null) => {
+  const pick = async (file: File | null) => {
     if (!file) return
+    // Предупреждение о мелком разрешении (правка №7) — не блокируем.
+    if (!(await confirmBackgroundResolution(file))) {
+      if (inputRef.current) inputRef.current.value = ''
+      return
+    }
     setBusy(true)
     setError(null)
     uploadCoverBackground(coverId, file)

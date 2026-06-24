@@ -54,8 +54,10 @@ export async function GET(req: NextRequest) {
       .eq('id', (album as any).tenant_id)
       .single()
     if (t) {
+      // Подписанная (Timeweb-aware) ссылка вместо ручной публичной Supabase:
+      // после переезда NEXT_PUBLIC_SUPABASE_URL = app.okeybook.ru (нет /storage).
       const logoUrl = (t as any).logo_url
-        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${(t as any).logo_url}`
+        ? await getPhotoUrl((t as any).logo_url)
         : null
       // C2: отдаём родителю только брендинговые ключи, а не весь settings
       // (там могут быть служебные поля).

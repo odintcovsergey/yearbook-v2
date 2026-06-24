@@ -8513,6 +8513,7 @@ type TenantSettings = {
   name: string
   slug: string
   logo_url: string | null
+  logo_signed_url: string | null
   city: string | null
   phone: string | null
   email: string | null
@@ -8931,10 +8932,10 @@ function SettingsModal({
                     <span className="text-muted-foreground ml-2">PNG или JPG до 5 МБ · будет обрезан до квадрата</span>
                   </label>
                   <div className="flex items-center gap-4">
-                    {tenant.logo_url ? (
+                    {tenant.logo_url && tenant.logo_signed_url ? (
                       <img
                         key={logoPreviewKey}
-                        src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/photos/${tenant.logo_url}?t=${logoPreviewKey}`}
+                        src={tenant.logo_signed_url}
                         alt="Логотип"
                         className="w-16 h-16 rounded-lg object-cover border border-border"
                       />

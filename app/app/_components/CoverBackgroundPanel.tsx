@@ -17,6 +17,7 @@ import { useState } from 'react'
 import { X, Upload, Loader2, Check } from 'lucide-react'
 import { COVER_BG_NONE, signCoverBg } from '@/lib/cover/editor-merge'
 import { uploadAlbumCoverBackground } from '../album/[id]/cover/coverBgUpload'
+import { confirmBackgroundResolution } from '@/lib/backgrounds/check-resolution'
 
 type Bg = { url: string; name: string }
 
@@ -57,6 +58,8 @@ export default function CoverBackgroundPanel({
 
   const handleUpload = async (file: File | null) => {
     if (!file) return
+    // Предупреждение о мелком разрешении (правка №7) — не блокируем.
+    if (!(await confirmBackgroundResolution(file))) return
     setUploading(true)
     setError(null)
     try {

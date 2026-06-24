@@ -262,7 +262,7 @@ async function buildRenderContext(
   );
   await Promise.all(
     distinctPaths.map(async (path) => {
-      const loaded = await loadBackground(pdfDoc, path, spreadAspect, warnings);
+      const loaded = await loadBackground(pdfDoc, path, spreadAspect, warnings, profile.jpeg_quality);
       bgCache.set(path, loaded);
     }),
   );
@@ -417,11 +417,16 @@ async function renderCoverPage(
   // Фон обложки — одна картинка во всё полотно (не категорийная 3-версии).
   if (cover.background_url) {
     try {
-      const res = await fetch(cover.background_url, { cache: 'no-store' });
-      if (res.ok) {
+      // Резолвим через resolveReadUrl (Timeweb-aware), как фон разворотов:
+      // в БД лежит относительный ключ (covers/<id>/<uuid>.jpg) — без резолва
+      // fetch уходил по ключу как по HTTP-пути → 404 → серый фон обложки.
+      // Расширение для PNG/JPG берём из исходного ключа (в signed-URL — query).
+      const isPngByExt = cover.background_url.toLowerCase().endsWith('.png');
+      const bgUrl = await resolveReadUrl('template-backgrounds', cover.background_url);
+      const res = bgUrl ? await fetch(bgUrl, { cache: 'no-store' }) : null;
+      if (res && res.ok) {
         const buf = Buffer.from(await res.arrayBuffer());
-        const isPng =
-          cover.background_url.toLowerCase().endsWith('.png') || buf[0] === 0x89;
+        const isPng = isPngByExt || buf[0] === 0x89;
         const img = isPng
           ? await ctx.pdfDoc.embedPng(buf)
           : await ctx.pdfDoc.embedJpg(buf);
@@ -1032,7 +1037,8 @@ async function loadBackground(
   pdfDoc: PDFDocument,
   path: string | null,
   spreadAspect: number,
-  warnings: PdfWarning[]
+  warnings: PdfWarning[],
+  jpegQuality: number
 ): Promise<BackgroundImages | null> {
   if (!path) return null;
   const url = await resolveReadUrl('template-backgrounds', path);
@@ -1078,26 +1084,38 @@ async function loadBackground(
       tW = width;
       tH = Math.max(1, Math.round(width / spreadAspect));
     }
+    const isPng = path.toLowerCase().endsWith('.png');
+
+    // Промежуточную cover-версию держим БЕЗ потерь (png), чтобы нарезка на
+    // половины не пересжимала JPEG дважды (раньше covered был q80, и левая/
+    // правая половины получали q80 ещё раз — двойная потеря). Финал кодируем
+    // ровно один раз: PNG без потерь либо JPEG с явным печатным качеством +
+    // mozjpeg (как у фото). Без явного quality sharp ставил дефолт q80 → фон
+    // в печати выходил мягким.
     const covered = await sharp(buffer)
       .resize(tW, tH, { fit: 'cover', position: 'centre' })
+      .png()
       .toBuffer();
+
+    const encode = (s: ReturnType<typeof sharp>): Promise<Buffer> =>
+      isPng
+        ? s.png().toBuffer()
+        : s.jpeg({ quality: jpegQuality, mozjpeg: true }).toBuffer();
 
     // Нарезаем cover-версию на 3: целая (is_spread) + левая/правая половины.
     const halfWidth = Math.floor(tW / 2);
-    const leftBuf = await sharp(covered)
-      .extract({ left: 0, top: 0, width: halfWidth, height: tH })
-      .toBuffer();
-    const rightBuf = await sharp(covered)
-      .extract({ left: halfWidth, top: 0, width: tW - halfWidth, height: tH })
-      .toBuffer();
+    const [coveredFinal, leftBuf, rightBuf] = await Promise.all([
+      encode(sharp(covered)),
+      encode(sharp(covered).extract({ left: 0, top: 0, width: halfWidth, height: tH })),
+      encode(sharp(covered).extract({ left: halfWidth, top: 0, width: tW - halfWidth, height: tH })),
+    ]);
 
-    const isPng = path.toLowerCase().endsWith('.png');
     const embed = isPng
       ? (b: Buffer) => pdfDoc.embedPng(b)
       : (b: Buffer) => pdfDoc.embedJpg(b);
 
     const [spread, left, right] = await Promise.all([
-      embed(covered),
+      embed(coveredFinal),
       embed(leftBuf),
       embed(rightBuf),
     ]);

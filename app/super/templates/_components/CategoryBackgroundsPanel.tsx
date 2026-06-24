@@ -33,6 +33,7 @@ import {
   BACKGROUND_CATEGORY_LABELS,
 } from '@/lib/backgrounds/page-role-to-category'
 import { uploadViaSignedTarget } from '@/lib/blob-upload-client'
+import { confirmBackgroundResolution } from '@/lib/backgrounds/check-resolution'
 
 const BUCKET = 'template-backgrounds'
 const MAX_SIZE = 50 * 1024 * 1024 // 50 МБ — совпадает с лимитом bucket'а
@@ -179,6 +180,11 @@ function CategorySection({
           onError('Файл больше 50 МБ')
           return
         }
+      }
+
+      // Предупреждение о мелком разрешении (правка №7) — не блокируем.
+      for (const f of files) {
+        if (!(await confirmBackgroundResolution(f))) return
       }
 
       setUploading(true)
