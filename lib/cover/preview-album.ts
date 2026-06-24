@@ -13,6 +13,7 @@ import { layoutCover } from './layout';
 import { renderCoverPreviewSvg } from './preview-svg';
 import { indexCoverEdits, mergeCoverEditsInto, resolveCoverBackground, COVER_BG_KEY, type CoverEditRow } from './editor-merge';
 import { resolveReadUrl } from '../blob-storage';
+import { resignCoverPhotoData } from './resign-photos';
 import type { CoverType } from './types';
 
 export type AlbumCoverPreview = {
@@ -142,6 +143,9 @@ export async function renderCoverMasterSvg(
     : null;
   const cleanData = { ...data };
   delete cleanData[COVER_BG_KEY];
+  // Пере-подпись фото-меток: в cover_edits мог лежать ПРОТУХШИЙ presigned-URL
+  // (срок 24ч). Достаём ключ и подписываем заново → битый портрет/логотип лечится.
+  const signedData = await resignCoverPhotoData(cleanData);
 
   return renderCoverPreviewSvg({
     width_mm: width || 100,
@@ -149,7 +153,7 @@ export async function renderCoverMasterSvg(
     spine_left_mm: laid.spine_left_mm,
     spine_right_mm: laid.spine_right_mm,
     placeholders: laid.placeholders,
-    data: cleanData,
+    data: signedData,
     background_url: signedBg,
     // Превью собранной обложки: пустые слоты скрываем (реальный вид), не серые.
     hide_empty_slots: true,

@@ -9,6 +9,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getPhotoUrl } from '@/lib/supabase';
 import { storageBackend, resolveReadUrl, signDecorPlaceholders } from '@/lib/blob-storage';
+import { resignCoverPhotoData } from './resign-photos';
 import type { RenderPlaceholder } from '../album-builder/types';
 import { loadAlbumCovers } from './load-covers';
 import {
@@ -187,25 +188,30 @@ export async function loadCoverEditor(
     if (path) common_photos.push({ id: p.id as string, url: await getPhotoUrl(path) });
   }
 
-  const items: CoverEditorItem[] = assembled.covers.map((inst) => {
-    const merged = mergeCoverEditsInto(
-      { child_id: inst.child_id, cover_type: inst.cover_type, data: inst.data },
-      byType,
-      byChild,
-    );
-    return {
-      key: inst.child_id ?? `type:${inst.cover_type}`,
-      child_id: inst.child_id,
-      child_name: inst.child_id ? names.get(inst.child_id) ?? null : null,
-      cover_id: inst.cover_id,
-      cover_type: inst.cover_type,
-      cover_name: inst.cover_name,
-      has_cover: !!inst.cover_id && masters.has(inst.cover_id),
-      master: inst.cover_id ? masters.get(inst.cover_id) ?? null : null,
-      data: merged.data,
-      base: inst.data,
-    };
-  });
+  const items: CoverEditorItem[] = await Promise.all(
+    assembled.covers.map(async (inst) => {
+      const merged = mergeCoverEditsInto(
+        { child_id: inst.child_id, cover_type: inst.cover_type, data: inst.data },
+        byType,
+        byChild,
+      );
+      // Пере-подпись фото-меток: в cover_edits мог лежать протухший presigned-URL
+      // (срок 24ч) → битый портрет/логотип на холсте. Достаём ключ, подписываем заново.
+      const data = await resignCoverPhotoData(merged.data);
+      return {
+        key: inst.child_id ?? `type:${inst.cover_type}`,
+        child_id: inst.child_id,
+        child_name: inst.child_id ? names.get(inst.child_id) ?? null : null,
+        cover_id: inst.cover_id,
+        cover_type: inst.cover_type,
+        cover_name: inst.cover_name,
+        has_cover: !!inst.cover_id && masters.has(inst.cover_id),
+        master: inst.cover_id ? masters.get(inst.cover_id) ?? null : null,
+        data,
+        base: inst.data,
+      };
+    }),
+  );
 
   return {
     items,

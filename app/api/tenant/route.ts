@@ -9,6 +9,7 @@ import { resolveAlbumEffectivePrintType } from '@/lib/album-builder'
 import { buildAlbumCoverPreviews } from '@/lib/cover/preview-album'
 import { buildCoverSummary } from '@/lib/cover/summary'
 import { loadCoverEditor } from '@/lib/cover/load-editor'
+import { keyifyCoverPhotoData } from '@/lib/cover/resign-photos'
 import type { CoverType, CoverLayoutMode } from '@/lib/cover/types'
 import { validatePreset } from '@/lib/presets/validate'
 import { buildPresetPreviewBundle } from '@/lib/presets/preview-bundle'
@@ -5433,7 +5434,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
     const scope = body.scope
-    const data = (body.data && typeof body.data === 'object') ? body.data : {}
+    // Клиент мог вшить ПОДПИСАННЫЕ presigned-URL фото (срок 24ч). Заменяем их на
+    // storage-ключи перед сохранением, чтобы подпись не протухала (читатель
+    // подпишет заново через resignCoverPhotoData). Текст/__bg__ не трогаем.
+    const data = keyifyCoverPhotoData(
+      (body.data && typeof body.data === 'object') ? body.data : {},
+    )
     let match: { cover_type: string | null; child_id: string | null }
     if (scope === 'type' && typeof body.cover_type === 'string') {
       match = { cover_type: body.cover_type, child_id: null }
