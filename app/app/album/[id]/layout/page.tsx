@@ -509,7 +509,7 @@ function LayoutEditorPageInner({
   const [editBlockReason, setEditBlockReason] = useState<
     'role' | 'view_as' | 'submitted' | null
   >(null)
-  const [workflowStatus, setWorkflowStatus] = useState<string>('active')
+  const [, setWorkflowStatus] = useState<string>('active')
   const [isMobile, setIsMobile] = useState<boolean>(false)
 
   // Подписка на изменение размера экрана для mobile detection.

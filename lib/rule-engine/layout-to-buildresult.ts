@@ -62,7 +62,6 @@
 
 import type {
   AlbumLayout,
-  SpreadInstance as RulesSpreadInstance,
   PageInstance,
 } from './types';
 import type {

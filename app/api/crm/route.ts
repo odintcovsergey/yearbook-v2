@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
-import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
+import { requireAuth, isAuthError, logAction } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0

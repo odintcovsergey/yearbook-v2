@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react'
+import React, { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import {
@@ -9382,7 +9382,7 @@ const WORKFLOW_LABELS: Record<string, { label: string; color: string }> = {
   delivered:     { label: 'Готов',             color: 'bg-green-100 text-green-700' },
 }
 
-function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperAdmin, viewAsTenantId, onWorkflowUpdate, onOriginalsUpdate, onDeliveryUpdate, onNotify, onError }: {
+function ProductionTab({ album, workflow, originals, delivery, canEdit, isSuperAdmin, viewAsTenantId, onWorkflowUpdate, onOriginalsUpdate, onNotify, onError }: {
   album: Album
   workflow: any
   originals: any[]

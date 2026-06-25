@@ -23,6 +23,7 @@ import { loadFonts } from './font-loader';
 import { renderAllSpreads, renderTypographyUnits } from './pipeline';
 import { adaptTemplateSetToFormat } from '@/lib/export-typography/adapt';
 import { rasterizePdfToJpegSafe } from './rasterize';
+import { checkFormatPx } from './format-px-check';
 import type { AcceptMode } from '@/lib/export-typography/plan';
 import type { CoverRenderUnit } from '@/lib/export-typography/covers';
 import type { PrinterFormat } from '@/lib/printers/types';
@@ -210,6 +211,19 @@ export async function exportAlbumTypography(
   const wantJpeg = opts.fileFormat === 'jpeg';
   const dpi = opts.dpi ?? 300;
   const jpegQuality = opts.jpegQuality ?? 92;
+
+  // Сверка пикселей (предупреждение): совпадает ли размер файла-разворота
+  // (мм×dpi) с эталоном px формата типографии. Чистая логика — checkFormatPx.
+  const pxWarning = checkFormatPx({
+    pageWidthMm: adapt.templateSet.page_width_mm,
+    pageHeightMm: adapt.templateSet.page_height_mm,
+    bleedMm: adapt.templateSet.bleed_mm,
+    dpi,
+    acceptMode: opts.acceptMode,
+    adapted: adapt.status === 'adapted',
+    format: opts.targetFormat,
+  });
+  if (pxWarning) warnings.push(pxWarning);
 
   const singlePdfs: Array<{ rf: (typeof rendered.files)[number]; pdfBytes: Uint8Array }> = [];
   for (const rf of rendered.files) {

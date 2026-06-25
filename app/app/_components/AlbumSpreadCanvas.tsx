@@ -7,7 +7,6 @@ import { RotateCw, RefreshCw, Check } from 'lucide-react'
 import type {
   SpreadInstance,
   SpreadTemplate,
-  Placeholder,
   PhotoPlaceholder,
   TextPlaceholder,
   DecorationPlaceholder,

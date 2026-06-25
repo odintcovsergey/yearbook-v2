@@ -12,7 +12,6 @@
 
 import type {
   SpreadInstance,
-  SpreadTemplate,
   TemplateSet,
   AlbumInput,
 } from '@/lib/album-builder/types';
@@ -164,7 +163,9 @@ export type PdfWarningCode =
   | 'text_overflow'
   | 'image_decode_failed'
   | 'template_not_found'
-  | 'placeholder_off_page';
+  | 'placeholder_off_page'
+  /** Размер файла (мм×dpi) не совпал с эталоном px формата типографии. */
+  | 'format_px_mismatch';
 
 export type PdfWarning = {
   code: PdfWarningCode;

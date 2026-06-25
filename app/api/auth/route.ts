@@ -10,7 +10,6 @@ import {
   setAuthCookies,
   clearAuthCookies,
   getAuth,
-  logAction,
   createImpersonationToken,
   verifyImpTokenForRefresh,
   setImpersonationCookie,

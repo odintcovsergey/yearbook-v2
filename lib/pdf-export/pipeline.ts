@@ -765,7 +765,7 @@ async function renderSpread(
 async function renderPage(
   ctx: RenderContext,
   instance: SpreadInstance,
-  template: SpreadTemplate,
+  _template: SpreadTemplate,
   placeholders: Placeholder[],
   pageHint: 'single' | 'left' | 'right' | 'spread'
 ): Promise<void> {

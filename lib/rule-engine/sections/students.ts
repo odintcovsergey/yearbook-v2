@@ -42,7 +42,6 @@ import { centerLastRowSlots, type SectionFillContext } from './shared';
 import {
   decideDistribution,
   type DistributionMode,
-  type DistributionPage,
 } from './distribution';
 
 /** Нормализованный режим личного раздела (после сворачивания config/глобалок). */

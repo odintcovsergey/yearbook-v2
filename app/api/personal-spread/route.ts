@@ -151,9 +151,7 @@ export async function POST(req: NextRequest) {
     // Если sharp не смог прочитать — не блокируем, просто нет размеров
   }
 
-  // Формируем имя файла — сохраняем оригинальное расширение
-  const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
-  const safeExt = ['jpg', 'jpeg', 'png', 'heic', 'heif'].includes(ext) ? ext : 'jpg'
+  // Формируем имя файла — оригинальное расширение сохраняется в file.name
   const filename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
   const storagePath = `${child.album_id}/personal/${child.id}/${filename}`
   const ycPath = `yc:${storagePath}`

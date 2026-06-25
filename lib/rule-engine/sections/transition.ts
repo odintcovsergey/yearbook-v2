@@ -53,7 +53,7 @@
  */
 
 import type { SpreadTemplate } from '@/lib/album-builder/types';
-import type { CommonPhotoCounts, SlotConsumes } from '../slot-chains';
+import type { SlotConsumes } from '../slot-chains';
 import { bindCommonPhotos, decrementAvailable } from './common';
 import {
   classifyTransitionLayout,

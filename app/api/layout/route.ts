@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { serverError } from '@/lib/api-error'
 import { supabaseAdmin } from '@/lib/supabase'
-import { ycUpload, getPhotoSignedUrl, ycGetObjectBuffer, ycDelete } from '@/lib/storage'
+import { getPhotoSignedUrl, ycGetObjectBuffer, ycDelete } from '@/lib/storage'
 import { storageBackend, resolveReadUrl, signDecorPlaceholders } from '@/lib/blob-storage'
 import { requireAuth, isAuthError, logAction, type AuthContext } from '@/lib/auth'
 import { parseIdml } from '@/lib/idml-converter/parse'
@@ -30,10 +30,6 @@ import { adaptAlbumLayoutToBuildResult } from '@/lib/rule-engine/layout-to-build
 import { buildAlbumInput, type SmartFillWarning } from '@/lib/smart-fill'
 import { coverCheck } from '@/lib/design-switch/cover-check'
 import { remapAlbumToDesign } from '@/lib/design-switch/remap-album'
-import {
-  exportAlbumPdf,
-  type AlbumExportInput,
-} from '@/lib/pdf-export'
 // Типографский рендер, обложки, форматы и т.п. теперь зовутся из общего ядра
 // lib/export-run (его же использует воркер очереди) — здесь напрямую не нужны.
 import {
