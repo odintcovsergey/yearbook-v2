@@ -40,8 +40,8 @@ export interface CleanupReport {
   totalBytes: number;
   /** Сколько кандидатов исключено анти-шарингом (делит не-истёкший заказ). */
   sharedSkipped: number;
-  /** Только для dryRun=false: реально удалено / ошибок. */
-  deleted?: { keys: number; errors: number };
+  /** Только для dryRun=false: реально удалено ключей / обнулено строк / ошибок. */
+  deleted?: { keys: number; errors: number; nulledRows: number };
 }
 
 /** Размер объекта в Timeweb (для отчёта). 0 если нет/ошибка. */
@@ -154,11 +154,47 @@ export async function runCleanup(
       errors++;
     }
   }
-  // Обнулить photos.original_path для удалённых ключей (чанками).
-  for (let i = 0; i < allKeys.length; i += 200) {
-    const chunk = allKeys.slice(i, i + 200);
-    await supabase.from('photos').update({ original_path: null }).in('original_path', chunk);
+  // Обнулить photos.original_path для удалённых ключей — ПО ЗАКАЗАМ, мелкими
+  // пачками. КРИТИЧНО (баг пробы 2026-06-25): .in() с длинным списком упирается в
+  // лимит длины URL (PostgREST/nginx) и МОЛЧА не обновляет ничего → висячие
+  // original_path на уже удалённые файлы. Поэтому: пачка ≤ NULL_CHUNK,
+  // ОБЯЗАТЕЛЬНАЯ проверка error (НЕ глотать) и сверка числа обнулённых строк.
+  const NULL_CHUNK = 50;
+  const keySetByAlbum = new Map<string, Set<string>>();
+  byAlbum.forEach((v, k) => keySetByAlbum.set(k, new Set(v)));
+  // Сколько строк ДОЛЖНО обнулиться: строки обрабатываемых заказов, чей
+  // original_path попал в удаляемые ключи (из уже загруженных photos).
+  let expectedNulled = 0;
+  for (const p of photos) {
+    const ks = p.original_path ? keySetByAlbum.get(p.album_id) : undefined;
+    if (ks && p.original_path && ks.has(p.original_path)) expectedNulled++;
   }
+
+  let nulledRows = 0;
+  for (const [album_id, keys] of Array.from(byAlbum)) {
+    for (let i = 0; i < keys.length; i += NULL_CHUNK) {
+      const chunk = keys.slice(i, i + NULL_CHUNK);
+      const { data, error } = await supabase
+        .from('photos')
+        .update({ original_path: null })
+        .eq('album_id', album_id)
+        .in('original_path', chunk)
+        .select('id');
+      if (error) {
+        throw new Error(
+          `[archive-cleanup] обнуление original_path упало (заказ ${album_id}, пачка ${chunk.length}): ${error.message}`,
+        );
+      }
+      nulledRows += data?.length ?? 0;
+    }
+  }
+  if (nulledRows !== expectedNulled) {
+    throw new Error(
+      `[archive-cleanup] рассинхрон обнуления: обнулено строк ${nulledRows}, ожидалось ${expectedNulled} ` +
+        `(удалено ключей ${deletedKeys}). Вероятен лимит длины URL в .in() — НЕ продолжаю, состояние требует ручной проверки.`,
+    );
+  }
+
   // Отметить заказы как почищенные + audit_log.
   const nowIso = new Date(nowMs).toISOString();
   for (const [album_id, keys] of Array.from(byAlbum)) {
@@ -173,6 +209,6 @@ export async function runCleanup(
     });
   }
 
-  report.deleted = { keys: deletedKeys, errors };
+  report.deleted = { keys: deletedKeys, errors, nulledRows };
   return report;
 }

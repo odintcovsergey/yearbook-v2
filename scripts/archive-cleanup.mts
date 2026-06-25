@@ -62,7 +62,9 @@ async function main() {
 
   if (!dryRun) {
     console.log('');
-    console.log(`  ✅ удалено ключей: ${report.deleted?.keys ?? 0}, ошибок: ${report.deleted?.errors ?? 0}`);
+    console.log(
+      `  ✅ удалено ключей: ${report.deleted?.keys ?? 0}, обнулено строк: ${report.deleted?.nulledRows ?? 0}, ошибок: ${report.deleted?.errors ?? 0}`,
+    );
   } else {
     console.log('');
     console.log('  DRY-RUN — данные не тронуты. Для реального удаления добавьте --apply.');
