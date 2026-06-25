@@ -5806,10 +5806,12 @@ export async function POST(req: NextRequest) {
     // Удаляем записи photos (selections удалятся каскадно через album_id)
     await supabaseAdmin.from('photos').delete().eq('album_id', album_id)
 
-    // Ставим флаг архива
+    // Ставим флаг архива + момент архивации (база отсчёта автоудаления
+    // исходников, ТЗ жизненного цикла архива). keep_originals_forever и
+    // originals_deleted_at не трогаем (сбрасывать нечего при заходе в архив).
     const { error } = await supabaseAdmin
       .from('albums')
-      .update({ archived: true })
+      .update({ archived: true, archived_at: new Date().toISOString() })
       .eq('id', album_id)
 
     if (error) {
@@ -5861,9 +5863,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Снимаем флаг архива + сбрасываем отсчёт автоудаления (archived_at=null).
+    // keep_originals_forever НЕ трогаем (это отдельная воля пользователя).
     const { error } = await supabaseAdmin
       .from('albums')
-      .update({ archived: false })
+      .update({ archived: false, archived_at: null })
       .eq('id', album_id)
 
     if (error) {
