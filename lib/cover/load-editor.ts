@@ -116,6 +116,15 @@ export async function loadCoverEditor(
     .eq('album_id', albumId);
   const { byType, byChild } = indexCoverEdits((editRows ?? []) as CoverEditRow[]);
 
+  // Подпись фото-меток В ПРАВКАХ (cover_portrait и пр. хранятся КЛЮЧАМИ). Клиент
+  // мёржит «база ⊕ правка» для ленты миниатюр и холста; сырой ключ из правки
+  // перекрывал бы подписанную базу → <image href="ключ"> → 404 «?» на портрете
+  // (видно после перезагрузки у тех, кому правили обложку поштучно). Сохранение
+  // заново keyify-ит значения (cover_save_edit), поэтому подпись для показа
+  // безопасна. __bg__/hidden/текст resignCoverPhotoData не трогает.
+  for (const k of Object.keys(byType)) byType[k] = await resignCoverPhotoData(byType[k]);
+  for (const k of Object.keys(byChild)) byChild[k] = await resignCoverPhotoData(byChild[k]);
+
   // Глобальные стили текстов обложки + дизайн заказа (для списка фонов).
   const { data: albumRow } = await supabase
     .from('albums')
