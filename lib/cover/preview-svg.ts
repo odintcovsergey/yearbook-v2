@@ -224,17 +224,20 @@ function esc(s: string): string {
 }
 
 /**
- * Атрибуты ссылки для <image> в инлайн-SVG — кросс-браузерно и кросс-origin.
+ * Атрибуты ссылки для <image> в инлайн-SVG — кросс-браузерно.
  *  - href — современный SVG2 (Chrome/Firefox);
- *  - xlink:href — старый синтаксис (часть версий Safari/WebKit грузит только его);
- *  - crossorigin="anonymous" — заставляет браузер слать заголовок Origin. Иначе
- *    Safari НЕ рисует кросс-origin картинку в инлайн-SVG без CORS-заголовка, а
- *    Timeweb отдаёт Access-Control-Allow-Origin ТОЛЬКО в ответ на запрос с Origin
- *    (supabase слал его всегда — поэтому раньше с supabase-URL фон был виден).
+ *  - xlink:href — старый синтаксис (часть версий Safari/WebKit грузит только его).
+ *
+ * БЕЗ crossorigin намеренно: для ПОКАЗА картинки чтение в canvas не нужно, а
+ * crossorigin="anonymous" переводит запрос в CORS-режим. На Timeweb это ломало
+ * именно фон: холст редактора грузит фон обычным (no-cors) Image и кэширует его;
+ * Safari потом отдавал этот no-cors кэш на cors-запрос из SVG → CORS-ошибка → «?»
+ * (портрет/QR не были закэшированы холстом, поэтому грузились). Без crossorigin
+ * запрос no-cors → переиспользует валидный кэш холста → фон рисуется.
  */
 function imgHref(url: string): string {
   const u = esc(url);
-  return `href="${u}" xlink:href="${u}" crossorigin="anonymous"`;
+  return `href="${u}" xlink:href="${u}"`;
 }
 
 function slug(s: string): string {
