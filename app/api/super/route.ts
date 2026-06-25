@@ -102,28 +102,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ total, submitted, in_progress, not_started, children: children ?? [] })
   }
 
-  if (action === 'tenant_detail' && tenantId) {
-    const [tenantRes, usersRes, albumsRes] = await Promise.all([
-      supabaseAdmin.from('tenants').select('*').eq('id', tenantId).single(),
-      supabaseAdmin
-        .from('users')
-        .select('id, email, full_name, role, is_active, last_login, created_at')
-        .eq('tenant_id', tenantId)
-        .order('created_at'),
-      supabaseAdmin
-        .from('albums')
-        .select('id, title, year, archived, deadline, created_at')
-        .eq('tenant_id', tenantId)
-        .order('created_at', { ascending: false }),
-    ])
-
-    return NextResponse.json({
-      tenant: tenantRes.data,
-      users: usersRes.data ?? [],
-      albums: albumsRes.data ?? [],
-    })
-  }
-
   // --- Глобальная статистика ---
   if (action === 'global_stats') {
     const [tenantsCount, albumsCount, childrenCount, submittedCount] = await Promise.all([
