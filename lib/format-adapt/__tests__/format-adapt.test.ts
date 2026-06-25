@@ -5,6 +5,7 @@ import {
   computeFormatFamily,
   resolveDesignFamily,
   resolveFormat,
+  resolveWorkZone,
   adaptTemplateToFormat,
   adaptCoverToFormat,
 } from '../index';
@@ -68,6 +69,57 @@ describe('resolveFormat', () => {
     expect(resolveFormat(config, 'zzz')).toBeNull();
     expect(resolveFormat({ sheet_types: [] }, 'a')).toBeNull();
     expect(resolveFormat(null, 'a')).toBeNull();
+  });
+});
+
+// ─── safe в work-зоне ─────────────────────────────────────────────────────────
+
+describe('resolveWorkZone (safe → work)', () => {
+  it('явный work>0 → он (приоритет над safe)', () => {
+    expect(resolveWorkZone(200, 10, 190)).toBe(190);
+  });
+  it('work=0/пусто, safe>0 → page − 2×safe', () => {
+    expect(resolveWorkZone(200, 10, 0)).toBe(180);
+    expect(resolveWorkZone(200, 10, undefined)).toBe(180);
+  });
+  it('safe=0 и work=0 → page (без регрессии)', () => {
+    expect(resolveWorkZone(200, 0, 0)).toBe(200);
+    expect(resolveWorkZone(200, undefined, undefined)).toBe(200);
+  });
+});
+
+describe('safe применяется в адаптации', () => {
+  const source = { pageWidthMm: 200, pageHeightMm: 290, family: 'vertical_rect' as const };
+  const m = master({ width_mm: 200, height_mm: 290, placeholders: [photo('p', 0, 0, 200, 290)] });
+
+  it('safe>0, work=0 → масштаб от page−2×safe, контент отступает от края ровно на safe', () => {
+    const f = fmt({ family: 'vertical_rect', page_w_mm: 200, page_h_mm: 290, safe_mm: 10, bleed_mm: 0 });
+    const r = adaptTemplateToFormat(m, source, f);
+    expect(r.status).toBe('adapted');
+    // workW=180, workH=270 → s=min(180/200, 270/290)=0.9
+    expect(r.scale).toBeCloseTo(0.9, 5);
+    // плейсхолдер с краю (x=0) после центрирования отступает на safe=10мм
+    const p = (r.template.placeholders as Placeholder[])[0];
+    expect(p.x_mm).toBeCloseTo(10, 5);
+  });
+
+  it('safe=0 → прежнее поведение (масштаб 1, без отступа)', () => {
+    const f = fmt({ family: 'vertical_rect', page_w_mm: 200, page_h_mm: 290, safe_mm: 0, bleed_mm: 0 });
+    const r = adaptTemplateToFormat(m, source, f);
+    expect(r.scale).toBeCloseTo(1, 5);
+    const p = (r.template.placeholders as Placeholder[])[0];
+    expect(p.x_mm).toBeCloseTo(0, 5);
+  });
+
+  it('обложка: safe тоже отступает от края', () => {
+    const f = fmt({ family: 'vertical_rect', page_w_mm: 200, page_h_mm: 290, safe_mm: 10, bleed_mm: 0 });
+    const r = adaptCoverToFormat(
+      { backWidthMm: 200, frontWidthMm: 200, heightMm: 290, spineWidthMm: 8, family: 'vertical_rect',
+        placeholders: [{ ...photo('bp', 0, 0, 200, 290), zone: 'back' } as Placeholder & { zone: 'back' }] },
+      f,
+    );
+    expect(r.status).toBe('adapted');
+    expect(r.scale).toBeCloseTo(0.9, 5); // s = min(180/200, 270/290)
   });
 });
 
@@ -143,9 +195,10 @@ describe('adaptTemplateToFormat', () => {
     expect(r.template.height_mm).toBeCloseTo(300, 5);
   });
 
-  it('work-зона = 0 (заглушки) → фолбэк на размеры страницы', () => {
+  it('work=0 и safe=0 → фолбэк на размеры страницы (чистый случай)', () => {
     const t = master({ width_mm: 205, height_mm: 296 });
-    const f = fmt({ id: 'a', name: '21x30', family: 'vertical_rect', page_w_mm: 210, page_h_mm: 300 }); // work_w/h=0
+    // safe=0 ВАЖНО: иначе work=page−2×safe (см. отдельные safe-тесты выше).
+    const f = fmt({ id: 'a', name: '21x30', family: 'vertical_rect', page_w_mm: 210, page_h_mm: 300, safe_mm: 0 }); // work_w/h=0
     const r = adaptTemplateToFormat(t, vSource, f);
     expect(r.status).toBe('adapted');
     if (r.status !== 'adapted') return;

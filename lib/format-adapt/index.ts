@@ -73,6 +73,34 @@ function pos(v: number | null | undefined, fallback: number): number {
 }
 
 /**
+ * Рабочая зона (work) ОДНОЙ СТРАНИЦЫ — зона вписывания контента для uniform-
+ * масштаба. Контент масштабируется под неё и центрируется в странице, оставляя
+ * поля по краям.
+ *
+ * СЕМАНТИКА (зафиксировано): `work_w_mm`/`work_h_mm` — размер рабочей зоны
+ * НА СТРАНИЦУ (per-page), как и `page_w_mm`/`page_h_mm`. Масштаб делится на
+ * размер ОДНОЙ страницы (srcPageW), поэтому work тоже на страницу.
+ *   ⚠️ NB: в seed «Фабрики Фотокниги» `work_w_mm=410` при `page_w_mm=210` похоже
+ *   на разворот, а НЕ страницу — это ОТДЕЛЬНАЯ задача (проверить seed). Формула
+ *   здесь per-page и НЕ меняется; чиним понимание поля, не правило.
+ *
+ * Приоритет:
+ *   1) явный `work>0` → он (типография задала рабочую зону вручную);
+ *   2) `work=0`/пусто и `safe>0` → `page − 2×safe` (контент отступает от края
+ *      на safe-поле с каждой стороны);
+ *   3) оба 0 → `page` (прежнее поведение без safe — без регрессии).
+ */
+export function resolveWorkZone(
+  pageMm: number,
+  safeMm: number | null | undefined,
+  explicitWorkMm: number | null | undefined,
+): number {
+  if (typeof explicitWorkMm === 'number' && explicitWorkMm > 0) return explicitWorkMm;
+  if (typeof safeMm === 'number' && safeMm > 0) return Math.max(1, pageMm - 2 * safeMm);
+  return pageMm;
+}
+
+/**
  * Масштабирует один плейсхолдер коэффициентом s и сдвигает на (offX, offY) мм.
  * Сохраняет все прочие поля (тип, url декора, эффекты). Все «размерные» поля —
  * геометрия (мм) и кегль/эффекты (pt) — умножаются на s; rotation не трогаем.
@@ -171,11 +199,12 @@ export function adaptTemplateToFormat(
   );
   const srcPageH = pos(template.height_mm, source.pageHeightMm);
 
-  // Целевая страница и work-зона (work=0 у заглушек → фолбэк на размер страницы).
+  // Целевая страница и work-зона. work учитывает safe: явный work>0 → он,
+  // иначе page − 2×safe, иначе page (см. resolveWorkZone).
   const tgtPageW = pos(target.page_w_mm, srcPageW);
   const tgtPageH = pos(target.page_h_mm, srcPageH);
-  const tgtWorkW = pos(target.work_w_mm, tgtPageW);
-  const tgtWorkH = pos(target.work_h_mm, tgtPageH);
+  const tgtWorkW = resolveWorkZone(tgtPageW, target.safe_mm, target.work_w_mm);
+  const tgtWorkH = resolveWorkZone(tgtPageH, target.safe_mm, target.work_h_mm);
 
   // Uniform-масштаб по меньшему коэффициенту (контент влезает в work-зону).
   const s = Math.min(tgtWorkW / srcPageW, tgtWorkH / srcPageH);
@@ -287,8 +316,8 @@ export function adaptCoverToFormat(
   const srcPageH = pos(input.heightMm, 1);
   const PW = pos(target.page_w_mm, srcPageW);
   const H = pos(target.page_h_mm, srcPageH);
-  const workW = pos(target.work_w_mm, PW);
-  const workH = pos(target.work_h_mm, H);
+  const workW = resolveWorkZone(PW, target.safe_mm, target.work_w_mm);
+  const workH = resolveWorkZone(H, target.safe_mm, target.work_h_mm);
   const s = Math.min(workW / srcPageW, workH / srcPageH);
   const spine = input.spineWidthMm;
 
