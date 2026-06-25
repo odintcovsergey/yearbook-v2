@@ -1,0 +1,32 @@
+# systemd unit — чистильщик исходников архивных заказов (Фаза 3, ТЗ
+# docs/tz-archive-lifecycle.md). Удаляет ТОЛЬКО исходники фотографа
+# (photos.original_path) истёкших архивных заказов (≥90 дней), с анти-шарингом.
+# Превью и записи photos остаются — архив остаётся смотрибельным.
+#
+# Запускается ТОЛЬКО по таймеру yearbook-cleanup.timer (Type=oneshot, не демон).
+# ⚠️  ВКЛЮЧАТЬ ТАЙМЕР — только в Фазе 5, после dry-run и пробы на проде:
+#   cp deploy/timeweb/yearbook-cleanup.{service,timer} /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now yearbook-cleanup.timer      # <-- НЕ делать до Фазы 5
+#
+# Ручной dry-run на проде (первый шаг Фазы 5, БЕЗ удаления):
+#   cd /srv/yearbook/current
+#   sudo -u yearbook env $(cat .env.production | grep -v '^#' | xargs) \
+#     node_modules/.bin/tsx scripts/archive-cleanup.mts
+[Unit]
+Description=yearbook-v2 чистильщик исходников архивных заказов (≥90 дней)
+After=network-online.target postgrest.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/yearbook/current
+EnvironmentFile=/srv/yearbook/current/.env.production
+Environment=NODE_ENV=production
+# --apply: по таймеру чистим РЕАЛЬНО. Без флага скрипт делает безопасный dry-run,
+# поэтому реальное удаление включается ровно здесь, в сервисе под таймером.
+ExecStart=/srv/yearbook/current/node_modules/.bin/tsx scripts/archive-cleanup.mts --apply
+User=yearbook
+Group=yearbook
+# Не зацикливать при сбое — следующий запуск по таймеру на следующий день.
+Restart=no

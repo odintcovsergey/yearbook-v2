@@ -1,0 +1,22 @@
+# Таймер чистильщика исходников архива — ежедневно 04:00 UTC.
+# Ставится в /etc/systemd/system/yearbook-cleanup.timer
+#
+# ⚠️  СОЗДАЁТСЯ, НО НЕ ВКЛЮЧАЕТСЯ в Фазе 3. Включение — ТОЛЬКО в Фазе 5,
+# после dry-run и пробы на одном заказе:
+#   systemctl enable --now yearbook-cleanup.timer   # <-- Фаза 5
+# Заморозить (выключить авточистку):
+#   systemctl disable --now yearbook-cleanup.timer
+# Проверить расписание/последний запуск:
+#   systemctl list-timers yearbook-cleanup.timer
+[Unit]
+Description=Ежедневная чистка исходников архивных заказов yearbook-v2 (04:00 UTC)
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 UTC
+# Если VDS был выключен в момент срабатывания — догнать после загрузки.
+Persistent=true
+AccuracySec=5min
+Unit=yearbook-cleanup.service
+
+[Install]
+WantedBy=timers.target
