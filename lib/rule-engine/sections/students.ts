@@ -1299,10 +1299,11 @@ function buildGridSemantic(
   // альбом без цитат, чем не построить вовсе. Info-warning объяснит партнёру
   // что произошло и как починить.
   //
-  // effectiveHasQuote — реальное значение которое будет использовано всеми
-  // последующими find-вызовами (combined-tail, adaptive). Если fallback
-  // сработал, все хвостовые мастера тоже ищутся без quote — иначе combo
-  // на хвосте откажется (он использует тот же hasQuote критерий).
+  // effectiveHasQuote — фактическая цитатность после fallback. Используется
+  // ниже в фильтре combined-кандидатов (masterHasQuote === effectiveHasQuote),
+  // чтобы хвост был согласован с сеткой по цитатам. Если fallback сработал
+  // (effectiveHasQuote=false) — хвост тоже без цитат, иначе на combined-хвосте
+  // вылезут цитаты, которых нет в базовой сетке.
   let effectiveHasQuote = hasQuote;
   if (!baseResult && hasQuote) {
     baseResult = findStudentGridMaster(ctx.bundle.mastersByName, {
@@ -1386,13 +1387,22 @@ function buildGridSemantic(
       typeof m.slot_capacity.students === 'number' ? m.slot_capacity.students : 0;
     const hasPortrait = m.slot_capacity.has_portrait === true;
     const hasName = m.slot_capacity.has_name === true;
+    const masterHasQuote = m.slot_capacity.has_quote === true;
     // Жёсткий фильтр: photos_full=1, has_portrait=true, has_name=true.
     // Это отсекает J-Combined-Tail-* (для transition) — у них нет
     // has_portrait/has_name.
+    //
+    // РЭ.37.9 (восстановлено после РЭ.40, 25.06.2026): combined-хвост обязан
+    // совпадать с базовой сеткой по цитатам (masterHasQuote === effectiveHasQuote).
+    // Если сетка ушла в quote-fallback без цитат (effectiveHasQuote=false), а
+    // единственный combined — с цитатами, он отсекается → хвост уходит в базовую
+    // сетку без цитат (путь tail_padded), а не показывает цитаты, которых в
+    // сетке нет. Симметрично для effectiveHasQuote=true.
     if (
       photosFullN === 1 &&
       hasPortrait &&
       hasName &&
+      masterHasQuote === effectiveHasQuote &&
       studentsN >= 1 &&
       studentsN < slotsPerPage
     ) {

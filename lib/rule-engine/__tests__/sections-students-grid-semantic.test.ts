@@ -564,5 +564,58 @@ describe("mode='grid' семантический поиск (РЭ.22.6)", () => 
       expect(w).toBeDefined();
       expect(w).toMatch(/has_quote=true.*has_quote=false/);
     });
+
+    it('quote fallback + combined С цитатами → хвост уходит в сетку БЕЗ цитат (РЭ.37.9 после РЭ.40)', () => {
+      // Партнёр просит цитаты, но в дизайне НЕТ quote-сеточного мастера на 6 →
+      // base уходит в fallback на L-Grid-Page (без цитат), effectiveHasQuote=false.
+      // В дизайне ЕСТЬ combined С цитатами (L-Combined-Q, 3 ученика + общее фото).
+      // Combined-хвост НЕ должен его взять — иначе хвост с цитатами при сетке без
+      // цитат (рассогласование, которое РЭ.40 случайно вернул, орфанив
+      // effectiveHasQuote). Ожидаем: хвост в базовой сетке L-Grid-Page, без цитат.
+      const L_COMBINED_Q = makeGridMaster('L-Combined-Q', 3, {
+        hasQuote: true,
+        photosFull: 1,
+      });
+      const bundle = makeBundle({
+        preset: makePreset({
+          id: 'light-quote-fallback',
+          student_layout_mode: 'grid',
+          student_grid_size: 6,
+          student_has_quote: true,
+          section_structure: [{ type: 'students' }],
+        }),
+        masters: [L_GRID, L_COMBINED_Q],
+      });
+      const result = buildFromSectionStructure(
+        bundle,
+        makeInput({ students_count: 7, full_class_count: 1 }),
+      );
+
+      // Fallback сетки сработал
+      expect(
+        result.warnings.some((w) => w.startsWith('students_quote_fallback')),
+      ).toBe(true);
+
+      expect(result.spreads).toHaveLength(1);
+      // Левая — полная сетка без цитат
+      expect(result.spreads[0].left?.master_id).toBe('id-L-Grid-Page');
+
+      // Правая (хвост 1 ученика) — НЕ combined с цитатами, а та же сетка без цитат
+      const right = result.spreads[0].right!;
+      expect(right.master_id).toBe('id-L-Grid-Page');
+      expect(right.master_id).not.toBe('id-L-Combined-Q');
+      // На хвосте нет цитат: у L-Grid-Page нет quote-слотов → studentquote не привязан
+      expect(right.bindings.studentquote_1).toBeUndefined();
+      // И нет общего фото (combined не выбран → classphotoframe не привязан)
+      expect(right.bindings.classphotoframe).toBeUndefined();
+
+      // Combined с цитатами не использован НИ на одной странице
+      const usedCombinedQ = result.spreads.some(
+        (s) =>
+          s.left?.master_id === 'id-L-Combined-Q' ||
+          s.right?.master_id === 'id-L-Combined-Q',
+      );
+      expect(usedCombinedQ).toBe(false);
+    });
   });
 });
