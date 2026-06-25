@@ -96,11 +96,18 @@ export type RemapResult = {
  * @param oldData          spread.data старого инстанса (с __scale__/__offset__ и т.п.)
  * @param oldPlaceholders  placeholders старого мастера (для определения типа каждого label)
  * @param newPlaceholders  placeholders нового мастера
+ * @param contentKeyPrefixes какие служебные ключи переносить на новый label.
+ *        По умолчанию — CONTENT_KEY_PREFIXES (смена мастера через
+ *        TemplatePickerModal: кропы + стили). Смена ДИЗАЙНА передаёт только
+ *        кропы (`__scale__/__offset__/__rotate__`), чтобы стили взялись из
+ *        нового дизайна (см. lib/design-switch). Не входящие в список ключи
+ *        отбрасываются.
  */
 export function remapData(
   oldData: Record<string, string | null>,
   oldPlaceholders: Placeholder[],
   newPlaceholders: Placeholder[],
+  contentKeyPrefixes: readonly string[] = CONTENT_KEY_PREFIXES,
 ): RemapResult {
   // ─── Стейт прохода ────────────────────────────────────────────────
   const newData: Record<string, string | null> = {};
@@ -240,7 +247,7 @@ export function remapData(
   for (const [newLabel, match] of Object.entries(matches)) {
     if (!match) continue;
     const srcLabel = match.sourceLabel;
-    for (const prefix of CONTENT_KEY_PREFIXES) {
+    for (const prefix of contentKeyPrefixes) {
       const srcKey = `${prefix}${srcLabel}`;
       if (srcKey in oldData) {
         const v = oldData[srcKey];
