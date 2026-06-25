@@ -142,17 +142,20 @@ export async function POST(req: NextRequest) {
     surcharge = price
   }
 
-  // Проверить что групповые фото не заняты другими (финальная проверка, только если exclusive)
-  for (const photoId of (album?.group_exclusive !== false ? groupPhotos : [])) {
+  // Проверить что групповые фото не заняты другими (финальная проверка, только если exclusive).
+  // Один запрос .in() вместо N запросов в цикле: ищем любое из выбранных фото,
+  // уже занятое в группе другим ребёнком — этого достаточно для отказа.
+  const photosToCheck = album?.group_exclusive !== false ? (groupPhotos ?? []) : []
+  if (photosToCheck.length > 0) {
     const { data: confirmedByOther } = await supabaseAdmin
       .from('selections')
       .select('child_id')
-      .eq('photo_id', photoId)
+      .in('photo_id', photosToCheck)
       .eq('selection_type', 'group')
       .neq('child_id', child.id)
-      .maybeSingle()
+      .limit(1)
 
-    if (confirmedByOther)
+    if (confirmedByOther && confirmedByOther.length > 0)
       return NextResponse.json({ error: 'Одно из выбранных фото только что заняли. Выберите другое.' }, { status: 409 })
   }
 
