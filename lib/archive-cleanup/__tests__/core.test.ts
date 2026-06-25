@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isExpiredAlbum,
   computeDeletableOriginals,
+  archiveLifecycleStatus,
   DEFAULT_TTL_DAYS,
   type AlbumLifecycle,
   type PhotoOriginalRef,
@@ -111,5 +112,34 @@ describe('computeDeletableOriginals', () => {
 
   it('TTL = DEFAULT_TTL_DAYS (90)', () => {
     expect(DEFAULT_TTL_DAYS).toBe(90);
+  });
+});
+
+describe('archiveLifecycleStatus (UI, Фаза 4)', () => {
+  it('archived_at=null (11 старых) → not_started, НЕ «через 90 дней»', () => {
+    expect(archiveLifecycleStatus(alb('a', { archived_at: null }), NOW)).toEqual({ kind: 'not_started' });
+  });
+  it('архивный 10д назад → countdown 80', () => {
+    expect(archiveLifecycleStatus(alb('a', { archived_at: daysAgo(10) }), NOW)).toEqual({ kind: 'countdown', daysLeft: 80 });
+  });
+  it('архивный только что → countdown 90', () => {
+    expect(archiveLifecycleStatus(alb('a', { archived_at: daysAgo(0) }), NOW)).toEqual({ kind: 'countdown', daysLeft: 90 });
+  });
+  it('просрочен (100д) → countdown 0, не уходит в минус', () => {
+    expect(archiveLifecycleStatus(alb('a', { archived_at: daysAgo(100) }), NOW)).toEqual({ kind: 'countdown', daysLeft: 0 });
+  });
+  it('keep_originals_forever → forever (важнее отсчёта)', () => {
+    expect(archiveLifecycleStatus(alb('a', { keep_originals_forever: true }), NOW)).toEqual({ kind: 'forever' });
+  });
+  it('originals_deleted_at задан → deleted (терминальный факт, важнее всего)', () => {
+    const at = daysAgo(1);
+    expect(archiveLifecycleStatus(alb('a', { originals_deleted_at: at }), NOW)).toEqual({ kind: 'deleted', at });
+  });
+  it('не в архиве → not_archived', () => {
+    expect(archiveLifecycleStatus(alb('a', { archived: false }), NOW)).toEqual({ kind: 'not_archived' });
+  });
+  it('deleted важнее forever (исходники физически удалены)', () => {
+    const at = daysAgo(2);
+    expect(archiveLifecycleStatus(alb('a', { keep_originals_forever: true, originals_deleted_at: at }), NOW)).toEqual({ kind: 'deleted', at });
   });
 });

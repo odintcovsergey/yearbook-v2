@@ -33,6 +33,7 @@ import IdeasModal from './_components/IdeasModal'
 import { confirmDestructive } from '@/lib/impersonation-client'
 import { subscribeModal } from '@/lib/cabinet-nav'
 import { resolveFormat } from '@/lib/format-adapt'
+import { archiveLifecycleStatus } from '@/lib/archive-cleanup/core'
 import type { PrinterConfig, PrinterFormat } from '@/lib/printers/types'
 // РЭ.21.7.3: drag-and-drop секций в редакторе пресета.
 
@@ -87,6 +88,10 @@ type Album = {
   cover_price: number
   deadline: string | null
   archived: boolean
+  // Жизненный цикл архива (Фаза 4): отсчёт автоудаления исходников.
+  archived_at?: string | null            // момент архивации = база отсчёта; null=отсчёт не начат (11 старых)
+  keep_originals_forever?: boolean | null // true = «оставить навсегда», чистильщик пропускает
+  originals_deleted_at?: string | null    // задан = исходники физически удалены (превью остаются)
   created_at: string
   template_title: string
   class_name: string | null
@@ -708,6 +713,7 @@ export default function AppPage() {
             notify(`Альбом «${title}» обновлён`, 'ok')
           }}
           onError={(text) => notify(text, 'err')}
+          onNotify={(text) => notify(text, 'ok')}
           onArchive={() => {
             setEditAlbum(null)
             loadDashboard()
@@ -3330,6 +3336,7 @@ function AlbumFormModal({
   onClose,
   onSuccess,
   onError,
+  onNotify,
   onArchive,
   onUnarchive,
 }: {
@@ -3338,6 +3345,7 @@ function AlbumFormModal({
   onClose: () => void
   onSuccess: (title: string) => void
   onError: (msg: string) => void
+  onNotify?: (msg: string) => void
   onArchive?: () => void
   onUnarchive?: () => void
 }) {
@@ -3407,6 +3415,38 @@ function AlbumFormModal({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   // РЭ.39.b: state модалки подтверждения клонирования альбома.
   const [showCloneConfirm, setShowCloneConfirm] = useState(false)
+  // Жизненный цикл архива (Фаза 4): локальная копия полей отсчёта автоудаления,
+  // чтобы кнопки «Продлить»/«Оставить навсегда»/«Включить снова» обновляли
+  // карточку без перезагрузки. Стартует из album, дальше — оптимистично.
+  const [lifecycle, setLifecycle] = useState<{
+    archived_at: string | null
+    keep_originals_forever: boolean
+    originals_deleted_at: string | null
+  }>(() => ({
+    archived_at: album?.archived_at ?? null,
+    keep_originals_forever: album?.keep_originals_forever ?? false,
+    originals_deleted_at: album?.originals_deleted_at ?? null,
+  }))
+  const handleLifecycle = async (
+    action: 'extend_archive_ttl' | 'keep_originals_forever' | 'resume_archive_autodelete',
+    optimistic: Partial<{ archived_at: string | null; keep_originals_forever: boolean }>,
+    okMsg: string,
+  ) => {
+    if (!album) return
+    setLoading(true)
+    const r = await api('/api/tenant', {
+      method: 'POST',
+      body: JSON.stringify({ action, album_id: album.id }),
+    })
+    if (r.ok) {
+      setLifecycle(prev => ({ ...prev, ...optimistic }))
+      onNotify?.(okMsg)
+    } else {
+      const d = await r.json().catch(() => ({}))
+      onError(d.error ?? 'Не удалось обновить настройку архива')
+    }
+    setLoading(false)
+  }
   const [backdropStart, setBackdropStart] = useState(false)
   // РЭ.24.6: модалка выбора шаблона + диалог смены/снятия шаблона.
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
@@ -4697,15 +4737,143 @@ function AlbumFormModal({
                   </div>
                 )
               ) : (
-                <div className="flex items-center gap-4">
-                  <button
-                    type="button"
-                    onClick={handleUnarchive}
-                    className="btn-secondary"
-                    disabled={loading}
-                  >
-                    Вернуть из архива
-                  </button>
+                <div className="space-y-3">
+                  {/* Жизненный цикл архива (Фаза 4): статус автоудаления
+                      исходников + управление. Чистая формула статуса —
+                      lib/archive-cleanup/core.ts archiveLifecycleStatus. */}
+                  {(() => {
+                    const st = archiveLifecycleStatus(
+                      {
+                        id: album.id,
+                        archived: true,
+                        archived_at: lifecycle.archived_at,
+                        keep_originals_forever: lifecycle.keep_originals_forever,
+                        originals_deleted_at: lifecycle.originals_deleted_at,
+                      },
+                      Date.now(),
+                    )
+                    const nowIso = () => new Date().toISOString()
+                    return (
+                      <div className="rounded-xl border border-border bg-muted/40 p-4">
+                        <div className="text-sm font-medium text-foreground mb-1">
+                          Исходники фотографа (для печати)
+                        </div>
+                        {st.kind === 'deleted' && (
+                          <p className="text-sm text-muted-foreground">
+                            Исходники удалены {new Date(st.at).toLocaleDateString('ru-RU')} для
+                            экономии места. Превью и данные заказа сохранены.
+                          </p>
+                        )}
+                        {st.kind === 'forever' && (
+                          <>
+                            <p className="text-sm text-muted-foreground mb-3">
+                              Исходники <strong>сохраняются навсегда</strong> — автоудаление выключено.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleLifecycle(
+                                  'resume_archive_autodelete',
+                                  { keep_originals_forever: false, archived_at: nowIso() },
+                                  'Автоудаление включено — отсчёт 90 дней',
+                                )
+                              }
+                              className="btn-secondary text-sm"
+                              disabled={loading}
+                            >
+                              Включить автоудаление снова
+                            </button>
+                          </>
+                        )}
+                        {st.kind === 'not_started' && (
+                          <>
+                            <p className="text-sm text-muted-foreground mb-3">
+                              Отсчёт автоудаления <strong>не начат</strong> — исходники хранятся.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleLifecycle(
+                                    'extend_archive_ttl',
+                                    { archived_at: nowIso() },
+                                    'Отсчёт запущен — исходники удалятся через 90 дней',
+                                  )
+                                }
+                                className="btn-secondary text-sm"
+                                disabled={loading}
+                              >
+                                Запустить отсчёт (90 дней)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleLifecycle(
+                                    'keep_originals_forever',
+                                    { keep_originals_forever: true },
+                                    'Исходники будут храниться навсегда',
+                                  )
+                                }
+                                className="btn-secondary text-sm"
+                                disabled={loading}
+                              >
+                                Оставить навсегда
+                              </button>
+                            </div>
+                          </>
+                        )}
+                        {st.kind === 'countdown' && (
+                          <>
+                            <p className="text-sm text-muted-foreground mb-3">
+                              Исходники удалятся через <strong>{st.daysLeft} дн.</strong> (превью и
+                              данные останутся). Можно продлить или оставить навсегда.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleLifecycle(
+                                    'extend_archive_ttl',
+                                    { archived_at: nowIso() },
+                                    'Срок продлён — ещё 90 дней',
+                                  )
+                                }
+                                className="btn-secondary text-sm"
+                                disabled={loading}
+                              >
+                                Продлить на 90 дней
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleLifecycle(
+                                    'keep_originals_forever',
+                                    { keep_originals_forever: true },
+                                    'Исходники будут храниться навсегда',
+                                  )
+                                }
+                                className="btn-secondary text-sm"
+                                disabled={loading}
+                              >
+                                Оставить навсегда
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )
+                  })()}
+
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={handleUnarchive}
+                      className="btn-secondary"
+                      disabled={loading}
+                    >
+                      Вернуть из архива
+                    </button>
+                  </div>
                 </div>
               )}
 

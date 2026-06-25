@@ -5880,6 +5880,75 @@ export async function POST(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
+  // Жизненный цикл архива (Фаза 4) — управление автоудалением исходников.
+  // Все три — tenant-aware через assertAlbumAccess (доступ только к своим).
+  // ----------------------------------------------------------
+
+  // extend_archive_ttl — продлить/запустить отсчёт: archived_at = сейчас, отсчёт
+  // снова 90 дней. Для 11 старых (archived_at=null) это и есть «запустить отсчёт».
+  if (body.action === 'extend_archive_ttl') {
+    const { album_id } = body
+    if (!album_id) {
+      return NextResponse.json({ error: 'album_id обязателен' }, { status: 400 })
+    }
+    if (!(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const { error } = await supabaseAdmin
+      .from('albums')
+      .update({ archived_at: new Date().toISOString() })
+      .eq('id', album_id)
+    if (error) {
+      return serverError(error, 'tenant')
+    }
+    await logAction(auth, 'album.archive_extend', 'album', album_id)
+    return NextResponse.json({ ok: true })
+  }
+
+  // keep_originals_forever — «оставить навсегда»: отсчёт останавливается,
+  // чистильщик такой заказ пропускает (isExpiredAlbum → false).
+  if (body.action === 'keep_originals_forever') {
+    const { album_id } = body
+    if (!album_id) {
+      return NextResponse.json({ error: 'album_id обязателен' }, { status: 400 })
+    }
+    if (!(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const { error } = await supabaseAdmin
+      .from('albums')
+      .update({ keep_originals_forever: true })
+      .eq('id', album_id)
+    if (error) {
+      return serverError(error, 'tenant')
+    }
+    await logAction(auth, 'album.keep_forever', 'album', album_id)
+    return NextResponse.json({ ok: true })
+  }
+
+  // resume_archive_autodelete — «включить автоудаление снова»: снимаем
+  // keep_forever и заодно ставим archived_at=сейчас (свежие 90 дней), чтобы не
+  // удалить мгновенно заказ, заархивированный давно.
+  if (body.action === 'resume_archive_autodelete') {
+    const { album_id } = body
+    if (!album_id) {
+      return NextResponse.json({ error: 'album_id обязателен' }, { status: 400 })
+    }
+    if (!(await assertAlbumAccess(auth, album_id))) {
+      return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
+    }
+    const { error } = await supabaseAdmin
+      .from('albums')
+      .update({ keep_originals_forever: false, archived_at: new Date().toISOString() })
+      .eq('id', album_id)
+    if (error) {
+      return serverError(error, 'tenant')
+    }
+    await logAction(auth, 'album.autodelete_resume', 'album', album_id)
+    return NextResponse.json({ ok: true })
+  }
+
+  // ----------------------------------------------------------
   // delete_album — полное удаление альбома (необратимо)
   // ----------------------------------------------------------
   if (body.action === 'delete_album') {

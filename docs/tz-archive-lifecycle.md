@@ -52,8 +52,14 @@
   `--apply` — по таймеру чистит реально) + `yearbook-cleanup.timer` (ежедневно
   04:00 UTC). **Таймер СОЗДАН, но НЕ включён** — `enable --now` только в Фазе 5
   после dry-run и пробы. Логи: stdout (journalctl) + audit_log.
-- **Фаза 4 — UI.** Отсчёт «исходники удалятся через N дней», кнопки «Продлить на
-  90»/«Оставить навсегда», статус «исходники удалены».
+- **Фаза 4 — UI (✅).** В модалке заказа (архивная ветка): панель «Исходники
+  фотографа» со статусом + кнопки. Статус — чистая `archiveLifecycleStatus`
+  (core.ts): `not_started` (archived_at=null, 11 старых → «отсчёт не начат», НЕ
+  «через 90») / `countdown N` («удалятся через N дн.») / `forever` («навсегда») /
+  `deleted` («удалены DD.MM.YYYY»). Кнопки → tenant API (tenant-aware,
+  assertAlbumAccess): `extend_archive_ttl` (продлить/запустить, archived_at=now),
+  `keep_originals_forever` (true), `resume_archive_autodelete` (forever→off,
+  archived_at=now чтобы не удалить мгновенно). Родительские страницы не тронуты.
 - **Фаза 5 — боевое включение (необратимо, по явному «ок»).** Шаги:
   (1) ручной dry-run на проде `tsx scripts/archive-cleanup.mts` (без флага);
   (2) проба `--apply --only=<один_заказ>`; (3) полный прогон `--apply` вручную;

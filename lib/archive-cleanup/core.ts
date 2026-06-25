@@ -49,6 +49,39 @@ export function isExpiredAlbum(
   return nowMs - archivedMs >= ttlDays * 86_400_000;
 }
 
+/**
+ * Статус исходников архивного заказа для UI (Фаза 4). Чистая функция от полей
+ * заказа и «сейчас». Порядок веток важен:
+ *   1) исходники уже удалены (originals_deleted_at) → терминальный факт, выше всех.
+ *   2) не в архиве → нет жизненного цикла.
+ *   3) keep_originals_forever → «сохраняются навсегда».
+ *   4) archived_at = null → «отсчёт не начат» (11 старых заказов: дату НЕ
+ *      бэкфиллили, поэтому показываем именно это, а НЕ «через 90 дней»).
+ *   5) иначе — отсчёт: N = ttl − floor((сейчас − archived_at)/сутки), не меньше 0.
+ */
+export type ArchiveStatus =
+  | { kind: 'deleted'; at: string }
+  | { kind: 'not_archived' }
+  | { kind: 'forever' }
+  | { kind: 'not_started' }
+  | { kind: 'countdown'; daysLeft: number };
+
+export function archiveLifecycleStatus(
+  a: AlbumLifecycle,
+  nowMs: number,
+  ttlDays: number = DEFAULT_TTL_DAYS,
+): ArchiveStatus {
+  if (a.originals_deleted_at) return { kind: 'deleted', at: a.originals_deleted_at };
+  if (!a.archived) return { kind: 'not_archived' };
+  if (a.keep_originals_forever) return { kind: 'forever' };
+  if (!a.archived_at) return { kind: 'not_started' }; // дату не проставляли (11 старых)
+  const archivedMs = Date.parse(a.archived_at);
+  if (!Number.isFinite(archivedMs)) return { kind: 'not_started' };
+  const passedDays = Math.floor((nowMs - archivedMs) / 86_400_000);
+  const daysLeft = Math.max(0, ttlDays - passedDays);
+  return { kind: 'countdown', daysLeft };
+}
+
 export interface DeletableResult {
   /** Истёкшие заказы, по которым есть что удалять: id → список original_path. */
   byAlbum: Map<string, string[]>;
