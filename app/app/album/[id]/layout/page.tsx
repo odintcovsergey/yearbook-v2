@@ -53,6 +53,7 @@ import WarningsPill, {
   type EnrichedWarning,
 } from './_components/WarningsPill'
 import LayoutPreviewFullscreen from '../../../_components/LayoutPreviewFullscreen'
+import DesignSwitchModal from '../../../_components/DesignSwitchModal'
 import {
   Eye,
   BookOpen,
@@ -67,6 +68,7 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
+  Palette,
 } from 'lucide-react'
 
 // Konva-компонент: SSR-incompatible (использует window.Image).
@@ -345,6 +347,8 @@ function LayoutEditorPageInner({
   const [textStylesModalOpen, setTextStylesModalOpen] = useState(false)
   // Блок UX.4: открыт ли полноэкранный просмотр макета («Вид»).
   const [fullscreenOpen, setFullscreenOpen] = useState(false)
+  // Этап 3 (смена дизайна): открыта ли модалка «Сменить дизайн».
+  const [designSwitchOpen, setDesignSwitchOpen] = useState(false)
   const [currentIdx, setCurrentIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1976,6 +1980,17 @@ function LayoutEditorPageInner({
           >
             <Eye size={16} /> Вид
           </button>
+          {/* Этап 3 — смена дизайна (remap). Пишет вёрстку → только в edit-режиме. */}
+          {!isReadOnly && (
+            <button
+              type="button"
+              onClick={() => setDesignSwitchOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded border border-border bg-card hover:bg-muted text-foreground transition-colors"
+              title="Сменить дизайн альбома (тексты и кадрирование сохранятся)"
+            >
+              <Palette size={16} /> Сменить дизайн
+            </button>
+          )}
           {/* Л.3 — кнопки Undo/Redo. Скрыты в read-only. */}
           {!isReadOnly && (
             <div className="flex items-center gap-1">
@@ -2655,6 +2670,25 @@ function LayoutEditorPageInner({
           initialPairIdx={currentPairIdx >= 0 ? currentPairIdx : 0}
           onClose={() => setFullscreenOpen(false)}
           spineMarginMm={effSpineMarginMm}
+        />
+      )}
+
+      {/* Этап 3 — модалка «Сменить дизайн» (remap). */}
+      {designSwitchOpen && (
+        <DesignSwitchModal
+          albumId={albumId}
+          currentTemplateSetId={layout?.template_set_id ?? null}
+          api={api}
+          viewAsSuffix={viewAsTenantId ? `&view_as=${viewAsTenantId}` : ''}
+          onClose={() => setDesignSwitchOpen(false)}
+          onBeforeApply={async () => {
+            // Дослать несохранённые правки, иначе remap возьмёт устаревшую вёрстку.
+            if (layout && saveStatus !== 'saved') await saveLayout(layout.spreads)
+          }}
+          onApplied={() => {
+            // Перезагрузить редактор: новая вёрстка + мастера/фоны нового дизайна.
+            window.location.reload()
+          }}
         />
       )}
 

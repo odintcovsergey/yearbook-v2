@@ -28,6 +28,8 @@ import type {
 import { adaptLegacyAlbumInput } from '@/lib/rule-engine/legacy-adapter'
 import { adaptAlbumLayoutToBuildResult } from '@/lib/rule-engine/layout-to-buildresult'
 import { buildAlbumInput, type SmartFillWarning } from '@/lib/smart-fill'
+import { coverCheck } from '@/lib/design-switch/cover-check'
+import { remapAlbumToDesign } from '@/lib/design-switch/remap-album'
 import {
   exportAlbumPdf,
   type AlbumExportInput,
@@ -420,6 +422,15 @@ export async function POST(req: NextRequest) {
   // Фоновая очередь экспорта (ТЗ №2): ручной повтор упавшей задачи.
   if (action === 'export_retry') {
     return handleExportRetry(req, auth)
+  }
+
+  // Смена дизайна в редакторе (remap, не rebuild): check = предпросмотр
+  // совместимости (read-only), apply = применить перенос (пишет вёрстку).
+  if (action === 'design_switch_check') {
+    return handleDesignSwitchCheck(req, auth)
+  }
+  if (action === 'design_switch_apply') {
+    return handleDesignSwitchApply(req, auth)
   }
 
   if (action === 'build_album_test') {
@@ -1463,6 +1474,103 @@ async function handleSaveAlbumLayout(
     success: true,
     layout_id: layoutRow.id,
   })
+}
+
+// ============================================================
+// Смена дизайна в редакторе (remap). Общий резолв доступа + (для apply)
+// проверка прав записи — тем же паттерном, что handleSaveAlbumLayout.
+// Возвращает tid (string) при успехе или NextResponse с ошибкой.
+// ============================================================
+async function resolveDesignSwitchAccess(
+  req: NextRequest,
+  auth: AuthContext,
+  albumId: string,
+  requireWrite: boolean,
+): Promise<string | null | NextResponse> {
+  const viewAsTenantId = req.nextUrl.searchParams.get('view_as')
+  const { data: currentTenantData } = viewAsTenantId
+    ? await supabaseAdmin.from('tenants').select('slug').eq('id', auth.tenantId).single()
+    : { data: null }
+  const canViewAs = auth.role === 'superadmin' || currentTenantData?.slug === 'main'
+  const tid = (canViewAs && viewAsTenantId) ? viewAsTenantId : auth.tenantId
+
+  if (!(await assertAlbumAccessLocal(auth, albumId, tid))) {
+    return NextResponse.json({ error: 'access denied' }, { status: 403 })
+  }
+
+  // Запись (apply) — те же ограничения, что у save_album_layout.
+  if (requireWrite && auth.role !== 'superadmin') {
+    if (auth.role === 'viewer') {
+      return NextResponse.json({ error: 'Viewer не может менять дизайн' }, { status: 403 })
+    }
+    if (canViewAs && viewAsTenantId) {
+      return NextResponse.json({ error: 'Смена дизайна от имени партнёра запрещена — только просмотр' }, { status: 403 })
+    }
+    const { data: albumRow } = await supabaseAdmin
+      .from('albums')
+      .select('workflow_status')
+      .eq('id', albumId)
+      .maybeSingle()
+    const ws = albumRow?.workflow_status as string | undefined
+    if (ws && ['submitted', 'in_production', 'delivered'].includes(ws)) {
+      return NextResponse.json(
+        { error: 'Альбом передан в работу — смена дизайна заблокирована. Обратитесь к OkeyBook если нужны изменения.' },
+        { status: 403 },
+      )
+    }
+  }
+  return tid
+}
+
+/** Разбор и валидация тела {album_id, target_template_set_id}. */
+async function parseDesignSwitchBody(
+  req: NextRequest,
+): Promise<{ albumId: string; targetId: string } | NextResponse> {
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
+  }
+  const albumId = (body as Record<string, unknown>)?.album_id
+  const targetId = (body as Record<string, unknown>)?.target_template_set_id
+  if (typeof albumId !== 'string' || !UUID_REGEX.test(albumId)) {
+    return NextResponse.json({ error: 'album_id is required (uuid)' }, { status: 400 })
+  }
+  if (typeof targetId !== 'string' || !UUID_REGEX.test(targetId)) {
+    return NextResponse.json({ error: 'target_template_set_id is required (uuid)' }, { status: 400 })
+  }
+  return { albumId, targetId }
+}
+
+// POST design_switch_check — предпросмотр совместимости (read-only).
+async function handleDesignSwitchCheck(req: NextRequest, auth: AuthContext): Promise<NextResponse> {
+  const parsed = await parseDesignSwitchBody(req)
+  if (parsed instanceof NextResponse) return parsed
+  const access = await resolveDesignSwitchAccess(req, auth, parsed.albumId, false)
+  if (access instanceof NextResponse) return access
+  try {
+    const coverage = await coverCheck(supabaseAdmin, parsed.albumId, parsed.targetId)
+    return NextResponse.json({ ok: coverage.ok, message: coverage.message, missing: coverage.missing })
+  } catch (e) {
+    return serverError(e, 'design_switch_check')
+  }
+}
+
+// POST design_switch_apply — применить перенос (пишет вёрстку + дизайн альбома).
+async function handleDesignSwitchApply(req: NextRequest, auth: AuthContext): Promise<NextResponse> {
+  const parsed = await parseDesignSwitchBody(req)
+  if (parsed instanceof NextResponse) return parsed
+  const access = await resolveDesignSwitchAccess(req, auth, parsed.albumId, true)
+  if (access instanceof NextResponse) return access
+  try {
+    const result = await remapAlbumToDesign(supabaseAdmin, parsed.albumId, parsed.targetId, { write: true })
+    // ok:false здесь — это либо несовместимость (человеческий message), либо
+    // ошибка записи. Клиент покажет message; HTTP 200 (не серверная ошибка).
+    return NextResponse.json({ ok: result.ok, written: result.written, message: result.message })
+  } catch (e) {
+    return serverError(e, 'design_switch_apply')
+  }
 }
 
 // ============================================================
