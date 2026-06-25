@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { renderCoverPreviewSvg, type CoverPreviewInput } from '../preview-svg';
 import type { Placeholder } from '../../album-builder/types';
 
+/** Картинки заворачиваются в same-origin прокси /api/img (см. preview-svg). */
+const px = (u: string) => `/api/img?u=${encodeURIComponent(u)}`;
+
 function photo(label: string, x: number, isCircle = false): Placeholder {
   return {
     type: 'photo',
@@ -64,7 +67,7 @@ describe('renderCoverPreviewSvg', () => {
 
   it('рисует фон обложки на всё полотно (background_url)', () => {
     const svg = renderCoverPreviewSvg({ ...BASE, background_url: 'https://cdn/bg.jpg' });
-    expect(svg).toContain('href="https://cdn/bg.jpg"');
+    expect(svg).toContain(`href="${px('https://cdn/bg.jpg')}"`);
     expect(svg).toContain('width="420"');
     expect(svg).toContain('height="280"');
   });
@@ -94,7 +97,7 @@ describe('renderCoverPreviewSvg', () => {
       offset_x_mm: 0, offset_y_mm: 0,
     } as unknown as CoverPreviewInput['placeholders'][number];
     const svg = renderCoverPreviewSvg({ ...BASE, placeholders: [...BASE.placeholders, decor] });
-    expect(svg).toContain('href="https://cdn/ribbon.png"');
+    expect(svg).toContain(`href="${px('https://cdn/ribbon.png')}"`);
   });
 
   it('с данными показывает фото через <image> и текст через <text>', () => {
@@ -106,7 +109,7 @@ describe('renderCoverPreviewSvg', () => {
       },
     });
     expect(svg).toContain('<image');
-    expect(svg).toContain('href="https://cdn/p.jpg"');
+    expect(svg).toContain(`href="${px('https://cdn/p.jpg')}"`);
     expect(svg).toContain('Выпуск 11А');
   });
 
@@ -139,7 +142,7 @@ describe('renderCoverPreviewSvg', () => {
       background_url: 'https://cdn/master-bg.jpg',
       data: { __bg__: 'https://cdn/custom-bg.jpg' },
     });
-    expect(svg).toContain('href="https://cdn/custom-bg.jpg"');
+    expect(svg).toContain(`href="${px('https://cdn/custom-bg.jpg')}"`);
     expect(svg).not.toContain('master-bg.jpg');
   });
 
@@ -162,7 +165,7 @@ describe('renderCoverPreviewSvg', () => {
         __hidden__back_qr: '1',
       },
     });
-    expect(svg).not.toContain('https://cdn/qr.png');
-    expect(svg).toContain('https://cdn/p.jpg');
+    expect(svg).not.toContain(px('https://cdn/qr.png'));
+    expect(svg).toContain(px('https://cdn/p.jpg'));
   });
 });

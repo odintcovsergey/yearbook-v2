@@ -224,19 +224,24 @@ function esc(s: string): string {
 }
 
 /**
+ * Превратить ссылку картинки в SAME-ORIGIN через наш прокси /api/img.
+ * Картинки из чужого origin (хранилище) Safari в инлайн-SVG грузит ненадёжно
+ * (CORS/кэш-грабли → «?»). Через свой домен — рисуется во всех браузерах.
+ * http(s) заворачиваем; относительные/data: оставляем как есть.
+ */
+function proxied(url: string): string {
+  if (!/^https?:\/\//.test(url)) return url;
+  return `/api/img?u=${encodeURIComponent(url)}`;
+}
+
+/**
  * Атрибуты ссылки для <image> в инлайн-SVG — кросс-браузерно.
  *  - href — современный SVG2 (Chrome/Firefox);
  *  - xlink:href — старый синтаксис (часть версий Safari/WebKit грузит только его).
- *
- * БЕЗ crossorigin намеренно: для ПОКАЗА картинки чтение в canvas не нужно, а
- * crossorigin="anonymous" переводит запрос в CORS-режим. На Timeweb это ломало
- * именно фон: холст редактора грузит фон обычным (no-cors) Image и кэширует его;
- * Safari потом отдавал этот no-cors кэш на cors-запрос из SVG → CORS-ошибка → «?»
- * (портрет/QR не были закэшированы холстом, поэтому грузились). Без crossorigin
- * запрос no-cors → переиспользует валидный кэш холста → фон рисуется.
+ * Ссылка идёт через same-origin прокси (см. proxied) — без CORS/crossorigin.
  */
 function imgHref(url: string): string {
-  const u = esc(url);
+  const u = esc(proxied(url));
   return `href="${u}" xlink:href="${u}"`;
 }
 
