@@ -68,7 +68,7 @@ export function renderCoverPreviewSvg(input: CoverPreviewInput): string {
 
   const parts: string[] = [];
   parts.push(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fmt(w)} ${fmt(h)}" preserveAspectRatio="xMidYMid meet">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${fmt(w)} ${fmt(h)}" preserveAspectRatio="xMidYMid meet">`,
   );
 
   // Полотно целиком.
@@ -80,7 +80,7 @@ export function renderCoverPreviewSvg(input: CoverPreviewInput): string {
   const bg = resolveCoverBackground(data, background_url);
   if (bg) {
     parts.push(
-      `<image href="${esc(bg)}" x="0" y="0" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid slice"/>`,
+      `<image ${imgHref(bg)} x="0" y="0" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid slice"/>`,
     );
   }
 
@@ -125,7 +125,7 @@ function renderDecor(ph: DecorationPlaceholder): string {
   const transform = rotation !== 0
     ? ` transform="rotate(${fmt(rotation)} ${fmt(x + w / 2)} ${fmt(y + h / 2)})"`
     : '';
-  return `<image href="${esc(ph.url)}" x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid meet"${transform}/>`;
+  return `<image ${imgHref(ph.url)} x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid meet"${transform}/>`;
 }
 
 function zoneGuide(x: number, h: number): string {
@@ -164,7 +164,7 @@ function renderPhotoSlot(ph: PhotoPlaceholder, url: string | null, hideEmpty: bo
       const cid = `clip-${slug(ph.label)}`;
       return (
         `<clipPath id="${cid}"><ellipse cx="${fmt(cx)}" cy="${fmt(cy)}" rx="${fmt(rx)}" ry="${fmt(ry)}"/></clipPath>` +
-        `<image href="${esc(url)}" x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${cid})"${transform}/>`
+        `<image ${imgHref(url)} x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${cid})"${transform}/>`
       );
     }
     return imageRect(x, y, w, h, url, rotation);
@@ -206,7 +206,7 @@ function imageRect(x: number, y: number, w: number, h: number, url: string, rota
   const transform = rotation !== 0
     ? ` transform="rotate(${fmt(rotation)} ${fmt(x + w / 2)} ${fmt(y + h / 2)})"`
     : '';
-  return `<image href="${esc(url)}" x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid slice"${transform}/>`;
+  return `<image ${imgHref(url)} x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}" preserveAspectRatio="xMidYMid slice"${transform}/>`;
 }
 
 // ─── Утилиты ────────────────────────────────────────────────────────────────
@@ -221,6 +221,20 @@ function esc(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * Атрибуты ссылки для <image> в инлайн-SVG — кросс-браузерно и кросс-origin.
+ *  - href — современный SVG2 (Chrome/Firefox);
+ *  - xlink:href — старый синтаксис (часть версий Safari/WebKit грузит только его);
+ *  - crossorigin="anonymous" — заставляет браузер слать заголовок Origin. Иначе
+ *    Safari НЕ рисует кросс-origin картинку в инлайн-SVG без CORS-заголовка, а
+ *    Timeweb отдаёт Access-Control-Allow-Origin ТОЛЬКО в ответ на запрос с Origin
+ *    (supabase слал его всегда — поэтому раньше с supabase-URL фон был виден).
+ */
+function imgHref(url: string): string {
+  const u = esc(url);
+  return `href="${u}" xlink:href="${u}" crossorigin="anonymous"`;
 }
 
 function slug(s: string): string {
