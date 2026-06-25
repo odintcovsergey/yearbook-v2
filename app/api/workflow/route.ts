@@ -83,6 +83,8 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Тарифы ────────────────────────────────────────────────────────────────
+  // TODO(аудит 25.06.2026): endpoint не подключён к UI — задел под экран тарифов
+  // (читает okeybook_pricing, различает tenant/глобальные). Потребителя нет.
   if (action === 'pricing') {
     const tenantId = auth.role === 'superadmin'
       ? searchParams.get('tenant_id')
@@ -323,6 +325,9 @@ export async function POST(req: NextRequest) {
   }
 
   // ── update_notes — заметки (только superadmin) ────────────────────────────
+  // TODO(аудит 25.06.2026): write-action не подключён к UI — задел. Поле
+  // workflow_notes показывается в super-панели (app/super/page.tsx), но экрана
+  // редактирования заметок ещё нет (построена только половина фичи — показ).
   if (action === 'update_notes') {
     if (!isSuperOrOkeybook) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 

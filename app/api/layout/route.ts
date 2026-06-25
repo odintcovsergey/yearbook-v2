@@ -403,6 +403,10 @@ export async function POST(req: NextRequest) {
     return handleSaveAlbumLayout(req, auth)
   }
 
+  // TODO(аудит 25.06.2026): не подключён к UI — задел под realtime-collab (КЭ.3).
+  // В текущем одиночном сценарии layout сохраняется через save_album_layout
+  // (см. примечание в app/app/album/[id]/layout/page.tsx). Удалять только
+  // вместе с решением не делать realtime-collab.
   if (action === 'update_data') {
     // КЭ.3 — точечный PATCH ключей data одного spread'а (generic endpoint:
     // __scale__<label> / __offset__<label> и любые другие точечные правки).
