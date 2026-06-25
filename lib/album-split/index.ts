@@ -133,11 +133,6 @@ export function splitIntoBooks(spreads: SpreadInstance[]): AlbumBooks {
   };
 }
 
-/** Число разворотов книги (для корешка). */
-export function bookSpreadCount(book: Book): number {
-  return book.spreads.length;
-}
-
 /**
  * Корешок отдельной книги по её числу разворотов (мм) или null, если режим
  * корешка типографии не даёт значения. Для общей книги 000 — её число

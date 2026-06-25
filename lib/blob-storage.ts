@@ -63,23 +63,6 @@ export async function resolveReadUrl(bucket: BlobBucket, stored: string | null |
   return supabasePublicUrl(b, key)
 }
 
-/** Синхронный публичный URL для supabase-режима (там, где async неудобен и backend заведомо supabase). */
-export function publicReadUrl(bucket: BlobBucket, stored: string): string {
-  const { bucket: b, key } = splitStored(bucket, stored)
-  return supabasePublicUrl(b, key)
-}
-
-/**
- * Подписать значение ДЛЯ КЛИЕНТА, который сам строит URL из относительного пути
- * (редактор: пул фонов, default-фон, master-override, __bg__, декор).
- *   - supabase → возвращаем как есть (клиент строит публичный URL как раньше) → 0 риска;
- *   - timeweb  → подписанный URL (клиент использует его напрямую, см. http-guard).
- */
-export async function signForClient(bucket: BlobBucket, stored: string | null | undefined): Promise<string | null | undefined> {
-  if (!stored || storageBackend() !== 'timeweb') return stored
-  return resolveReadUrl(bucket, stored)
-}
-
 /** Подписать url у декор-плейсхолдеров (timeweb). В supabase — массив без изменений. */
 export async function signDecorPlaceholders<T extends { type?: string; url?: string | null }>(
   placeholders: T[] | null | undefined,

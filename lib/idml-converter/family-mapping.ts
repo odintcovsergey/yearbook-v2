@@ -606,11 +606,3 @@ function gridModes(minSlots: number, maxSlots: number): Array<{ slot_count: numb
 export function getFamilyMapping(masterName: string): FamilyMapping | null {
   return MAPPING[masterName] ?? null;
 }
-
-/**
- * Список всех имён мастеров, для которых есть маппинг.
- * Используется в dry-run для отчёта о coverage.
- */
-export function getKnownMasterNames(): readonly string[] {
-  return Object.keys(MAPPING);
-}
