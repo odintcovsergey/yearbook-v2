@@ -31,6 +31,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import sharp from 'sharp';
 import { getFamilyMapping } from './family-mapping';
+import { matchCanonType, type CanonType, type CanonMatchReason } from './canon-match';
 import { serverUpload, storedValue } from '@/lib/blob-storage';
 import type {
   DecorationPlaceholder,
@@ -53,9 +54,21 @@ export type UploadMeta = {
   force?: boolean;
 };
 
+/** Фаза 2: отчёт сверки загруженных мастеров с каноном master_page_types. */
+export type CanonReport = {
+  /** Сколько мастеров распознано каноном (matched). */
+  recognized: number;
+  /** Всего мастеров (не считая cover). */
+  total: number;
+  /** Не легло: имя мастера + причина (unmapped / no-canon-type). */
+  unmatched: Array<{ name: string; reason: CanonMatchReason }>;
+};
+
 export type UploadResult = {
   template_set_id: string;
   spread_count: number;
+  /** Фаза 2: сверка с каноном (МЯГКИЙ режим — не влияет на успех загрузки). */
+  canon_report: CanonReport;
   /**
    * Имена cover-мастеров (type='cover'), которые НЕ записаны в spread_templates.
    * Запись обложек в таблицу `covers` + UI библиотеки — Этап 6 ТЗ обложки.
@@ -264,11 +277,37 @@ export async function uploadTemplateSetToSupabase(
     );
   }
 
+  // ─── Сверка с каноном master_page_types (Фаза 2, МЯГКИЙ режим) ──────
+  // Загружаем канон ОДИН раз (не в цикле). При сбое — пустой канон: загрузка
+  // НЕ блокируется, просто все мастера уйдут в unmatched (reason no-canon-type).
+  // Логика матча — lib/idml-converter/canon-match.ts (= backfill Фазы 1).
+  const { data: canonRows, error: canonError } = await supabaseAdmin
+    .from('master_page_types')
+    .select('id, code, page_role, slot_capacity, page_type');
+  if (canonError) {
+    console.warn(`[upload] canon load failed (мягко продолжаем без сверки): ${canonError.message}`);
+  }
+  const canon: CanonType[] = (canonRows ?? []) as CanonType[];
+
   const unmappedMasters: string[] = [];
+  const canonUnmatched: Array<{ name: string; reason: CanonMatchReason }> = [];
+
   const spreadRows = innerMasters.map((spread, index) => {
     const mapping = getFamilyMapping(spread.name);
     if (!mapping) {
       unmappedMasters.push(spread.name);
+    }
+    // Сверка с каноном по тем же тегам, что пишем в строку.
+    const canonMatch = matchCanonType(
+      {
+        page_role: mapping?.page_role ?? null,
+        slot_capacity: mapping?.slot_capacity ?? null,
+        page_type: mapping?.page_type ?? 'page-any',
+      },
+      canon,
+    );
+    if (canonMatch.reason !== 'matched') {
+      canonUnmatched.push({ name: spread.name, reason: canonMatch.reason });
     }
     return {
       template_set_id: templateSetId,
@@ -293,8 +332,18 @@ export async function uploadTemplateSetToSupabase(
       page_role: mapping?.page_role ?? null,
       slot_capacity: mapping?.slot_capacity ?? null,
       applies_to_configs: mapping?.applies_to_configs ?? [],
+      // ─── Фаза 2: ссылка на канон (МЯГКО — null не блокирует загрузку) ──
+      master_page_type_id: canonMatch.master_page_type_id,
     };
   });
+
+  // Отчёт сверки с каноном (включает и unmapped, и no-canon-type — не дублируем
+  // unmappedMasters в ответе, он остаётся только для серверного лога ниже).
+  const canonReport = {
+    recognized: spreadRows.length - canonUnmatched.length,
+    total: spreadRows.length,
+    unmatched: canonUnmatched,
+  };
 
   if (unmappedMasters.length > 0) {
     console.warn(
@@ -302,6 +351,12 @@ export async function uploadTemplateSetToSupabase(
         `(family_id will be NULL, won't be used by rule engine): ${unmappedMasters.join(', ')}`,
     );
   }
+  console.log(
+    `[upload] canon: распознано ${canonReport.recognized}/${canonReport.total}` +
+      (canonUnmatched.length
+        ? `, не легло: ${canonUnmatched.map((u) => `${u.name}(${u.reason})`).join(', ')}`
+        : ''),
+  );
 
   const { error: insertSpreadsError } = await supabaseAdmin
     .from('spread_templates')
@@ -349,6 +404,8 @@ export async function uploadTemplateSetToSupabase(
   return {
     template_set_id: templateSetId,
     spread_count: spreadRows.length,
+    // Фаза 2: отчёт сверки с каноном (МЯГКИЙ режим — не влияет на успех загрузки).
+    canon_report: canonReport,
     ...(coverMasters.length > 0
       ? { skipped_cover_masters: coverMasters.map((s) => s.name) }
       : {}),

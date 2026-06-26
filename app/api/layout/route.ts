@@ -628,6 +628,8 @@ async function handleImportIdml(
     template_set_id: result.template_set_id,
     spread_count: result.spread_count,
     warnings: parsed.warnings ?? [],
+    // Фаза 2: отчёт сверки с каноном master_page_types (мягкий режим).
+    canon_report: result.canon_report,
   })
 }
 
