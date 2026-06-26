@@ -264,7 +264,6 @@ export function fillStudentsSection(
         density: 'medium',
         baseMasterName: 'M-Grid-Page',
         defaultSlots: 4,
-        adaptiveTailNames: [],
         combinedMasterName: 'M-Combined-Page',
       });
       return;
@@ -273,7 +272,6 @@ export function fillStudentsSection(
         density: 'light',
         baseMasterName: 'L-Grid-Page',
         defaultSlots: 6,
-        adaptiveTailNames: ['L-2', 'L-3', 'L-4'],
         combinedMasterName: 'L-Combined-Page',
       });
       return;
@@ -282,7 +280,6 @@ export function fillStudentsSection(
         density: 'mini',
         baseMasterName: 'N-Grid-Page',
         defaultSlots: 12,
-        adaptiveTailNames: ['N-4', 'N-6', 'N-9'],
         combinedMasterName: 'N-Combined-Page',
       });
       return;
@@ -1493,19 +1490,19 @@ function buildGridSemantic(
  *    содержит `defaultSlots` ученических placeholder'ов.
  *  - `defaultSlots` — fallback количество слотов, если у мастера нет
  *    `slot_capacity.students`. Используется только если БД-тег не задан.
- *  - `adaptiveTailNames` — упорядоченный (asc по slots) список адаптивных
- *    мастеров для хвоста. Пустой массив для Medium (нет адаптивных).
- *    Для Light: L-2 / L-3 / L-4. Для Mini: N-4 / N-6 / N-9. Берётся
- *    минимально-достаточный по slot_capacity.students (см. pickAdaptiveTail).
  *  - `combinedMasterName` — мастер с N учениками сверху + общее фото снизу,
  *    используется для хвоста когда есть `full_class >= 1`. Потребляет
  *    1 фото full_class.
+ *
+ * РЭ.22.11: поле `adaptiveTailNames` (хардкод L-2/3/4, N-4/6/9) удалено —
+ * оно было мёртвым с РЭ.40 (decideDistribution не ищет мастеров по именам
+ * вида L-N/N-N). `buildGrid` оставлен как legacy safety-net (недостижим:
+ * 0 пресетов с student_layout_mode=null, вытеснен buildGridSemantic).
  */
 interface GridConfig {
   density: 'medium' | 'light' | 'mini';
   baseMasterName: string;
   defaultSlots: number;
-  adaptiveTailNames: string[];
   combinedMasterName: string;
 }
 
@@ -1584,25 +1581,12 @@ function buildGrid(ctx: SectionFillContext, config: GridConfig): void {
 }
 
 /**
- * Выбирает минимально-достаточного адаптивного мастера для остатка.
- *
- * Параметры:
- *  - `names` — кандидаты в порядке возрастания slots (например ['L-2','L-3','L-4']).
- *  - `remainder` — количество учеников в хвосте.
- *
- * Алгоритм: собираем кандидатов с известным slot count, фильтруем по
- * `slots >= remainder`, берём минимальный по slots. Slot count берётся
- * из `master.slot_capacity.students` или парсится из имени (`L-N` → N).
- * Если ни один кандидат не подходит — null (caller сделает другой fallback).
- */
-/**
- * РЭ.40: legacy-функции pickAdaptiveTail и slotsFromName удалены —
- * новый алгоритм decideDistribution() более общий и не использует
- * именования вида L-N / N-N для поиска адаптивного мастера.
- * Алгоритм работает только с base + combined мастерами.
- *
- * adaptiveTailNames в GridConfig остаются (для обратной совместимости
- * с типом), но игнорируются. Удалить в будущем коммите.
+ * РЭ.40: legacy-функции pickAdaptiveTail и slotsFromName удалены — алгоритм
+ * decideDistribution() более общий и не ищет мастеров по именам вида L-N / N-N,
+ * работает только с base + combined мастерами.
+ * РЭ.22.11: мёртвое поле adaptiveTailNames (хардкод L-2/3/4, N-4/6/9) снято с
+ * GridConfig и call-site'ов — оно игнорировалось с РЭ.40. Сама buildGrid
+ * оставлена как legacy safety-net (см. комментарий у GridConfig выше).
  */
 
 /**
