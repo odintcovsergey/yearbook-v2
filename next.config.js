@@ -14,6 +14,9 @@ module.exports = {
   // .node) и они require'ились в рантайме.
   experimental: {
     serverComponentsExternalPackages: ['@napi-rs/canvas', 'pdfjs-dist'],
+    // Включает instrumentation.ts register() — fail-fast барьер на STORAGE_BACKEND
+    // при старте сервера в проде (см. instrumentation.ts).
+    instrumentationHook: true,
   },
   // Увеличиваем лимит тела запроса для загрузки фото личного разворота (до 10 МБ)
   api: {
