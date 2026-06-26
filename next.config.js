@@ -1,13 +1,5 @@
 /** @type {import('next').NextConfig} */
 module.exports = {
-  // Только наши хранилища — раньше было ['*'] (открытый image-прокси, SSRF-сосед, E4).
-  images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: 'storage.yandexcloud.net' },
-      { protocol: 'https', hostname: '**.storage.yandexcloud.net' },
-      { protocol: 'https', hostname: 'bnotiyhamfyllcrqwquq.supabase.co' },
-    ],
-  },
   // @napi-rs/canvas — нативный бинарник (.node), pdfjs-dist — тяжёлый legacy-бандл:
   // оба используются ТОЛЬКО на сервере (растеризация PDF→JPG в типографском
   // экспорте). Внешние — чтобы webpack не пытался их бандлить (иначе падает на
