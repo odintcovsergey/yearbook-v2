@@ -55,6 +55,17 @@ export async function twcDelete(key: string): Promise<void> {
   }
 }
 
+// Удалить файл из Timeweb S3 — СТРОГО: бросает при реальной ошибке (сеть/ACL),
+// в отличие от twcDelete. Нужно там, где по факту удаления принимается решение
+// (например, чистить ли записи БД). DeleteObject идемпотентен — отсутствующий
+// объект ошибкой НЕ считается, поэтому повтор после частичного сбоя безопасен.
+export async function twcDeleteStrict(key: string): Promise<void> {
+  await twcStorage.send(new DeleteObjectCommand({
+    Bucket: BUCKET(),
+    Key: key,
+  }))
+}
+
 // Список ключей по префиксу (для замены supabase.storage.list при удалении пачкой).
 export async function twcList(prefix: string): Promise<string[]> {
   const keys: string[] = []

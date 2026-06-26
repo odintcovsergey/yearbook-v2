@@ -3,7 +3,7 @@ import { serverError } from '@/lib/api-error'
 import { supabaseAdmin, getPhotoUrl, getThumbUrl } from '@/lib/supabase'
 import { createUploadTarget, resolveReadUrl, removeBlobs, copyBlob, storedValue } from '@/lib/blob-storage'
 import { requireAuth, isAuthError, logAction, hashPassword, verifyPassword, createImpersonationToken, setImpersonationCookie, clearImpersonationCookie, type AuthContext } from '@/lib/auth'
-import { ycUpload, ycDelete, isYcPath, stripYcPrefix } from '@/lib/storage'
+import { ycUpload, ycDelete, ycDeleteStrict, isYcPath, stripYcPrefix } from '@/lib/storage'
 import { renderPreviewSvg } from '@/lib/album-builder/render-preview-svg'
 import { resolveAlbumEffectivePrintType } from '@/lib/album-builder'
 import { buildAlbumCoverPreviews } from '@/lib/cover/preview-album'
@@ -5961,24 +5961,59 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
 
-    // 1. Удаляем файлы фото из Storage
+    // 1. Удаляем файлы фото из Storage.
+    //    Берём ВСЕ три пути: основной, превью И исходник фотографа
+    //    (original_path) — иначе исходники остаются висеть в хранилище.
     const { data: photos } = await supabaseAdmin
       .from('photos')
-      .select('storage_path, thumb_path')
+      .select('storage_path, thumb_path, original_path')
       .eq('album_id', album_id)
 
-    if (photos && photos.length > 0) {
-      const paths: string[] = []
-      for (const p of photos as any[]) {
-        if (p.storage_path) paths.push(p.storage_path)
-        if (p.thumb_path) paths.push(p.thumb_path)
-      }
-      for (let i = 0; i < paths.length; i += 100) {
-        await supabaseAdmin.storage.from('photos').remove(paths.slice(i, i + 100))
-      }
+    // Уникальные непустые пути ко всем файлам альбома.
+    const paths = Array.from(new Set(
+      ((photos as any[]) ?? [])
+        .flatMap((p) => [p.storage_path, p.thumb_path, p.original_path])
+        .filter((x: unknown): x is string => typeof x === 'string' && x.length > 0)
+    ))
+
+    // Удаляем по факту: yc/Timeweb-пути через ycDeleteStrict (НЕ глушит ошибку —
+    // в отличие от старого supabase.remove, который на Timeweb был пустышкой и
+    // оставлял осиротевшие файлы), legacy supabase-пути — через Supabase Storage.
+    // Любую ошибку считаем провалом: если хоть один файл не удалился — НЕ трогаем
+    // записи БД, иначе потеряем ссылки и осиротим файлы молча (урок бага
+    // обнуления: не делать вид, что всё ок). DeleteObject идемпотентен —
+    // повторный запуск удаления безопасен.
+    const failed: string[] = []
+    const BATCH = 50
+    for (let i = 0; i < paths.length; i += BATCH) {
+      const batch = paths.slice(i, i + BATCH)
+      const results = await Promise.allSettled(batch.map(async (path) => {
+        if (isYcPath(path)) {
+          await ycDeleteStrict(path)
+        } else {
+          const { error: rmErr } = await supabaseAdmin.storage.from('photos').remove([path])
+          if (rmErr) throw rmErr
+        }
+      }))
+      results.forEach((r, idx) => { if (r.status === 'rejected') failed.push(batch[idx]) })
     }
 
-    // 2. Удаляем связанные записи (явно, без CASCADE через PostgREST)
+    if (failed.length > 0) {
+      await logAction(auth, 'album.delete_failed', 'album', album_id, {
+        failed_files: failed.length,
+        total_files: paths.length,
+        sample: failed.slice(0, 5),
+      })
+      return NextResponse.json(
+        {
+          error: `Не удалось удалить ${failed.length} из ${paths.length} файлов из хранилища. ` +
+            `Заказ НЕ удалён, чтобы не потерять ссылки на оставшиеся файлы. Попробуйте ещё раз.`,
+        },
+        { status: 502 }
+      )
+    }
+
+    // 2. Файлы удалены — теперь удаляем связанные записи (явно, без CASCADE через PostgREST)
     await supabaseAdmin.from('photos').delete().eq('album_id', album_id)
     await supabaseAdmin.from('children').delete().eq('album_id', album_id)
     await supabaseAdmin.from('teachers').delete().eq('album_id', album_id)
@@ -5996,6 +6031,7 @@ export async function POST(req: NextRequest) {
 
     await logAction(auth, 'album.delete', 'album', album_id, {
       photos_deleted: photos?.length ?? 0,
+      files_deleted: paths.length,
     })
 
     return NextResponse.json({ ok: true })

@@ -15,6 +15,7 @@ import {
   getTwcUploadUrl,
   twcUpload,
   twcDelete,
+  twcDeleteStrict,
 } from '@/lib/storage-twc'
 
 // Переключатель фото-хранилища: тот же флаг STORAGE_BACKEND, что и у блобов
@@ -69,6 +70,21 @@ export async function ycDelete(storagePath: string): Promise<void> {
   } catch {
     // Не бросаем ошибку если файл уже удалён
   }
+}
+
+// Удалить файл — СТРОГО: НЕ глушит ошибку (в отличие от ycDelete). Бросает,
+// если объект не удалился (сеть/ACL). Нужно для delete_album: по факту удаления
+// решаем, можно ли чистить записи БД, иначе осиротим файлы молча. На Timeweb
+// уходит в twcDeleteStrict, на Yandex — DeleteObjectCommand без catch.
+export async function ycDeleteStrict(storagePath: string): Promise<void> {
+  const key = stripYcPrefix(storagePath)
+  if (storageBackend() === 'timeweb') {
+    return twcDeleteStrict(key)
+  }
+  await ycStorage.send(new DeleteObjectCommand({
+    Bucket: BUCKET(),
+    Key: key,
+  }))
 }
 
 export function isYcPath(storagePath: string): boolean {
