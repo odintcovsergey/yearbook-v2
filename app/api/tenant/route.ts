@@ -5773,7 +5773,14 @@ export async function POST(req: NextRequest) {
   }
 
   // ----------------------------------------------------------
-  // archive_album — в архив + удаление файлов фото
+  // archive_album — в архив (отложенная модель: данные НЕ трогаем).
+  // Только ставит флаг + момент архивации = база отсчёта 90-дневного
+  // автоудаления ОРИГИНАЛОВ таймером (lib/archive-cleanup). Записи photos,
+  // превью и selections остаются целыми → архив смотрибелен, превью на месте,
+  // выборы сохранены (как обещает UI «превью останутся, выборы сохранятся»).
+  // Раньше здесь немедленно удалялись display-файлы (supabase.remove — no-op на
+  // Timeweb → осиротевшие файлы) и ВСЕ записи photos (+каскад selections) —
+  // убрано как несовместимое с отложенной моделью. Симметрично unarchive_album.
   // ----------------------------------------------------------
   if (body.action === 'archive_album') {
     const { album_id } = body
@@ -5784,27 +5791,6 @@ export async function POST(req: NextRequest) {
     if (!(await assertAlbumAccess(auth, album_id))) {
       return NextResponse.json({ error: 'Альбом не найден' }, { status: 404 })
     }
-
-    // Удаляем файлы фото из Storage (экономим место)
-    const { data: photos } = await supabaseAdmin
-      .from('photos')
-      .select('storage_path, thumb_path')
-      .eq('album_id', album_id)
-
-    if (photos && photos.length > 0) {
-      const paths: string[] = []
-      for (const p of photos as any[]) {
-        if (p.storage_path) paths.push(p.storage_path)
-        if (p.thumb_path) paths.push(p.thumb_path)
-      }
-      // Батчами по 100
-      for (let i = 0; i < paths.length; i += 100) {
-        await supabaseAdmin.storage.from('photos').remove(paths.slice(i, i + 100))
-      }
-    }
-
-    // Удаляем записи photos (selections удалятся каскадно через album_id)
-    await supabaseAdmin.from('photos').delete().eq('album_id', album_id)
 
     // Ставим флаг архива + момент архивации (база отсчёта автоудаления
     // исходников, ТЗ жизненного цикла архива). keep_originals_forever и
@@ -5818,11 +5804,9 @@ export async function POST(req: NextRequest) {
       return serverError(error, 'tenant')
     }
 
-    await logAction(auth, 'album.archive', 'album', album_id, {
-      photos_deleted: photos?.length ?? 0,
-    })
+    await logAction(auth, 'album.archive', 'album', album_id)
 
-    return NextResponse.json({ ok: true, deleted: photos?.length ?? 0 })
+    return NextResponse.json({ ok: true })
   }
 
   // ----------------------------------------------------------
