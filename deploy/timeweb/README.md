@@ -15,8 +15,10 @@
 | `yearbook.service` | `/etc/systemd/system/yearbook.service` | автозапуск Next — B1 |
 | `deploy.sh` | `/srv/yearbook/repo/deploy/timeweb/` (в репо) | **pull-деплой**: fetch→build→switch→health→rollback |
 | `health-check.sh` | рядом с `deploy.sh` | проба `/login`=200 + `/api/health`=200 (БД) |
-| `yearbook-deploy.service` | `/etc/systemd/system/` | oneshot-запуск `deploy.sh` |
-| `yearbook-deploy.timer` | `/etc/systemd/system/` | опрос GitHub каждые 2 мин |
+| `select-source.sh` | рядом с `deploy.sh` (в репо) | выбор источника `select_active_remote` (gitflic→github) |
+| `prepare-repo.sh` | рядом с `deploy.sh` (в репо) | ExecStartPre: выбор источника + занос репо (fetch+reset) |
+| `yearbook-deploy.service` | `/etc/systemd/system/` | oneshot: `prepare-repo.sh` (ExecStartPre) → `deploy.sh` |
+| `yearbook-deploy.timer` | `/etc/systemd/system/` | опрос источника (gitflic→github) каждые 2 мин |
 | ~~`deploy-timeweb.yml`~~ | — | ⚠️ **ЗАМЕНЁН pull-моделью** (см. ниже), не используется |
 
 ## ⭐ Авто-деплой (pull-модель) — АКТУАЛЬНАЯ СХЕМА (ТЗ №1, 23.06.2026)
@@ -26,8 +28,18 @@
 рубежа до сервера ненадёжны (та же фильтрация, что убила HTTP-01 Let's Encrypt).
 Поэтому раннер GitHub, который SSH-ится внутрь сервера (входящее), и self-hosted
 раннер (тянет бинарь/control-plane с заблокированного `githubusercontent.com`) —
-оба хрупкие. Надёжно: **сервер сам опрашивает GitHub** (только исходящее).
-GitFlic с сервера НЕ тянется (`ls-remote` → FAIL) — primary remote = GitHub.
+оба хрупкие. Надёжно: **сервер сам опрашивает источник** (только исходящее).
+
+**Источник деплоя выбирается отказоустойчиво** (26.06.2026, было «primary = GitHub»):
+`DEPLOY_REMOTES="gitflic origin"`, **primary = GitFlic** (росхостинг, стабилен из РФ —
+GitHub периодически флапает по SSL из РФ), **GitHub = fallback + зеркало**. Логика выбора —
+`select-source.sh` (`select_active_remote`: первый источник, ответивший на
+`git ls-remote --exit-code` за таймаут, становится активным; если НИ ОДИН не отвечает —
+честный non-zero провал, деплой не едет, а live-сервер не затрагивается). Занос репо до
+запуска `deploy.sh` — в `prepare-repo.sh` (ExecStartPre, та же логика). Чтение с GitFlic по
+HTTPS — через **oauth2-токен в credential store** `/srv/yearbook/.git-credentials`
+(права 600, токен read-only Pull); `origin`=github не тронут. **Ротация токена** — заменить
+строку в этом файле (формат `https://oauth2:<token>@gitflic.ru`).
 
 **Раскладка на сервере (capistrano-стиль, аддитивно к старому `/srv/yearbook-v2`):**
 ```
@@ -39,8 +51,11 @@ GitFlic с сервера НЕ тянется (`ls-remote` → FAIL) — primary
 └── .deploy.lock               flock от параллельных запусков
 ```
 
-**Цикл деплоя** (`deploy.sh`, по таймеру каждые 2 мин под юзером `yearbook`):
-1. `git fetch origin main`; если sha == текущий — выходим (ничего не делаем).
+**Цикл деплоя** (по таймеру каждые 2 мин под юзером `yearbook`):
+0. `prepare-repo.sh` (ExecStartPre) выбирает доступный источник (gitflic→github) и
+   обновляет рабочее дерево репо до свежего main (`fetch`+`reset --hard`).
+1. `deploy.sh` выбирает источник той же логикой (`select-source.sh` → `$ACTIVE_REMOTE`),
+   `git fetch $ACTIVE_REMOTE main`; если sha == текущий — выходим (ничего не делаем).
 2. Новый коммит → `git archive` в `releases/<sha>`, симлинк `.env.production`,
    `npm ci`, `npm run build`.
 3. Переключить `current` → новый релиз, `sudo systemctl restart yearbook`.
