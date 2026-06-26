@@ -3,14 +3,15 @@
  *
  * Спецификация: docs/rule-engine-spec.md v1.3 §6 (модель данных).
  *
- * Используется build.ts чтобы получить полный набор:
- *   - preset (комплектация)
- *   - rules (упорядоченные по priority desc для семейств преста)
- *   - families (template_families — для валидации section.density и пр.)
- *   - masters (spread_templates конкретного template_set, byName)
+ * Используется живым движком buildFromSectionStructure: грузит preset
+ * (комплектация) + masters (spread_templates дизайна, byName).
  *
- * Стратегия: всё грузим заранее, в build.ts передаём как готовые структуры.
- * Так buildFromRules остаётся чистой синхронной функцией.
+ * Поля bundle.rules / bundle.families сохранены в типе RuleEngineBundle ради
+ * совместимости (их конструируют тест-фикстуры), но БОЛЬШЕ НЕ загружаются из БД
+ * и НЕ читаются живым движком — это наследие удалённого buildFromRules
+ * (РЭ.21.8.чистка-1, 20.05.2026). SELECT'ы rules/template_families убраны как
+ * мёртвая работа на проде; поля заполняются пустыми массивами. Полная типовая
+ * чистка (удаление полей/типов + 25 тест-фикстур) — отдельной задачей после РЭ.22.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -62,34 +63,15 @@ export async function loadBundle(
   }
   const preset: Preset = presetRowToPreset(presetRow);
 
-  // 2) Families (все включённые)
-  const { data: familyRows, error: famErr } = await supabase
-    .from('template_families')
-    .select('*');
-  if (famErr || !familyRows) {
-    throw new Error(`template_families load failed: ${famErr?.message ?? 'empty'}`);
-  }
-  const families: TemplateFamily[] = familyRows.map(familyRowToFamily);
+  // 2) families / rules — НЕ грузим из БД: живой движок buildFromSectionStructure
+  // их не читает (наследие удалённого buildFromRules, РЭ.21.8.чистка-1). Пустые
+  // массивы — для совместимости типа RuleEngineBundle (его конструируют тесты).
+  // SELECT'ы template_families/rules убраны как мёртвая работа на проде.
+  // (tenantId оставлен в сигнатуре для callers; больше нигде не используется.)
+  const families: TemplateFamily[] = [];
+  const rules: Rule[] = [];
 
-  // 3) Rules — все enabled, упорядочены по priority desc.
-  // Глобальные (tenant_id IS NULL) + конкретного тенанта если задан.
-  let rulesQuery = supabase
-    .from('rules')
-    .select('*')
-    .eq('enabled', true)
-    .order('priority', { ascending: false });
-  if (tenantId !== null) {
-    rulesQuery = rulesQuery.or(`tenant_id.is.null,tenant_id.eq.${tenantId}`);
-  } else {
-    rulesQuery = rulesQuery.is('tenant_id', null);
-  }
-  const { data: ruleRows, error: ruleErr } = await rulesQuery;
-  if (ruleErr || !ruleRows) {
-    throw new Error(`rules load failed: ${ruleErr?.message ?? 'empty'}`);
-  }
-  const rules: Rule[] = ruleRows.map(ruleRowToRule);
-
-  // 4) Template set: slug из пресета, либо фолбэк на 'okeybook-default'.
+  // 3) Template set: slug из пресета, либо фолбэк на 'okeybook-default'.
   // РЭ.21.6.2: один дополнительный SELECT для разрешения uuid → slug.
   // Стоимость незначительна (1 строка по PK), зато slug остаётся
   // человеко-читаемым identifier-ом в loadTemplateSet.
@@ -259,37 +241,6 @@ function parseTransitionScenario(raw: unknown): TransitionScenario | null {
   };
 }
 
-function familyRowToFamily(row: Record<string, unknown>): TemplateFamily {
-  return {
-    id: String(row.id),
-    display_name: String(row.display_name ?? row.id),
-    aliases: (row.aliases as string[]) ?? [],
-    deprecated: !!row.deprecated,
-    version: String(row.version ?? '1.0'),
-    tenant_id:
-      row.tenant_id === null || row.tenant_id === undefined ? null : String(row.tenant_id),
-    params: (row.params as TemplateFamily['params']) ?? {},
-    density_config: (row.density_config as TemplateFamily['density_config']) ?? null,
-  };
-}
-
-function ruleRowToRule(row: Record<string, unknown>): Rule {
-  // rule_json содержит весь объект правила; плоские колонки — для индексации/фильтрации.
-  // Берём из rule_json, fallback на плоские поля если что-то отсутствует.
-  const json = (row.rule_json as Record<string, unknown>) || {};
-  return {
-    id: String(row.id ?? json.id),
-    family_id: String(row.family_id ?? json.family_id),
-    family_version: String(row.family_version ?? json.family_version ?? '1.0'),
-    priority: Number(row.priority ?? json.priority ?? 0),
-    when: (json.when as Rule['when']) ?? {},
-    produces: json.produces as Rule['produces'],
-    bind: (json.bind as Rule['bind']) ?? undefined,
-    consumes: (json.consumes as Rule['consumes']) ?? undefined,
-    balance: (json.balance as Rule['balance']) ?? undefined,
-    variants: (json.variants as Rule['variants']) ?? undefined,
-    display_name: json.display_name as string | undefined,
-    description: json.description as string | undefined,
-    enabled: row.enabled === false ? false : true,
-  };
-}
+// familyRowToFamily / ruleRowToRule удалены (РЭ.21.8.чистка-N, Этап А): мапперы
+// нужны были только для загрузки families/rules в bundle, которую живой движок
+// не читал. Типы Rule/TemplateFamily пока сохранены (используются тест-фикстурами).

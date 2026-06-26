@@ -59,7 +59,8 @@ function rowToPresetForValidation(row: any) {
     print_type: row.print_type,
     pages_per_spread: row.pages_per_spread ?? 2,
     version: row.version ?? '1.0',
-    sections: row.sections ?? [],
+    // legacy preset.sections не читается потребителем (только id/display_name +
+    // loadBundle по id); колонка дропается Этапом Б — не сериализуем.
     tenant_id: row.tenant_id ?? null,
     template_set_id: row.template_set_id ?? null,
     section_structure: row.section_structure ?? null,
@@ -3090,14 +3091,8 @@ export async function POST(req: NextRequest) {
       density = v.value
     }
 
-    // sections — legacy поле для текущего rule engine. Используем минимальный
-    // набор семейств (без params) — для legacy build это безопасный default.
-    const defaultSections = [
-      { family_id: 'head-teacher' },
-      { family_id: 'student-section' },
-      { family_id: 'common-section' },
-    ]
-
+    // (legacy defaultSections удалён — колонка presets.sections больше не пишется,
+    //  дропается Этапом Б; живой движок работает на section_structure.)
     const { data: created, error } = await supabaseAdmin
       .from('presets')
       .insert({
@@ -3111,7 +3106,7 @@ export async function POST(req: NextRequest) {
         density: density,
         sheet_type: sheetType,
         section_structure: sectionStructure,
-        sections: defaultSections,
+        // legacy колонка sections больше не пишется (дропается Этапом Б).
         template_set_id: templateSetId,
         tenant_id: auth.tenantId,
         parent_preset_id: null,
@@ -3804,7 +3799,7 @@ export async function POST(req: NextRequest) {
         print_type: 'layflat',
         pages_per_spread: 2,
         version: '1.0',
-        sections: [],
+        // legacy колонка sections больше не пишется (дропается Этапом Б).
         section_structure: [],
         template_set_id: templateSetId,
         tenant_id: auth.tenantId,
