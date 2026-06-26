@@ -50,6 +50,7 @@ import { tryFillSlot } from '../slot-chains';
 import type { SpreadTemplate } from '@/lib/album-builder/types';
 import type { RulesAlbumInput } from '../types';
 import type { SectionFillContext } from './shared';
+import { findCommonMaster, pageTypeFromName, type CommonPageType } from './find-common-master';
 
 // ─── Manual режим ──────────────────────────────────────────────────────────
 
@@ -70,10 +71,21 @@ export function fillCommonSection(
       continue;
     }
 
-    const master = ctx.bundle.mastersByName.get(fill.master_name);
+    // РЭ.22.9: выбор мастера по ТИПУ (page_role+ёмкость+сторона), не по имени.
+    // category/count берём из consumes (один ключ); сторону — из канонического
+    // имени, что tryStep уже зашил (manual: без page-any фолбэка, как было by-name).
+    const cat = Object.keys(fill.consumes)[0] as keyof CommonPhotoCounts;
+    const cnt = fill.consumes[cat] as number;
+    const master = findCommonMaster(
+      ctx.bundle.mastersByName,
+      cat,
+      cnt,
+      [pageTypeFromName(fill.master_name)],
+    );
     if (!master) {
       ctx.warnings.push(
-        `master_not_found: '${fill.master_name}' (slot ${slotType}) ` +
+        `master_not_found: тип common ${cat}×${cnt} ` +
+          `(${pageTypeFromName(fill.master_name)}, slot ${slotType}) ` +
           `отсутствует в template_set дизайна`,
       );
       continue;
@@ -121,37 +133,26 @@ export function fillCommonSection(
 interface AutopackStep {
   category: keyof CommonPhotoCounts;
   count: number;
-  masterName: string;
-  /** Для зеркальных пар (J-Quarter-Left/Right): имя мастера на правой стороне. */
-  rightVariant?: string;
   /**
-   * Имя симметричного page-any мастера. Если он есть в template_set —
-   * предпочитаем его паре masterName/rightVariant: правую сторону отдаёт
-   * авто-зеркало (mirror-placeholders.ts), отдельный -Right не нужен.
-   * Фолбэк на пару — для старых наборов (okeybook-default) без page-any.
+   * РЭ.22.9: у категории есть зеркальные стороны (quarter). Селектор сначала
+   * пробует page-any (как прежний preferAny), затем сторону по позиции (как
+   * rightVariant/base). У несторонних категорий — только page-any.
    */
-  preferAny?: string;
+  sided?: boolean;
 }
 
-// Коллажи (J-Collage-6→5→4→3) перечислены от крупного к мелкому: автопак
-// берёт первый шаг, где хватает collage-фото И мастер есть в наборе. Так
-// «самый крупный помещающийся из присутствующих» выходит автоматически —
-// без отдельной логики выбора (по аналогии с лестницей grid у учеников).
+// Коллажи (collage 6→5→4→3) перечислены от крупного к мелкому: автопак берёт
+// первый шаг, где хватает collage-фото И в наборе есть мастер этого типа. Так
+// «самый крупный помещающийся из присутствующих» выходит автоматически.
 const AUTOPACK_STEPS: AutopackStep[] = [
-  { category: 'full_class', count: 1, masterName: 'J-Full' },
-  { category: 'half_class', count: 2, masterName: 'J-Half' },
-  {
-    category: 'quarter',
-    count: 2,
-    masterName: 'J-Quarter-Left',
-    rightVariant: 'J-Quarter-Right',
-    preferAny: 'J-Quarter',
-  },
-  { category: 'sixth', count: 6, masterName: 'J-Sixth-6' },
-  { category: 'collage', count: 6, masterName: 'J-Collage-6' },
-  { category: 'collage', count: 5, masterName: 'J-Collage-5' },
-  { category: 'collage', count: 4, masterName: 'J-Collage-4' },
-  { category: 'collage', count: 3, masterName: 'J-Collage-3' },
+  { category: 'full_class', count: 1 },
+  { category: 'half_class', count: 2 },
+  { category: 'quarter', count: 2, sided: true },
+  { category: 'sixth', count: 6 },
+  { category: 'collage', count: 6 },
+  { category: 'collage', count: 5 },
+  { category: 'collage', count: 4 },
+  { category: 'collage', count: 3 },
 ];
 
 interface AutopackPagePick {
@@ -179,25 +180,19 @@ function pickAutopackPage(
   for (let i = 0; i < AUTOPACK_STEPS.length; i++) {
     const step = AUTOPACK_STEPS[i];
     if (available[step.category] < step.count) continue;
-    // Приоритет: симметричный page-any (preferAny) если он в наборе →
-    // иначе правый вариант для правой стороны → иначе базовое имя.
-    let effectiveName: string;
-    if (step.preferAny && mastersByName.has(step.preferAny)) {
-      effectiveName = step.preferAny;
-    } else if (position === 'right' && step.rightVariant) {
-      effectiveName = step.rightVariant;
-    } else {
-      effectiveName = step.masterName;
-    }
-    const master = mastersByName.get(effectiveName);
-    if (!master) continue; // мастер не загружен в template_set — пробуем
-                           // следующий шаг
+    // РЭ.22.9: выбор по ТИПУ. Сторонняя категория (quarter): page-any раньше
+    // стороны (как прежний preferAny → rightVariant). Несторонняя: только page-any.
+    const pref: CommonPageType[] = step.sided
+      ? ['page-any', position === 'right' ? 'page-right' : 'page-left']
+      : ['page-any'];
+    const master = findCommonMaster(mastersByName, step.category, step.count, pref);
+    if (!master) continue; // в наборе нет мастера этого типа — пробуем след. шаг
     const consumes: SlotConsumes = {};
     consumes[step.category] = step.count;
     return {
       master,
       consumes,
-      trace: `${effectiveName} (${step.count} ${step.category})`,
+      trace: `${master.name} (${step.count} ${step.category})`,
     };
   }
   return null;

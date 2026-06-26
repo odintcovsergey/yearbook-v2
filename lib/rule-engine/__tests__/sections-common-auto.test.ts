@@ -30,6 +30,7 @@ import type {
   SpreadTemplate,
   TemplateSet,
 } from '@/lib/album-builder/types';
+import { commonMasterFields } from './__fixtures__/common-master-fields';
 
 // ─── Фикстуры ───────────────────────────────────────────────────────────────
 
@@ -62,8 +63,7 @@ function makeMaster(
     sort_order: 0,
     applies_to_configs: [],
     default_for_configs: [],
-    page_role: null,
-    slot_capacity: null,
+    ...commonMasterFields(name),
     is_fallback: false,
     mirror_for_soft: false,
     audit_notes: null,

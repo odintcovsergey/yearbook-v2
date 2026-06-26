@@ -28,6 +28,7 @@ import type {
   SpreadTemplate,
   TemplateSet,
 } from '@/lib/album-builder/types';
+import { commonMasterFields } from './__fixtures__/common-master-fields';
 
 // ─── Минимальные фикстуры ───────────────────────────────────────────────────
 
@@ -45,8 +46,7 @@ function makeMaster(name: string): SpreadTemplate {
     sort_order: 0,
     applies_to_configs: [],
     default_for_configs: [],
-    page_role: null,
-    slot_capacity: null,
+    ...commonMasterFields(name),
     is_fallback: false,
     mirror_for_soft: false,
     audit_notes: null,
@@ -331,6 +331,8 @@ describe('buildFromSectionStructure: master_not_found', () => {
     expect(result.spreads).toEqual([]);
     expect(result.warnings).toHaveLength(1);
     expect(result.warnings[0]).toContain('master_not_found');
-    expect(result.warnings[0]).toContain('J-Half');
+    // РЭ.22.9: warning теперь описывает недостающий ТИП (category×count), а не
+    // имя мастера — выбор стал by-type. Поведение прежнее: страница пропущена.
+    expect(result.warnings[0]).toContain('half_class');
   });
 });
