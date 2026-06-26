@@ -2938,6 +2938,9 @@ function AlbumDetailModal({
                 <PhotosTab
                   albumId={album.id}
                   archived={album.archived}
+                  archivedAt={album.archived_at ?? null}
+                  keepForever={album.keep_originals_forever ?? false}
+                  originalsDeletedAt={album.originals_deleted_at ?? null}
                   canEdit={canEdit}
                   children={children}
                   onNotify={onNotify}
@@ -4711,10 +4714,10 @@ function AlbumFormModal({
                       Подтвердите архивирование
                     </div>
                     <p className="text-sm text-amber-700 mb-3">
-                      Все фотографии альбома будут{' '}
-                      <strong>удалены с сервера</strong> для освобождения места.
-                      Ссылки для родителей перестанут работать. Статистика, выборы,
-                      контакты и тексты сохранятся.
+                      Через <strong>90 дней</strong> оригиналы фотографий этого
+                      заказа будут удалены автоматически — для освобождения места.
+                      <strong> Превью останутся</strong>, заказ можно будет
+                      смотреть. Статистика, выборы, контакты и тексты сохранятся.
                     </p>
                     <div className="flex gap-2">
                       <button
@@ -6263,6 +6266,11 @@ async function uploadFilesParallel(
 function PhotosTab({
   albumId,
   archived,
+  // Жизненный цикл архива: поля отсчёта автоудаления — чтобы честно показать
+  // статус исходников на вкладке (а не врущий текст «удалены при архивировании»).
+  archivedAt,
+  keepForever,
+  originalsDeletedAt,
   canEdit,
   children: childList,
   onNotify,
@@ -6274,6 +6282,9 @@ function PhotosTab({
 }: {
   albumId: string
   archived: boolean
+  archivedAt: string | null
+  keepForever: boolean
+  originalsDeletedAt: string | null
   canEdit: boolean
   children: Child[]
   onNotify: (msg: string) => void
@@ -6739,9 +6750,31 @@ function PhotosTab({
   const totalDone = Object.values(upload).reduce((s, v) => s + v.done, 0)
 
   if (archived) {
+    // Честный статус исходников — та же формула, что в блоке «Исходники
+    // фотографа» (lib/archive-cleanup/core.ts), не плодим вторую логику.
+    const st = archiveLifecycleStatus(
+      {
+        id: albumId,
+        archived: true,
+        archived_at: archivedAt,
+        keep_originals_forever: keepForever,
+        originals_deleted_at: originalsDeletedAt,
+      },
+      Date.now(),
+    )
+    const statusMsg =
+      st.kind === 'deleted'
+        ? `Исходники удалены ${new Date(st.at).toLocaleDateString('ru-RU')} для экономии места, превью доступны.`
+        : st.kind === 'forever'
+          ? 'Исходники хранятся (автоудаление выключено), превью доступны.'
+          : st.kind === 'not_started'
+            ? 'Исходники хранятся — отсчёт автоудаления не начат.'
+            : st.kind === 'countdown'
+              ? `Исходники хранятся, будут удалены через ${st.daysLeft} дн. Превью останутся.`
+              : 'Альбом в архиве.'
     return (
       <div className="text-center text-muted-foreground text-sm py-12">
-        Альбом в архиве — фотографии удалены из хранилища при архивировании.
+        Альбом в архиве — {statusMsg}
         <br />
         Верните альбом из архива, чтобы снова загрузить фото.
       </div>
