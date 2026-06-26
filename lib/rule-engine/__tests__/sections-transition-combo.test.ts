@@ -123,6 +123,7 @@ import { buildFromSectionStructure } from '../build-from-section-structure';
 import type { Preset, RulesAlbumInput } from '../types';
 import type { RuleEngineBundle } from '../loaders';
 import type { TemplateSet, Placeholder } from '@/lib/album-builder/types';
+import { transitionMasterFields } from './__fixtures__/transition-master-fields';
 
 function photoSlot(label: string): Placeholder {
   return {
@@ -160,6 +161,10 @@ function makeMaster(
   placeholders: Placeholder[],
   slot_capacity: SpreadTemplate['slot_capacity'] = null,
 ): SpreadTemplate {
+  // РЭ.22.10: combo/J-chain дотянуты до реальной разметки (см.
+  // __fixtures__/transition-master-fields). Явный slot_capacity (гриды)
+  // сохраняется; combo/J получают page_role+capacity+page_type.
+  const f = transitionMasterFields(name);
   return {
     id: `id-${name}`,
     name,
@@ -172,8 +177,9 @@ function makeMaster(
     sort_order: 0,
     applies_to_configs: [],
     default_for_configs: [],
-    page_role: null,
-    slot_capacity,
+    page_role: f?.page_role ?? null,
+    slot_capacity: slot_capacity ?? f?.slot_capacity ?? null,
+    page_type: f?.page_type,
     is_fallback: false,
     mirror_for_soft: false,
     audit_notes: null,

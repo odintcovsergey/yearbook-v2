@@ -39,6 +39,7 @@ import type {
   SpreadTemplate,
   SlotCapacity,
 } from '@/lib/album-builder/types';
+import { transitionMasterFields } from './__fixtures__/transition-master-fields';
 
 // ─── Минимальные фикстуры ───────────────────────────────────────────────
 
@@ -66,12 +67,17 @@ function makeMaster(
     slot_capacity?: SlotCapacity | null;
   } = {},
 ): SpreadTemplate {
+  // РЭ.22.10: combo/J-chain мастера дотянуты до реальной разметки
+  // (student_grid {students,photos_full} / common {photos_*} + page_type),
+  // иначе семантические finders их не выберут. Гриды/E-Student — без изменений.
+  const f = transitionMasterFields(name);
   return {
     id: `id-${name}`, name, type: 'common', is_spread: false,
     width_mm: 200, height_mm: 280, placeholders, rules: null, sort_order: 0,
     applies_to_configs: [], default_for_configs: [],
-    page_role: opts.page_role ?? null,
-    slot_capacity: opts.slot_capacity ?? null,
+    page_role: f?.page_role ?? opts.page_role ?? null,
+    slot_capacity: f?.slot_capacity ?? opts.slot_capacity ?? null,
+    page_type: f?.page_type,
     is_fallback: false, mirror_for_soft: false, audit_notes: null,
   };
 }
@@ -354,14 +360,21 @@ describe('РЭ.37.7: регрессионная матрица transition (xlsx-
       expect(r.spreads[0].right?.master_id).toBe('id-N-Grid-Page');
     });
 
-    it('кейс 2: 25 учеников (25-28, tail=1) → combo на L + closing на R', () => {
+    it('кейс 2: 25 учеников (25-28, tail=1) → grid-padded на L + closing на R', () => {
       const r = buildLayflat({ density: 'mini', gridSize: 12, studentsCount: 25 });
       assertNoDegraded(r);
       expect(r.spreads).toHaveLength(2);
-      // Mini bundle содержит Tail-4 (combo для mini) — engine берёт его
-      // (min_fit для tail=1 с photos_full=1 в нашем bundle = Combo-4 как
-      // единственный доступный).
-      expect(r.spreads[1].left?.master_id).toBe('id-J-Combined-Tail-4');
+      // РЭ.22.10: combo на L здесь БОЛЬШЕ НЕ кладётся — и это РЕАЛИСТИЧНО.
+      // Раньше синтетический J-Combined-Tail-4 имел has_name/has_portrait и
+      // students.ts ставил его как страницу-ученика (min_fit, tail=1). Реальный
+      // J-Combined-Tail-4 = {students:4, photos_full:1} БЕЗ has_name → students
+      // его не ставит, а detectComplectation('N-Grid-Page') возвращает null
+      // (распознаёт только 'N-Grid-12'), поэтому combo-путь mini БЕЗ
+      // symmetrize спит — ровно как на реальном belly (снапшот РЭ.22.10:
+      // tail=N-Combined-Page, combo не появляется без symmetrize). В этом
+      // bundle нет N-Combined-Page → хвост = N-Grid-Page (12, padded).
+      // Закрытие правой: sixth=0 → J-Half (полупортретные есть).
+      expect(r.spreads[1].left?.master_id).toBe('id-N-Grid-Page');
       expect(r.spreads[1].right?.master_id).toBe('id-J-Half');
     });
 
@@ -388,17 +401,21 @@ describe('РЭ.37.7: регрессионная матрица transition (xlsx-
       expect(r.spreads[0].right?.master_id).toBe('id-N-Grid-Page');
     });
 
-    it('кейс 5: 25 учеников soft (tail=1) → combo + J-Half', () => {
+    it('кейс 5: 25 учеников soft (tail=1) → grid-padded + closing J-Half', () => {
       const r = buildSoft({ density: 'mini', gridSize: 12, studentsCount: 25 });
       assertNoDegraded(r);
-      // На soft combo может оказаться на разных позициях; проверяем наличие
-      // combo (без жёсткой проверки L/R или конкретного combo размера).
+      // РЭ.22.10: combo mini БЕЗ symmetrize спит (см. кейс 2). На soft хвостовая
+      // N-Grid-Page (padded, tail=1) ложится на ПРАВУЮ страницу разворота и сама
+      // закрывает его → закрывающий мастер не нужен (warnings пусты). Реалистичный
+      // результат: 2 разворота сеток, БЕЗ J-Combined-Tail. (Раньше тест ждал combo,
+      // потому что синтетический combo имел has_name и работал как страница-ученик.)
+      expect(r.spreads).toHaveLength(2);
       expect(
         r.spreads.some(s =>
           s.left?.master_id?.includes('Combined-Tail') ||
           s.right?.master_id?.includes('Combined-Tail'),
         ),
-      ).toBe(true);
+      ).toBe(false);
     });
 
     it('кейс 6: 29 учеников soft (29-36, tail=5)', () => {

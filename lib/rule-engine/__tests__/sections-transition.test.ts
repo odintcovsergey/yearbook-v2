@@ -20,6 +20,7 @@ import type {
   SpreadTemplate,
   TemplateSet,
 } from '@/lib/album-builder/types';
+import { transitionMasterFields } from './__fixtures__/transition-master-fields';
 
 // ─── Фикстуры (минимум для теста transition + students) ────────────────────
 
@@ -55,6 +56,10 @@ function textSlot(label: string): Placeholder {
 }
 
 function makeMaster(name: string, placeholders: Placeholder[] = []): SpreadTemplate {
+  // РЭ.22.10: J-chain (J-Half/J-Full/J-Sixth-6) дотянуты до реальной common-
+  // разметки, иначе семантический findCommonMaster их не выберет. Прочие
+  // (E-Standard/E-Universal/J-Quarter) — без изменений (helper вернёт null).
+  const f = transitionMasterFields(name);
   return {
     id: `id-${name}`,
     name,
@@ -67,8 +72,9 @@ function makeMaster(name: string, placeholders: Placeholder[] = []): SpreadTempl
     sort_order: 0,
     applies_to_configs: [],
     default_for_configs: [],
-    page_role: null,
-    slot_capacity: null,
+    page_role: f?.page_role ?? null,
+    slot_capacity: f?.slot_capacity ?? null,
+    page_type: f?.page_type,
     is_fallback: false,
     mirror_for_soft: false,
     audit_notes: null,

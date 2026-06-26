@@ -62,6 +62,8 @@ import {
 } from '../transition-cases';
 import { detectComplectationFromLastPage } from '../detect-complectation';
 import { pushCombinedTailPage, pushGridPage } from './students';
+import { findCommonMaster, type CommonPageType } from './find-common-master';
+import { findComboTailMaster } from './find-transition-master';
 import type { SectionFillContext } from './shared';
 import type { SectionStructureEntry, TransitionScenario } from '../types';
 
@@ -154,29 +156,13 @@ function classifyMasterCategory(master: SpreadTemplate): LegacyCategory | null {
 }
 
 /**
- * Найти первый чистый J-мастер заданной категории, с зеркалом для R.
- * Поведение РЭ.32 — оставлено для legacy ветки master_name.
+ * РЭ.22.10: J-цепочка закрытия — выбор мастера по СТОРОНЕ через page_type.
+ * by-name брал base для L (page-any у J-Half/J-Sixth-6/J-Full) и -Right для R
+ * с фолбэком на base. Воспроизводим списком приоритета page_type для
+ * семантического findCommonMaster (page_role='common' + ёмкость + page_type).
  */
-function findCommonMasterForCategory(
-  mastersByName: ReadonlyMap<string, SpreadTemplate>,
-  category: LegacyCategory,
-  position: 'left' | 'right',
-): SpreadTemplate | null {
-  for (const m of Array.from(mastersByName.values())) {
-    if (m.name.endsWith('-Right')) continue;
-    const cat = classifyMasterCategory(m);
-    if (cat !== category) continue;
-    if (position === 'right') {
-      if (m.name.endsWith('-Left')) {
-        const right = mastersByName.get(m.name.replace(/-Left$/, '-Right'));
-        if (right) return right;
-      }
-      const rightAlt = mastersByName.get(m.name + '-Right');
-      if (rightAlt) return rightAlt;
-    }
-    return m;
-  }
-  return null;
+function jChainPageTypePref(position: 'left' | 'right'): readonly CommonPageType[] {
+  return position === 'right' ? ['page-right', 'page-any'] : ['page-any'];
 }
 
 /**
@@ -226,29 +212,13 @@ function hasVacantRight(ctx: SectionFillContext): boolean {
   return positionOfIndex(ctx, lastIndex) === 'left';
 }
 
-// ─── Поиск combo-мастера (РЭ.37.2.b) ────────────────────────────────────
-
-/**
- * РЭ.37.2.b: поиск combo-мастера по базовому имени с учётом позиции.
- * Combo всегда асимметричен → ищем -Right для R, fallback на base.
- *
- * Возвращает null если ни base, ни -Right не найдены — это сигнал
- * что combo в template_set отсутствует (партнёр не нарисовал его в
- * InDesign), нужно сгенерировать warning.
- */
-function findComboMaster(
-  mastersByName: ReadonlyMap<string, SpreadTemplate>,
-  baseName: string,
-  position: 'left' | 'right',
-): SpreadTemplate | null {
-  if (position === 'right') {
-    const right = mastersByName.get(`${baseName}-Right`);
-    if (right) return right;
-    // fallback на base — это норма, если мастер симметричный
-    return mastersByName.get(baseName) ?? null;
-  }
-  return mastersByName.get(baseName) ?? null;
-}
+// ─── Поиск combo-мастера ─────────────────────────────────────────────────
+//
+// РЭ.22.10: by-name (`mastersByName.get('J-Combined-Tail-4'(-Right))`) заменён
+// на семантический findComboTailMaster (page_role='student_grid' + students=M
+// + classphoto, без has_portrait; сторона через page_type). См.
+// ./find-transition-master.ts. Combo-капасити M берётся из layout.combo_capacity
+// (тот же класс хвоста, что считает classifyTransitionLayout — его НЕ меняем).
 
 // ─── Главная экспортная функция ─────────────────────────────────────────
 
@@ -775,15 +745,15 @@ function tryReplaceTailWithCombo(
   // РЭ.37.3.b: считаем по физической странице с учётом sheet_type.
   const position: 'left' | 'right' = positionOfIndex(ctx, tailIndex);
 
-  const combo = findComboMaster(
+  const combo = findComboTailMaster(
     ctx.bundle.mastersByName,
-    layout.combo_master_base,
+    layout.combo_capacity,
     position,
   );
   if (!combo) {
     ctx.warnings.push(
-      `transition_combo_master_missing: '${layout.combo_master_base}' ` +
-        `(или -Right) не найден в template_set — хвостовая страница ` +
+      `transition_combo_master_missing: combo на ${layout.combo_capacity} ученика ` +
+        `(${position}) не найден в template_set — хвостовая страница ` +
         `students оставлена как есть`,
     );
     return false;
@@ -874,12 +844,16 @@ function tryJChainClosing(ctx: SectionFillContext): void {
     const need = J_PHOTO_COUNT[category];
     if (ctx.available[category] < need) continue;
 
-    // J-Half / J-Sixth-6 / J-Full ищем через классификатор мастеров.
+    // РЭ.22.10: J-Half / J-Sixth-6 / J-Full ищем СЕМАНТИЧЕСКИ (общий с
+    // common-разделом findCommonMaster: page_role='common' + ёмкость +
+    // page_type). category — ключ ёмкости (half_class/sixth/full_class),
+    // need — count фото категории; сторона через jChainPageTypePref.
     const legacyCat: LegacyCategory = category;
-    const master = findCommonMasterForCategory(
+    const master = findCommonMaster(
       ctx.bundle.mastersByName,
-      legacyCat,
-      position,
+      category,
+      need,
+      jChainPageTypePref(position),
     );
     if (!master) continue;
 
@@ -1033,9 +1007,9 @@ function trySymmetrizeTail(
   // (previousPage сначала запушится, затем combo).
   const newComboIndex = ctx.pageInstances.length + 1;
   const positionForCombo = positionOfIndex(ctx, newComboIndex);
-  const combo = findComboMaster(
+  const combo = findComboTailMaster(
     ctx.bundle.mastersByName,
-    layout.combo_master_base,
+    layout.combo_capacity,
     positionForCombo,
   );
   if (!combo) {
