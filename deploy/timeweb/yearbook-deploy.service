@@ -1,8 +1,9 @@
 # Pull-деплой yearbook-v2: oneshot, запускается таймером yearbook-deploy.timer.
-# Тянет main с GitHub, собирает релиз, переключает симлинк, health-check + откат.
+# Тянет main с первого доступного источника (primary gitflic → fallback origin/
+# github), собирает релиз, переключает симлинк, health-check + откат.
 # Ставится в /etc/systemd/system/yearbook-deploy.service
 [Unit]
-Description=yearbook-v2 pull deploy (poll GitHub main, build, switch, health-check)
+Description=yearbook-v2 pull deploy (gitflic->github main, build, switch, health-check)
 After=network-online.target
 Wants=network-online.target
 
@@ -11,11 +12,11 @@ Type=oneshot
 User=yearbook
 Group=yearbook
 WorkingDirectory=/srv/yearbook
-# Перед деплоем обновляем рабочее дерево репо-источника до origin/main — иначе
-# git fetch обновит только ссылки, а сам deploy.sh останется на старом коммите.
-# ExecStartPre завершается ДО ExecStart, поэтому скрипт не переписывается на ходу.
-ExecStartPre=/usr/bin/git -C /srv/yearbook/repo fetch --quiet origin main
-ExecStartPre=/usr/bin/git -C /srv/yearbook/repo reset --hard --quiet origin/main
+# Перед деплоем обновляем рабочее дерево репо до свежего main с первого доступного
+# источника (gitflic→github) — иначе сам deploy.sh останется на старом коммите.
+# Вынесено в prepare-repo.sh (отказоустойчивый выбор источника, общая логика с
+# deploy.sh). ExecStartPre завершается ДО ExecStart, скрипт не переписывается на ходу.
+ExecStartPre=/srv/yearbook/repo/deploy/timeweb/prepare-repo.sh
 ExecStart=/srv/yearbook/repo/deploy/timeweb/deploy.sh
 # Сборка тяжёлая — даём время и ограничиваем, чтобы не висло вечно
 TimeoutStartSec=1200
