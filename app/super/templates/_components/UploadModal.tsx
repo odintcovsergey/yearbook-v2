@@ -12,6 +12,22 @@ type FormState = {
 
 const SLUG_REGEX = /^[a-z0-9-]+$/
 
+// Фаза 2: отчёт сверки с каноном master_page_types (приходит в ответе import_idml).
+type CanonReason = 'matched' | 'unmapped' | 'no-canon-type'
+type CanonReport = {
+  recognized: number
+  total: number
+  unmatched: Array<{ name: string; reason: CanonReason }>
+}
+
+// Человекочитаемая причина «не легло в канон».
+const reasonLabel = (r: CanonReason): string =>
+  r === 'unmapped'
+    ? 'не размечен (нет в family-mapping)'
+    : r === 'no-canon-type'
+      ? 'новый тип, нет в каноне'
+      : '—'
+
 const emptyForm = (): FormState => ({
   file: null,
   name: '',
@@ -32,6 +48,9 @@ export default function UploadModal({
   const [error, setError] = useState<string | null>(null)
   const [conflictPending, setConflictPending] = useState(false)
   const [backdropStart, setBackdropStart] = useState(false)
+  // Фаза 2: после успешной загрузки показываем отчёт сверки с каноном (вместо
+  // мгновенного закрытия). null = ещё не загружено.
+  const [result, setResult] = useState<CanonReport | null>(null)
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm(prev => ({ ...prev, [k]: v }))
@@ -104,7 +123,14 @@ export default function UploadModal({
         return
       }
       setSubmitting(false)
-      onSuccess()
+      // Фаза 2: показываем отчёт сверки с каноном. Закрытие — по кнопке (onSuccess).
+      setResult(
+        (data.canon_report as CanonReport | undefined) ?? {
+          recognized: data.spread_count ?? 0,
+          total: data.spread_count ?? 0,
+          unmatched: [],
+        },
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Сеть недоступна')
       setSubmitting(false)
@@ -139,7 +165,45 @@ export default function UploadModal({
           Загрузить IDML
         </h2>
 
-        {conflictPending ? (
+        {result ? (
+          <div className="space-y-4">
+            {result.unmatched.length === 0 ? (
+              <div className="card p-4 bg-emerald-50 border-emerald-200">
+                <div className="font-medium text-emerald-900">
+                  Распознано {result.recognized} из {result.total} ✓
+                </div>
+                <div className="text-sm text-emerald-700 mt-1">
+                  Все мастера легли в канон типов разворотов.
+                </div>
+              </div>
+            ) : (
+              <div className="card p-4 bg-amber-50 border-amber-200">
+                <div className="font-medium text-amber-900 mb-1">
+                  Распознано {result.recognized} из {result.total}
+                </div>
+                <div className="text-sm text-amber-700 mb-2">
+                  Не легло в канон ({result.unmatched.length}):
+                </div>
+                <ul className="text-sm text-amber-800 space-y-1 max-h-60 overflow-y-auto">
+                  {result.unmatched.map((u) => (
+                    <li key={u.name} className="flex flex-col">
+                      <span className="font-mono">{u.name}</span>
+                      <span className="text-xs text-amber-600">{reasonLabel(u.reason)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="text-xs text-amber-600 mt-2">
+                  Загрузка прошла — это мягкая сверка, дизайн уже создан. Канон используется только для справки.
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button onClick={onSuccess} className="btn-primary">
+                Закрыть
+              </button>
+            </div>
+          </div>
+        ) : conflictPending ? (
           <div className="space-y-4">
             <div className="card p-4 bg-amber-50 border-amber-200">
               <div className="font-medium text-amber-900 mb-1">
